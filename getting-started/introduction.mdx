@@ -35,19 +35,19 @@ Here is the full picture. The flight controller runs ArduPilot or PX4. The compa
 ```mermaid
 flowchart LR
     subgraph Drone
-        FC[Flight Controller\nArduPilot / PX4]
+        FC[Flight Controller<br/>ArduPilot / PX4]
         CAM[Camera]
-        SBC[Companion SBC\nDrone Agent]
-        RADIO_TX[WFB-ng TX\nRTL8812EU]
+        SBC[Companion SBC<br/>Drone Agent]
+        RADIO_TX[WFB-ng TX<br/>RTL8812EU]
     end
 
     subgraph Ground
-        RADIO_RX[WFB-ng RX\nRTL8812EU]
-        GS[Ground Station SBC\nGround Agent]
+        RADIO_RX[WFB-ng RX<br/>RTL8812EU]
+        GS[Ground Station SBC<br/>Ground Agent]
     end
 
     subgraph You
-        BROWSER[Browser\nMission Control]
+        BROWSER[Browser<br/>Mission Control]
         PHONE[Phone / Tablet]
         MONITOR[HDMI Monitor]
     end
@@ -55,7 +55,7 @@ flowchart LR
     FC <-->|MAVLink UART| SBC
     CAM -->|USB / MIPI CSI| SBC
     SBC -->|H.264 video| RADIO_TX
-    RADIO_TX -.->|5.8 GHz\n50 km range| RADIO_RX
+    RADIO_TX -.->|5.8 GHz<br/>50 km range| RADIO_RX
     RADIO_RX --> GS
     GS -->|WiFi AP / USB tether| BROWSER
     GS -->|WiFi AP| PHONE

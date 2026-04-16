@@ -68,22 +68,22 @@ Here is what makes ADOS different from other open-source drone projects. It is n
 ```mermaid
 flowchart TB
     subgraph "Open Source (GPLv3)"
-        GCS[Mission Control\nBrowser GCS]
-        AGENT[Drone Agent\nCompanion Software]
-        GROUND[Ground Agent\nGround Station]
-        SITL[SITL Bridge\nArduPilot Simulator]
-        MQTT[MQTT Bridge\nTelemetry Relay]
-        VIDEO[Video Relay\nRTSP to WebSocket]
+        GCS[Mission Control<br/>Browser GCS]
+        AGENT[Drone Agent<br/>Companion Software]
+        GROUND[Ground Agent<br/>Ground Station]
+        SITL[SITL Bridge<br/>ArduPilot Simulator]
+        MQTT[MQTT Bridge<br/>Telemetry Relay]
+        VIDEO[Video Relay<br/>RTSP to WebSocket]
     end
 
     subgraph "Open Source (CERN-OHL-S v2)"
-        HW[Hardware Designs\nSchematics + PCB]
+        HW[Hardware Designs<br/>Schematics + PCB]
     end
 
     subgraph "Open Source (Others)"
-        AP[ArduPilot\nFlight Controller Firmware]
-        WFB[WFB-ng\nVideo Link Protocol]
-        MAVLINK[MAVLink\nCommunication Protocol]
+        AP[ArduPilot<br/>Flight Controller Firmware]
+        WFB[WFB-ng<br/>Video Link Protocol]
+        MAVLINK[MAVLink<br/>Communication Protocol]
     end
 
     GCS <--> AGENT

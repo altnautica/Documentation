@@ -26,36 +26,36 @@ flowchart TB
     Supervisor["ados-supervisor"]
     
     subgraph Core["Core Services (always running)"]
-        MAVLink["ados-mavlink\nFC serial proxy"]
-        API["ados-api\nFastAPI :8080"]
-        Cloud["ados-cloud\nMQTT + Convex"]
-        Health["ados-health\nCPU, RAM, temp"]
+        MAVLink["ados-mavlink<br/>FC serial proxy"]
+        API["ados-api<br/>FastAPI :8080"]
+        Cloud["ados-cloud<br/>MQTT + Convex"]
+        Health["ados-health<br/>CPU, RAM, temp"]
     end
     
     subgraph HW["Hardware-Dependent"]
-        Video["ados-video\nCamera + encoder"]
-        WFB["ados-wfb\nWFB-ng TX or RX"]
-        Modem["ados-modem\n4G LTE"]
+        Video["ados-video<br/>Camera + encoder"]
+        WFB["ados-wfb<br/>WFB-ng TX or RX"]
+        Modem["ados-modem<br/>4G LTE"]
     end
     
     subgraph Suite["Suite-Dependent"]
-        Scripting["ados-scripting\nPython executor"]
-        Sensors["ados-peripherals\nUSB + sensor mgr"]
+        Scripting["ados-scripting<br/>Python executor"]
+        Sensors["ados-peripherals<br/>USB + sensor mgr"]
     end
     
     subgraph OnDemand["On-Demand"]
-        OTA["ados-ota\nGitHub release poll"]
+        OTA["ados-ota<br/>GitHub release poll"]
     end
     
     subgraph GroundOnly["Ground Station Profile"]
-        WiFiAP["ados-wifi-ap\nhostapd"]
-        OLED["ados-oled\nI2C display"]
-        Buttons["ados-buttons\nGPIO input"]
-        Kiosk["ados-kiosk\nChromium HDMI"]
-        MediaMTXGS["ados-mediamtx-gs\nRTSP + WHEP"]
-        USBGadget["ados-usb-gadget\nCDC-NCM setup"]
-        SetupWebapp["ados-setup-webapp\nCaptive portal"]
-        CaptiveDNS["ados-captive-dns\nProbe responder"]
+        WiFiAP["ados-wifi-ap<br/>hostapd"]
+        OLED["ados-oled<br/>I2C display"]
+        Buttons["ados-buttons<br/>GPIO input"]
+        Kiosk["ados-kiosk<br/>Chromium HDMI"]
+        MediaMTXGS["ados-mediamtx-gs<br/>RTSP + WHEP"]
+        USBGadget["ados-usb-gadget<br/>CDC-NCM setup"]
+        SetupWebapp["ados-setup-webapp<br/>Captive portal"]
+        CaptiveDNS["ados-captive-dns<br/>Probe responder"]
     end
     
     Supervisor --> Core

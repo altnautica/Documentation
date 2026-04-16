@@ -17,23 +17,23 @@ Its core job: receive video from the air, relay it to your screen.
 ```mermaid
 flowchart LR
     subgraph Drone
-        TX[WFB-ng TX\nRTL8812EU]
+        TX[WFB-ng TX<br/>RTL8812EU]
     end
 
     subgraph Ground Station
-        RX[WFB-ng RX\nRTL8812EU]
-        SBC[SBC\nGround Agent]
+        RX[WFB-ng RX<br/>RTL8812EU]
+        SBC[SBC<br/>Ground Agent]
         OLED[OLED Display]
         BTNS[4 Buttons]
     end
 
     subgraph Your Devices
-        LAPTOP[Laptop Browser\nMission Control]
+        LAPTOP[Laptop Browser<br/>Mission Control]
         PHONE[Phone]
         TV[HDMI Monitor]
     end
 
-    TX -.->|5.8 GHz\n50 km range| RX
+    TX -.->|5.8 GHz<br/>50 km range| RX
     RX --> SBC
     SBC -->|WiFi AP| LAPTOP
     SBC -->|WiFi AP| PHONE

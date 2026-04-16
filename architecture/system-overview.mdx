@@ -14,12 +14,12 @@ ADOS is a three-tier system: a drone agent on the aircraft, a ground agent on a 
 %%{init: {'theme': 'dark'}}%%
 flowchart TB
     subgraph Drone["Tier 1: Drone"]
-        FC["Flight Controller\n(ArduPilot / PX4 / Betaflight)"]
-        Agent["ADOS Drone Agent\n(Python, systemd)"]
-        Camera["Camera\n(CSI or USB)"]
-        WFB_TX["WFB-ng TX\n(RTL8812EU, 5 GHz)"]
-        ELRS["ELRS RX\n(2.4 GHz control)"]
-        Modem_Air["4G Modem\n(optional)"]
+        FC["Flight Controller<br/>(ArduPilot / PX4 / Betaflight)"]
+        Agent["ADOS Drone Agent<br/>(Python, systemd)"]
+        Camera["Camera<br/>(CSI or USB)"]
+        WFB_TX["WFB-ng TX<br/>(RTL8812EU, 5 GHz)"]
+        ELRS["ELRS RX<br/>(2.4 GHz control)"]
+        Modem_Air["4G Modem<br/>(optional)"]
 
         FC <-->|UART MAVLink| Agent
         Camera -->|V4L2| Agent
@@ -29,12 +29,12 @@ flowchart TB
     end
 
     subgraph Ground["Tier 2: Ground Station"]
-        WFB_RX["WFB-ng RX\n(RTL8812EU, 5 GHz)"]
-        GS_Agent["ADOS Ground Agent\n(same codebase, ground profile)"]
-        MediaMTX["MediaMTX\n(RTSP + WHEP)"]
-        WiFi_AP["WiFi AP\n(2.4 GHz)"]
-        USB["USB Tether\n(CDC-NCM)"]
-        HDMI["HDMI Kiosk\n(Chromium + cage)"]
+        WFB_RX["WFB-ng RX<br/>(RTL8812EU, 5 GHz)"]
+        GS_Agent["ADOS Ground Agent<br/>(same codebase, ground profile)"]
+        MediaMTX["MediaMTX<br/>(RTSP + WHEP)"]
+        WiFi_AP["WiFi AP<br/>(2.4 GHz)"]
+        USB["USB Tether<br/>(CDC-NCM)"]
+        HDMI["HDMI Kiosk<br/>(Chromium + cage)"]
         OLED["OLED + Buttons"]
 
         WFB_RX --> GS_Agent
@@ -46,9 +46,9 @@ flowchart TB
     end
 
     subgraph Cloud["Tier 3: Cloud (optional)"]
-        Convex["Convex Backend\n(HTTP API, reactive queries)"]
-        MQTT["Mosquitto\n(MQTT broker)"]
-        Video_Relay["Video Relay\n(RTSP-to-fMP4)"]
+        Convex["Convex Backend<br/>(HTTP API, reactive queries)"]
+        MQTT["Mosquitto<br/>(MQTT broker)"]
+        Video_Relay["Video Relay<br/>(RTSP-to-fMP4)"]
     end
 
     subgraph Clients["Clients"]

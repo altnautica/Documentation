@@ -170,7 +170,7 @@ flowchart TB
         GCS[Mission Control]
     end
 
-    AGENT -->|MQTT publish\ntelemetry 2Hz| MQTT
+    AGENT -->|MQTT publish<br/>telemetry 2Hz| MQTT
     MQTT --> BRIDGE
     BRIDGE -->|write| CONVEX
     CONVEX -->|reactive query| GCS

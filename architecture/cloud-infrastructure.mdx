@@ -14,14 +14,14 @@ The cloud layer is optional. Every core ADOS function works without internet. Bu
 %%{init: {'theme': 'dark'}}%%
 flowchart LR
     subgraph Agent["Drone/Ground Agent"]
-        A_HTTP["HTTP POST\n(every 5s)"]
-        A_MQTT["MQTT publish\n(2 Hz)"]
-        A_WebRTC["WebRTC signaling\n(on-demand)"]
+        A_HTTP["HTTP POST<br/>(every 5s)"]
+        A_MQTT["MQTT publish<br/>(2 Hz)"]
+        A_WebRTC["WebRTC signaling<br/>(on-demand)"]
     end
 
     subgraph Cloud["Cloud Services"]
-        Convex["Convex Backend\n(convex.altnautica.com)"]
-        Mosquitto["Mosquitto MQTT\n(mqtt.altnautica.com)"]
+        Convex["Convex Backend<br/>(convex.altnautica.com)"]
+        Mosquitto["Mosquitto MQTT<br/>(mqtt.altnautica.com)"]
         Bridge["MQTT-to-Convex Bridge"]
     end
 
