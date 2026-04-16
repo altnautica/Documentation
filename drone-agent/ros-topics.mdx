@@ -1,0 +1,90 @@
+---
+title: "ROS Topics"
+description: "All MAVLink-to-ROS 2 topics published by the bridge node, with message types, rates, and QoS settings."
+icon: "list"
+---
+
+# Published ROS 2 Topics
+
+The MAVLink Bridge Node reads binary MAVLink frames from the agent's IPC socket and publishes them as standard ROS 2 topics. All topic names and message types are compatible with the mavros naming convention, so existing ROS tooling and packages work out of the box.
+
+## Topic reference
+
+| ROS Topic | Message Type | Source | Rate | QoS |
+|-----------|-------------|--------|------|-----|
+| `/mavros/imu/data` | `sensor_msgs/Imu` | ATTITUDE + SCALED_IMU2 | 50 Hz | Best-effort |
+| `/mavros/local_position/pose` | `geometry_msgs/PoseStamped` | LOCAL_POSITION_NED | 10-30 Hz | Best-effort |
+| `/mavros/global_position/global` | `sensor_msgs/NavSatFix` | GLOBAL_POSITION_INT | 5-10 Hz | Reliable |
+| `/mavros/global_position/local` | `nav_msgs/Odometry` | GLOBAL_POSITION_INT | 5-10 Hz | Best-effort |
+| `/mavros/vfr_hud` | `geometry_msgs/TwistStamped` | VFR_HUD | 5 Hz | Best-effort |
+| `/mavros/battery` | `sensor_msgs/BatteryState` | BATTERY_STATUS | 1-2 Hz | Reliable |
+| `/mavros/state` | `std_msgs/String` | HEARTBEAT | 1 Hz | Reliable, transient-local |
+| `/mavros/rangefinder/rangefinder` | `sensor_msgs/Range` | RANGEFINDER | 10-20 Hz | Best-effort |
+| `/mavros/statustext/recv` | `std_msgs/String` | STATUSTEXT | Event-driven | Reliable, transient-local |
+| `/mavros/param/param_value` | `std_msgs/String` | PARAM_VALUE | Event-driven | Reliable |
+| `/mavros/bridge/health` | `diagnostic_msgs/DiagnosticStatus` | Bridge internal | 1 Hz | Reliable |
+
+## Camera topics
+
+When the camera node is running (VIO or Mapping profile), two additional topics are published:
+
+| ROS Topic | Message Type | Rate | Notes |
+|-----------|-------------|------|-------|
+| `/camera/image_raw` | `sensor_msgs/Image` | 30 Hz | BGR8 encoding, USB UVC camera |
+| `/camera/camera_info` | `sensor_msgs/CameraInfo` | 30 Hz | Intrinsics from calibration file if present |
+
+## IMU merge behavior
+
+The bridge merges two separate MAVLink messages into a single `/mavros/imu/data` message:
+
+- **ATTITUDE** provides orientation (roll, pitch, yaw as quaternion) and angular velocities
+- **SCALED_IMU2** provides linear accelerations (converted from milliG to m/s^2)
+
+If the flight controller sends ATTITUDE but not SCALED_IMU2 (some older firmware), the bridge still publishes IMU data but sets `linear_acceleration_covariance[0] = -1.0`. This is the ROS convention for "this data is not available." Downstream nodes should check for this before using acceleration values.
+
+## Velocity setpoints (reverse direction)
+
+The bridge also subscribes to one topic for sending commands back to the flight controller:
+
+| ROS Topic | Message Type | Direction | Notes |
+|-----------|-------------|-----------|-------|
+| `/mavros/setpoint_velocity/cmd_vel` | `geometry_msgs/TwistStamped` | ROS to FC | Rate-limited to 20 Hz |
+
+When you publish a velocity command, the bridge encodes it as a MAVLink `SET_POSITION_TARGET_LOCAL_NED` message and writes it back to the IPC socket. The coordinate conversion (ROS ENU to MAVLink NED) is handled automatically.
+
+## TF tree
+
+The bridge broadcasts a single TF transform:
+
+```
+map -> base_link
+```
+
+The transform uses the orientation from the ATTITUDE message. Position data from LOCAL_POSITION_NED is published as a separate PoseStamped topic (not as a TF transform) because the NED-to-ENU frame conversion depends on your specific use case.
+
+## Health diagnostics
+
+The `/mavros/bridge/health` topic publishes a `DiagnosticStatus` message every second with:
+
+| Key | Type | Description |
+|-----|------|-------------|
+| `ipc_connected` | bool | Whether the bridge is connected to the agent's MAVLink socket |
+| `ipc_reconnects` | int | Number of reconnection attempts since startup |
+| `decode_errors` | int | MAVLink frames that failed to parse |
+| `publisher_drops` | int | Messages dropped due to queue overflow |
+| `armed` | bool | Whether the flight controller is armed |
+| `mode` | string | Current flight mode (e.g., "STABILIZE", "GUIDED") |
+| `boot_offset_ms` | int | Estimated offset between FC boot clock and system clock |
+
+## Timestamp modes
+
+The bridge supports two timestamp modes, controlled by a ROS parameter:
+
+**`receive_time` (default):** Stamps messages with the current ROS clock time when they arrive. Good for logging and general visualization. Introduces 1-5 ms of jitter.
+
+**`source_time`:** Stamps messages using the flight controller's boot clock, corrected with a median-filter epoch offset. Necessary for VIO and sensor fusion where camera and IMU timestamps need tight alignment.
+
+```bash
+# Switch to source_time for VIO work
+ros2 launch ados_mavlink_bridge bridge.launch.py timestamp_mode:=source_time
+```

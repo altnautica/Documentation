@@ -1,0 +1,133 @@
+---
+title: "ROS Workspace"
+description: "Creating ROS 2 nodes, building packages, using templates, and managing your workspace."
+icon: "code"
+---
+
+# ROS 2 Workspace
+
+When you initialize ROS 2 on the agent, a workspace is created at `~/ados_ws/` inside the Docker container. This is a standard ROS 2 colcon workspace where you can create packages, write nodes, and build everything with a single command.
+
+## Workspace layout
+
+```
+~/ados_ws/
+  src/               # Your ROS 2 packages go here
+    my_planner/
+      package.xml
+      setup.py
+      my_planner/
+        planner_node.py
+      launch/
+        planner.launch.py
+  build/             # Colcon build output (auto-generated)
+  install/           # Installed packages (auto-generated)
+  log/               # Build logs (auto-generated)
+```
+
+The workspace is bind-mounted from the host at `/opt/ados/ros-ws/`, so your code persists across container restarts.
+
+## Creating a new node
+
+The fastest way to start is with a template:
+
+```bash
+ados ros create-node my_planner --template planner
+```
+
+Three templates are available:
+
+| Template | What it creates | Good for |
+|----------|----------------|----------|
+| `basic` | Publisher + subscriber node | Learning ROS 2, simple data processing |
+| `planner` | Subscribes to `/odom`, publishes `/cmd_vel` | Trajectory planning, autonomous flight |
+| `perception` | Subscribes to `/camera/image_raw`, publishes detections | Computer vision, object detection |
+
+Each template generates a complete package with `package.xml`, `setup.py`, a Python node, and a launch file. You can start editing immediately.
+
+## Building
+
+Build all packages in the workspace:
+
+```bash
+ados ros build
+```
+
+Or build a specific package:
+
+```bash
+ados ros build --package my_planner
+```
+
+Build output streams to your terminal in real time. The colcon-watch service inside the container also auto-rebuilds when you save changes to files in `src/`.
+
+## Launching your node
+
+After building:
+
+```bash
+ados ros launch my_planner planner_node
+```
+
+Your node starts inside the container and appears in the node graph. You can see it in Foxglove Studio or the GCS ROS tab.
+
+## Echoing topics
+
+See what a topic is publishing:
+
+```bash
+ados ros topic echo /mavros/imu/data
+```
+
+This streams messages to your terminal until you press Ctrl+C.
+
+## Example: trajectory planner
+
+Here is a minimal node that reads odometry and publishes velocity commands:
+
+```python
+import rclpy
+from rclpy.node import Node
+from nav_msgs.msg import Odometry
+from geometry_msgs.msg import Twist
+
+class SimplePlanner(Node):
+    def __init__(self):
+        super().__init__("simple_planner")
+        self.sub = self.create_subscription(Odometry, "/odom", self.on_odom, 10)
+        self.pub = self.create_publisher(Twist, "/cmd_vel", 10)
+        self.get_logger().info("Planner ready. Waiting for odometry...")
+
+    def on_odom(self, msg):
+        cmd = Twist()
+        # Simple forward flight at 1 m/s
+        cmd.linear.x = 1.0
+        cmd.angular.z = 0.0
+        self.pub.publish(cmd)
+
+def main():
+    rclpy.init()
+    rclpy.spin(SimplePlanner())
+```
+
+The bridge converts your `/cmd_vel` messages into MAVLink velocity setpoints and sends them to the flight controller. The ENU-to-NED conversion is handled automatically.
+
+## Interactive shell
+
+For full access to the ROS 2 container:
+
+```bash
+ados ros shell
+```
+
+This opens a bash session inside the container with all ROS tools available (`ros2 topic list`, `ros2 node info`, `colcon build`, etc.).
+
+## VS Code integration
+
+For a comfortable development experience, use VS Code with the Remote-SSH extension:
+
+1. Connect to your companion computer over SSH
+2. Open the workspace folder at `/opt/ados/ros-ws/`
+3. Install the ROS and Python extensions inside the container
+
+The colcon-watch service handles auto-rebuilding, so you can edit and test without switching to a terminal.

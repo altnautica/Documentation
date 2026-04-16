@@ -1,0 +1,86 @@
+---
+title: "Foxglove Studio"
+description: "Visualize ROS topics, record data, and build custom dashboards with Foxglove Studio."
+icon: "chart-mixed"
+---
+
+# Foxglove Studio
+
+Foxglove Studio is a browser-based tool for visualizing ROS 2 data. The ADOS agent runs a foxglove_bridge server on port 8766 that streams topic data over WebSocket. You can view IMU plots, GPS tracks, camera feeds, and custom topics without installing anything.
+
+## Connecting
+
+### From the GCS
+
+The ROS tab Overview sub-view includes an embedded Foxglove panel. It connects automatically when the ROS environment is running. Click the fullscreen button to expand it.
+
+### From Foxglove Studio (browser)
+
+1. Go to [app.foxglove.dev](https://app.foxglove.dev)
+2. Click **Open connection**
+3. Select **Foxglove WebSocket**
+4. Enter your drone's address: `ws://drone-ip:8766` (LAN) or `wss://ros-{id}.altnautica.com` (cloud)
+
+### From Foxglove Studio (desktop app)
+
+Download from [foxglove.dev/download](https://foxglove.dev/download). Same connection flow as the browser version, but with faster rendering and local file playback.
+
+## What you can visualize
+
+| Panel Type | Topics | Use Case |
+|-----------|--------|----------|
+| **Plot** | `/mavros/imu/data` | Attitude angles, angular velocities over time |
+| **3D** | `/mavros/local_position/pose`, TF tree | Drone position in 3D space |
+| **Map** | `/mavros/global_position/global` | GPS track on a map |
+| **Gauge** | `/mavros/battery` | Voltage, current, percentage |
+| **State** | `/mavros/state` | Armed/disarmed, flight mode |
+| **Image** | `/camera/image_raw` | Live camera feed |
+| **Diagnostics** | `/mavros/bridge/health` | Bridge connection health |
+| **Log** | `/mavros/statustext/recv` | Flight controller warnings and errors |
+
+## Recording data
+
+MCAP is the standard recording format for ROS 2 data. You can start and stop recordings from the GCS Recordings sub-view, the CLI, or the REST API.
+
+### From the CLI
+
+```bash
+# Record all topics
+ados ros record
+
+# Record specific topics for 5 minutes
+ados ros record --topics /mavros/imu/data /camera/image_raw --duration 300
+```
+
+### From the REST API
+
+```bash
+curl -X POST http://localhost:8080/api/ros/recording/start \
+  -H "Content-Type: application/json" \
+  -d '{"topics": ["/mavros/imu/data"], "max_duration_s": 600}'
+```
+
+### Rotation policy
+
+The agent keeps the 10 most recent recordings and caps total disk usage at 5 GB. Older recordings are deleted automatically. You can download recordings from the GCS Recordings sub-view before they rotate out.
+
+## Playing back recordings
+
+Open an MCAP file in Foxglove Studio to replay the data as if the drone were flying. This is useful for debugging algorithms, reviewing flights, and sharing data with teammates.
+
+1. Download the MCAP file from the GCS Recordings sub-view
+2. Open Foxglove Studio
+3. Click **Open local file** and select the `.mcap` file
+
+## Configuration
+
+The foxglove_bridge server is configured through the agent:
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `ros.foxglove_port` | `8766` | WebSocket port for Foxglove connections |
+| Send buffer | 100 MB | Maximum buffered data before dropping slow clients |
+| Worker threads | 2 | Threads handling WebSocket connections |
+| Encoding | CBOR/CDR | Binary encoding, 10-20x faster than JSON for image topics |
+
+Port 8766 is used because the agent's MAVLink WebSocket proxy already occupies port 8765.

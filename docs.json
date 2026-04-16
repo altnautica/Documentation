@@ -169,6 +169,16 @@
             ]
           },
           {
+            "group": "ROS 2 Integration",
+            "pages": [
+              "drone-agent/ros-integration",
+              "drone-agent/ros-topics",
+              "drone-agent/ros-workspace",
+              "drone-agent/ros-network",
+              "drone-agent/ros-foxglove"
+            ]
+          },
+          {
             "group": "Operations",
             "pages": [
               "drone-agent/ota-updates",

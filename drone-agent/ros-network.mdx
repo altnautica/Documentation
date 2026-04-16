@@ -1,0 +1,142 @@
+---
+title: "ROS Network Access"
+description: "Three ways to access your drone's ROS 2 environment: LAN, cloud relay, and self-hosted tunnels."
+icon: "globe"
+---
+
+# Network Access Tiers
+
+The ROS 2 environment runs on the drone. You access it from your laptop, phone, or another machine. There are three ways to connect, depending on your network setup.
+
+## Tier 1: LAN Direct
+
+**Best for:** Bench testing, field work on the same WiFi, wired Ethernet.
+
+Connect directly to the drone's Foxglove bridge:
+
+```
+ws://drone-ip:8766
+```
+
+No internet required. No cloud dependency. Lowest latency (typically under 10 ms). This is the default when you initialize ROS 2.
+
+**Requirements:**
+- Your computer and the drone must be on the same network
+- Port 8766 must be reachable (the agent's firewall allows this on private IP ranges)
+
+**In Foxglove Studio:**
+1. Open [app.foxglove.dev](https://app.foxglove.dev)
+2. Click "Open connection"
+3. Select "Foxglove WebSocket"
+4. Enter `ws://your-drone-ip:8766`
+
+## Tier 2: Altnautica Cloud Relay
+
+**Best for:** Remote access over the internet, 4G/5G cellular connections, accessing the drone from anywhere.
+
+When your drone is paired with Altnautica, the cloud relay exposes the Foxglove bridge through a Cloudflare Tunnel:
+
+```
+wss://ros-{deviceId}.altnautica.com
+```
+
+**How it works:**
+1. The agent runs a Cloudflare tunnel (already set up for video and telemetry relay)
+2. A new tunnel route maps `ros-{deviceId}.altnautica.com` to the local Foxglove bridge on port 8766
+3. Short-lived JWT tokens gate access (only paired GCS sessions can connect)
+4. TLS is terminated at Cloudflare, so the connection is encrypted end-to-end
+
+**Requirements:**
+- Drone must be paired with Altnautica (via the GCS pairing flow)
+- Drone must have an internet connection (WiFi, Ethernet, or 4G)
+- No port forwarding or firewall changes needed on your side
+
+## Tier 3: Self-Hosted
+
+**Best for:** Enterprise users, OEMs, or anyone who wants full control over the network path.
+
+If you don't want to use the Altnautica cloud relay, you can set up your own tunnel. Six recipes are supported:
+
+### Tailscale (recommended for simplicity)
+
+Install Tailscale on both the drone and your laptop. Access via MagicDNS:
+
+```
+ws://drone-hostname:8766
+```
+
+No configuration beyond the initial Tailscale login. Works across NATs and firewalls automatically.
+
+### WireGuard
+
+Set up a WireGuard VPN between the drone and your network:
+
+```bash
+# On the drone
+sudo wg-quick up /etc/wireguard/ados.conf
+```
+
+Access via the WireGuard tunnel IP:
+
+```
+ws://10.0.0.2:8766
+```
+
+### ZeroTier
+
+Similar to Tailscale but self-hostable. Join both devices to the same ZeroTier network and access via the assigned IP.
+
+### Your own Cloudflare zone
+
+If you have your own Cloudflare account, edit `/etc/ados/cloudflared/config.yml` on the drone to point to your zone:
+
+```yaml
+ingress:
+  - hostname: ros.yourdomain.com
+    service: http://localhost:8766
+  - service: http_status:404
+```
+
+### SSH port forward (development only)
+
+For quick testing, forward the port over SSH:
+
+```bash
+ssh -L 8766:localhost:8766 user@drone-ip
+```
+
+Then connect to `ws://localhost:8766` from your laptop. Not recommended for production because it requires an active SSH session.
+
+### Bare port forward with nginx
+
+If you have a public IP or VPS, set up nginx as a WebSocket reverse proxy with TLS:
+
+```nginx
+location /ros/ {
+    proxy_pass http://drone-internal-ip:8766/;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+}
+```
+
+## Switching tiers
+
+From the GCS ROS tab Settings sub-view, select your network tier and enter the connection details. The Foxglove panel and topic subscriptions will reconnect automatically.
+
+From the CLI:
+
+```bash
+# Check current tier
+ados ros status
+
+# The tier is part of your agent config
+ados config show | grep ros
+```
+
+## Security notes
+
+- **Tier 1:** No authentication by default on LAN. The agent's firewall restricts port 8766 to private IP ranges (192.168.x.x, 10.x.x.x, 172.16-31.x.x).
+- **Tier 2:** JWT tokens minted per session, short-lived (1 hour), only for paired devices.
+- **Tier 3:** Security depends on your tunnel provider. Tailscale and WireGuard encrypt traffic by default. SSH is encrypted. Bare nginx should always use TLS.
+- **DDS/Zenoh is bound to loopback** inside the container. ROS topic data does not leak over WiFi. All external access goes through the Foxglove bridge WebSocket.
