@@ -15,6 +15,14 @@
   "appearance": {
     "default": "dark"
   },
+  "styling": {
+    "codeblocks": {
+      "theme": {
+        "light": "github-light",
+        "dark": "github-dark"
+      }
+    }
+  },
   "navbar": {
     "links": [
       {
