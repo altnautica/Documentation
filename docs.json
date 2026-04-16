@@ -18,16 +18,17 @@
   "navbar": {
     "links": [
       {
-        "text": "GitHub",
+        "type": "github",
         "href": "https://github.com/altnautica"
       },
       {
-        "text": "Discord",
+        "type": "discord",
         "href": "https://discord.gg/uxbvuD4d5q"
       }
     ],
     "primary": {
-      "text": "Try Demo",
+      "type": "button",
+      "label": "Try Demo",
       "href": "https://command.altnautica.com"
     }
   },
