@@ -1,0 +1,115 @@
+---
+title: "What is ADOS Mission Control?"
+description: "A browser-based ground control station for ArduPilot, PX4, and Betaflight drones."
+icon: "display"
+---
+
+ADOS Mission Control is an open-source ground control station (GCS) that runs in your browser. It connects to your flight controller over USB, Wi-Fi, or the cloud, and gives you everything you need to fly, plan missions, configure your FC, and manage a fleet.
+
+<Frame caption="ADOS Mission Control dashboard with live drone telemetry">
+  <img src="/images/placeholder-dashboard-overview.png" alt="Mission Control dashboard showing drone cards, map, and telemetry" />
+</Frame>
+
+## Why Mission Control?
+
+Traditional GCS tools are desktop-only, platform-locked, and built for a single firmware. Mission Control takes a different approach.
+
+- **Runs in any Chromium browser.** Chrome, Edge, Brave, or the Electron desktop app. No install required for the web version.
+- **Three firmware families.** Full support for ArduPilot and PX4 via MAVLink v2. Full MSP support for Betaflight. iNav support is planned.
+- **Real flight controls.** Gamepad and HOTAS input at 50 Hz with `MANUAL_CONTROL` messages. Keyboard shortcuts for guided mode.
+- **Mission planning.** Waypoints, 9 pattern generators, terrain following, geofence editor, rally points, and KML/CSV import/export.
+- **Video.** WebRTC with a 4-mode transport switcher (LAN, P2P via MQTT signaling, Auto cascade, or Off).
+- **Open source.** GPLv3 license. Self-host the backend, fork the code, contribute upstream.
+
+## Feature Highlights
+
+<CardGroup cols={2}>
+  <Card title="38 Configuration Panels" icon="sliders">
+    Flight modes, failsafes, PID tuning, power monitoring, OSD editor, serial ports, sensors, gimbal, camera, LED, VTX, CAN bus, and more.
+  </Card>
+  <Card title="83 MAVLink Decoders" icon="message-code">
+    Binary MAVLink v2 parsing with CRC validation. 34 MSP decoders for Betaflight. 33 MAV_CMD command handlers.
+  </Card>
+  <Card title="9 Calibration Wizards" icon="compass">
+    Step-by-step wizards for accelerometer, gyro, compass, level, RC, ESC, airspeed, barometer, and CompassMot.
+  </Card>
+  <Card title="3D Mission Simulation" icon="globe">
+    CesiumJS globe with flight path replay, playback controls, camera trigger markers, geofence volumes, and rally point visualization.
+  </Card>
+  <Card title="Firmware Flashing" icon="microchip">
+    Flash ArduPilot, PX4, or Betaflight firmware over WebSerial. Board auto-detection and DFU mode support.
+  </Card>
+  <Card title="16 Languages" icon="language">
+    English, German, Spanish, French, Hindi, Gujarati, Kannada, Marathi, Punjabi, Tamil, Telugu, Indonesian, Japanese, Korean, Portuguese, and Chinese.
+  </Card>
+</CardGroup>
+
+## Supported Firmware
+
+| Firmware | Protocol | Status | Notes |
+|----------|----------|--------|-------|
+| ArduPilot | MAVLink v2 | Full support | Tested on real hardware. 200+ parameters, 18 flight modes, 9 calibrations. |
+| PX4 | MAVLink v2 | Full support | 63+ parameter mappings, 18 modes. Airframe and actuator panels. |
+| Betaflight | MSP v1/v2 | Full support | 34 decoders, 21 encoders, ~105 virtual params. Aux modes, rate profiles, BF OSD. |
+| iNav | MSP | Planned | Architecture prepared. iNav-specific decoders to come. |
+
+## Browser vs Desktop
+
+Mission Control works in two modes.
+
+**Browser (recommended for most users)**
+
+Open `http://localhost:4000` after running the dev server. WebSerial for USB connections requires Chrome 89+ or Edge 89+. No install needed beyond Node.js.
+
+**Electron Desktop App**
+
+A standalone application built on Electron 35. Same features as the browser version, packaged as a native app for macOS, Windows, and Linux. Useful when you want a dedicated window and system tray integration.
+
+```bash
+# Build for your platform
+npm run desktop:build:mac
+npm run desktop:build:win
+npm run desktop:build:linux
+```
+
+## Demo Mode
+
+Try Mission Control without any hardware. Demo mode simulates 5 drones with realistic telemetry, flight modes, and GPS tracks.
+
+```bash
+npm run demo
+```
+
+Open `http://localhost:4000` and you will see five simulated drones on the dashboard. All panels, calibration wizards, and mission planning tools work in demo mode.
+
+<Tip>
+You can also activate demo mode in the browser by adding `?demo=true` to the URL.
+</Tip>
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|------------|
+| Framework | Next.js 16 (App Router) + React 19 |
+| Language | TypeScript (strict mode) |
+| State | 54+ Zustand stores with ring-buffered telemetry |
+| Styling | Tailwind CSS v4 |
+| Maps | Leaflet (2D), CesiumJS (3D simulation) |
+| Video | WebRTC (WHEP + MQTT signaling) |
+| Backend | Convex (optional, for cloud features) |
+| Desktop | Electron 35 |
+| License | GPL-3.0-only |
+
+## Next Steps
+
+<CardGroup cols={3}>
+  <Card title="Install" icon="download" href="/mission-control/installation">
+    Set up your development environment.
+  </Card>
+  <Card title="Connect" icon="plug" href="/mission-control/connecting">
+    Connect to your flight controller.
+  </Card>
+  <Card title="Fly" icon="paper-plane" href="/mission-control/flight-control">
+    Take manual control with a gamepad.
+  </Card>
+</CardGroup>

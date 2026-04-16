@@ -1,0 +1,254 @@
+---
+title: "Application Suites"
+description: "Six built-in suites that configure your drone for specific missions."
+icon: "grid-2"
+---
+
+# Application Suites
+
+Suites are configuration packages that tune the drone for a specific job. Each suite declares what sensors it needs, what services to run, what flight parameters to set, and what dashboard views to show in Mission Control.
+
+Suites are not custom code. They are YAML manifests that configure existing agent services.
+
+## Built-in suites
+
+The agent ships with six suites:
+
+| Suite | Use case | Key capabilities |
+|-------|----------|-----------------|
+| **Sentry** | Patrol and surveillance | Geofence orbits, detection alerts, live video, night mode |
+| **Survey** | Mapping and photogrammetry | Grid patterns, overlap control, GSD calculation, dataset export |
+| **Inspection** | Structural assessment | Close-range orbits, thermal overlay, defect detection, zoom control |
+| **Agriculture** | Crop monitoring and spraying | Row following, NDVI mapping, spray control, plant health analysis |
+| **Cargo** | Delivery and logistics | Waypoint navigation, payload release, weight monitoring, landing zone assessment |
+| **SAR** | Search and rescue | Expanding square and sector patterns, person detection, thermal scanning |
+
+## Suite manifest format
+
+Each suite is defined in a YAML file stored at `/etc/ados/suites/`:
+
+```yaml
+# /etc/ados/suites/survey.yaml
+name: survey
+version: "1.0"
+description: "Aerial mapping and photogrammetry"
+
+sensors:
+  required:
+    - type: camera
+      min_resolution: "12MP"
+      connection:
+        protocol: mipi_csi
+        data_format: raw_bayer
+  optional:
+    - type: rtk_gps
+      connection:
+        protocol: uart
+        baud_rate: 115200
+    - type: lidar
+      connection:
+        protocol: uart
+        baud_rate: 921600
+
+services:
+  enable:
+    - ados-video
+    - ados-scripting
+  disable:
+    - ados-wfb  # Optional, not required for survey
+
+parameters:
+  video:
+    camera:
+      codec: h264
+      width: 4000
+      height: 3000
+      fps: 2  # Low FPS, high resolution for stills
+      bitrate_kbps: 8000
+  mavlink:
+    # Slower flight speed for overlap
+    cruise_speed: 5  # m/s
+
+mission_templates:
+  - name: grid_survey
+    description: "Parallel grid lines with configurable overlap"
+  - name: crosshatch
+    description: "Two perpendicular grid passes for 3D reconstruction"
+  - name: facade_scan
+    description: "Multi-altitude orbit for building scanning"
+  - name: gaussian_splatting_capture
+    description: "High-overlap capture optimized for 3D gaussian splatting"
+
+dashboard:
+  widgets:
+    - type: coverage_map
+      position: main
+    - type: gsd_indicator
+      position: sidebar
+    - type: overlap_meter
+      position: sidebar
+    - type: image_counter
+      position: status_bar
+```
+
+## Activating a suite
+
+### From the CLI
+
+```bash
+ados set suites.active survey
+```
+
+### From the REST API
+
+```bash
+curl -X POST http://localhost:8080/api/suites/activate \
+  -H "X-ADOS-Key: $KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "survey"}'
+```
+
+### From Mission Control
+
+Open the Command tab, go to the Suites sub-page, and click on the suite you want to activate. Mission Control shows each suite's sensor requirements and compatibility with your current hardware.
+
+## Suite lifecycle
+
+<Steps>
+  <Step title="Activate">
+    You select a suite. The agent reads its YAML manifest and validates sensor requirements.
+  </Step>
+
+  <Step title="Configure">
+    The agent applies parameter overrides (video settings, flight speeds, etc.) and enables/disables services as specified.
+  </Step>
+
+  <Step title="Start">
+    Suite-specific services start. Mission templates become available in the mission planner. Dashboard widgets load in Mission Control.
+  </Step>
+
+  <Step title="Run">
+    You fly missions using the suite's templates and behaviors. The agent manages the runtime: camera triggers, data recording, vision processing.
+  </Step>
+
+  <Step title="Deactivate">
+    When you switch suites or deactivate, the agent reverts parameter overrides and stops suite-specific services. The base agent continues running.
+  </Step>
+</Steps>
+
+## Sensor compatibility
+
+Each suite lists `required` and `optional` sensors. The agent checks hardware at activation time:
+
+- **Required sensors:** if missing, activation fails with an error message telling you what is needed.
+- **Optional sensors:** if missing, the suite activates with reduced functionality. Mission Control shows which optional features are unavailable.
+
+The sensor `connection` block tells operators how to wire each sensor:
+
+```yaml
+sensors:
+  required:
+    - type: camera
+      connection:
+        protocol: mipi_csi
+        voltage: "3.3V"
+        data_format: raw_bayer
+        notes: "Connect to the board's CSI ribbon connector"
+```
+
+## Suite-specific details
+
+<AccordionGroup>
+  <Accordion title="Sentry (patrol and surveillance)">
+    Designed for perimeter monitoring and security patrols. The drone flies predefined geofence orbits, records video, and triggers alerts when the vision engine detects people, vehicles, or activity.
+
+    Key features:
+    - Geofence orbit patterns (circle, racetrack, custom polygon)
+    - Detection alerts with timestamp and frame capture
+    - Night mode (thermal priority, IR illuminator control)
+    - Configurable dwell time at points of interest
+  </Accordion>
+
+  <Accordion title="Survey (mapping and photogrammetry)">
+    Optimized for aerial mapping. Controls camera triggers, calculates ground sample distance (GSD), manages overlap between images, and exports datasets for processing in WebODM, COLMAP, or Pix4D.
+
+    Key features:
+    - Grid and crosshatch patterns with configurable overlap (60-90%)
+    - Real-time GSD monitoring
+    - Camera trigger at distance intervals or time intervals
+    - Dataset export in ODM, COLMAP, and nerfstudio formats
+    - RTK GPS integration for centimeter-accurate geotagging
+  </Accordion>
+
+  <Accordion title="Inspection (structural assessment)">
+    For close-range inspection of buildings, bridges, towers, and infrastructure. Flies slow, deliberate orbits with zoom camera control and defect marking.
+
+    Key features:
+    - Close-range orbit patterns at configurable distance
+    - Thermal overlay for heat leak detection
+    - Defect detection and marking with the vision engine
+    - Zoom camera control (digital and optical)
+    - Multi-altitude passes for complete coverage
+  </Accordion>
+
+  <Accordion title="Agriculture (crop monitoring)">
+    Supports precision agriculture workflows: crop health mapping, row following for spray operations, and weed detection.
+
+    Key features:
+    - Crop row following using vision engine
+    - NDVI mapping with multispectral cameras
+    - Targeted spray control (per-nozzle)
+    - Plant health analysis
+    - Field boundary detection
+  </Accordion>
+
+  <Accordion title="Cargo (delivery)">
+    Manages payload delivery missions with waypoint navigation, weight monitoring, and precision landing.
+
+    Key features:
+    - Waypoint-based delivery routes
+    - Payload weight monitoring
+    - Payload release mechanism control
+    - Landing zone assessment (flat surface, obstacle check)
+    - Return to base after delivery
+  </Accordion>
+
+  <Accordion title="SAR (search and rescue)">
+    Search patterns optimized for finding people. Integrates thermal and visible cameras with the vision engine for person detection.
+
+    Key features:
+    - Expanding square search pattern
+    - Sector search pattern
+    - Creeping line ahead pattern
+    - Person detection (thermal and visible)
+    - Alert on detection with GPS coordinates
+    - Coverage tracking to avoid re-searching areas
+  </Accordion>
+</AccordionGroup>
+
+## Custom suites
+
+You can create your own suite by writing a YAML manifest and placing it in `/etc/ados/suites/`. Follow the same schema as the built-in suites. The agent loads all YAML files in the suites directory at startup.
+
+```yaml
+# /etc/ados/suites/my-custom-suite.yaml
+name: my-custom-suite
+version: "1.0"
+description: "My custom application"
+
+sensors:
+  required: []
+  optional: []
+
+services:
+  enable:
+    - ados-video
+    - ados-scripting
+
+parameters: {}
+
+mission_templates: []
+
+dashboard:
+  widgets: []
+```

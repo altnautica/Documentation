@@ -1,0 +1,150 @@
+---
+title: "FC Configuration"
+description: "Configure your flight controller with 38 panels covering flight, safety, sensors, tuning, and more."
+icon: "sliders"
+---
+
+The Configure section provides 38 panels for setting up your flight controller. Each panel reads parameters from the FC, lets you edit them, and writes changes back. The panels adapt automatically based on the detected firmware (ArduPilot, PX4, or Betaflight).
+
+<Frame caption="Configuration panel list with flight modes selected">
+  <img src="/images/placeholder-fc-configuration.png" alt="FC configuration showing flight mode panel with mode slots" />
+</Frame>
+
+## How Configuration Works
+
+Every panel follows the same workflow:
+
+1. **Read from FC:** Click "Read" to fetch parameters from the flight controller.
+2. **Edit values:** Change parameters in the UI. Modified values are highlighted.
+3. **Save to RAM:** Click "Save" to write changes to the FC's working memory.
+4. **Write to Flash:** Click "Write to Flash" to persist changes across reboots. (ArduPilot auto-saves to EEPROM on each parameter write, so this is a belt-and-suspenders step.)
+
+<Note>
+Parameters cannot be written while the vehicle is armed. The armed-lock overlay blocks all writes as a safety measure. Disarm first, then configure.
+</Note>
+
+## Panel Categories
+
+### Flight
+
+| Panel | Description |
+|-------|-------------|
+| **Flight Modes** | Map RC switch positions to flight modes. ArduPilot supports 6 mode slots. PX4 supports 6 main modes plus sub-modes. |
+| **Frame** | Select the airframe type (quad, hexa, octa, Y6, etc.) and motor layout. |
+| **Airframe** (PX4) | PX4-specific airframe selection with model presets. |
+| **Actuator** (PX4) | PX4 actuator configuration and testing. |
+| **Outputs** | Map motors and servos to physical outputs. Timer group diagram shows which outputs share PWM timers. |
+| **Receiver** | RC receiver protocol, channel mapping, and failsafe values. |
+
+### Safety
+
+| Panel | Description |
+|-------|-------------|
+| **Failsafe** | Configure battery, GCS, RC, and geofence failsafe actions and thresholds. |
+| **Geofence** | FC-level geofence parameters (max altitude, max distance, breach action). See also the [Geofence Editor](/mission-control/geofences-rally). |
+| **Pre-Arm Checks** | View and configure which pre-arm checks the FC enforces before allowing arming. |
+
+### Sensors
+
+| Panel | Description |
+|-------|-------------|
+| **Sensors** | Configure rangefinder, optical flow, airspeed sensor, and barometer settings. Each sensor type is in a collapsible section. |
+| **GPS** | GPS module configuration, constellation selection, and GNSS settings. |
+| **Sensor Graph** | Live plots of sensor data for debugging (accel, gyro, mag, baro). |
+
+### Tuning
+
+| Panel | Description |
+|-------|-------------|
+| **PID Tuning** | Adjust roll, pitch, and yaw PID gains. Autotune trigger. Preset profiles. Filter settings. Live PID response graph for tuning analysis. |
+| **Rate Profile** (Betaflight) | Betaflight rate curve configuration with visual curve preview. |
+| **Adjustments** (Betaflight) | In-flight adjustment mappings (RC channel to PID adjustments). |
+
+### Display
+
+| Panel | Description |
+|-------|-------------|
+| **OSD Editor** | Drag-and-drop OSD element placement across 4 independent screens. 25+ configurable elements. Preset layouts. |
+| **OSD Editor** (Betaflight) | Betaflight-specific OSD configuration with BF element set. |
+| **LED** | Configure LED strip patterns. 11 LED types, brightness, color picker, and pattern preview animation. |
+
+### Communications
+
+| Panel | Description |
+|-------|-------------|
+| **Serial Ports** | Configure serial port protocols, baud rates, and options. 8 ports, 25+ protocols, 14 baud rates. |
+| **Telemetry Radio** | SiK radio configuration (air speed, ECC, MAVLink version, TX power). |
+| **MAVLink Inspector** | Live view of incoming and outgoing MAVLink messages with decode. |
+| **MAVLink Shell** (PX4) | PX4 NuttShell console over MAVLink. Type commands directly to the FC. |
+| **CLI** (Betaflight) | Betaflight command-line interface over MSP. |
+| **Blackbox** (Betaflight) | Betaflight blackbox data log configuration and download. |
+| **CAN Monitor** | DroneCAN/UAVCAN bus monitoring. View CAN node info and messages. |
+
+### Power
+
+| Panel | Description |
+|-------|-------------|
+| **Power** | Battery monitor configuration for BATT1 and BATT2. Voltage divider, amps per volt, cell count, and capacity. Live cell voltage display. |
+
+### Peripherals
+
+| Panel | Description |
+|-------|-------------|
+| **Gimbal** | Mount type, axis limits, manual control sliders, ROI targeting. Supports Gimbal Manager v2 protocol. |
+| **Camera** | Camera trigger configuration (servo, relay, distance-based). Survey helper calculator for trigger intervals. |
+| **VTX** (Betaflight) | Video transmitter settings (band, channel, power, pit mode). |
+| **Betaflight Config** (Betaflight) | Betaflight system configuration (features, board alignment, name). |
+| **Aux Modes** (Betaflight) | Map RC aux channels to Betaflight modes (arm, angle, horizon, beeper, etc.). |
+| **Motors** (Betaflight) | Motor testing and direction configuration for Betaflight. |
+
+### Debug
+
+| Panel | Description |
+|-------|-------------|
+| **Debug** | Real-time data graphing with table view, CSV export. 4-chart limit. 300-sample ring buffer per chart. Useful for debugging sensor issues or tuning. |
+
+### Firmware
+
+| Panel | Description |
+|-------|-------------|
+| **Firmware** | Flash firmware, view board info, backup and restore parameters. See [Firmware Flashing](/mission-control/firmware-flashing). |
+
+### Parameters
+
+| Panel | Description |
+|-------|-------------|
+| **Parameters** | Full parameter tree browser with search, edit, modified filter, and import/export. See [Parameters](/mission-control/parameters). |
+
+### Calibration
+
+| Panel | Description |
+|-------|-------------|
+| **Calibration** | 9 sensor calibration wizards. See [Calibration](/mission-control/calibration). |
+
+## Firmware-Specific Panels
+
+Some panels only appear for certain firmware:
+
+| Panel | ArduPilot | PX4 | Betaflight |
+|-------|-----------|-----|------------|
+| Airframe | No | Yes | No |
+| Actuator | No | Yes | No |
+| MAVLink Shell | No | Yes | No |
+| Aux Modes | No | No | Yes |
+| Rate Profile | No | No | Yes |
+| BF Config | No | No | Yes |
+| BF Motors | No | No | Yes |
+| BF OSD | No | No | Yes |
+| CLI | No | No | Yes |
+| VTX | No | No | Yes |
+| Blackbox | No | No | Yes |
+| Adjustments | No | No | Yes |
+
+The FC configuration navigation filters panels by the `requiredCapability` field. Only panels compatible with the connected firmware appear.
+
+## Safety Features
+
+- **Armed lock:** All parameter writes are blocked while the vehicle is armed
+- **Unsaved changes guard:** Navigating away from a panel with dirty (unsaved) parameters triggers a warning
+- **Parameter validation:** Values are checked against min/max ranges before writing
+- **Reboot banner:** Panels that require a reboot after changes show a persistent banner

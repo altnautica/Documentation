@@ -1,0 +1,149 @@
+---
+title: "Connecting to Your Drone"
+description: "Connect to a flight controller over USB, WebSocket, or the cloud."
+icon: "plug"
+---
+
+Mission Control supports three connection methods. Choose the one that fits your setup.
+
+<Frame caption="Connect dialog with serial, WebSocket, and Bluetooth tabs">
+  <img src="/images/placeholder-connect-dialog.png" alt="Connect dialog showing connection options" />
+</Frame>
+
+## Connection Methods
+
+<Tabs>
+  <Tab title="USB (WebSerial)">
+    The most common method. Plug your flight controller into your computer with a USB cable and connect directly in the browser.
+
+    **Requirements:**
+    - Chrome 89+, Edge 89+, or another Chromium-based browser
+    - USB cable connected to the FC's USB port
+    - Flight controller powered on
+
+    <Steps>
+      <Step title="Click the Connect button">
+        Find the connect button in the top navigation bar. It opens the connection dialog.
+      </Step>
+      <Step title="Select the Serial tab">
+        The Serial tab shows WebSerial options. Click "Select Port" to open the browser's port picker.
+      </Step>
+      <Step title="Choose your device">
+        The browser lists available serial devices. Select your flight controller. Common names include "CP2102" or "STM32 Virtual COM Port".
+      </Step>
+      <Step title="Set baud rate">
+        The default baud rate is 115200, which works for most ArduPilot and PX4 boards. Betaflight boards typically use 115200 as well. Adjust if needed.
+      </Step>
+      <Step title="Click Connect">
+        The GCS establishes a MAVLink or MSP connection. You will see telemetry data within a few seconds.
+      </Step>
+    </Steps>
+
+    <Note>
+    WebSerial is not available in Firefox or Safari. If you need cross-browser support, use the WebSocket method with a MAVLink router.
+    </Note>
+  </Tab>
+  <Tab title="WebSocket">
+    Connect to a flight controller over the network. This works with MAVLink routers, the SITL simulator, or the ADOS Drone Agent.
+
+    **Common scenarios:**
+    - Drone Agent running on a companion computer (connects over Wi-Fi or LAN)
+    - ArduPilot SITL running on your machine or a remote server
+    - MAVLink router forwarding telemetry over TCP/WebSocket
+
+    <Steps>
+      <Step title="Open the Connect dialog">
+        Click the connect button in the top bar.
+      </Step>
+      <Step title="Select the WebSocket tab">
+        Enter the WebSocket URL. Common formats:
+        - SITL bridge: `ws://localhost:5001`
+        - Drone Agent: `ws://drone-ip:8080/mavlink`
+        - MAVLink router: `ws://router-ip:port`
+      </Step>
+      <Step title="Click Connect">
+        The GCS opens a WebSocket connection and begins parsing MAVLink frames.
+      </Step>
+    </Steps>
+
+    <Tip>
+    The bundled SITL tool at `tools/sitl/` launches ArduPilot SITL and bridges TCP to WebSocket automatically. See the [SITL Testing](/mission-control/sitl-testing) page for setup.
+    </Tip>
+  </Tab>
+  <Tab title="Cloud Relay">
+    Connect to a remote drone through the cloud. The drone agent publishes status to a Convex backend, and the GCS subscribes to reactive updates.
+
+    **How it works:**
+    1. The ADOS Drone Agent on the drone posts telemetry to the Convex HTTP relay.
+    2. The GCS subscribes to real-time updates via Convex reactive queries.
+    3. Commands flow from GCS to agent through a command queue table.
+
+    **Requirements:**
+    - ADOS Drone Agent running on the drone's companion computer
+    - Agent paired with your Convex backend
+    - GCS running on HTTPS (cloud mode auto-activates on HTTPS)
+
+    Cloud relay supports three layers with increasing real-time capability:
+    - **Convex HTTP:** Baseline polling at 5-second intervals. Works immediately with zero extra infrastructure.
+    - **MQTT:** Real-time telemetry at 2+ Hz via Mosquitto with WebSocket transport.
+    - **WebRTC:** Peer-to-peer video with MQTT-relayed SDP signaling.
+
+    <Note>
+    Cloud relay is entirely optional. Most users connect over USB or local WebSocket. The cloud path is useful for remote monitoring, fleet management, or when the drone is on a cellular network.
+    </Note>
+  </Tab>
+</Tabs>
+
+## Connection Presets
+
+Save frequently used connections as presets. The Connect dialog remembers your recent connections and lets you create named presets with pre-filled settings (URL, baud rate, options).
+
+Build presets are also available. These bundle a connection method with a specific board profile, making it easy to switch between different drones in your fleet.
+
+## Auto-Detection
+
+When you connect over serial, Mission Control auto-detects the firmware type:
+
+| Firmware | Detection Method |
+|----------|-----------------|
+| ArduPilot | MAVLink `HEARTBEAT` message with `autopilot = MAV_AUTOPILOT_ARDUPILOTMEGA` |
+| PX4 | MAVLink `HEARTBEAT` message with `autopilot = MAV_AUTOPILOT_PX4` |
+| Betaflight | MSP `API_VERSION` response |
+| iNav | MSP `API_VERSION` with iNav-specific FC variant |
+
+The GCS automatically loads the correct protocol adapter, parameter set, and UI panels for the detected firmware.
+
+## Multi-Drone
+
+You can connect to multiple drones simultaneously. Each drone gets its own entry in the fleet sidebar. Select a drone to view its telemetry, send commands, or configure its parameters.
+
+In demo mode, five simulated drones are connected automatically. In real use, each additional connection requires its own serial port or WebSocket URL.
+
+## Bluetooth
+
+The Connect dialog also includes a Bluetooth tab. Bluetooth connections use the Web Bluetooth API available in Chromium browsers. This is useful for short-range connections to Bluetooth-enabled flight controllers or companion boards.
+
+## Connection Quality
+
+Once connected, the top bar shows connection health:
+
+- **Link quality meter** showing signal strength and packet loss
+- **Telemetry freshness indicator** that marks data as stale after 10 seconds and offline after 30 seconds
+- **RSSI values** from the radio link (if available)
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="No serial ports appear in the browser picker">
+    Check that your USB cable supports data (not charge-only). Try a different USB port. On Linux, your user may need to be in the `dialout` group: `sudo usermod -aG dialout $USER` and log out/in.
+  </Accordion>
+  <Accordion title="Connected but no telemetry">
+    Verify the baud rate matches your FC configuration. For ArduPilot, the default is 115200 on the USB port. Check that no other application (like Mission Planner or QGroundControl) is holding the serial port.
+  </Accordion>
+  <Accordion title="WebSocket connection refused">
+    Confirm the target service is running and the URL is correct. For SITL, make sure the bridge is started (see [SITL Testing](/mission-control/sitl-testing)). Firewalls may block WebSocket connections on non-standard ports.
+  </Accordion>
+  <Accordion title="Cloud mode not activating">
+    Cloud mode auto-activates when the page is served over HTTPS. On `http://localhost`, the GCS uses direct connections. To test cloud mode locally, use a tunneling service or deploy to a domain with TLS.
+  </Accordion>
+</AccordionGroup>

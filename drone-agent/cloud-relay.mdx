@@ -1,0 +1,178 @@
+---
+title: "Cloud Relay"
+description: "Three-layer cloud connectivity: Convex HTTP, MQTT telemetry, and WebRTC video."
+icon: "cloud"
+---
+
+# Cloud Relay
+
+The cloud relay lets you monitor and control your drone from anywhere. It works behind NAT, through firewalls, and over cellular networks without port forwarding.
+
+The relay uses three additive layers. Each adds more real-time capability on top of the last.
+
+## Three layers
+
+### Layer 1: Convex HTTP (baseline)
+
+The simplest layer. The agent POSTs status to a Convex HTTP endpoint every 5 seconds and polls for pending commands. Mission Control uses reactive Convex queries to display the data in near-real-time.
+
+- **Latency:** 2-5 seconds
+- **Requires:** Internet connection (any)
+- **Used for:** Status updates, command queue, pairing
+- **Always active** when paired
+
+This layer works immediately with zero infrastructure beyond the Convex backend. It is the fallback when MQTT or WebRTC are unavailable.
+
+### Layer 2: MQTT (real-time telemetry)
+
+The agent publishes telemetry to an MQTT broker over WebSocket transport (port 443, through Cloudflare). The default publish rate is 2 Hz (configurable).
+
+- **Latency:** 100-300 ms
+- **Requires:** MQTT broker access
+- **Topics:** `ados/{deviceId}/status`, `ados/{deviceId}/telemetry`
+- **Used for:** Live telemetry in Mission Control, fleet dashboards
+
+```yaml
+server:
+  telemetry_rate: 2    # Hz
+  mqtt_transport: "websockets"
+  mqtt_username: "ados"
+```
+
+Mission Control subscribes to these topics via browser MQTT.js and updates the dashboard in real-time. The MQTT bridge also writes to Convex for persistence (debounced at 3 seconds per device).
+
+### Layer 3: WebRTC P2P (video)
+
+For live video, the agent uses peer-to-peer WebRTC signaling relayed through MQTT. This avoids sending video through a central server.
+
+The flow:
+
+1. GCS publishes an SDP offer to `ados/{deviceId}/webrtc/offer` via MQTT
+2. Agent's `WebrtcSignalingRelay` service picks up the offer
+3. Agent forwards it to MediaMTX's WHIP endpoint
+4. MediaMTX generates an SDP answer
+5. Agent publishes the answer to `ados/{deviceId}/webrtc/answer`
+6. GCS receives the answer and establishes a direct WebRTC connection
+
+Once the peer connection is established, video flows directly between the drone and the browser. MQTT is only used for the initial handshake.
+
+- **Latency:** 50-200 ms (video)
+- **Requires:** STUN/TURN servers for NAT traversal
+- **Used for:** Live video in Mission Control
+
+<Note>
+P2P WebRTC works on most home and office networks. On symmetric NAT cellular carriers (~5-15% of mobile networks), the ICE negotiation may fail. In that case, the GCS falls back to Layer 1 for commands and telemetry. Video requires switching to a different network.
+</Note>
+
+## Connection modes
+
+The agent supports three server modes:
+
+<Tabs>
+  <Tab title="Cloud (default)">
+    Connects to the ADOS cloud backend. MQTT goes through `mqtt.altnautica.com` via Cloudflare. Convex HTTP goes to `convex-site.altnautica.com`.
+
+    ```yaml
+    server:
+      mode: "cloud"
+      cloud:
+        url: "https://convex-site.altnautica.com"
+        mqtt_broker: "mqtt.altnautica.com"
+        mqtt_port: 443
+    ```
+
+    This is the default for most users. No infrastructure to manage.
+  </Tab>
+
+  <Tab title="Self-hosted">
+    Connects to your own MQTT broker and Convex instance. Full control over your data.
+
+    ```yaml
+    server:
+      mode: "self_hosted"
+      self_hosted:
+        url: "https://your-convex-instance.com"
+        mqtt_broker: "your-mqtt-broker.com"
+        mqtt_port: 8883
+        api_key: "your-api-key"
+    ```
+
+    You need to run your own Mosquitto MQTT broker, MQTT-to-Convex bridge, and Convex backend. See the `tools/mqtt-bridge/` directory in the Mission Control repo for Docker Compose files.
+  </Tab>
+
+  <Tab title="Disabled">
+    No cloud connectivity. The agent works fully locally: MAVLink proxy, video, REST API, scripting all function. Only remote access is off.
+
+    ```yaml
+    server:
+      mode: "disabled"
+    ```
+
+    Use this for air-gapped environments, testing, or when you only need local access.
+  </Tab>
+</Tabs>
+
+## MQTT topics
+
+When connected to the cloud, the agent publishes to these MQTT topics:
+
+| Topic | Rate | Content |
+|-------|------|---------|
+| `ados/{deviceId}/status` | Every 5s | Full status (board, FC, services) |
+| `ados/{deviceId}/telemetry` | 2 Hz | Attitude, position, speed, battery |
+| `ados/{deviceId}/webrtc/answer` | On demand | SDP answer for video |
+
+And subscribes to:
+
+| Topic | Content |
+|-------|---------|
+| `ados/{deviceId}/webrtc/offer` | SDP offer from GCS |
+
+## MQTT reliability
+
+The agent uses `paho-mqtt` with these settings for reliable operation:
+
+- `max_inflight_messages_set(1000)` to prevent message drops under load
+- WebSocket transport on port 443 to pass through corporate firewalls
+- Automatic reconnection with exponential backoff
+- QoS 0 for telemetry (fire and forget, optimized for real-time)
+- QoS 1 for command acknowledgments (at least once delivery)
+
+## Heartbeat
+
+The agent sends a heartbeat to the cloud every 5 seconds (configurable):
+
+```yaml
+server:
+  heartbeat_interval: 5
+```
+
+Mission Control uses the heartbeat to determine if a drone is online. If no heartbeat is received for 30 seconds, the drone is marked offline.
+
+## Security
+
+All cloud traffic is encrypted:
+
+- MQTT uses WebSocket over TLS (wss://, port 443)
+- Convex HTTP uses HTTPS
+- WebRTC uses DTLS for media and HTTPS for signaling
+- The agent authenticates with its API key (set during pairing)
+
+No inbound ports are required on the drone's network. All connections are outbound.
+
+## Checking cloud status
+
+From the CLI:
+
+```bash
+$ ados status --json | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('cloud', {}))"
+```
+
+From the REST API:
+
+```bash
+curl http://localhost:8080/api/status \
+  -H "X-ADOS-Key: your_key"
+```
+
+The status response includes cloud connectivity state, MQTT broker connection, and last successful publish timestamp.

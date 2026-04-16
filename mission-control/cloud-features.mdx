@@ -1,0 +1,168 @@
+---
+title: "Cloud Features"
+description: "Convex backend for fleet sync, authentication, community features, and self-hosting."
+icon: "cloud"
+---
+
+Mission Control includes an optional Convex backend that adds authentication, fleet synchronization, community features, and cloud relay capabilities. Cloud features are entirely optional. The GCS works fully offline for USB and local WebSocket connections.
+
+## What Cloud Adds
+
+| Feature | Without Cloud | With Cloud |
+|---------|--------------|------------|
+| USB/WebSocket connections | Yes | Yes |
+| All configuration panels | Yes | Yes |
+| Mission planning | Yes | Yes |
+| Video feed (LAN) | Yes | Yes |
+| Authentication & profiles | No | Yes |
+| Fleet sync across devices | No | Yes |
+| Cloud relay to remote drones | No | Yes |
+| Community changelog | No | Yes |
+| Community roadmap | No | Yes |
+| Contact form | No | Yes |
+
+## Architecture
+
+The cloud backend is built on [Convex](https://convex.dev), a reactive backend platform. The GCS repo includes a complete `convex/` directory with 25 tables (7 auth + 18 custom).
+
+**Key tables:**
+
+| Table | Purpose |
+|-------|---------|
+| `profiles` | User profiles with roles (admin, member, viewer) |
+| `cmd_droneStatus` | Cloud relay drone status (heartbeat from agent) |
+| `cmd_droneCommands` | Cloud relay command queue (GCS enqueues, agent polls) |
+| `cmd_missions` | Stored missions synced across devices |
+| `cmd_preferences` | User preferences synced to cloud |
+| `communityChangelog` | Public changelog entries |
+| `comments` | Comments on changelog, roadmap, and other content |
+| `contactSubmissions` | Contact form submissions |
+
+## Cloud Relay
+
+When the GCS runs on HTTPS, it auto-activates cloud mode. This enables connecting to remote drones through the Convex backend.
+
+The cloud relay has three layers:
+
+<Tabs>
+  <Tab title="Convex HTTP (Baseline)">
+    The simplest layer. The Drone Agent POSTs status to the Convex backend every 5 seconds. The GCS subscribes to reactive queries.
+
+    - **Latency:** 2-5 seconds
+    - **Infrastructure:** Just the Convex backend, nothing else
+    - **Use case:** Monitoring, fleet overview, non-critical telemetry
+  </Tab>
+  <Tab title="MQTT (Real-time)">
+    For faster telemetry. The agent publishes to MQTT topics, and the GCS subscribes via browser MQTT.js.
+
+    - **Latency:** 200-500ms
+    - **Infrastructure:** Mosquitto MQTT broker with WebSocket transport
+    - **Use case:** Real-time telemetry, live status updates
+    - **Topics:** `ados/{deviceId}/status`, `ados/{deviceId}/telemetry`
+  </Tab>
+  <Tab title="WebRTC (Video)">
+    For live video streaming. SDP signaling flows through MQTT, but the actual video stream is peer-to-peer.
+
+    - **Latency:** 100-200ms for video
+    - **Infrastructure:** MQTT for signaling, STUN for ICE
+    - **Use case:** Live camera feed from remote drones
+  </Tab>
+</Tabs>
+
+## Authentication
+
+Cloud mode uses Convex Auth with a password provider. Users sign up with email and password. The first user to register is automatically granted admin role.
+
+**Roles:**
+- **Admin:** Full access. Manage users, view all drones.
+- **Member:** Standard access. View paired drones, use community features.
+- **Viewer:** Read-only. Can view fleet status but cannot send commands.
+
+## Community Features
+
+The community section (`/community` route) provides:
+
+- **Changelog:** Browse project updates and release notes. Admins can create and edit entries.
+- **Roadmap:** View the project roadmap as a kanban board.
+- **Contact form:** Submit feedback or questions.
+
+These features are powered by Convex reactive queries, so updates appear in real time for all connected users.
+
+## Self-Hosting
+
+You can deploy your own Convex backend and run the full cloud stack independently.
+
+<Steps>
+  <Step title="Install Convex CLI">
+    ```bash
+    npm install -g convex
+    ```
+  </Step>
+  <Step title="Start the dev backend">
+    From the ADOSMissionControl directory:
+    ```bash
+    npx convex dev
+    ```
+    This starts a local Convex development backend and pushes your schema and functions.
+  </Step>
+  <Step title="Set the URL">
+    Copy the Convex URL from the terminal output and set it in your `.env`:
+    ```bash
+    NEXT_PUBLIC_CONVEX_URL=https://your-deployment.convex.cloud
+    ```
+  </Step>
+  <Step title="Start the GCS">
+    ```bash
+    npm run dev
+    ```
+    Cloud features are now active, pointing at your own backend.
+  </Step>
+</Steps>
+
+### Production Deployment
+
+For production, deploy the Convex backend to Convex Cloud (free tier available) or self-host using Convex's open-source backend with Docker and SQLite.
+
+```bash
+# Deploy to Convex Cloud
+npx convex deploy
+
+# Or self-host with Docker
+docker compose up -d
+```
+
+The self-hosted option stores all data in a local SQLite database, giving you full control over your data.
+
+## MQTT Bridge Tool
+
+The `tools/mqtt-bridge/` directory contains a Node.js service that bridges MQTT telemetry to Convex:
+
+1. Subscribes to MQTT topics (`ados/+/status`, `ados/+/telemetry`)
+2. Debounces updates (3 seconds per device)
+3. POSTs to the Convex HTTP API
+
+It runs as a Docker Compose stack alongside Mosquitto and an optional Cloudflare tunnel.
+
+## Video Relay Tool
+
+The `tools/video-relay/` directory contains a video relay that converts RTSP streams to WebSocket fMP4:
+
+1. Accepts WebSocket connections from browser clients
+2. Spawns ffmpeg per device (copy codec, no transcoding)
+3. Streams fMP4 fragments over WebSocket
+4. Cleans up ffmpeg when the last viewer disconnects
+
+This is an alternative to WebRTC for situations where peer-to-peer is not possible.
+
+## Offline Behavior
+
+Cloud features degrade gracefully when the network is unavailable:
+
+- Local connections (USB, WebSocket) continue to work
+- Settings stored in IndexedDB remain available
+- Previously loaded fleet data stays visible but marked as potentially stale
+- The GCS retries cloud connections in the background
+
+<Tip>
+For field operations without internet, use direct USB or local WebSocket connections. Cloud features are a bonus for remote monitoring and fleet management, not a requirement for flying.
+</Tip>

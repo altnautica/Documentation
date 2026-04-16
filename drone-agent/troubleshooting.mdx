@@ -1,0 +1,279 @@
+---
+title: "Troubleshooting"
+description: "Common problems and how to fix them: FC not detected, video frozen, cloud disconnected."
+icon: "wrench"
+---
+
+# Troubleshooting
+
+This page covers the most common issues you might hit and how to diagnose them. Start with `ados diag` for a full system dump, then work through the relevant section below.
+
+## First step: run diagnostics
+
+```bash
+ados diag
+```
+
+This prints board detection, OS info, network interfaces, service states, FC connection, disk usage, RAM, CPU, temperature, and installed dependencies. Read it top to bottom. Most problems show up here.
+
+## Flight controller not detected
+
+**Symptoms:** `ados status` shows `FC: False`. No telemetry in Mission Control. MAVLink screen in TUI shows "disconnected."
+
+<AccordionGroup>
+  <Accordion title="Check the serial connection">
+    Verify the UART cable is connected between the FC and the companion computer. Make sure TX goes to RX and RX goes to TX (crossover). Check voltage levels (most FCs use 3.3V UART; some use 5V TTL, which can damage a 3.3V SBC input).
+
+    List available serial ports:
+    ```bash
+    ls /dev/tty{S,AMA,ACM,USB}*
+    ```
+
+    If your FC is connected via USB, it usually appears as `/dev/ttyACM0` or `/dev/ttyUSB0`.
+  </Accordion>
+
+  <Accordion title="Check baud rate">
+    The agent and FC must use the same baud rate. Common values:
+    - ArduPilot: 57600 (default TELEM1) or 921600
+    - PX4: 115200 or 921600
+    - Betaflight: 115200
+
+    Set it in config:
+    ```bash
+    ados set mavlink.baud_rate 115200
+    sudo systemctl restart ados-mavlink
+    ```
+  </Accordion>
+
+  <Accordion title="Check for serial port conflicts">
+    Another process might be holding the serial port. Check:
+    ```bash
+    sudo fuser /dev/ttyS0
+    ```
+    If something else is using the port, stop it or configure the agent to use a different port.
+  </Accordion>
+
+  <Accordion title="Check MAVLink protocol version">
+    ArduPilot defaults to MAVLink 1 on some ports. The agent works with both MAVLink 1 and 2, but if you see garbled data, verify the FC's `SERIALN_PROTOCOL` is set to MAVLink (1 or 2).
+  </Accordion>
+
+  <Accordion title="FC not sending heartbeats">
+    The agent waits for heartbeat messages to confirm the FC is alive. If the FC is not sending heartbeats, check:
+    - Is the FC powered on?
+    - Is the correct serial port configured on the FC side?
+    - Is the FC in a boot loop? (Check FC LED patterns)
+  </Accordion>
+</AccordionGroup>
+
+## Video frozen or not starting
+
+**Symptoms:** Video feed is black in Mission Control. `ados video` shows `State: idle` or `State: error`. MediaMTX shows stopped.
+
+<AccordionGroup>
+  <Accordion title="Check if a camera is detected">
+    ```bash
+    ls /dev/video*
+    ```
+    If no `/dev/video*` devices exist, the camera is not recognized. For USB cameras, check `lsusb`. For CSI cameras, check that the ribbon cable is seated properly (gold contacts face the PCB on both ends for Radxa boards).
+  </Accordion>
+
+  <Accordion title="Check the video service">
+    ```bash
+    sudo systemctl status ados-video
+    sudo journalctl -u ados-video -n 50
+    ```
+    Look for error messages about ffmpeg, camera access, or MediaMTX.
+  </Accordion>
+
+  <Accordion title="Check MediaMTX">
+    ```bash
+    curl http://localhost:9997/v3/paths/list
+    ```
+    If MediaMTX is running and the stream is active, you should see a path entry for `cam`. If MediaMTX is not responding, check its logs:
+    ```bash
+    sudo journalctl -u ados-video --grep "mediamtx" -n 20
+    ```
+  </Accordion>
+
+  <Accordion title="Check cgroup resource limits">
+    The video service has a MemoryMax cgroup limit. If ffmpeg or MediaMTX is being OOM-killed, you will see it in the logs:
+    ```bash
+    sudo journalctl -u ados-video --grep "oom\|killed\|cgroup" -n 20
+    ```
+    Also check cgroup throttle stats:
+    ```bash
+    cat /sys/fs/cgroup/system.slice/ados-video.service/memory.events
+    ```
+    If `max` is incrementing, the service is hitting its memory limit.
+  </Accordion>
+
+  <Accordion title="Camera permission denied">
+    The agent user needs access to `/dev/video*`. The install script adds the user to the `video` group, but if you installed manually, you may need to:
+    ```bash
+    sudo usermod -aG video $(whoami)
+    ```
+    Then log out and back in.
+  </Accordion>
+
+  <Accordion title="USB camera enumerates at wrong index">
+    Some boards enumerate cameras at `/dev/video1` or higher instead of `/dev/video0`. The agent scans all `/dev/video[0-9]*` devices, but if you see "no camera found" in logs while a camera exists, check:
+    ```bash
+    v4l2-ctl --list-devices
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Cloud disconnected
+
+**Symptoms:** Drone does not appear in Mission Control. `ados status` shows cloud as disconnected. No telemetry in the dashboard.
+
+<AccordionGroup>
+  <Accordion title="Check internet connectivity">
+    ```bash
+    ping -c 3 8.8.8.8
+    ping -c 3 mqtt.altnautica.com
+    ```
+    If pings fail, the board has no internet. Check WiFi, Ethernet, or cellular connection.
+  </Accordion>
+
+  <Accordion title="Check pairing">
+    ```bash
+    ados pair
+    ```
+    If the agent is not paired, it will not connect to the cloud. Follow the [Pairing](/drone-agent/pairing) guide.
+  </Accordion>
+
+  <Accordion title="Check MQTT connection">
+    ```bash
+    sudo journalctl -u ados-cloud -n 50
+    ```
+    Look for MQTT connection errors. Common issues:
+    - DNS resolution failure (check `/etc/resolv.conf`)
+    - TLS certificate errors (clock skew on the SBC can cause this)
+    - Auth failure (API key mismatch)
+  </Accordion>
+
+  <Accordion title="Check clock synchronization">
+    MQTT over TLS requires accurate time. If the SBC clock is off by more than a few minutes, TLS handshakes fail:
+    ```bash
+    date
+    ```
+    Fix with NTP:
+    ```bash
+    sudo timedatectl set-ntp true
+    ```
+  </Accordion>
+
+  <Accordion title="Check server mode">
+    ```bash
+    ados config server.mode
+    ```
+    If it says `disabled`, the cloud relay is turned off. Set it to `cloud`:
+    ```bash
+    ados set server.mode cloud
+    sudo systemctl restart ados-cloud
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## WFB-ng not working
+
+**Symptoms:** No video link, `ados link` shows `State: inactive`, ground station sees no signal.
+
+<AccordionGroup>
+  <Accordion title="Check the WiFi adapter">
+    ```bash
+    lsusb | grep -i realtek
+    ```
+    You should see an RTL8812EU device. If not, check the USB connection.
+  </Accordion>
+
+  <Accordion title="Check the DKMS driver">
+    ```bash
+    dkms status
+    ```
+    Look for the `88x2eu` or `rtl8812eu` module. If it shows an error, rebuild:
+    ```bash
+    sudo dkms autoinstall
+    ```
+  </Accordion>
+
+  <Accordion title="Check channel match">
+    The air unit and ground station must use the same WFB-ng channel:
+    ```bash
+    ados config video.wfb.channel
+    ```
+    Make sure both sides are on the same channel (default: 149).
+  </Accordion>
+
+  <Accordion title="Check key match">
+    Both sides need the same WFB-ng encryption key:
+    ```bash
+    cat /etc/ados/wfb.key
+    ```
+    Compare the key on the air unit and ground station. They must be identical.
+  </Accordion>
+</AccordionGroup>
+
+## Agent not starting
+
+**Symptoms:** `ados status` returns "Agent is not running."
+
+<AccordionGroup>
+  <Accordion title="Check systemd">
+    ```bash
+    sudo systemctl status ados-supervisor
+    sudo journalctl -u ados-supervisor -n 50
+    ```
+  </Accordion>
+
+  <Accordion title="Check Python and venv">
+    ```bash
+    /opt/ados/venv/bin/python --version
+    /opt/ados/venv/bin/pip list | grep ados
+    ```
+    If the venv is broken, reinstall:
+    ```bash
+    curl -sSL https://raw.githubusercontent.com/altnautica/ADOSDroneAgent/main/scripts/install.sh | sudo bash -s -- --force
+    ```
+  </Accordion>
+
+  <Accordion title="Check disk space">
+    ```bash
+    df -h /
+    ```
+    If the disk is full, the agent cannot start. Clean up old recordings or logs:
+    ```bash
+    sudo rm -rf /var/ados/recordings/*.mp4
+    sudo journalctl --vacuum-size=100M
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## High CPU or temperature
+
+<AccordionGroup>
+  <Accordion title="Check which service is using resources">
+    ```bash
+    ados health
+    top -b -n 1 | head -20
+    ```
+    If `ffmpeg` is using high CPU, the video encoder may not be using hardware acceleration. Check that `hw_video_codecs` in your board profile includes `h264_enc`.
+  </Accordion>
+
+  <Accordion title="Thermal throttling">
+    ```bash
+    cat /sys/class/thermal/thermal_zone0/temp
+    ```
+    Divide by 1000 for Celsius. If above 80C, the SoC is throttling. Add a heatsink or fan. Reduce video resolution or FPS as a software workaround.
+  </Accordion>
+</AccordionGroup>
+
+## Getting help
+
+If the troubleshooting steps above do not solve your problem:
+
+1. Run `ados diag` and save the output
+2. Collect relevant service logs: `sudo journalctl -u ados-* --since "1h ago" > /tmp/ados-logs.txt`
+3. Open an issue on [GitHub](https://github.com/altnautica/ADOSDroneAgent/issues) with the diagnostics output and logs
+4. Join the [Discord community](https://discord.gg/uxbvuD4d5q) for real-time help

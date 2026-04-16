@@ -1,0 +1,209 @@
+---
+title: "Systemd Services"
+description: "All service units, dependencies, startup order, resource limits, and log access."
+icon: "server"
+---
+
+# Systemd Services
+
+The agent runs as a collection of systemd services. Each service handles one responsibility: MAVLink, video, cloud, health, and so on. The supervisor service manages the lifecycle of all child services.
+
+This architecture gives you per-service restart, resource isolation via cgroups, and clean dependency ordering.
+
+## Service list
+
+### Core services (all profiles)
+
+| Service | Description | Tier |
+|---------|-------------|------|
+| `ados-supervisor` | Parent service, starts and monitors children | All |
+| `ados-mavlink` | FC serial connection and MAVLink proxy | 1+ |
+| `ados-api` | FastAPI REST server on port 8080 | 2+ |
+| `ados-health` | CPU, RAM, disk, temperature monitoring | 2+ |
+| `ados-discovery` | mDNS advertisement (`_ados._tcp.local.`) | 2+ |
+| `ados-video` | Camera detection, encoding, MediaMTX | 3+ |
+| `ados-wfb` | WFB-ng video transmitter | 3+ |
+| `ados-cloud` | MQTT and Convex cloud relay | 3+ |
+| `ados-scripting` | Python script executor and text commands | 3+ |
+| `ados-peripherals` | USB hot-plug, sensor manager | 3+ |
+| `ados-ota` | GitHub release polling, upgrade, rollback | 3+ |
+
+### Ground station services (ground_station profile only)
+
+| Service | Description |
+|---------|-------------|
+| `ados-wfb-rx` | WFB-ng video receiver |
+| `ados-mediamtx-gs` | MediaMTX for ground-side video relay |
+| `ados-hostapd` | WiFi hotspot (access point) |
+| `ados-dnsmasq-gs` | DHCP and DNS for the hotspot |
+| `ados-setup-captive` | Captive portal DNS responder |
+| `ados-usb-gadget` | USB CDC-NCM/RNDIS gadget for laptop tether |
+| `ados-usb-gadget-setup` | One-shot USB gadget configuration |
+| `ados-oled` | OLED display driver (SSD1306 I2C) |
+| `ados-buttons` | GPIO button handler |
+| `ados-input` | Bluetooth and USB gamepad input manager |
+| `ados-kiosk` | HDMI kiosk mode (Chromium + cage Wayland) |
+| `ados-pic` | Priority Input Controller arbiter |
+| `ados-uplink-router` | Internet uplink priority and data cap |
+| `ados-cloud-relay` | Cloud relay bridge for ground station |
+| `ados-wifi-client` | WiFi client connection manager |
+| `ados-modem` | Cellular modem manager |
+| `ados-ethernet` | Ethernet connection manager |
+
+## Startup order
+
+The supervisor starts first and brings up child services in dependency order:
+
+```
+ados-supervisor
+  │
+  ├── ados-mavlink        (starts immediately)
+  ├── ados-api            (starts immediately)
+  ├── ados-health         (starts immediately)
+  ├── ados-discovery      (starts immediately)
+  │
+  ├── ados-video          (after camera detected)
+  ├── ados-wfb            (after ados-video)
+  ├── ados-cloud          (after ados-api)
+  ├── ados-scripting      (after ados-api)
+  ├── ados-peripherals    (after ados-api)
+  └── ados-ota            (after ados-api)
+```
+
+Hardware-dependent services (video, wfb, modem) only start when the relevant hardware is detected.
+
+## Resource limits
+
+Each service runs with cgroup resource limits to prevent any single service from consuming all system resources:
+
+```ini
+# Example from ados-video.service
+[Service]
+MemoryMax=512M
+CPUQuota=80%
+```
+
+Typical memory allocation on a 2 GB board:
+
+| Service | MemoryMax | Typical usage |
+|---------|-----------|---------------|
+| ados-mavlink | 64M | ~20 MB |
+| ados-api | 128M | ~40 MB |
+| ados-video | 512M | ~100-200 MB |
+| ados-cloud | 128M | ~30 MB |
+| ados-health | 64M | ~15 MB |
+| ados-scripting | 256M | ~30-100 MB |
+| Total core | ~1.2 GB cap | ~250-400 MB actual |
+
+This leaves headroom for the OS, ffmpeg, MediaMTX, and any scripts you run.
+
+## Circuit breaker
+
+The supervisor implements a circuit breaker: if a service fails 5 times within 60 seconds, the circuit breaker opens and stops restarting it. This prevents crash loops from consuming all system resources.
+
+The circuit breaker state is visible through the REST API:
+
+```bash
+curl http://localhost:8080/api/services \
+  -H "X-ADOS-Key: $KEY"
+```
+
+## Managing services
+
+### Check service status
+
+```bash
+# All services
+sudo systemctl list-units "ados-*" --all
+
+# Specific service
+sudo systemctl status ados-video
+```
+
+### Restart a service
+
+```bash
+sudo systemctl restart ados-video
+```
+
+### View service logs
+
+```bash
+# Last 50 lines from a specific service
+sudo journalctl -u ados-video -n 50
+
+# Follow live
+sudo journalctl -u ados-video -f
+
+# All agent logs combined
+sudo journalctl -u "ados-*" -f
+
+# Since a specific time
+sudo journalctl -u ados-mavlink --since "10 minutes ago"
+```
+
+### Stop everything
+
+```bash
+sudo systemctl stop ados-supervisor
+```
+
+This stops the supervisor and all child services.
+
+### Start everything
+
+```bash
+sudo systemctl start ados-supervisor
+```
+
+## Service dependencies
+
+Ground station services have explicit dependency ordering:
+
+```
+ados-kiosk
+  └── After=ados-mediamtx-gs.service
+       └── After=ados-wfb-rx.service
+
+ados-uplink-router
+  └── After=ados-hostapd.service
+       └── After=ados-dnsmasq-gs.service
+```
+
+This ensures the WiFi hotspot is up before the uplink router starts, and the video relay is ready before the kiosk opens the HUD page.
+
+## Automatic restart
+
+All services are configured with automatic restart on failure:
+
+```ini
+[Service]
+Restart=on-failure
+RestartSec=3
+```
+
+The supervisor detects when a child service restarts and logs the event. Combined with the circuit breaker, this means transient failures self-heal while persistent failures are contained.
+
+## Viewing all service files
+
+The systemd unit files are installed at:
+
+```
+/etc/systemd/system/ados-*.service
+```
+
+To see the contents of a specific service file:
+
+```bash
+cat /etc/systemd/system/ados-video.service
+```
+
+<Note>
+Do not edit the service files directly. They are overwritten on each upgrade. If you need to customize a service (e.g., add environment variables or change resource limits), use a systemd override:
+
+```bash
+sudo systemctl edit ados-video
+```
+
+This creates a drop-in override file that persists across upgrades.
+</Note>

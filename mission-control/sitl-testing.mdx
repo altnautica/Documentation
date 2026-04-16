@@ -1,0 +1,182 @@
+---
+title: "SITL Testing"
+description: "Test with ArduPilot SITL using the bundled WebSocket bridge."
+icon: "flask-vial"
+---
+
+SITL (Software In The Loop) lets you test Mission Control against a full ArduPilot autopilot running on your computer. No drone hardware needed. The bundled SITL tool launches ArduPilot SITL and bridges its TCP output to a WebSocket that the browser can connect to.
+
+<Frame caption="SITL tool running with ArduPilot and WebSocket bridge">
+  <img src="/images/placeholder-sitl-testing.png" alt="Terminal showing SITL launcher with ArduPilot running" />
+</Frame>
+
+## What SITL Provides
+
+- **Real ArduPilot code.** Not a mock or simulation. The same firmware that runs on flight controllers runs on your machine with physics simulation.
+- **Full MAVLink.** Every MAVLink message, parameter, and command works exactly as it would on real hardware.
+- **Physics engine.** Simulated flight dynamics for copter, plane, rover, and sub vehicles.
+- **No fake data.** Unlike demo mode (which uses mock telemetry), SITL runs the actual autopilot.
+
+## Prerequisites
+
+SITL requires ArduPilot built from source on your machine.
+
+<Steps>
+  <Step title="Clone ArduPilot">
+    ```bash
+    git clone --recurse-submodules https://github.com/ArduPilot/ardupilot.git ~/.ardupilot
+    ```
+  </Step>
+  <Step title="Install build dependencies">
+    Follow the [ArduPilot build instructions](https://ardupilot.org/dev/docs/building-setup-linux.html) for your OS. On macOS:
+    ```bash
+    cd ~/.ardupilot
+    Tools/environment_install/install-prereqs-mac.sh
+    ```
+    On Ubuntu/Debian:
+    ```bash
+    cd ~/.ardupilot
+    Tools/environment_install/install-prereqs-ubuntu.sh -y
+    ```
+  </Step>
+  <Step title="Build SITL">
+    ```bash
+    cd ~/.ardupilot
+    ./waf configure --board sitl
+    ./waf copter
+    ```
+    This builds ArduCopter for the SITL target. You can also build `plane`, `rover`, or `sub`.
+  </Step>
+</Steps>
+
+## Using the SITL Tool
+
+The SITL tool lives at `tools/sitl/` inside the Mission Control repo.
+
+<Steps>
+  <Step title="Start the SITL tool">
+    ```bash
+    cd ADOSMissionControl/tools/sitl
+    npm install
+    npm start
+    ```
+    By default, this launches ArduCopter SITL and starts a WebSocket bridge on port 5001.
+  </Step>
+  <Step title="Connect from Mission Control">
+    Open Mission Control in your browser. Click Connect, select the WebSocket tab, and enter:
+    ```
+    ws://localhost:5001
+    ```
+    Click Connect. You should see a simulated copter appear with full telemetry.
+  </Step>
+  <Step title="Interact with the simulated drone">
+    The SITL drone behaves like a real ArduPilot vehicle:
+    - Arm and takeoff
+    - Change flight modes
+    - Upload and execute missions
+    - Configure parameters
+    - Run calibrations
+  </Step>
+</Steps>
+
+## Configuration Options
+
+The SITL tool accepts command-line options:
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--vehicle` | `copter` | Vehicle type: copter, plane, rover, sub |
+| `--port` | `5001` | WebSocket bridge port |
+| `--ardupilot-path` | `~/.ardupilot` | Path to ArduPilot source directory |
+| `--location` | `CMAC` | Starting location (ArduPilot location name or lat,lon,alt,heading) |
+| `--speedup` | `1` | Simulation speed multiplier |
+
+**Examples:**
+
+```bash
+# Start a plane simulation
+npm start -- --vehicle plane
+
+# Start at a custom location (Bangalore)
+npm start -- --location 12.9716,77.5946,920,0
+
+# Run at 2x speed
+npm start -- --speedup 2
+
+# Use a different WebSocket port
+npm start -- --port 5002
+```
+
+## How the Bridge Works
+
+ArduPilot SITL speaks MAVLink over TCP (default port 5760). Browsers cannot connect to raw TCP sockets. The SITL tool bridges this gap:
+
+```
+ArduPilot SITL (TCP :5760)  →  Bridge (Node.js)  →  WebSocket :5001  →  Browser
+```
+
+The bridge is a thin relay. It connects to SITL's TCP port, opens a WebSocket server, and forwards binary MAVLink frames in both directions. No parsing, no modification. What goes in comes out.
+
+## Multi-Drone SITL
+
+You can run multiple SITL instances for multi-drone testing:
+
+```bash
+# Terminal 1: First copter on port 5001
+npm start -- --port 5001
+
+# Terminal 2: Second copter on port 5002
+npm start -- --port 5002 --location 12.9720,77.5950,920,90
+```
+
+In Mission Control, connect to both WebSocket URLs. Both drones appear in the fleet sidebar.
+
+## Testing Missions
+
+SITL is ideal for testing missions before flying:
+
+1. Plan a mission in the Plan tab.
+2. Upload it to the SITL drone.
+3. Switch to Auto mode.
+4. Watch the simulated drone fly the mission.
+5. Check the 3D simulation view for the flight path.
+
+The physics engine simulates wind, battery discharge, and sensor noise, giving you a realistic preview of how the mission will execute.
+
+## Testing Configuration
+
+All configuration panels work with SITL:
+
+- Read and write parameters
+- Calibrate sensors (simulated sensor data)
+- Configure failsafes and test triggers
+- Set up geofences and test breach behavior
+- Configure flight modes and switch between them
+
+## Automated Testing
+
+The SITL tool powers the project's end-to-end tests:
+
+```bash
+# Run e2e tests against SITL
+npm run test:e2e:sitl
+```
+
+Playwright tests start a SITL instance, connect the browser, and exercise the full GCS workflow: connect, read params, upload mission, arm, takeoff, fly, land.
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="SITL not found">
+    The tool looks for ArduPilot at `~/.ardupilot` by default. If you installed it elsewhere, use the `--ardupilot-path` option. Make sure you have built the correct vehicle type (`./waf copter`, `./waf plane`, etc.).
+  </Accordion>
+  <Accordion title="WebSocket connection refused">
+    Check that the SITL tool is running and the port is not in use by another process. Run `lsof -i :5001` to check.
+  </Accordion>
+  <Accordion title="No telemetry after connecting">
+    SITL may take a few seconds to initialize. Wait for the "APM: Ready to fly" message in the SITL output. If telemetry still does not appear, check that the TCP bridge connected successfully (look for "Connected to SITL" in the tool output).
+  </Accordion>
+  <Accordion title="Simulated drone crashes on takeoff">
+    The default SITL configuration may have conservative parameters. Make sure GPS is locked (SITL simulates GPS fix after a few seconds). Try arming in Stabilize mode first, then switching to Loiter or Auto after takeoff.
+  </Accordion>
+</AccordionGroup>

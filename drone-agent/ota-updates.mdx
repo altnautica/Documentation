@@ -1,0 +1,223 @@
+---
+title: "OTA Updates"
+description: "Over-the-air updates: check, upgrade, rollback, and channel management."
+icon: "arrows-rotate"
+---
+
+# OTA Updates
+
+The agent can update itself over the air. It polls GitHub releases for new versions, downloads the update, installs it, and restarts. You can also roll back to a previous version if something goes wrong.
+
+The OTA service runs as `ados-ota` and is enabled on Tier 3+ boards.
+
+## Update channels
+
+Three release channels control which versions the agent sees:
+
+| Channel | Description | Use when |
+|---------|-------------|----------|
+| `stable` | Production releases only. Tested and verified. | Field use, production drones |
+| `beta` | Pre-release versions. Functionally complete, may have rough edges. | Testing before deploying to fleet |
+| `dev` | Bleeding edge. May contain breaking changes. | Active development, contributing |
+
+Set the channel in config:
+
+```yaml
+ota:
+  channel: "stable"
+```
+
+Or from the CLI:
+
+```bash
+ados set ota.channel beta
+```
+
+## Checking for updates
+
+### Automatic checks
+
+By default, the agent checks for updates every 24 hours:
+
+```yaml
+ota:
+  check_interval: 24  # Hours
+```
+
+The check is non-blocking. If an update is found, it is noted but not installed unless `auto_install` is enabled.
+
+### Manual check
+
+```bash
+$ ados check
+Update available: v0.5.4
+Changelog: Fixed video pipeline restart on camera hot-plug...
+```
+
+Or via the REST API:
+
+```bash
+curl -X POST http://localhost:8080/api/ota/check \
+  -H "X-ADOS-Key: $KEY"
+```
+
+Response:
+
+```json
+{
+  "status": "update_available",
+  "version": "0.5.4",
+  "changelog": "Fixed video pipeline restart on camera hot-plug. Improved MQTT reconnection."
+}
+```
+
+If no update is available:
+
+```json
+{
+  "status": "up_to_date",
+  "version": "0.5.3"
+}
+```
+
+## Upgrading
+
+### One-step upgrade
+
+The `ados upgrade` command checks, downloads, installs, and restarts in one step:
+
+```bash
+$ ados upgrade
+Checking for updates...
+Update available: v0.5.4
+Install v0.5.4? [y/N]: y
+Downloading and installing...
+Installed v0.5.4
+Restarting service...
+Done.
+```
+
+Skip the confirmation prompt with `-y`:
+
+```bash
+ados upgrade -y
+```
+
+### Via install script
+
+You can also upgrade by re-running the install script:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/altnautica/ADOSDroneAgent/main/scripts/install.sh | sudo bash -s -- --upgrade
+```
+
+This is equivalent to `ados upgrade` but also updates the install script itself, systemd service files, and any DKMS drivers.
+
+### Auto-upgrade
+
+Enable automatic installation of updates:
+
+```yaml
+ota:
+  auto_install: true
+```
+
+<Warning>
+Auto-install restarts the agent immediately after installing an update. If the drone is in flight, this could interrupt operations. Only enable auto-install on ground-based drones or when you are confident in the release channel's stability.
+</Warning>
+
+## Rolling back
+
+If an update causes problems, roll back to the previous version:
+
+```bash
+$ ados rollback
+Rollback complete. Reverted to v0.5.2.
+```
+
+Roll back to a specific version:
+
+```bash
+$ ados rollback 0.5.0
+Rollback complete. Reverted to v0.5.0.
+```
+
+The rollback command downloads the specified version from PyPI and reinstalls it. Your config is preserved.
+
+Via the REST API:
+
+```bash
+# Rollback to previous version
+curl -X POST http://localhost:8080/api/ota/rollback \
+  -H "X-ADOS-Key: $KEY"
+
+# Rollback to specific version
+curl -X POST "http://localhost:8080/api/ota/rollback?version=0.5.0" \
+  -H "X-ADOS-Key: $KEY"
+```
+
+## Update status
+
+Check the current OTA state:
+
+```bash
+$ ados update
+Version:    0.5.3
+State:      idle
+Channel:    stable
+Repo:       altnautica/ADOSDroneAgent
+Last check: 2026-04-16T10:00:00
+```
+
+Possible states:
+
+| State | Meaning |
+|-------|---------|
+| `idle` | No update activity |
+| `checking` | Currently checking for updates |
+| `downloading` | Downloading an update |
+| `installing` | Installing an update |
+| `restarting` | Restarting after an update |
+| `error` | Last operation failed |
+
+## How updates work internally
+
+<Steps>
+  <Step title="Check GitHub releases">
+    The OTA service queries the GitHub Releases API for the configured repository (`altnautica/ADOSDroneAgent`). It filters by the selected channel (stable = full releases, beta = pre-releases, dev = all releases).
+  </Step>
+
+  <Step title="Compare versions">
+    Compares the latest available version against the installed version. If a newer version exists, it is marked as pending.
+  </Step>
+
+  <Step title="Download and install">
+    Uses pip to install the new version into the virtual environment at `/opt/ados/venv/`. The previous version's wheel is cached for rollback.
+  </Step>
+
+  <Step title="Restart">
+    Sends a restart command to systemd (`systemctl restart ados-supervisor`), which brings down all services and starts them again with the new code.
+  </Step>
+</Steps>
+
+## Configuration reference
+
+```yaml
+ota:
+  channel: "stable"                          # stable | beta | dev
+  check_interval: 24                          # Hours between auto-checks
+  auto_install: false                         # Install updates automatically
+  github_repo: "altnautica/ADOSDroneAgent"   # Source repository
+  pip_path: "/opt/ados/venv/bin/pip"          # Path to pip in the venv
+  service_name: "ados-agent"                  # Systemd service to restart
+```
+
+## Fleet updates
+
+For fleets of drones, you can trigger updates from Mission Control. The cloud relay sends an update command to each drone, which then checks and installs independently.
+
+This approach lets you roll out updates gradually (canary deployments): update one drone, verify it works, then roll out to the rest.
+
+<Tip>
+Always test updates on a bench drone before deploying to your field fleet. Use the `beta` channel on the bench and `stable` on production drones. Promote a beta release to stable only after bench validation passes.
+</Tip>

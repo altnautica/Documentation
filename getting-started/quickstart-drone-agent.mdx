@@ -1,0 +1,324 @@
+---
+title: "Quickstart: Drone Agent"
+description: "Install the ADOS Drone Agent on a companion computer in one command."
+icon: "microchip"
+---
+
+## What You Will Build
+
+By the end of this page, the ADOS Drone Agent will be running on a companion computer (SBC) connected to your drone's flight controller. It will auto-detect the FC, start streaming telemetry, and be ready to pair with Mission Control.
+
+## Prerequisites
+
+**Hardware you need:**
+
+- A single-board computer (SBC): Raspberry Pi 4B, Radxa ROCK 5C, or any supported Linux board
+- A flight controller running ArduPilot or PX4, connected via UART or USB
+- A USB camera (optional, for video)
+- An internet connection on the SBC (WiFi or Ethernet) for the install
+
+**Software requirements:**
+
+- A fresh Linux install: Raspberry Pi OS (Bookworm), Ubuntu 22.04+, Armbian, or Debian 12+
+- SSH access to the SBC
+- `curl` installed (it is on most distros by default)
+
+<Note>
+The Drone Agent supports 17 board profiles out of the box. It auto-detects your board at install time and configures hardware-specific settings (camera paths, serial ports, GPIO, power management). Check the [supported hardware](/drone-agent/supported-hardware) page for the full list.
+</Note>
+
+## Install in One Command
+
+SSH into your SBC and run:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/altnautica/ADOSDroneAgent/main/scripts/install.sh | sudo bash
+```
+
+That is it. The install script handles everything:
+
+1. Installs system dependencies (Python 3.11+, ffmpeg, v4l-utils, and others)
+2. Creates the `ados` system user and directories
+3. Installs the agent Python package from the repository
+4. Detects your board and writes the hardware profile
+5. Detects the flight controller on serial ports
+6. Sets up systemd services
+7. Starts the agent
+
+The full install takes 3-8 minutes depending on your SBC's speed and network connection.
+
+<Warning>
+Run the install script with `sudo`. The agent needs root access during install to create systemd services, set up udev rules, and configure hardware. After install, the agent services run as the `ados` user with restricted permissions.
+</Warning>
+
+## Install with Pairing
+
+If you already have a pairing code from Mission Control (from the cloud relay setup), you can pair during install:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/altnautica/ADOSDroneAgent/main/scripts/install.sh | sudo bash -s -- --pair YOUR_PAIRING_CODE
+```
+
+This installs the agent AND registers it with your Mission Control cloud account in one step. More on pairing in the [Pairing](/drone-agent/pairing) section.
+
+## Verify the Install
+
+After the script finishes, check the agent status:
+
+```bash
+ados status
+```
+
+You should see output like:
+
+```
+ADOS Drone Agent v0.5.3
+Board: raspberry-pi-4b
+Profile: air-unit
+
+Services:
+  ados-supervisor    active (running)
+  ados-mavlink       active (running)
+  ados-api           active (running)
+  ados-health        active (running)
+  ados-video         active (running) [camera detected]
+  ados-cloud         inactive (not paired)
+
+Flight Controller:
+  Port: /dev/ttyAMA0
+  Baud: 921600
+  Firmware: ArduPilot Copter 4.5.7
+  Connected: yes
+
+Network:
+  IP: 192.168.1.42
+  API: http://192.168.1.42:8080
+```
+
+<Frame caption="ADOS Drone Agent TUI showing service status, telemetry, and system resources">
+  <img src="/images/placeholder-agent-tui.png" alt="Terminal UI showing agent services, FC connection, and telemetry data" />
+</Frame>
+
+## What the Agent Does at Boot
+
+Every time the SBC powers on, the agent runs automatically via systemd. Here is the boot sequence:
+
+<Steps>
+  <Step title="Hardware detection">
+    The agent reads `/sys/` and `/dev/` to identify the board model, available serial ports, USB devices, and cameras. It loads the matching board profile YAML.
+  </Step>
+
+  <Step title="FC auto-detect">
+    The agent scans serial ports for MAVLink heartbeats. It tries common baud rates (921600, 460800, 115200, 57600) and picks the first port that responds with a valid heartbeat. No configuration needed.
+  </Step>
+
+  <Step title="Service startup">
+    The supervisor starts core services in order:
+    - `ados-mavlink`: MAVLink proxy and FC communication
+    - `ados-api`: REST API on port 8080
+    - `ados-health`: System health monitoring
+    - `ados-cloud`: Cloud relay (if paired)
+    - `ados-video`: Video pipeline (if camera detected)
+    - `ados-wfb`: WFB-ng transmitter (if RTL8812EU adapter detected)
+  </Step>
+
+  <Step title="Telemetry streaming">
+    Once the FC is connected, the agent starts publishing telemetry to the internal IPC socket. If paired, it also publishes to the MQTT cloud relay at 2Hz.
+  </Step>
+</Steps>
+
+## Using the CLI
+
+The `ados` command is your primary tool for managing the agent. Here are the commands you will use most:
+
+```bash
+# Check overall status
+ados status
+
+# View real-time health (CPU, RAM, temp, disk)
+ados health
+
+# Stream logs from all services
+ados logs
+
+# Stream logs from a specific service
+ados logs --service mavlink
+
+# Check the agent version
+ados version
+
+# View current configuration
+ados config show
+
+# Pair with a Mission Control cloud account
+ados pair YOUR_CODE
+
+# Unpair
+ados unpair
+
+# Run a diagnostic check
+ados diag
+
+# Restart a specific service
+sudo ados restart video
+
+# Upgrade to the latest version
+sudo ados upgrade
+```
+
+The full CLI reference covers all 25 commands. See [CLI Reference](/drone-agent/cli-reference).
+
+## Using the TUI
+
+The agent includes a terminal user interface (TUI) built with Textual. It gives you a live dashboard over SSH.
+
+```bash
+ados tui
+```
+
+The TUI shows:
+
+- Service status for all agent services (green/red indicators)
+- Live telemetry: attitude, GPS, altitude, battery, RC channels
+- System resources: CPU, RAM, temperature, disk usage
+- Log stream from all services
+- Network status and cloud relay connection
+
+It works over SSH, so you can monitor your drone from your laptop without opening a browser. Press `q` to quit.
+
+## Connecting Mission Control
+
+With the agent running and connected to your FC, you can connect Mission Control.
+
+### Over LAN (same network)
+
+If your laptop and the SBC are on the same WiFi or Ethernet network:
+
+1. Open Mission Control in your browser
+2. The agent's REST API is available at `http://<SBC_IP>:8080`
+3. Video is available via WebRTC at `http://<SBC_IP>:8889`
+4. Mission Control will auto-discover the agent via mDNS if both are on the same subnet
+
+### Over the Internet (cloud relay)
+
+If you want to connect from anywhere:
+
+1. Pair the agent: `ados pair YOUR_CODE` (get the code from Mission Control's cloud settings)
+2. The agent will start publishing telemetry via MQTT
+3. Open Mission Control at [command.altnautica.com](https://command.altnautica.com)
+4. Your drone will appear in the dashboard
+
+## Configuration
+
+The agent stores its configuration at `/etc/ados/config.yaml`. You rarely need to edit this by hand. The installer and CLI handle most settings.
+
+Key configuration options:
+
+```yaml
+# /etc/ados/config.yaml
+agent:
+  device_id: "ados-abc123"
+  profile: air-unit          # or "ground-station"
+
+mavlink:
+  auto_detect: true          # scan for FC on serial ports
+  port: /dev/ttyAMA0         # override auto-detect
+  baud: 921600
+
+video:
+  enabled: true
+  camera: auto               # auto-detect USB/CSI camera
+  width: 1920
+  height: 1080
+  fps: 30
+  bitrate: 4000000           # 4 Mbps
+
+cloud:
+  enabled: false             # set to true after pairing
+  mqtt_broker: mqtt.altnautica.com
+  telemetry_rate_hz: 2
+```
+
+Edit with `ados config edit` or directly with your text editor.
+
+## REST API
+
+The agent runs a FastAPI server on port 8080. It serves OpenAPI documentation at `http://<SBC_IP>:8080/docs`.
+
+Key endpoints:
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/status/full` | GET | Full status (telemetry, services, resources, video) |
+| `/api/v1/telemetry` | GET | Current telemetry snapshot |
+| `/api/v1/services` | GET | Service status list |
+| `/api/v1/video` | GET | Video pipeline state and WebRTC URLs |
+| `/api/v1/config` | GET/PUT | Read and write agent configuration |
+| `/api/v1/pair` | POST | Pair with cloud relay |
+| `/api/v1/command` | POST | Send MAVLink command to FC |
+
+See the full [REST API reference](/drone-agent/rest-api).
+
+## Upgrading
+
+To upgrade to the latest version:
+
+```bash
+sudo ados upgrade
+```
+
+Or use the install script with the upgrade flag:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/altnautica/ADOSDroneAgent/main/scripts/install.sh | sudo bash -s -- --upgrade
+```
+
+The upgrade preserves your configuration, pairing state, and device ID. It updates the agent code, dependencies, and systemd services.
+
+## Troubleshooting
+
+**Agent won't start:**
+```bash
+# Check the supervisor log
+journalctl -u ados-supervisor -n 50 --no-pager
+
+# Check for port conflicts
+ss -tlnp | grep 8080
+```
+
+**FC not detected:**
+```bash
+# List serial devices
+ls -la /dev/ttyUSB* /dev/ttyAMA* /dev/ttyACM* 2>/dev/null
+
+# Check the MAVLink service specifically
+journalctl -u ados-mavlink -n 50 --no-pager
+```
+
+**Camera not detected:**
+```bash
+# List video devices
+ls -la /dev/video*
+
+# Check what the system sees
+v4l2-ctl --list-devices
+```
+
+**Need more help?** See the full [Troubleshooting guide](/drone-agent/troubleshooting) or ask in [Discord](https://discord.gg/uxbvuD4d5q).
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart: Ground Agent" icon="tower-broadcast" href="/getting-started/quickstart-ground-agent">
+    Set up long-range video with a ground station node.
+  </Card>
+  <Card title="Video Pipeline" icon="video" href="/drone-agent/video-pipeline">
+    Configure the video encoder, resolution, and transport.
+  </Card>
+  <Card title="Cloud Relay" icon="cloud" href="/drone-agent/cloud-relay">
+    Set up MQTT telemetry and remote access.
+  </Card>
+  <Card title="Python SDK" icon="python" href="/drone-agent/python-sdk">
+    Write scripts that control your drone programmatically.
+  </Card>
+</CardGroup>

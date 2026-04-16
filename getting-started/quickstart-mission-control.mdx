@@ -1,0 +1,272 @@
+---
+title: "Quickstart: Mission Control"
+description: "Run the browser-based GCS in under 5 minutes. No drone required."
+icon: "display"
+---
+
+## What You Will Build
+
+By the end of this page, you will have ADOS Mission Control running in your browser with 5 simulated drones. You can explore the dashboard, plan missions, try the configuration panels, and fly a simulated drone with your keyboard or gamepad. No hardware needed.
+
+## Prerequisites
+
+You need:
+
+- **Node.js 18+** (LTS recommended). Check with `node --version`
+- **npm 9+** (ships with Node.js). Check with `npm --version`
+- **Git**. Check with `git --version`
+- A modern browser: Chrome, Edge, or Firefox. Chrome recommended for WebSerial support.
+
+<Note>
+Mission Control uses WebSerial for USB flight controller connections and WebUSB for firmware flashing. Both require a Chromium-based browser (Chrome, Edge, Brave). Firefox works for everything except USB features.
+</Note>
+
+## Option A: Demo Mode (No Clone Needed)
+
+The fastest way to try ADOS Mission Control is the hosted demo at [command.altnautica.com](https://command.altnautica.com).
+
+It loads with 5 simulated drones, demo telemetry, and all features enabled. Nothing to install. Just open the link.
+
+## Option B: Run Locally
+
+<Steps>
+  <Step title="Clone the repository">
+    ```bash
+    git clone https://github.com/altnautica/ADOSMissionControl.git
+    cd ADOSMissionControl
+    ```
+  </Step>
+
+  <Step title="Install dependencies">
+    ```bash
+    npm install
+    ```
+
+    This takes 1-2 minutes. The project uses Next.js 16 with React 19 and about 60 dependencies.
+  </Step>
+
+  <Step title="Start in demo mode">
+    ```bash
+    npm run demo
+    ```
+
+    This starts the development server on port 4000 with demo mode enabled. Open [http://localhost:4000](http://localhost:4000) in your browser.
+
+    <Tip>
+    Demo mode sets `NEXT_PUBLIC_DEMO_MODE=true` and populates the dashboard with 5 simulated drones showing live-updating telemetry. It requires no Convex backend, no SITL, and no hardware.
+    </Tip>
+  </Step>
+
+  <Step title="Explore the dashboard">
+    You should see the main dashboard with 5 simulated drones. Each drone shows:
+
+    - Attitude indicator (artificial horizon)
+    - GPS coordinates and altitude
+    - Battery voltage and percentage
+    - Flight mode (Stabilize, Loiter, Auto, etc.)
+    - Connection status
+
+    <Frame caption="Mission Control dashboard with 5 simulated drones in demo mode">
+      <img src="/images/placeholder-dashboard-demo.png" alt="Mission Control dashboard showing 5 drone cards with telemetry data" />
+    </Frame>
+  </Step>
+</Steps>
+
+## Exploring the UI
+
+With demo mode running, click through the main tabs to see what is available.
+
+### Dashboard
+
+The home view. Shows all connected drones as cards. Click a drone card to select it and see its detail view.
+
+### Plan
+
+The mission planning interface. You can:
+
+- Drop waypoints on the map by clicking
+- Use pattern generators (survey grid, corridor scan, spiral search, and more)
+- Set altitude, speed, and camera trigger parameters per waypoint
+- Draw geofences and set rally points
+- Import and export missions in multiple formats (QGC WPL, KML, CSV)
+
+<Frame caption="Mission planner with a survey grid pattern generated over a field">
+  <img src="/images/placeholder-mission-planner.png" alt="Mission planner showing a survey grid pattern with waypoints on a satellite map" />
+</Frame>
+
+### Configure
+
+36+ configuration panels for your flight controller. In demo mode, these show example values. With a real FC connected, you can read and write parameters.
+
+Key panels include:
+
+| Panel | What It Does |
+|-------|-------------|
+| Failsafe | Battery, GCS, and RC loss behavior |
+| PID Tuning | Rate and stabilize PIDs with live response graph |
+| Power | Battery monitor setup (voltage divider, amps per volt) |
+| OSD Editor | Drag-and-drop on-screen display layout (4 screens) |
+| Ports | Serial port protocol assignment (25+ protocols) |
+| Sensors | Rangefinder, optical flow, airspeed, barometer config |
+| Gimbal | Mount type, axis limits, ROI targeting |
+
+### Flight Control
+
+Manual flight controls. This tab shows when a drone is selected. You can:
+
+- Arm and disarm
+- Change flight modes (25+ modes for ArduPilot)
+- Fly with a gamepad or HOTAS at 50Hz input rate
+- Fly with keyboard (WASD + arrow keys)
+- Set guided mode waypoints by clicking the map
+
+### Simulate
+
+3D mission simulation. Upload a mission plan and watch it execute with terrain following, camera trigger markers, and timing estimates.
+
+## Connecting a Real Flight Controller
+
+If you have an ArduPilot, PX4, or Betaflight flight controller on your desk, you can connect it right now.
+
+<Steps>
+  <Step title="Start in normal mode">
+    Stop the demo server (`Ctrl+C`) and start normally:
+
+    ```bash
+    npm run dev
+    ```
+
+    Open [http://localhost:4000](http://localhost:4000).
+  </Step>
+
+  <Step title="Plug in your flight controller">
+    Connect the FC to your laptop with a USB cable. Make sure it is powered (some FCs need a battery connected for USB to work, others do not).
+  </Step>
+
+  <Step title="Click Connect">
+    Click the **Connect** button in the top navigation bar. A browser dialog will appear listing available serial ports.
+
+    <Frame caption="WebSerial port selection dialog showing a connected flight controller">
+      <img src="/images/placeholder-connect-dialog.png" alt="Browser serial port selection dialog with a flight controller listed" />
+    </Frame>
+
+    Select your flight controller and click **Connect**. Mission Control will:
+
+    1. Open the serial port at the detected baud rate
+    2. Send a MAVLink heartbeat
+    3. Request autopilot version and capabilities
+    4. Request data streams (attitude, GPS, battery, RC, sensors)
+    5. Download the full parameter list
+
+    This takes 2-5 seconds.
+  </Step>
+
+  <Step title="Verify the connection">
+    The top bar will show the firmware type (ArduPilot, PX4, or Betaflight), vehicle type (Copter, Plane, Rover, etc.), and firmware version. The dashboard card will show live telemetry.
+
+    If connection fails, check:
+    - Is the FC powered?
+    - Is another application (Mission Planner, QGroundControl, Betaflight Configurator) holding the serial port?
+    - Are you using Chrome, Edge, or another Chromium-based browser? Firefox does not support WebSerial.
+  </Step>
+</Steps>
+
+<Warning>
+WebSerial requires a secure context. If you are running locally on `http://localhost:4000`, it works. If you are accessing the GCS over a network, you need HTTPS. The hosted version at `command.altnautica.com` uses HTTPS.
+</Warning>
+
+## Running with SITL
+
+ADOS ships with a SITL (Software In The Loop) launcher that runs a full ArduPilot simulation with real physics. This is useful for testing mission planning, flight modes, and the full MAVLink stack without hardware.
+
+<Steps>
+  <Step title="Install ArduPilot SITL">
+    Follow the [ArduPilot SITL setup guide](https://ardupilot.org/dev/docs/building-setup-linux.html) to build ArduPilot from source. The SITL binary lands in `~/.ardupilot/`.
+  </Step>
+
+  <Step title="Start the SITL bridge">
+    ```bash
+    cd ADOSMissionControl/tools/sitl
+    npm install
+    npm start
+    ```
+
+    This launches ArduPilot SITL (a real autopilot running on your computer with simulated physics) and bridges its TCP output to a WebSocket that Mission Control can connect to.
+  </Step>
+
+  <Step title="Connect from Mission Control">
+    In Mission Control, click **Connect** and choose the SITL WebSocket option. You will see a simulated ArduPilot copter with GPS, battery, and full parameter set.
+
+    You can arm, take off, switch modes, upload missions, and fly. The physics simulation includes gravity, drag, wind, and motor response. It is the same simulation that ArduPilot developers use.
+  </Step>
+</Steps>
+
+## Running as a Desktop App
+
+Mission Control can also run as an Electron desktop app. This gives you a standalone window with native serial port access (no WebSerial browser restrictions).
+
+```bash
+# Development mode
+npm run desktop:dev
+
+# Demo mode
+npm run desktop:demo
+
+# Build distributable
+npm run desktop:build:mac   # macOS
+npm run desktop:build       # All platforms
+```
+
+The desktop app is the same codebase with an Electron wrapper. It uses about 200MB on disk and 200-300MB of RAM.
+
+## Environment Variables
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `NEXT_PUBLIC_DEMO_MODE` | `false` | Enable demo mode with 5 simulated drones |
+| `PORT` | `4000` | Dev server port |
+| `NEXT_PUBLIC_CONVEX_URL` | (none) | Convex backend URL for cloud features |
+| `NEXT_PUBLIC_MQTT_URL` | (none) | MQTT broker URL for real-time telemetry |
+
+Cloud features (fleet management, cloud relay, community changelog) require a Convex backend. For local development and direct connections, no backend is needed.
+
+## Project Structure
+
+A quick orientation of the codebase:
+
+```
+ADOSMissionControl/
+├── src/
+│   ├── app/              # Next.js App Router pages
+│   ├── components/       # React components
+│   ├── lib/
+│   │   ├── protocol/     # MAVLink/MSP codec and adapters
+│   │   ├── video/        # WebRTC client, transport cascade
+│   │   └── mission/      # Mission file parsers, pattern generators
+│   ├── stores/           # Zustand state stores (27 total)
+│   └── hooks/            # Custom React hooks
+├── convex/               # Convex backend (optional, for cloud features)
+├── tools/
+│   ├── sitl/             # ArduPilot SITL launcher + WebSocket bridge
+│   ├── mqtt-bridge/      # MQTT-to-Convex bridge (Docker)
+│   └── video-relay/      # RTSP-to-WebSocket relay (Docker)
+├── electron/             # Electron desktop wrapper
+└── public/               # Static assets
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Your First Flight" icon="plane" href="/getting-started/your-first-flight">
+    Connect a real flight controller and fly.
+  </Card>
+  <Card title="Quickstart: Drone Agent" icon="microchip" href="/getting-started/quickstart-drone-agent">
+    Install the agent on a companion computer.
+  </Card>
+  <Card title="Mission Planning" icon="map" href="/mission-control/mission-planning">
+    Deep dive into the mission planner.
+  </Card>
+  <Card title="FC Configuration" icon="sliders" href="/mission-control/fc-configuration">
+    Explore all 36+ configuration panels.
+  </Card>
+</CardGroup>

@@ -1,0 +1,114 @@
+---
+title: "Dashboard"
+description: "The main view showing your fleet, drone cards, and live map."
+icon: "grid-2"
+---
+
+The Dashboard is the first screen you see when you open Mission Control. It shows all connected drones, their live positions on a map, and quick-access telemetry cards.
+
+<Frame caption="Dashboard with drone list, map, and detail panel">
+  <img src="/images/placeholder-dashboard.png" alt="Mission Control dashboard showing connected drones and map" />
+</Frame>
+
+## Layout
+
+The dashboard has three main areas:
+
+1. **Drone List Panel (left):** A scrollable list of all connected drones. Each card shows the drone's name, firmware type, flight mode, armed state, and battery level.
+2. **Map (center):** A Leaflet map showing live drone positions with heading indicators. Supports OpenStreetMap, satellite, terrain, and dark tile sources.
+3. **Drone Detail Panel (right):** Expanded information about the selected drone, including telemetry, GPS, battery, and quick actions.
+
+## Drone Cards
+
+Each connected drone gets a card in the left panel. The card displays:
+
+- **Connection status** (connected, degraded, disconnected)
+- **Firmware badge** (ArduPilot, PX4, Betaflight)
+- **Flight mode** (Stabilize, Loiter, Auto, etc.)
+- **Armed state** with a color indicator (red when armed, gray when disarmed)
+- **Battery percentage** with a color-coded bar
+- **GPS status** showing fix type and satellite count
+
+Click a drone card to select it. The map centers on that drone, and the detail panel updates.
+
+## Map View
+
+The map shows real-time drone positions. Each drone is represented by an icon that rotates to match its heading. As drones move, their position updates in real time from MAVLink telemetry.
+
+**Map controls:**
+- Zoom with scroll wheel or +/- buttons
+- Pan by clicking and dragging
+- Switch tile source (OSM, satellite, terrain, dark) from the map controls
+
+**Map overlays:**
+- Drone position and heading arrow
+- Drone trail showing recent flight path
+- Home position marker
+- GCS location (if browser geolocation is enabled)
+
+## Drone Detail Panel
+
+Select a drone to see expanded information:
+
+- **Attitude:** Roll, pitch, yaw with a compact HUD
+- **Position:** Latitude, longitude, altitude (AGL and MSL)
+- **Speed:** Ground speed and climb rate
+- **Battery:** Voltage, current, remaining percentage, consumed mAh
+- **GPS:** Fix type, satellite count, HDOP
+- **Radio:** RSSI, remote RSSI, noise floor
+- **EKF:** Status flags and variance ratios
+
+## Demo Mode
+
+In demo mode (`npm run demo`), the dashboard populates with five simulated drones:
+
+| Drone | Firmware | Behavior |
+|-------|----------|----------|
+| Demo Copter 1 | ArduPilot (Copter) | Flies a circular pattern |
+| Demo Copter 2 | ArduPilot (Copter) | Hovers at a fixed position |
+| Demo Plane 1 | ArduPilot (Plane) | Flies a racetrack pattern |
+| Demo Rover 1 | ArduPilot (Rover) | Follows a ground path |
+| Demo Copter 3 | PX4 (Copter) | Flies a figure-eight |
+
+Each simulated drone generates realistic telemetry, including GPS noise, battery discharge, and radio signal variation. This is useful for testing the UI, building dashboards, or learning the interface.
+
+## Top Navigation
+
+The top bar is consistent across all tabs. It shows:
+
+- **Tab navigation:** Dashboard, Command, Plan, Simulate, Airspace, History, Hardware, Config, Community
+- **Connection button:** Opens the connect dialog
+- **Active drone selector:** Switch between connected drones
+- **Armed/Disarmed badge:** Shows the currently selected drone's armed state
+- **Settings gear:** Quick access to the settings page
+
+## Fleet Management
+
+When multiple drones are connected, the dashboard becomes a fleet overview. You can:
+
+- See all drones at a glance in the list panel
+- Click any drone to focus on it
+- Monitor battery levels across the fleet
+- Spot connection issues quickly (degraded or offline drones are highlighted)
+
+<Tip>
+In cloud mode, drones paired with your Convex backend appear automatically on the dashboard, even if they are on a different network. The Drone Agent pushes status updates through the cloud relay.
+</Tip>
+
+## Quick Actions
+
+From the dashboard, you can:
+
+- **Arm/Disarm** the selected drone (with safety confirmation)
+- **Change flight mode** using the mode selector
+- **Set home position** to the drone's current location
+- Navigate to any other tab for the selected drone
+
+## Keyboard Shortcuts
+
+| Shortcut | Action |
+|----------|--------|
+| `1-9` | Select drone by index |
+| `M` | Toggle map fullscreen |
+| `D` | Open drone detail panel |
+| `C` | Open connect dialog |

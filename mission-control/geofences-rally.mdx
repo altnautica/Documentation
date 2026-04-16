@@ -1,0 +1,136 @@
+---
+title: "Geofences and Rally Points"
+description: "Define flight boundaries and emergency landing positions."
+icon: "shield-halved"
+---
+
+Geofences keep your drone inside safe boundaries. Rally points give the flight controller a list of safe landing positions for emergencies. Both features are managed in the Plan tab.
+
+<Frame caption="Geofence polygon with rally points on the map">
+  <img src="/images/placeholder-geofences-rally.png" alt="Map showing geofence boundaries and rally point markers" />
+</Frame>
+
+## Geofences
+
+A geofence is a virtual boundary that the flight controller enforces. If the drone approaches or crosses the boundary, the FC takes a configured action (RTL, land, report only, or brake).
+
+### Fence Types
+
+| Type | Shape | Description |
+|------|-------|-------------|
+| Inclusion polygon | Polygon | The drone must stay inside this area |
+| Exclusion polygon | Polygon | The drone must stay outside this area |
+| Inclusion circle | Circle | Circular inclusion boundary |
+| Exclusion circle | Circle | Circular exclusion boundary |
+| Altitude fence | (none) | Maximum altitude limit (configured in FC parameters) |
+
+You can combine multiple fences. For example, one large inclusion polygon for the general flight area and one or more small exclusion polygons around buildings, roads, or restricted zones.
+
+### Creating a Geofence
+
+<Steps>
+  <Step title="Open the Geofence Editor">
+    In the Plan tab, click the geofence tool in the map toolbar (shield icon).
+  </Step>
+  <Step title="Draw the boundary">
+    Click on the map to place vertices of the polygon. Double-click to close the polygon. For a circle, click the center and drag to set the radius.
+  </Step>
+  <Step title="Set the type">
+    Choose inclusion or exclusion. Inclusion fences define where the drone CAN fly. Exclusion fences define no-fly zones.
+  </Step>
+  <Step title="Configure the action">
+    The breach action is configured in the FC's failsafe parameters (see [FC Configuration](/mission-control/fc-configuration)). Common actions:
+    - **Report Only:** Log the breach but take no action
+    - **RTL:** Return to launch
+    - **Land:** Land immediately
+    - **Brake:** Stop and hover (copter only)
+  </Step>
+  <Step title="Upload to FC">
+    Click "Upload Fence" to send the geofence to the flight controller. The FC stores the fence and enforces it during flight.
+  </Step>
+</Steps>
+
+### Editing Fences
+
+After creating a fence:
+- **Drag vertices** to reshape the polygon
+- **Add vertices** by clicking on an edge
+- **Delete vertices** by right-clicking a vertex
+- **Delete the entire fence** from the fence list
+
+### Downloading Fences
+
+Click "Download Fence" to read the currently stored fence from the flight controller. This is useful when a fence was uploaded from another GCS.
+
+## Rally Points
+
+Rally points are pre-defined landing positions for emergencies. When the drone triggers an RTL failsafe (low battery, lost link, geofence breach), the FC can fly to the nearest rally point instead of the home position.
+
+### Why Use Rally Points?
+
+- Home position might be obstructed (crowd, vehicle, obstacle)
+- Closer landing options exist in different directions
+- Wind direction makes certain landing spots safer
+- Multiple takeoff/landing areas in a large field
+
+### Creating Rally Points
+
+<Steps>
+  <Step title="Open the Rally Point Editor">
+    In the Plan tab, click the rally point tool (flag icon) in the toolbar.
+  </Step>
+  <Step title="Click the map to place points">
+    Each click adds a rally point at that location. Add as many as you need.
+  </Step>
+  <Step title="Set altitude">
+    Each rally point has a loiter altitude. The drone will loiter at this altitude above the rally point before landing.
+  </Step>
+  <Step title="Upload to FC">
+    Click "Upload Rally Points" to send them to the flight controller.
+  </Step>
+</Steps>
+
+### Editing Rally Points
+
+- **Drag** a rally point marker to reposition it
+- **Click** a rally point to edit its altitude
+- **Right-click** to delete a rally point
+- **Download** existing rally points from the FC
+
+### How the FC Uses Rally Points
+
+When RTL is triggered:
+1. The FC checks if any rally points are stored.
+2. If rally points exist, the drone flies to the nearest one (by straight-line distance).
+3. The drone loiters at the rally point's configured altitude.
+4. Depending on FC settings, it either loiters indefinitely or lands automatically.
+
+If no rally points are stored, the drone returns to the home position as usual.
+
+<Note>
+Rally point behavior depends on the ArduPilot `RALLY_LIMIT_KM` parameter. Points beyond this distance from the home position are ignored. Set this parameter to cover your entire operating area.
+</Note>
+
+## Fence + Rally Combined
+
+A common setup:
+
+1. **One large inclusion polygon** defining the entire safe flight area
+2. **Exclusion polygons** around buildings, roads, or people
+3. **3-4 rally points** at safe, clear landing areas within the inclusion zone
+4. **Altitude fence** set in the FC parameters as a ceiling
+
+This gives the FC multiple layers of protection: it cannot leave the inclusion zone, it avoids exclusion areas, and if something goes wrong, it has multiple safe landing options.
+
+## Upload and Download
+
+| Action | Protocol | Description |
+|--------|----------|-------------|
+| Upload Fence | `MISSION_ITEM_INT` (MAV_CMD_NAV_FENCE_*) | Send fence items to the FC |
+| Download Fence | `MISSION_REQUEST_INT` | Read fence items from the FC |
+| Upload Rally | `MISSION_ITEM_INT` (MAV_CMD_NAV_RALLY_POINT) | Send rally points to the FC |
+| Download Rally | `MISSION_REQUEST_INT` | Read rally points from the FC |
+| Clear Fence | `MISSION_CLEAR_ALL` (fence type) | Remove all fence items |
+| Clear Rally | `MISSION_CLEAR_ALL` (rally type) | Remove all rally points |
+
+All operations use the MAVLink mission protocol with the appropriate mission type flag.

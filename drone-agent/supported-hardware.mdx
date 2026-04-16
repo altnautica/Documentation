@@ -1,0 +1,128 @@
+---
+title: "Supported Hardware"
+description: "All 17 supported board profiles, tier system, and recommended hardware."
+icon: "circuit-board"
+---
+
+# Supported Hardware
+
+The ADOS Drone Agent ships with 17 board profiles. Each profile is a YAML file that tells the agent what SoC it is running on, which buses are available, what video encoders exist, and which features to enable.
+
+## Board profiles
+
+The agent reads `/proc/device-tree/model` at boot and matches it against the patterns in each profile. If no match is found, it falls back to `generic-arm64`.
+
+| Board | SoC | Architecture | Default Tier | Video Encode | NPU |
+|-------|-----|-------------|-------------|-------------|-----|
+| Raspberry Pi CM4 | BCM2711 | aarch64 | 3 | H.264 | No |
+| Raspberry Pi CM5 | BCM2712 | aarch64 | 4 | H.264 | No |
+| Raspberry Pi 4B | BCM2711 | aarch64 | 3 | H.264 | No |
+| Raspberry Pi 5 | BCM2712 | aarch64 | 4 | H.264 | No |
+| Radxa ROCK 5C Lite | RK3582 | aarch64 | 4 | H.264, H.265 | 6 TOPS |
+| Radxa CM3 (RK3566) | RK3566 | aarch64 | 3 | H.264 | 0.8 TOPS |
+| Radxa CM4 (RK3588S2) | RK3588S2 | aarch64 | 4 | H.264, H.265 | 6 TOPS |
+| Rockchip RK3576 | RK3576 | aarch64 | 4 | H.264, H.265 | 6 TOPS |
+| Orange Pi 5 | RK3588S | aarch64 | 4 | H.264, H.265 | 6 TOPS |
+| NVIDIA Jetson Nano | Tegra X1 | aarch64 | 3 | H.264, H.265 | 0.5 TFLOPS |
+| NVIDIA Jetson Orin Nano | Tegra Orin | aarch64 | 4 | H.264, H.265 | 40 TOPS |
+| Rockchip RV1126B | RV1126B | armv7l | 2 | H.264, H.265 | 2 TOPS |
+| Luckfox Pico Pro/Max RV1106 | RV1106 | armv7l | 1 | H.264 | 0.5 TOPS |
+| Luckfox Pico Zero RV1106G3 | RV1106G3 | armv7l | 1 | H.264 | 0.5 TOPS |
+| Luckfox Pico RV1103 | RV1103 | armv7l | 1 | H.264 | No |
+| Luckfox Lyra RK3506G2 | RK3506G2 | armv7l | 1 | None | No |
+| Generic ARM64 | Unknown | aarch64 | 2 | None | No |
+
+## Tier system
+
+Tiers control which agent features are enabled based on available system resources. The agent selects a tier automatically from the board profile, but you can override it in config.
+
+<AccordionGroup>
+  <Accordion title="Tier 1 (64-128 MB RAM)">
+    The bare minimum. Only the MAVLink proxy runs. No REST API, no video, no cloud connectivity. Suitable for ultra-low-cost boards like the Luckfox Pico where you just need serial MAVLink forwarding.
+
+    **Enabled services:** `ados-mavlink`
+
+    **Boards:** RV1103, RV1106, RV1106G3, RK3506G2
+  </Accordion>
+
+  <Accordion title="Tier 2 (256-512 MB RAM)">
+    Adds the REST API and basic health monitoring. You can query the agent over HTTP and get telemetry. No video pipeline, no scripting.
+
+    **Enabled services:** `ados-mavlink`, `ados-api`, `ados-health`, `ados-discovery`
+
+    **Boards:** RV1126B, generic-arm64
+  </Accordion>
+
+  <Accordion title="Tier 3 (1-2 GB RAM)">
+    Adds the full video pipeline, scripting engine, cloud relay, and OTA updates. This is the minimum tier for a useful companion computer on a real drone.
+
+    **Enabled services:** All Tier 2 services plus `ados-video`, `ados-wfb`, `ados-cloud`, `ados-scripting`, `ados-peripherals`, `ados-ota`
+
+    **Boards:** Raspberry Pi CM4, Raspberry Pi 4B, Jetson Nano, Radxa CM3 (RK3566)
+  </Accordion>
+
+  <Accordion title="Tier 4 (4 GB+ RAM)">
+    Full autonomy. Everything from Tier 3 plus the vision engine (object detection, tracking, follow-me) and application suites. Requires an NPU or GPU for real-time inference.
+
+    **Enabled services:** All Tier 3 services plus vision engine and suite runtime
+
+    **Boards:** Raspberry Pi CM5, Raspberry Pi 5, ROCK 5C Lite, Radxa CM4 (RK3588S2), RK3576, Orange Pi 5, Jetson Orin Nano
+  </Accordion>
+</AccordionGroup>
+
+## Recommended boards
+
+### For development and testing
+
+**Radxa ROCK 5C Lite (16 GB)**
+
+This is the primary development board used by the ADOS team. The RK3582 SoC has 6 TOPS of NPU compute (RK3588 model zoo compatible), hardware H.264/H.265 encoding via the VPU, and 16 GB of RAM. The GPU is fused off, but that does not matter for a headless drone. Runs at Tier 4 with all features enabled.
+
+<Note>
+The ROCK 5C Lite uses a 31-pin 0.3mm Radxa-proprietary FPC connector for MIPI CSI, not the standard Raspberry Pi ribbon. Check camera compatibility before purchasing.
+</Note>
+
+### For ground station use
+
+**Raspberry Pi 4B (4 GB or 8 GB)**
+
+The Pi 4B is the recommended ground station board. It has proven WFB-ng RTL8812EU driver support, a 40-pin GPIO header for the OLED display and menu buttons, USB 2.0 ports for WiFi adapters, Gigabit Ethernet, and HDMI output for standalone kiosk mode. The board profile includes ground-station-specific GPIO button mappings.
+
+### For production OEM builds
+
+**Rockchip RK3576 (reference design)**
+
+The RK3576 is a production-oriented SoC with 6 TOPS NPU, H.265 4K60 encode, triple MIPI CSI inputs, native Mini-PCIe for 4G modems, and USB 3.0. A single board profile covers both air-unit and ground-station configurations.
+
+### For budget builds
+
+**Rockchip RV1126B**
+
+A good option for cost-sensitive builds. Hardware ISP, H.264/H.265 encode, and 2 TOPS NPU in a small package. Runs at Tier 2 with MAVLink proxy, REST API, and basic telemetry.
+
+## WiFi adapter for WFB-ng
+
+The video link requires a WiFi adapter that supports monitor mode. The recommended chipset is the **RTL8812EU** (also labeled RTL8812AU in some listings).
+
+| Adapter | Chipset | TX Power | Interface | Notes |
+|---------|---------|----------|-----------|-------|
+| LB-LINK BL-M8812EU2 | RTL8812EU | 29 dBm (800 mW) | USB 2.0 | Recommended. Small form factor (~25g) |
+
+The adapter runs in monitor mode on the 5.8 GHz band. It does not use standard WiFi. Instead, it broadcasts raw 802.11 frames using the WFB-ng protocol with forward error correction (FEC). This gives you HD video at ranges of 10-50+ km depending on antennas and line of sight.
+
+<Warning>
+The RTL8812EU requires a DKMS kernel driver. The install script handles this automatically on supported boards. If you are building a custom kernel, make sure `CONFIG_RTL8812EU` is enabled or install the out-of-tree driver.
+</Warning>
+
+## Adding a new board
+
+If your board is not in the list, the agent falls back to `generic-arm64` (Tier 2). To add full support:
+
+1. Create a YAML file at `src/ados/hal/boards/your-board.yaml`
+2. Define `name`, `vendor`, `soc`, `arch`, `model_patterns`, `default_tier`
+3. Add bus definitions (UART paths, I2C paths, USB ports)
+4. Specify video codec support (`hw_video_codecs`)
+5. List GPIO pins if applicable
+6. Submit a pull request
+
+See the [HAL and Tiers](/drone-agent/hal-and-tiers) page for the full YAML schema and detailed instructions.

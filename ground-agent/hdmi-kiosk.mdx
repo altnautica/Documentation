@@ -1,0 +1,119 @@
+---
+title: "HDMI Kiosk Mode"
+description: "Fly with a monitor and gamepad plugged directly into the ground station. No laptop needed."
+icon: "display"
+---
+
+# HDMI Kiosk Mode
+
+Plug a monitor and a gamepad into the ground station SBC. The agent launches Chromium in kiosk mode, rendering the Mission Control HUD route at full screen. You get video, telemetry overlays, and stick control without a laptop, phone, or internet connection.
+
+<Frame caption="HDMI kiosk showing the /hud route with video background, attitude indicator, and telemetry overlays">
+  <img src="/images/placeholder-hdmi-kiosk.png" alt="Ground station HDMI output showing fullscreen video with HUD overlay" />
+</Frame>
+
+## What you need
+
+- Micro-HDMI to HDMI cable (Pi 4B uses micro-HDMI)
+- Any HDMI monitor or display (7" field monitors work well)
+- USB or Bluetooth gamepad (Logitech F310, Xbox, PS4, PS5, 8BitDo)
+
+The ground station must have Mission Control installed locally. The install script handles this.
+
+## How it works
+
+When the ground station detects a display output at `/dev/dri/card0`, it starts three services:
+
+1. **`ados-mc-local`** serves a pre-built Mission Control at `http://localhost:4000`
+2. **`ados-kiosk`** launches Chromium inside the `cage` Wayland compositor, pointing at `http://localhost:4000/hud`
+3. **Chromium** renders the HUD route in fullscreen kiosk mode, with no address bar, no tabs, no browser chrome
+
+The entire display chain runs locally on the SBC. No network traffic, no external server. Video from WFB-ng flows through MediaMTX on localhost. Telemetry comes from the local MAVLink WebSocket.
+
+## The HUD layout
+
+The `/hud` route is a stripped-down flight view designed for fullscreen use:
+
+- **Full-frame video background** (WebRTC from the local MediaMTX)
+- **Top bar:** link RSSI, flight mode, battery percentage, altitude, speed, GPS satellite count
+- **Bottom bar:** crosshair, artificial horizon, heading tape
+- **Corner alerts:** failsafe indicators, home distance, connection health
+- No menus, no maps, no multi-drone fleet views
+
+This is the pilot-in-command view. For mission planning, configuration, and fleet management, use a laptop connected over WiFi or USB.
+
+## Performance on Pi 4B
+
+| Scenario | CPU usage | RAM usage |
+|----------|-----------|-----------|
+| HUD idle (no video) | 12% | 280 MB |
+| WebRTC 720p at 30 fps | 38% | 440 MB |
+| WebRTC 1080p at 30 fps | 62% | 520 MB |
+| WebRTC 1080p at 60 fps | 88% | 620 MB |
+
+<Tip>
+For the Pi 4B, 720p at 30 fps is the sweet spot for kiosk mode. It leaves enough CPU headroom for the WFB-ng receiver, MediaMTX, and the agent services. Use 1080p only if you have a 4 GB Pi.
+</Tip>
+
+## Gamepad input
+
+The Web Gamepad API in Chromium handles controller mapping. USB gamepads work immediately. Bluetooth gamepads need to be paired first.
+
+To pair a Bluetooth gamepad:
+
+1. Put the controller in pairing mode
+2. Use the OLED menu: navigate to Network > Bluetooth > Scan
+3. Select the controller from the list
+4. Press B3 (Select) to confirm
+
+Or pair through the setup webapp Display page from your phone.
+
+Once paired, the gamepad sends stick inputs at 50 Hz through the existing `MANUAL_CONTROL` MAVLink message path. The same code that handles gamepad input in the browser on your laptop handles it here.
+
+## Pilot-in-command (PIC)
+
+When the kiosk starts and a gamepad is connected, the kiosk automatically claims PIC. If a laptop or phone also connects, they are observers until PIC is explicitly transferred.
+
+PIC transfer is done through:
+- The Mission Control Hardware tab on a connected laptop (click "Take Control")
+- The OLED menu (B3 long-press to release PIC)
+
+If the kiosk client disconnects (monitor unplugged, gamepad dies), PIC auto-transfers to the next connected client with an active gamepad. If no client has a gamepad, the agent sends failsafe intent to the flight controller (hover or RTL, depending on FC configuration).
+
+## Display settings
+
+You can configure HDMI output from three places:
+
+- **OLED menu:** Display > HDMI Resolution
+- **Setup webapp:** Display page
+- **Mission Control Hardware tab:** Physical UI sub-view
+
+Available settings:
+- Resolution (auto-detect, 720p, 1080p)
+- Refresh rate (30 Hz, 60 Hz)
+- OLED brightness and auto-dim
+
+## Booting into kiosk
+
+The kiosk service uses `cage` as a minimal Wayland compositor. `cage` is designed for single-application kiosk use. It starts only when:
+
+1. A display output is detected (`/dev/dri/card0` exists)
+2. The ground-station profile is active
+3. The local Mission Control build is available
+
+If any of these conditions are not met, the kiosk service does not start. The OLED and WiFi AP still work normally.
+
+## Graceful degradation
+
+| Event | Behavior |
+|-------|----------|
+| Monitor unplugged mid-flight | Kiosk keeps running on virtual framebuffer. On re-plug, display returns in ~2 seconds |
+| Gamepad disconnected | PIC transfers to next client, or failsafe triggers |
+| Mission Control build missing | Chromium shows blank page, OLED shows error, agent runs normally |
+| No display output at boot | Kiosk service skips, no errors |
+
+## What is next
+
+- [Physical UI](/ground-agent/physical-ui) for the OLED and button system
+- [WiFi AP](/ground-agent/wifi-ap) to add laptop observers while flying on HDMI
+- [Setup and Pairing](/ground-agent/setup-and-pairing) for the first-time walkthrough

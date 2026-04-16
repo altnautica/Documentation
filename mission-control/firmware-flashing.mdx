@@ -1,0 +1,140 @@
+---
+title: "Firmware Flashing"
+description: "Flash ArduPilot, PX4, or Betaflight firmware over WebSerial."
+icon: "microchip"
+---
+
+Mission Control can flash firmware directly to your flight controller from the browser. No external tools needed. The firmware panel supports ArduPilot, PX4, and Betaflight with board auto-detection.
+
+<Frame caption="Firmware panel showing board info and flash progress">
+  <img src="/images/placeholder-firmware-flashing.png" alt="Firmware flashing interface with board detection and progress bar" />
+</Frame>
+
+## How It Works
+
+Firmware flashing uses the WebSerial API to communicate with the flight controller's bootloader. The process varies by firmware:
+
+- **ArduPilot and PX4:** The board enters DFU (Device Firmware Upgrade) mode, and the firmware binary is written over the serial connection.
+- **Betaflight:** The board enters DFU mode via MSP command or manual boot button, and firmware is flashed via the STM32 bootloader protocol.
+
+<Note>
+WebSerial is required for firmware flashing. This means Chrome 89+, Edge 89+, or another Chromium-based browser. Firefox and Safari do not support WebSerial.
+</Note>
+
+## Flashing ArduPilot
+
+<Steps>
+  <Step title="Connect your FC">
+    Plug in the flight controller via USB and connect in Mission Control.
+  </Step>
+  <Step title="Open the Firmware panel">
+    Navigate to Configure > Firmware in the sidebar.
+  </Step>
+  <Step title="View board info">
+    The panel shows the detected board name, current firmware version, and board ID. This information comes from the `AUTOPILOT_VERSION` MAVLink message.
+  </Step>
+  <Step title="Select firmware">
+    Choose the ArduPilot vehicle type (Copter, Plane, Rover, Sub) and version. Stable, beta, and development builds are available.
+  </Step>
+  <Step title="Flash">
+    Click "Flash Firmware." The board reboots into bootloader mode. The progress bar shows the upload status. Do not disconnect during flashing.
+  </Step>
+  <Step title="Reconnect">
+    After flashing, the board reboots with the new firmware. Reconnect and verify the version in the board info section.
+  </Step>
+</Steps>
+
+## Flashing PX4
+
+The PX4 section follows a similar flow:
+
+1. Connect the FC and open the Firmware panel.
+2. The PX4 section auto-detects PX4-compatible boards.
+3. Select the PX4 version (stable or development).
+4. Flash and wait for the progress bar to complete.
+5. Reconnect after reboot.
+
+## Flashing Betaflight
+
+Betaflight flashing has a few extra considerations:
+
+1. **Enter DFU mode:** Some boards require holding the boot button while plugging in USB. Others can enter DFU via an MSP command from the CLI panel.
+2. Select the Betaflight target that matches your board.
+3. Choose the firmware version.
+4. Flash the firmware binary.
+5. Reconnect after reboot.
+
+<Warning>
+Flashing the wrong firmware target can brick your flight controller. Always verify that the detected board matches the firmware target you select. If in doubt, check the board's documentation for the correct target name.
+</Warning>
+
+## Board Detection
+
+Mission Control auto-detects the connected board using multiple methods:
+
+| Method | Description |
+|--------|-------------|
+| MAVLink `AUTOPILOT_VERSION` | Board ID, firmware version, capabilities |
+| MSP `BOARD_INFO` | Betaflight board identifier string |
+| USB VID/PID | Vendor and product IDs from the WebSerial device info |
+
+The detected board is matched against a built-in database of board profiles. Each profile maps a board ID to its physical output layout, timer groups, and default settings.
+
+## Board Profiles
+
+Mission Control includes profiles for popular flight controllers. A board profile contains:
+
+- **Board name and ID** for auto-detection
+- **Output mapping:** Which physical pins map to which motor/servo outputs
+- **Timer groups:** STM32 timer assignments that determine which outputs share timers (affects DShot vs PWM mixing)
+- **Protocol support:** Which output protocols each timer group supports (PWM, DShot, or both)
+- **Notes:** Special outputs like solder pads, LED pads, or dedicated servo headers
+
+The Outputs panel uses the board profile to render a timer group diagram, showing which outputs can run DShot and which share timers.
+
+## Backup and Restore
+
+Before flashing, back up your current parameters:
+
+<Steps>
+  <Step title="Export parameters">
+    Go to the [Parameters panel](/mission-control/parameters) and click "Export." Save the `.param` file.
+  </Step>
+  <Step title="Flash new firmware">
+    Follow the flashing steps above.
+  </Step>
+  <Step title="Restore parameters">
+    After reconnecting with the new firmware, go to Parameters and click "Import." Load your saved `.param` file. Review the diff and apply.
+  </Step>
+</Steps>
+
+<Tip>
+Some parameters change names or meaning between firmware versions. The import diff view highlights these conflicts so you can resolve them manually.
+</Tip>
+
+## DFU Mode
+
+DFU (Device Firmware Upgrade) mode is a low-level bootloader state used for flashing. Different boards enter DFU differently:
+
+| Method | When to use |
+|--------|-------------|
+| **Software reboot to bootloader** | Most boards support this via MAVLink or MSP command. The firmware panel triggers it automatically. |
+| **Boot button** | Hold the boot/DFU button on the FC while plugging in USB. Useful when firmware is corrupted and cannot respond to commands. |
+| **Boot pads** | Some boards have boot pads that must be shorted while powering on. Check your board's documentation. |
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Board not detected">
+    Make sure the FC is powered and connected via USB. Try a different USB cable (data-capable, not charge-only). On Linux, check serial port permissions (`dialout` group).
+  </Accordion>
+  <Accordion title="Flash fails midway">
+    Do not unplug the board. Try again. If the firmware is corrupted, enter DFU mode manually (boot button method) and reflash. The bootloader is separate from the main firmware and is not overwritten.
+  </Accordion>
+  <Accordion title="Wrong board detected">
+    The auto-detection relies on board ID from the firmware. If you previously flashed the wrong target, the board ID may be incorrect. Use the manual board selection override to pick the correct target.
+  </Accordion>
+  <Accordion title="Parameters lost after flashing">
+    A major version upgrade (e.g., ArduPilot 4.4 to 4.5) may reset parameters. Always export your parameters before flashing. After flashing, import the backup and review the diff.
+  </Accordion>
+</AccordionGroup>

@@ -1,0 +1,311 @@
+---
+title: "Contributing"
+description: "How to contribute code, docs, and translations to ADOS."
+icon: "code-pull-request"
+---
+
+## Welcome
+
+ADOS is built in the open and we welcome contributions. Whether you are fixing a typo, reporting a bug, adding a feature, or translating the UI into your language, there is a way to help.
+
+This page covers the practical details: where to contribute, how to set up each repo, what the PR process looks like, and the code conventions we follow.
+
+## Where to Contribute
+
+ADOS has two main repositories. Both are on GitHub, both are GPLv3.
+
+<CardGroup cols={2}>
+  <Card title="ADOS Mission Control" icon="display" href="https://github.com/altnautica/ADOSMissionControl">
+    Browser-based GCS. TypeScript, Next.js 16, React 19.
+  </Card>
+  <Card title="ADOS Drone Agent" icon="microchip" href="https://github.com/altnautica/ADOSDroneAgent">
+    Companion computer software. Python 3.11+, FastAPI, Textual.
+  </Card>
+</CardGroup>
+
+The Ground Agent is part of the Drone Agent repo (it is the same codebase, activated by a `ground-station` profile).
+
+## Types of Contributions
+
+**Bug reports.** Found something broken? Open a GitHub issue with steps to reproduce, expected behavior, actual behavior, and your environment (OS, browser, FC firmware, agent version). Screenshots or logs help a lot.
+
+**Bug fixes.** Small fixes (typos, off-by-one errors, missing null checks) can go straight to a PR. Bigger fixes should have an issue first so we can discuss the approach.
+
+**Features.** Open an issue first to discuss the feature. We want to make sure it fits the project's direction before you write code. Small features can be a single PR. Larger features should be broken into smaller PRs.
+
+**Documentation.** This docs site, README files, code comments, JSDoc/docstrings. Docs PRs are always welcome and reviewed quickly.
+
+**Translations.** Mission Control supports 16 languages. Translation files are JSON in the `locales/` directory. Adding missing keys or improving existing translations is a great first contribution.
+
+**Tests.** Test coverage is an area where we can always improve. Vitest for Mission Control, pytest for the Drone Agent.
+
+## Setting Up Mission Control
+
+### Prerequisites
+
+- Node.js 18+ (LTS)
+- npm 9+
+- Git
+
+### Setup
+
+```bash
+# Clone the repo
+git clone https://github.com/altnautica/ADOSMissionControl.git
+cd ADOSMissionControl
+
+# Install dependencies
+npm install
+
+# Start in demo mode (no hardware needed)
+npm run demo
+
+# Open http://localhost:4000
+```
+
+### Useful Commands
+
+```bash
+# Development server (no demo data)
+npm run dev
+
+# Type checking
+npx tsc --noEmit
+
+# Linting
+npm run lint
+
+# Run tests
+npx vitest
+
+# Build for production
+npm run build
+```
+
+### Project Structure
+
+```
+src/
+├── app/              # Next.js App Router pages and layouts
+├── components/       # React components, organized by feature
+│   ├── command/      # Agent management (Command tab)
+│   ├── configure/    # FC configuration panels (36+)
+│   ├── flight/       # Flight control UI
+│   ├── hardware/     # Ground station Hardware tab
+│   ├── mission/      # Mission planning tools
+│   ├── simulate/     # Mission simulation
+│   └── ui/           # Shared UI primitives
+├── hooks/            # Custom React hooks
+├── lib/
+│   ├── protocol/     # MAVLink and MSP protocol implementation
+│   │   ├── adapters/ # Firmware-specific adapters
+│   │   ├── decoders/ # Binary message decoders
+│   │   └── encoders/ # Binary message encoders
+│   ├── video/        # WebRTC client, transport cascade
+│   └── mission/      # Mission file parsers, pattern generators
+├── stores/           # Zustand state stores (27 total)
+└── locales/          # i18n translation files (16 languages)
+```
+
+### Key Architecture Concepts
+
+**Protocol adapters.** Each firmware (ArduPilot, PX4, Betaflight) has its own adapter that implements the `DroneProtocol` TypeScript interface. The adapters handle the differences between MAVLink and MSP, between ArduPilot parameter names and PX4 parameter names, and between different capability sets. New firmware support means writing a new adapter.
+
+**Zustand stores.** All state lives in Zustand stores. Components subscribe to store slices via selectors. Stores are independent. The telemetry store uses ring buffers (300 samples) for time-series data.
+
+**Pattern generators.** Mission patterns (survey grid, spiral, corridor, etc.) are pure functions. They take configuration in and return waypoints out. No React, no side effects. You can add new patterns by writing a generator function and registering it in the pattern registry.
+
+## Setting Up the Drone Agent
+
+### Prerequisites
+
+- Python 3.11+
+- pip
+- Git
+- A Linux SBC (for full testing) or macOS/Linux desktop (for development)
+
+### Setup
+
+```bash
+# Clone the repo
+git clone https://github.com/altnautica/ADOSDroneAgent.git
+cd ADOSDroneAgent
+
+# Create a virtual environment
+python3 -m venv .venv
+source .venv/bin/activate
+
+# Install in development mode
+pip install -e ".[dev]"
+
+# Run the CLI
+ados --help
+
+# Run the TUI
+ados tui
+
+# Run the API server (development mode)
+ados api --dev
+```
+
+### Project Structure
+
+```
+src/ados/
+├── __init__.py          # Version (single source of truth)
+├── cli.py               # Click CLI (25 commands)
+├── tui/                 # Textual TUI dashboard
+├── api/                 # FastAPI REST API
+├── services/
+│   ├── mavlink/         # MAVLink proxy and FC communication
+│   ├── video/           # Video pipeline (ffmpeg, mediamtx)
+│   ├── cloud/           # MQTT cloud relay
+│   ├── health/          # System health monitoring
+│   ├── wfb/             # WFB-ng TX/RX management
+│   └── supervisor/      # Process supervisor
+├── hal/
+│   ├── boards/          # Board profile YAMLs (17 profiles)
+│   └── detect.py        # Hardware auto-detection
+├── config/              # Configuration management
+└── scripts/
+    └── install.sh       # One-line installer
+```
+
+### Key Architecture Concepts
+
+**systemd services.** In production, each agent service (mavlink, api, video, cloud, health, wfb) runs as a separate systemd unit. The supervisor service manages them. For development, you can run individual services directly.
+
+**HAL board profiles.** Each supported SBC has a YAML profile (`src/ados/hal/boards/*.yaml`) that describes its hardware: serial ports, camera paths, GPIO pins, capabilities. The agent reads the profile at boot and configures itself accordingly.
+
+**IPC via Unix sockets.** Agent services communicate through Unix domain sockets at `/run/ados/`. The MAVLink service writes parsed telemetry to `/run/ados/mavlink.sock`. Other services read from it.
+
+## Pull Request Guidelines
+
+### Before Submitting
+
+1. **Check existing issues.** Someone may already be working on this.
+2. **For features, open an issue first.** Discuss the approach before writing code.
+3. **Keep PRs focused.** One feature or fix per PR. If your PR touches 50 files across 5 features, split it.
+4. **Test your changes.** Run the linter, type checker, and tests. If you add a feature, add tests.
+
+### Branch Naming
+
+```
+fix/short-description      # Bug fixes
+feat/short-description     # New features
+docs/short-description     # Documentation
+i18n/short-description     # Translations
+refactor/short-description # Code cleanup
+```
+
+### Commit Messages
+
+Write clear, short commit messages. Describe what changed and why.
+
+```
+feat: add corridor scan pattern generator
+
+fix: prevent null reference in telemetry store when FC disconnects
+
+docs: add gamepad setup instructions to flight control page
+
+i18n: add missing Hindi translations for configure panels
+```
+
+Do not include internal references, issue trackers from other projects, or partner names in commit messages.
+
+### The Review Process
+
+1. Push your branch and open a PR against `main`
+2. Fill in the PR template (summary, test plan, screenshots if UI changes)
+3. A maintainer will review within a few days
+4. Address review feedback
+5. Once approved, the PR is merged
+
+### Code Style
+
+**Mission Control (TypeScript):**
+- TypeScript strict mode (`noEmit` type check must pass)
+- Functional React components with hooks
+- Zustand for state (not Redux, not Context for data)
+- Tailwind CSS for styling
+- No `any` types without a comment explaining why
+
+**Drone Agent (Python):**
+- Python 3.11+ features are fine (match statements, `|` union types, etc.)
+- Type hints on all public functions
+- structlog for logging
+- Pydantic for config and API models
+- Black for formatting (if configured)
+
+## Translation Guide
+
+Mission Control supports 16 languages. Translation files live at `src/locales/<lang>.json`.
+
+### Current Languages
+
+| Code | Language | Status |
+|------|----------|--------|
+| `en` | English | Complete (reference) |
+| `de` | German | Partial |
+| `es` | Spanish | Partial |
+| `fr` | French | Partial |
+| `gu` | Gujarati | Partial |
+| `hi` | Hindi | Partial |
+| `id` | Indonesian | Partial |
+| `ja` | Japanese | Partial |
+| `kn` | Kannada | Partial |
+| `ko` | Korean | Partial |
+| `mr` | Marathi | Partial |
+| `pa` | Punjabi | Partial |
+| `pt` | Portuguese | Partial |
+| `ta` | Tamil | Partial |
+| `te` | Telugu | Partial |
+| `zh` | Chinese (Simplified) | Partial |
+
+### How to Contribute Translations
+
+1. Open `src/locales/en.json` (the reference file)
+2. Open the target language file (e.g., `src/locales/hi.json`)
+3. Find keys that are missing or have English placeholder values
+4. Translate them
+5. Submit a PR
+
+Keep these in mind:
+- Drone terminology often does not have direct translations. Use the term pilots in your language actually use. For example, "throttle" in Hindi might stay as "throttle" rather than a literal Hindi translation.
+- Keep strings short. UI labels have limited space.
+- Do not translate parameter names (like `MOT_SPIN_ARM`). Those are ArduPilot identifiers.
+
+### Adding a New Language
+
+1. Copy `src/locales/en.json` to `src/locales/<code>.json`
+2. Translate all keys
+3. Add the language to the locale registry in `src/lib/i18n.ts`
+4. Submit a PR
+
+## Reporting Security Issues
+
+If you find a security vulnerability, do **not** open a public issue. Email [team@altnautica.com](mailto:team@altnautica.com) with details. We will work with you on a fix and coordinated disclosure.
+
+## Code of Conduct
+
+Be respectful. Be constructive. Help each other learn. We do not tolerate harassment, discrimination, or personal attacks. If you see bad behavior, report it to [team@altnautica.com](mailto:team@altnautica.com).
+
+## Need Help?
+
+If you want to contribute but are not sure where to start:
+
+- Look for issues labeled `good first issue` on GitHub
+- Ask in the `#contributing` channel on [Discord](https://discord.gg/uxbvuD4d5q)
+- Read the [Architecture](/architecture/system-overview) section to understand the codebase
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Architecture Overview" icon="sitemap" href="/architecture/system-overview">
+    Understand the system architecture before making changes.
+  </Card>
+  <Card title="Community" icon="users" href="/getting-started/community">
+    Join the Discord and connect with other contributors.
+  </Card>
+</CardGroup>

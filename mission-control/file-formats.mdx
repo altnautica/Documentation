@@ -1,0 +1,162 @@
+---
+title: "File Formats"
+description: "Import and export missions in .waypoints, .plan, KML, KMZ, CSV, and GPX."
+icon: "file-export"
+---
+
+Mission Control supports multiple file formats for importing and exporting missions. This lets you share missions between different GCS applications, convert data for GIS tools, or back up your plans.
+
+## Supported Formats
+
+| Format | Import | Export | Description |
+|--------|--------|--------|-------------|
+| `.waypoints` | Yes | Yes | ArduPilot standard format. One waypoint per line. |
+| `.plan` | Yes | Yes | QGroundControl JSON format. Includes waypoints, geofences, and rally points. |
+| KML | Yes | Yes | Keyhole Markup Language. Used by Google Earth. |
+| KMZ | Yes | Yes | Compressed KML (zipped). |
+| CSV | Yes | Yes | Comma-separated values. One waypoint per row. |
+| GPX | No | Yes | GPS Exchange format. Compatible with many GPS tools. |
+
+## .waypoints Format
+
+The ArduPilot `.waypoints` format is a plain text file with one mission item per line. It is the native format used by Mission Planner and ArduPilot SITL.
+
+```
+QGC WPL 110
+0	1	0	16	0	0	0	0	-35.363262	149.165237	584.000000	1
+1	0	3	16	0.00000000	0.00000000	0.00000000	0.00000000	-35.361540	149.164475	100.000000	1
+2	0	3	16	0.00000000	0.00000000	0.00000000	0.00000000	-35.360068	149.168137	100.000000	1
+```
+
+Each line has the fields: sequence, current, frame, command, param1-4, latitude, longitude, altitude, autocontinue.
+
+## .plan Format
+
+The QGroundControl `.plan` format is a JSON file that can contain waypoints, geofences, and rally points in a single file.
+
+```json
+{
+  "fileType": "Plan",
+  "geoFence": { ... },
+  "groundStation": "ADOS Mission Control",
+  "mission": {
+    "items": [ ... ],
+    "plannedHomePosition": { ... }
+  },
+  "rallyPoints": { ... },
+  "version": 1
+}
+```
+
+This format preserves the most information, including complex mission items, fence definitions, and rally points.
+
+## KML / KMZ
+
+KML (Keyhole Markup Language) is an XML format used by Google Earth and many GIS tools. Mission Control can import KML files as waypoint paths or polygon boundaries.
+
+**Import behavior:**
+- `<Placemark>` with `<Point>` elements become waypoints
+- `<Placemark>` with `<LineString>` elements become a connected waypoint path
+- `<Placemark>` with `<Polygon>` elements become boundary polygons for pattern generators
+
+**Export behavior:**
+- Waypoints are exported as a `<LineString>` with `<Placemark>` markers
+- Altitude mode is set to `relativeToGround`
+
+KMZ files are ZIP-compressed KML. Mission Control handles the compression and decompression automatically.
+
+<Warning>
+KML uses longitude-latitude order (`lon,lat,alt`), while Mission Control uses latitude-longitude internally. The parser handles this conversion, but be aware of the difference if you edit KML files by hand.
+</Warning>
+
+## CSV
+
+A simple spreadsheet-compatible format with one waypoint per row.
+
+**Columns:**
+```
+seq, command, frame, lat, lon, alt, param1, param2, param3, param4
+```
+
+**Import:**
+- The CSV handler detects the column layout from the header row
+- Missing columns use default values
+- Coordinates must be in decimal degrees
+
+**Export:**
+- All waypoints are written with headers
+- Compatible with Excel, Google Sheets, and any CSV tool
+
+## GPX
+
+GPX (GPS Exchange Format) is an XML format widely used by hiking, cycling, and outdoor navigation apps.
+
+**Export only.** Mission Control exports the flight plan as a GPX track with waypoints. This is useful for visualizing your planned route in GPS tools or on hiking apps.
+
+## Parameter Files
+
+Mission Control also handles FC parameter files through a separate flow:
+
+| Format | Description |
+|--------|-------------|
+| `.param` | ArduPilot parameter file (name=value pairs) |
+| `.params` | Alternative parameter extension |
+
+These are used in the [Parameters](/mission-control/parameters) panel for importing and exporting flight controller configurations, not mission waypoints.
+
+## Plan Library
+
+The Plan Library stores missions locally in your browser (IndexedDB). You can:
+
+- **Save** any mission to the library with a name and description
+- **Load** a saved mission to replace the current plan
+- **Delete** missions you no longer need
+- **Browse** saved missions with preview thumbnails
+
+The library persists across browser sessions. It is local to your browser and not synced to the cloud by default.
+
+<Tip>
+Export important missions to a file as a backup. Browser storage can be cleared by the user or the browser itself.
+</Tip>
+
+## KML Overlays
+
+In addition to importing KML as waypoints, you can load KML/KMZ files as map overlays. This is useful for:
+
+- Visualizing property boundaries
+- Showing restricted airspace shapes
+- Overlaying survey area outlines from other tools
+- Displaying reference paths from previous flights
+
+Overlays appear on the map but do not become part of the mission. They serve as visual references while planning.
+
+## Importing a Mission
+
+<Steps>
+  <Step title="Open the Plan tab">
+    Navigate to the Plan tab.
+  </Step>
+  <Step title="Click Import">
+    Use the mission actions menu (or drag and drop a file onto the map).
+  </Step>
+  <Step title="Select the file">
+    Choose a `.waypoints`, `.plan`, `.kml`, `.kmz`, or `.csv` file from your computer.
+  </Step>
+  <Step title="Review the imported mission">
+    The waypoints appear on the map. Review and edit if needed before uploading to the FC.
+  </Step>
+</Steps>
+
+## Exporting a Mission
+
+<Steps>
+  <Step title="Create or load a mission">
+    Make sure you have waypoints in the planner.
+  </Step>
+  <Step title="Click Export">
+    Open the mission actions menu and select the export format.
+  </Step>
+  <Step title="Save the file">
+    The browser downloads the file. For KMZ, a compressed archive is generated automatically.
+  </Step>
+</Steps>

@@ -1,0 +1,158 @@
+---
+title: "Pattern Generators"
+description: "Automated flight patterns for survey, orbit, corridor, SAR, structure scan, and landings."
+icon: "vector-polygon"
+---
+
+Pattern generators create waypoint sequences automatically from a boundary polygon and configuration parameters. Draw a shape on the map, pick a pattern type, adjust the settings, and apply the generated waypoints to your mission.
+
+<Frame caption="Survey pattern generated from a polygon boundary with GSD calculator">
+  <img src="/images/placeholder-pattern-generators.png" alt="Survey pattern showing parallel lines inside a polygon boundary" />
+</Frame>
+
+## How It Works
+
+<Steps>
+  <Step title="Draw a boundary">
+    Use the polygon or circle tool from the map toolbar to draw the area you want to cover.
+  </Step>
+  <Step title="Open the Pattern Editor">
+    With the boundary selected, click "Generate Pattern" in the toolbar. The Pattern Editor panel opens on the right.
+  </Step>
+  <Step title="Choose a pattern type">
+    Select from the available patterns: Survey, Orbit, Corridor, Structure Scan, Expanding Square, Sector Search, or Parallel Track.
+  </Step>
+  <Step title="Configure parameters">
+    Each pattern has specific settings (spacing, altitude, overlap, angle, etc.). Adjust them and see the preview update on the map in real time.
+  </Step>
+  <Step title="Apply to mission">
+    Click "Apply" to add the generated waypoints to your mission. The pattern becomes part of your waypoint list.
+  </Step>
+</Steps>
+
+## Available Patterns
+
+### Survey
+
+Generates parallel flight lines (lawn-mower pattern) to cover an area. This is the standard pattern for photogrammetry, mapping, and crop monitoring.
+
+**Configuration:**
+| Parameter | Description |
+|-----------|-------------|
+| Line spacing | Distance between parallel lines (meters) |
+| Altitude | Flight altitude (meters AGL) |
+| Angle | Direction of the survey lines (degrees) |
+| Overshoot | Extra distance past the boundary before turning |
+| Front overlap | Percentage of image overlap along the flight line |
+| Side overlap | Percentage of overlap between adjacent lines |
+| Camera | Select a camera profile for GSD calculation |
+
+<Tip>
+The GSD calculator automatically computes Ground Sample Distance based on your camera, altitude, and overlap settings. See the GSD section below.
+</Tip>
+
+### Orbit
+
+Generates a circular flight path around a center point. Use this for inspection, videography, or point-of-interest observation.
+
+**Configuration:**
+| Parameter | Description |
+|-----------|-------------|
+| Radius | Distance from center (meters) |
+| Altitude | Flight altitude (meters AGL) |
+| Points | Number of waypoints around the circle |
+| Direction | Clockwise or counter-clockwise |
+| Start angle | Where on the circle to begin (degrees) |
+
+### Corridor
+
+Generates a path that follows a corridor (road, pipeline, power line) with parallel lines on either side for coverage.
+
+**Configuration:**
+| Parameter | Description |
+|-----------|-------------|
+| Width | Corridor width to cover (meters) |
+| Altitude | Flight altitude (meters AGL) |
+| Spacing | Distance between parallel passes |
+| Overshoot | Extension beyond corridor endpoints |
+
+### Structure Scan
+
+Generates a multi-altitude orbit for scanning a vertical structure (building, tower, cliff). The drone circles at several altitudes to capture the entire surface.
+
+**Configuration:**
+| Parameter | Description |
+|-----------|-------------|
+| Radius | Distance from the structure (meters) |
+| Bottom altitude | Lowest orbit altitude |
+| Top altitude | Highest orbit altitude |
+| Layers | Number of vertical orbits |
+| Points per layer | Waypoints per orbit |
+| Camera angle | Gimbal pitch toward the structure |
+
+### SAR Patterns
+
+Three search-and-rescue patterns for covering an area systematically:
+
+<Tabs>
+  <Tab title="Expanding Square">
+    Starts at the center (last known position) and spirals outward in an expanding square. Best when the target's probable position is well known.
+
+    **Parameters:** Start point, leg length, spacing, altitude, expansion factor.
+  </Tab>
+  <Tab title="Sector Search">
+    Divides the area into pie-slice sectors searched one at a time. Good for coastal or river bank searches.
+
+    **Parameters:** Center point, radius, number of sectors, altitude, sweep angle.
+  </Tab>
+  <Tab title="Parallel Track">
+    Covers a rectangular area with parallel lines, similar to survey but optimized for visual search. Lines are closer together for thorough coverage.
+
+    **Parameters:** Area boundary, track spacing, altitude, search direction.
+  </Tab>
+</Tabs>
+
+### Landing Generators
+
+Two specialized patterns for approach and landing:
+
+- **Fixed-Wing Landing:** Generates a landing approach with configurable glide slope, final approach altitude, and runway alignment.
+- **VTOL Landing:** Generates a VTOL transition and descent pattern with configurable transition altitude and descent point.
+
+## GSD Calculator
+
+The Ground Sample Distance (GSD) calculator helps you determine the right altitude and line spacing for photogrammetry missions.
+
+**Inputs:**
+- Camera sensor dimensions (width and height in mm)
+- Focal length (mm)
+- Image resolution (width and height in pixels)
+- Flight altitude (meters AGL)
+
+**Outputs:**
+- GSD (cm/pixel)
+- Image footprint on the ground (width and height in meters)
+- Required line spacing for desired overlap
+- Estimated photo count for the survey area
+
+Several camera profiles are built in (common drone cameras), or you can enter custom sensor specs.
+
+## Pattern Preview
+
+As you adjust parameters, the map shows a live preview of the generated pattern:
+
+- Waypoints are displayed as numbered markers
+- Flight lines connect the waypoints
+- The boundary polygon remains visible
+- Statistics (total distance, number of waypoints, estimated time) update in real time
+
+The preview is non-destructive. Nothing changes in your mission until you click "Apply."
+
+## Pure Functions
+
+All pattern generators are implemented as pure functions. They take a configuration object and return a list of waypoints with statistics. No side effects, no store access. This makes them easy to test and compose.
+
+```
+Input: { boundary, altitude, spacing, angle, ... }
+Output: { waypoints: [...], stats: { distance, time, photos, ... } }
+```

@@ -1,0 +1,200 @@
+---
+title: "Text Commands"
+description: "Tello-style text commands for simple drone control and education use."
+icon: "message-lines"
+---
+
+# Text Commands
+
+The agent supports Tello-style text commands for simple drone control. Send a plain text string, get a plain text response. No SDK, no MAVLink knowledge, no protocol libraries needed.
+
+This is the easiest way to control the drone programmatically. It is designed for education, quick prototyping, and beginner-friendly automation.
+
+## How it works
+
+The text command engine listens on two ports:
+
+| Protocol | Port | Config key |
+|----------|------|-----------|
+| UDP | 8889 | `scripting.text_commands.udp_port` |
+| WebSocket | 8890 | `scripting.text_commands.websocket_port` |
+
+Send a command string, get a response string. UDP is fire-and-forget (responses come back to the sender's address). WebSocket is bidirectional.
+
+```yaml
+scripting:
+  text_commands:
+    enabled: true
+    udp_port: 8889
+    websocket_port: 8890
+```
+
+## Sending commands
+
+### From the CLI
+
+```bash
+ados send "takeoff"
+# Response: ok
+
+ados send "forward 200"
+# Response: ok
+
+ados send "land"
+# Response: ok
+```
+
+### From Python (UDP)
+
+```python
+import socket
+
+sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+drone = ("192.168.4.1", 8889)  # Drone IP and port
+
+def send(cmd):
+    sock.sendto(cmd.encode(), drone)
+    resp, _ = sock.recvfrom(1024)
+    return resp.decode()
+
+print(send("takeoff"))    # "ok"
+print(send("forward 100"))  # "ok"
+print(send("cw 90"))      # "ok"
+print(send("land"))       # "ok"
+```
+
+### From the REST API
+
+```bash
+curl -X POST http://localhost:8080/api/scripting/command \
+  -H "X-ADOS-Key: $KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"command": "takeoff"}'
+```
+
+### From a web browser (WebSocket)
+
+```javascript
+const ws = new WebSocket('ws://192.168.4.1:8890');
+
+ws.onopen = () => {
+  ws.send('takeoff');
+};
+
+ws.onmessage = (event) => {
+  console.log('Response:', event.data);
+};
+```
+
+## Command reference
+
+### Takeoff and landing
+
+| Command | Description | Example |
+|---------|-------------|---------|
+| `takeoff` | Take off to default altitude (2m) | `takeoff` |
+| `takeoff <height>` | Take off to specified height in cm | `takeoff 150` |
+| `land` | Land at current position | `land` |
+
+### Movement
+
+All distances are in centimeters. The drone must be airborne.
+
+| Command | Description | Range |
+|---------|-------------|-------|
+| `forward <cm>` | Fly forward | 20-500 |
+| `back <cm>` | Fly backward | 20-500 |
+| `left <cm>` | Fly left | 20-500 |
+| `right <cm>` | Fly right | 20-500 |
+| `up <cm>` | Fly up | 20-500 |
+| `down <cm>` | Fly down | 20-500 |
+
+### Rotation
+
+| Command | Description | Range |
+|---------|-------------|-------|
+| `cw <degrees>` | Rotate clockwise | 1-360 |
+| `ccw <degrees>` | Rotate counter-clockwise | 1-360 |
+
+### Queries
+
+| Command | Returns |
+|---------|---------|
+| `battery?` | Battery percentage (e.g., "85") |
+| `speed?` | Current speed in cm/s |
+| `time?` | Flight time in seconds |
+| `height?` | Current height in cm |
+| `temp?` | CPU temperature |
+| `attitude?` | Roll, pitch, yaw |
+| `gps?` | Latitude, longitude, fix type |
+
+### Control
+
+| Command | Description |
+|---------|-------------|
+| `speed <cm/s>` | Set movement speed (10-100 cm/s) |
+| `stop` | Hover in place (cancel current movement) |
+| `emergency` | Emergency motor stop (immediate disarm) |
+
+## Responses
+
+Every command returns one of:
+
+| Response | Meaning |
+|----------|---------|
+| `ok` | Command accepted and executing |
+| `error` | Command failed (followed by reason) |
+| A value | Response to a query (e.g., "85" for battery) |
+
+Error examples:
+
+```
+error: not armed
+error: parameter out of range
+error: no GPS fix
+error: battery too low
+```
+
+## Safety
+
+Text commands pass through the same safety validator as the Python SDK. The validator checks pre-arm conditions, GPS fix, battery level, and geofence before allowing flight commands. The `emergency` command bypasses all safety checks and disarms immediately.
+
+<Warning>
+The `emergency` command kills the motors instantly, regardless of altitude. The drone will fall. Use it only as a last resort.
+</Warning>
+
+## Education use
+
+Text commands are inspired by the DJI Tello SDK, which is widely used in programming education (Scratch, Python courses, robotics classes). The same code patterns work:
+
+```python
+# Works with both Tello and ADOS
+import socket
+import time
+
+sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+drone = ("192.168.4.1", 8889)
+
+def send(cmd):
+    sock.sendto(cmd.encode(), drone)
+    resp, _ = sock.recvfrom(1024)
+    return resp.decode()
+
+send("takeoff")
+time.sleep(3)
+
+# Fly a square
+for _ in range(4):
+    send("forward 100")
+    time.sleep(2)
+    send("cw 90")
+    time.sleep(1)
+
+send("land")
+```
+
+The interface is deliberately simple. No imports beyond `socket` and `time`. No authentication required on the UDP port (secured by network access). Students can focus on control logic instead of protocol boilerplate.
+
+<Tip>
+For classroom setups, run the agent in demo mode (`ados demo`) on a laptop. Students send text commands over localhost UDP. No real drone needed for the programming exercises.
+</Tip>

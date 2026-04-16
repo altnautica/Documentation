@@ -1,0 +1,129 @@
+---
+title: "Hardware Tab"
+description: "Manage your ground station from Mission Control's Hardware tab."
+icon: "gear"
+---
+
+# Hardware Tab in Mission Control
+
+The Hardware tab is a top-level tab in ADOS Mission Control that gives you full control over the ground station from your browser. It covers everything the OLED menu and setup webapp can do, plus advanced features like drag-and-drop uplink priority, button remapping, and recording management.
+
+<Frame caption="The Hardware tab Overview sub-view showing ground station status, connected clients, and quick actions">
+  <img src="/images/placeholder-hardware-tab.png" alt="Mission Control Hardware tab showing ground station overview with link health and connected clients" />
+</Frame>
+
+## Where to find it
+
+The Hardware tab sits in the top navigation bar of Mission Control, after **Command** and before **Plan**. It appears when a ground station is detected on the network (via mDNS or manual IP entry).
+
+## Sub-views
+
+The Hardware tab is organized into five sub-views, each covering a different aspect of the ground station.
+
+### 1. Overview
+
+The landing page for the Hardware tab. Shows at a glance:
+
+- **Ground station card:** device ID, firmware version, profile, board type, uptime
+- **Link health:** WFB-ng RSSI, bitrate, FEC recovered and lost packets, channel
+- **Connected clients:** list of all devices connected (HDMI kiosk, laptops, phones) with IP, connection type, and PIC badge
+- **Recording state:** whether video recording is active, file name, duration
+- **Quick actions:** buttons for "Take PIC", "Start Recording", "Reboot Ground Station"
+
+If multiple ground stations are connected (multi-GS fleet), each gets its own card.
+
+### 2. Network
+
+Full network configuration:
+
+- **WiFi AP row:** toggle on/off, edit SSID, reveal passphrase, select band
+- **WiFi client row:** scan for networks, join, forget saved networks
+- **Ethernet row:** status, DHCP lease info, manual IP entry
+- **4G modem row:** enable/disable, APN configuration, signal strength bars, data used this month, cap setting, throttle status indicator
+- **Uplink priority:** drag-and-drop reorder list with a visible indicator showing which uplink is currently active
+- **Share uplink toggle:** advanced option to NAT AP clients through the uplink
+
+### 3. WFB-ng Radio
+
+Radio link configuration and monitoring:
+
+- **Channel picker:** select from channels 1-165 across 2.4 GHz and 5 GHz bands
+- **FEC presets:** low-latency, balanced, long-range (each adjusts FEC ratio and bitrate)
+- **Antenna diversity display:** for Pro tier boards with two RTL8812EU adapters, shows per-antenna RSSI and which antenna is currently selected
+- **Recording toggle:** start and stop video recording on the ground station SD card
+- **Pair with drone:** initiate pairing workflow with key entry and confirmation on both sides
+
+### 4. Physical UI
+
+OLED and button configuration:
+
+- **OLED brightness slider:** 0-100%, with auto-dim toggle
+- **Screen cycle time:** how long each status screen displays (default 5 seconds)
+- **Screen enable/reorder:** choose which of the 5 status screens to show and in what order
+- **Button remap matrix:** a 4x2 grid (4 buttons, 2 layers: short press and long press) where you can assign any action to any button/layer combination
+- **Factory reset:** button that opens a typed-phrase confirmation dialog
+
+### 5. Storage and Logs
+
+Recorded files and diagnostics:
+
+- **SD usage bar:** visual indicator of how much storage is used
+- **Recorded files list:** filename, duration, file size, and a download button for each recording
+- **Log download:** select a time range and download agent logs as a zip file
+- **Auto-clean policy:** toggle "delete recordings older than 30 days" to free SD card space automatically
+
+## Data flow
+
+The Hardware tab communicates with the ground station through two channels:
+
+1. **REST API** at `http://<ground-node>:8080/api/v1/ground-station/*` for reads and writes (config changes, pair commands, reboot)
+2. **WebSocket** at `ws://<ground-node>:8080/api/v1/ground-station/events` for live updates (RSSI changes, uplink flaps, client connects and disconnects)
+
+For ground stations on the local network (WiFi AP, USB tether, Ethernet), the browser connects directly. For cloud-relayed ground stations, the data routes through the Convex proxy.
+
+## State management
+
+A Zustand store (`groundStationStore`) holds the state for all connected ground stations. Key behaviors:
+
+- One entry per ground station, keyed by device ID
+- Status polling at 2 Hz by default
+- If a ground station goes offline, the last-known state is displayed with a "stale" indicator and greyed-out UI
+- Reconnection is automatic when the ground station comes back
+
+## Live updates
+
+The WebSocket connection delivers real-time events:
+
+| Event | Content |
+|-------|---------|
+| `link_update` | RSSI, bitrate, FEC stats (every 500 ms) |
+| `client_connected` | New device IP, connection type |
+| `client_disconnected` | Device left |
+| `pic_changed` | New pilot-in-command client |
+| `uplink_failover` | Old uplink, new uplink, reason |
+| `recording_started` | Filename, timestamp |
+| `recording_stopped` | Filename, duration, size |
+| `data_cap_threshold` | Percentage reached (80%, 95%, 100%) |
+
+## Future sub-views
+
+The Hardware tab is designed to grow. These sub-views will appear in future releases as their respective products ship:
+
+| Sub-view | Covers | Status |
+|----------|--------|--------|
+| Game Controllers | Gamepad dead zones, expo curves, rebinds, profile storage | Planned |
+| ADOS Edge RC | Model selection, rates, mixer, ELRS backpack config, firmware flash | Planned |
+| Android RC | OEM controller config, expansion accessories | Planned |
+| Peripherals | USB and Bluetooth device list, peripheral health | Planned |
+
+All future peripherals land in the same tab. One place for everything you plug in or hold.
+
+## Using Hardware tab offline
+
+The Hardware tab works fully offline as long as you can reach the ground station over the local network. No Convex connection is needed. Cloud features (remote access, fleet view) are additive.
+
+## What is next
+
+- [Physical UI](/ground-agent/physical-ui) for OLED and button details
+- [Uplink Matrix](/ground-agent/uplink-matrix) for network configuration
+- [Troubleshooting](/ground-agent/troubleshooting) for common issues

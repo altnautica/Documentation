@@ -1,0 +1,124 @@
+---
+title: "Android Client"
+description: "Use your Android phone or tablet as a ground station display."
+icon: "mobile"
+---
+
+# Android Client
+
+Your Android phone or tablet is a first-class client for the ground station. Join the WiFi hotspot or plug in a USB-C cable, and you have live video and telemetry on your phone. Use the ADOS Android app for the best experience, or Chrome for a quick connection.
+
+## Three connection paths
+
+| Path | How it works | Latency | When to use |
+|------|-------------|---------|-------------|
+| WiFi AP | Phone joins `ADOS-GS-XXXX`, opens app or browser | 50-80 ms (app), 80-120 ms (browser) | Primary field use, no cables |
+| USB-C tether | Cable from phone to ground station, CDC-NCM Ethernet | 40-70 ms | Wired reliability, phone charges too |
+| Cloud relay | Both ends on separate internet, routed through Altnautica cloud | 150-300 ms | Remote observer, not pilot |
+
+## WiFi AP connection
+
+<Steps>
+  <Step title="Join the hotspot">
+    Open your phone WiFi settings. Look for `ADOS-GS-XXXX`. Enter the passphrase printed on the ground station case (default for bench builds: `ados-ground`).
+  </Step>
+  <Step title="Handle the no-internet warning">
+    Android will show a "No internet" notification because the ground station is a local network. Tap "Stay connected" or "Use without internet." The ground station is working, it just does not provide internet access.
+  </Step>
+  <Step title="Open the app or browser">
+    **ADOS Android app:** The app discovers the ground station automatically via mDNS. Video and telemetry start within 2-3 seconds.
+
+    **Chrome browser:** Navigate to `http://192.168.4.1:4000` (Mission Control) or `http://setup.ados.local/` (setup webapp).
+  </Step>
+  <Step title="Fly">
+    Pilot with touch controls (virtual sticks overlay) or pair a Bluetooth gamepad to your phone. The first device with stick input claims pilot-in-command.
+  </Step>
+</Steps>
+
+## USB-C tether connection
+
+Android 11 and later supports CDC-NCM USB Ethernet natively.
+
+<Steps>
+  <Step title="Plug in the cable">
+    Connect a USB-C data cable from your phone to the ground station. Your phone shows a notification: "USB device detected. Allow ADOS Ground Station network access?"
+  </Step>
+  <Step title="Approve the connection">
+    Tap "Allow." Android creates a USB Ethernet interface and assigns your phone the IP `192.168.7.2`.
+  </Step>
+  <Step title="Open the app or browser">
+    The ADOS Android app detects the USB connection and switches to it automatically. In Chrome, navigate to `http://192.168.7.1:4000`.
+  </Step>
+</Steps>
+
+<Tip>
+USB-C tether charges your phone while streaming. If you are flying for extended sessions in the field, USB-C keeps your phone alive without a separate power bank.
+</Tip>
+
+## ADOS Android app vs Chrome
+
+| Feature | ADOS Android app | Chrome browser |
+|---------|-----------------|----------------|
+| Video decode | Native MediaCodec (hardware H.264) | WebRTC via browser |
+| Latency | 50-80 ms | 80-120 ms |
+| Auto-discovery | mDNS, automatic | Manual URL entry |
+| Gamepad input | Android InputDevice API | Web Gamepad API |
+| Touch sticks | Native overlay | Web overlay |
+| Power consumption | ~1x baseline | ~2-3x baseline |
+
+The ADOS Android app is the recommended path. It uses native MediaCodec for hardware H.264 decoding, which uses less power and gives lower latency than the browser's WebRTC decoder.
+
+Chrome works for quick checks and testing. You do not need to install anything.
+
+## Video codec
+
+The ground station serves H.264 high profile level 4.1 (`avc1.640029`) over WebRTC WHEP. This profile is universally supported on Android devices going back to Android 5.0.
+
+## Android captive portal behavior
+
+Android 11+ aggressively checks for internet on newly joined WiFi networks. If the ground station does not respond to probe URLs quickly, Android:
+
+- Marks the network as "no internet"
+- Disables automatic data routing through it
+- Shows a persistent "use mobile data" notification
+
+The ground station handles this by serving `204 No Content` responses to Google's connectivity check URLs (`connectivitycheck.gstatic.com/generate_204`) within 100 ms. This satisfies Android's probe and prevents the network from being flagged.
+
+<Note>
+On USB tether, Android does not fire the captive portal probe. No special handling is needed.
+</Note>
+
+## Internet sharing
+
+By default, the ground station WiFi AP is a local-only network. Your phone cannot use the ground station's internet connection (4G modem or WiFi client uplink) for background app data.
+
+If you want your phone to have internet through the ground station, enable "Share uplink with AP clients" in the setup webapp Network page or the Mission Control Hardware tab. Be aware that background app data will consume the ground station's data cap if it has a 4G modem.
+
+## Bluetooth gamepad on Android
+
+You can pair a Bluetooth gamepad to your phone and use it to fly through the ADOS Android app. The app receives stick inputs via the standard Android gamepad API and sends them as `MANUAL_CONTROL` MAVLink messages at 50 Hz.
+
+In Chrome, the Web Gamepad API works but has some restrictions:
+
+- Use Chrome full browser, not an in-app WebView
+- The site must load from `http://192.168.*` (private IP, insecure-origin permitted)
+- Press any button to register the controller
+
+## Touch fallback
+
+When no gamepad is connected, both the ADOS Android app and Mission Control in Chrome show a virtual sticks overlay on screen. Two touch zones on the left and right sides of the display act as throttle/yaw and pitch/roll sticks. Not ideal for precision flying, but good enough for basic control.
+
+## Supported Android versions
+
+| Android version | WiFi AP | USB-C tether | Notes |
+|----------------|---------|--------------|-------|
+| Android 14+ | Yes | Yes (CDC-NCM native) | Full support |
+| Android 11-13 | Yes | Yes (CDC-NCM native) | Full support |
+| Android 10 | Yes | Partial (may need RNDIS) | Browser only, no USB auto-detect |
+| Android 9 and older | Yes | No | WiFi only |
+
+## What is next
+
+- [WiFi AP](/ground-agent/wifi-ap) for laptop connection details
+- [USB Tether](/ground-agent/usb-tether) for the full USB-C reference
+- [Setup and Pairing](/ground-agent/setup-and-pairing) for first-time setup

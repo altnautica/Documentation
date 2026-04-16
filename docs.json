@@ -1,0 +1,236 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "name": "ADOS Documentation",
+  "theme": "mint",
+  "colors": {
+    "primary": "#3A82FF",
+    "light": "#5A9AFF",
+    "dark": "#2A6ADF"
+  },
+  "logo": {
+    "light": "/logo/light.svg",
+    "dark": "/logo/dark.svg"
+  },
+  "favicon": "/favicon.svg",
+  "appearance": {
+    "default": "dark"
+  },
+  "navbar": {
+    "links": [
+      {
+        "text": "GitHub",
+        "href": "https://github.com/altnautica"
+      },
+      {
+        "text": "Discord",
+        "href": "https://discord.gg/uxbvuD4d5q"
+      }
+    ],
+    "primary": {
+      "text": "Try Demo",
+      "href": "https://command.altnautica.com"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/altnautica",
+      "discord": "https://discord.gg/uxbvuD4d5q",
+      "linkedin": "https://www.linkedin.com/company/altnautica",
+      "youtube": "https://www.youtube.com/@altnautica"
+    }
+  },
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Getting Started",
+        "icon": "rocket",
+        "groups": [
+          {
+            "group": "Introduction",
+            "pages": [
+              "getting-started/introduction",
+              "getting-started/how-it-works"
+            ]
+          },
+          {
+            "group": "Quickstart",
+            "pages": [
+              "getting-started/quickstart-mission-control",
+              "getting-started/quickstart-drone-agent",
+              "getting-started/quickstart-ground-agent"
+            ]
+          },
+          {
+            "group": "First Steps",
+            "pages": [
+              "getting-started/your-first-flight",
+              "getting-started/your-first-mission"
+            ]
+          },
+          {
+            "group": "Community",
+            "pages": [
+              "getting-started/open-source",
+              "getting-started/contributing",
+              "getting-started/community"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Mission Control",
+        "icon": "display",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "mission-control/overview",
+              "mission-control/installation",
+              "mission-control/connecting"
+            ]
+          },
+          {
+            "group": "Flying",
+            "pages": [
+              "mission-control/dashboard",
+              "mission-control/flight-control",
+              "mission-control/telemetry",
+              "mission-control/video-feed"
+            ]
+          },
+          {
+            "group": "Mission Planning",
+            "pages": [
+              "mission-control/mission-planning",
+              "mission-control/pattern-generators",
+              "mission-control/geofences-rally",
+              "mission-control/file-formats"
+            ]
+          },
+          {
+            "group": "Configuration",
+            "pages": [
+              "mission-control/fc-configuration",
+              "mission-control/parameters",
+              "mission-control/firmware-flashing",
+              "mission-control/calibration"
+            ]
+          },
+          {
+            "group": "Advanced",
+            "pages": [
+              "mission-control/simulation",
+              "mission-control/airspace",
+              "mission-control/cloud-features",
+              "mission-control/sitl-testing",
+              "mission-control/settings"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Drone Agent",
+        "icon": "microchip",
+        "groups": [
+          {
+            "group": "Getting Started",
+            "pages": [
+              "drone-agent/overview",
+              "drone-agent/supported-hardware",
+              "drone-agent/installation"
+            ]
+          },
+          {
+            "group": "Using the Agent",
+            "pages": [
+              "drone-agent/cli-reference",
+              "drone-agent/tui-dashboard",
+              "drone-agent/pairing",
+              "drone-agent/configuration"
+            ]
+          },
+          {
+            "group": "Core Systems",
+            "pages": [
+              "drone-agent/mavlink-proxy",
+              "drone-agent/video-pipeline",
+              "drone-agent/cloud-relay",
+              "drone-agent/wfb-ng",
+              "drone-agent/rest-api"
+            ]
+          },
+          {
+            "group": "Scripting",
+            "pages": [
+              "drone-agent/python-sdk",
+              "drone-agent/text-commands",
+              "drone-agent/application-suites"
+            ]
+          },
+          {
+            "group": "Operations",
+            "pages": [
+              "drone-agent/ota-updates",
+              "drone-agent/hal-and-tiers",
+              "drone-agent/systemd-services",
+              "drone-agent/setup-webapp",
+              "drone-agent/troubleshooting"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Ground Agent",
+        "icon": "tower-broadcast",
+        "groups": [
+          {
+            "group": "Getting Started",
+            "pages": [
+              "ground-agent/overview",
+              "ground-agent/supported-hardware",
+              "ground-agent/installation"
+            ]
+          },
+          {
+            "group": "Connecting Your Devices",
+            "pages": [
+              "ground-agent/wifi-ap",
+              "ground-agent/usb-tether",
+              "ground-agent/hdmi-kiosk",
+              "ground-agent/android-client"
+            ]
+          },
+          {
+            "group": "Operations",
+            "pages": [
+              "ground-agent/physical-ui",
+              "ground-agent/setup-and-pairing",
+              "ground-agent/uplink-matrix",
+              "ground-agent/hardware-tab",
+              "ground-agent/troubleshooting"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Architecture",
+        "icon": "sitemap",
+        "groups": [
+          {
+            "group": "Architecture",
+            "pages": [
+              "architecture/system-overview",
+              "architecture/mavlink-protocol",
+              "architecture/state-management",
+              "architecture/agent-services",
+              "architecture/video-stack",
+              "architecture/cloud-infrastructure",
+              "architecture/project-structure",
+              "architecture/contributing-guide"
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

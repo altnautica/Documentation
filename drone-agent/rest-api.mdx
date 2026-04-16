@@ -1,0 +1,243 @@
+---
+title: "REST API"
+description: "FastAPI server on port 8080 with endpoints for every agent capability."
+icon: "code"
+---
+
+# REST API
+
+The agent runs a FastAPI server on port 8080. It provides HTTP endpoints for status, telemetry, commands, configuration, video, scripts, OTA, pairing, and everything else the agent can do.
+
+The API is the backbone that the CLI, TUI, Mission Control, and your own scripts all talk to.
+
+## Base URL
+
+```
+http://<drone-ip>:8080
+```
+
+On the drone itself: `http://localhost:8080`
+
+## Authentication
+
+Most endpoints require the `X-ADOS-Key` header. The key is generated during pairing and stored at `/etc/ados/pairing.json`.
+
+```bash
+curl http://localhost:8080/api/status \
+  -H "X-ADOS-Key: sk_live_your_key_here"
+```
+
+A few endpoints are exempt from auth (like `/api/pairing/info`) so that unpaired agents can still be discovered and paired.
+
+## Route modules
+
+The API is organized into route modules, each handling a domain:
+
+| Module | Prefix | Purpose |
+|--------|--------|---------|
+| `status` | `/api/status` | Agent status, board, FC, health |
+| `config` | `/api/config` | Read/write configuration |
+| `commands` | `/api/commands` | Send MAVLink commands to FC |
+| `video` | `/api/video` | Video pipeline, snapshot, recording |
+| `wfb` | `/api/wfb` | WFB-ng link stats |
+| `scripts` | `/api/scripts` | Script management, run, stop |
+| `suites` | `/api/suites` | Suite activation, status |
+| `pairing` | `/api/pairing` | Pair, unpair, info |
+| `ota` | `/api/ota` | Update check, install, rollback |
+| `services` | `/api/services` | Systemd service control |
+| `logs` | `/api/logs` | Log retrieval |
+| `system` | `/api/system` | Reboot, shutdown, diagnostics |
+| `fleet` | `/api/fleet` | Fleet/swarm coordination |
+| `peripherals` | `/api/peripherals` | USB devices, sensors |
+| `params` | `/api/params` | FC parameter read/write |
+| `features` | `/api/features` | Feature flags by tier |
+| `ground_station` | `/api/ground-station` | Ground station specific endpoints |
+
+## Common endpoints
+
+### Status
+
+```bash
+# Full agent status
+curl http://localhost:8080/api/status \
+  -H "X-ADOS-Key: $KEY"
+```
+
+Response:
+
+```json
+{
+  "version": "0.5.3",
+  "uptime_seconds": 3847,
+  "board": {
+    "name": "Radxa ROCK 5C Lite (RK3582)",
+    "tier": 4,
+    "soc": "RK3582"
+  },
+  "fc_connected": true,
+  "fc_port": "/dev/ttyS0",
+  "fc_baud": 921600,
+  "health": {
+    "cpu_percent": 12.3,
+    "memory_percent": 34.2,
+    "disk_percent": 41.8,
+    "temperature": 52.3
+  }
+}
+```
+
+```bash
+# Consolidated full status (single request, replaces 4 separate calls)
+curl http://localhost:8080/api/status/full \
+  -H "X-ADOS-Key: $KEY"
+```
+
+### Configuration
+
+```bash
+# Read full config
+curl http://localhost:8080/api/config \
+  -H "X-ADOS-Key: $KEY"
+
+# Set a value
+curl -X PUT http://localhost:8080/api/config \
+  -H "X-ADOS-Key: $KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"key": "mavlink.baud_rate", "value": "115200"}'
+```
+
+### Video
+
+```bash
+# Video pipeline status
+curl http://localhost:8080/api/video \
+  -H "X-ADOS-Key: $KEY"
+
+# Capture snapshot
+curl -X POST http://localhost:8080/api/video/snapshot \
+  -H "X-ADOS-Key: $KEY"
+```
+
+### WFB-ng link
+
+```bash
+curl http://localhost:8080/api/wfb \
+  -H "X-ADOS-Key: $KEY"
+```
+
+Response:
+
+```json
+{
+  "state": "active",
+  "rssi_dbm": -42,
+  "snr_db": 28.5,
+  "channel": 149,
+  "packets_received": 184523,
+  "packets_lost": 12,
+  "fec_recovered": 8,
+  "fec_failed": 0,
+  "bitrate_kbps": 4200
+}
+```
+
+### Scripts
+
+```bash
+# List running scripts
+curl http://localhost:8080/api/scripts \
+  -H "X-ADOS-Key: $KEY"
+
+# Run a script
+curl -X POST http://localhost:8080/api/scripts/run \
+  -H "X-ADOS-Key: $KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"path": "/var/ados/scripts/my_mission.py"}'
+
+# Send a text command
+curl -X POST http://localhost:8080/api/scripting/command \
+  -H "X-ADOS-Key: $KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"command": "takeoff"}'
+```
+
+### Pairing
+
+```bash
+# Check pairing status (no auth required)
+curl http://localhost:8080/api/pairing/info
+
+# Unpair
+curl -X POST http://localhost:8080/api/pairing/unpair \
+  -H "X-ADOS-Key: $KEY"
+```
+
+### OTA Updates
+
+```bash
+# Check for updates
+curl -X POST http://localhost:8080/api/ota/check \
+  -H "X-ADOS-Key: $KEY"
+
+# Install pending update
+curl -X POST http://localhost:8080/api/ota/install \
+  -H "X-ADOS-Key: $KEY"
+
+# Rollback
+curl -X POST http://localhost:8080/api/ota/rollback \
+  -H "X-ADOS-Key: $KEY"
+
+# Restart agent
+curl -X POST http://localhost:8080/api/ota/restart \
+  -H "X-ADOS-Key: $KEY"
+```
+
+### Services
+
+```bash
+# List all systemd services and their states
+curl http://localhost:8080/api/services \
+  -H "X-ADOS-Key: $KEY"
+```
+
+### Ground station
+
+```bash
+# Ground station status (only in ground-station profile)
+curl http://localhost:8080/api/ground-station/status \
+  -H "X-ADOS-Key: $KEY"
+
+# Network info
+curl http://localhost:8080/api/ground-station/network \
+  -H "X-ADOS-Key: $KEY"
+
+# PIC heartbeat
+curl -X POST http://localhost:8080/api/ground-station/pic/heartbeat \
+  -H "X-ADOS-Key: $KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"client_id": "gcs-session-1"}'
+```
+
+## CORS
+
+CORS is enabled by default with `*` allowed origins. This lets any browser-based app connect to the API. You can restrict origins in config:
+
+```yaml
+security:
+  api:
+    cors_enabled: true
+    cors_origins: ["https://command.altnautica.com"]
+```
+
+## OpenAPI docs
+
+FastAPI generates interactive API documentation automatically. When the agent is running, open:
+
+- **Swagger UI:** `http://localhost:8080/docs`
+- **ReDoc:** `http://localhost:8080/redoc`
+
+These pages list every endpoint with request/response schemas and a "Try it out" button.
+
+<Tip>
+The Swagger UI is the fastest way to explore the API. It shows all available endpoints, required parameters, and response shapes. You can send test requests directly from the browser.
+</Tip>

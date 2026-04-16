@@ -1,0 +1,312 @@
+---
+title: "Configuration"
+description: "Structure and key settings of the /etc/ados/config.yaml file."
+icon: "gear"
+---
+
+# Configuration
+
+The agent's configuration lives at `/etc/ados/config.yaml`. It is a single YAML file validated by Pydantic models at load time. Every field has a sensible default, so a minimal config (or no config file at all) produces a working agent.
+
+## Config search order
+
+When the agent starts, it looks for config in this order:
+
+1. Path passed as argument or environment variable (`ADOS_CONFIG`)
+2. `/etc/ados/config.yaml`
+3. `./config.yaml` (current directory)
+4. Pure defaults (no file needed)
+
+## Full config structure
+
+The config is organized into 14 top-level sections. Here is the complete structure with defaults:
+
+```yaml
+agent:
+  device_id: ""           # Auto-generated on first boot
+  name: "my-drone"        # Human-readable name
+  tier: "auto"            # auto | 1 | 2 | 3 | 4
+  profile: "auto"         # auto | drone | ground_station
+
+mavlink:
+  serial_port: ""         # Auto-detected if empty
+  baud_rate: 57600        # Common: 57600, 115200, 921600
+  system_id: 1
+  component_id: 191
+  signing:
+    enabled: false
+    key: ""
+  endpoints:
+    - type: websocket
+      host: "0.0.0.0"
+      port: 8765
+      enabled: true
+
+video:
+  mode: "wfb"             # wfb | rtsp | disabled
+  wfb:
+    interface: ""          # RTL8812EU interface, auto-detected
+    channel: 149           # 5 GHz channel
+    tx_power: 25           # dBm
+    fec_k: 8              # FEC data blocks
+    fec_n: 12             # FEC total blocks (data + parity)
+  camera:
+    source: "csi"         # csi | usb | test
+    codec: "h264"         # h264 | h265
+    width: 1280
+    height: 720
+    fps: 30
+    bitrate_kbps: 4000
+  recording:
+    enabled: false
+    path: "/var/ados/recordings"
+    max_duration_minutes: 30
+  cloud_relay_url: ""
+
+network:
+  wifi_client:
+    enabled: false
+    ssid: ""
+    password: ""
+  cellular:
+    enabled: false
+    apn: ""
+  hotspot:
+    enabled: true
+    ssid: "ADOS-{device_id}"
+    password: "ados1234"
+    channel: 6
+
+server:
+  mode: "cloud"           # cloud | self_hosted | disabled
+  cloud:
+    url: "https://convex-site.altnautica.com"
+    mqtt_broker: "mqtt.altnautica.com"
+    mqtt_port: 443
+  self_hosted:
+    url: ""
+    mqtt_broker: ""
+    mqtt_port: 8883
+    api_key: ""
+  telemetry_rate: 2       # Hz, MQTT publish rate
+  heartbeat_interval: 5   # Seconds
+  mqtt_transport: "websockets"  # websockets | tcp
+  mqtt_username: "ados"
+  mqtt_password: ""
+
+security:
+  tls:
+    enabled: true
+    cert_path: "/etc/ados/certs/device.crt"
+    key_path: "/etc/ados/certs/device.key"
+    ca_path: "/etc/ados/certs/ca.crt"
+  wireguard:
+    enabled: false
+    config_path: "/etc/wireguard/ados.conf"
+  api:
+    api_key: ""
+    cors_enabled: true
+    cors_origins: ["*"]
+  hmac_enabled: false
+  hmac_secret: ""
+
+suites:
+  manifest_dir: "/etc/ados/suites"
+  active: ""              # Name of the active suite
+  ros2_workspace: "/opt/ados/ros2_ws"
+
+scripting:
+  text_commands:
+    enabled: true
+    udp_port: 8889
+    websocket_port: 8890
+  scripts:
+    enabled: true
+    script_dir: "/var/ados/scripts"
+    max_concurrent: 3
+  rest_api:
+    enabled: true
+    host: "0.0.0.0"
+    port: 8080
+
+ota:
+  channel: "stable"       # stable | beta | dev
+  check_interval: 24      # Hours between auto-checks
+  auto_install: false     # Auto-install after check
+  github_repo: "altnautica/ADOSDroneAgent"
+  pip_path: "/opt/ados/venv/bin/pip"
+  service_name: "ados-agent"
+
+logging:
+  level: "info"           # debug | info | warning | error
+  max_size_mb: 50
+  keep_count: 5
+  flight_log_dir: "/var/ados/logs/flights"
+
+pairing:
+  state_path: "/etc/ados/pairing.json"
+  convex_url: ""
+  beacon_interval: 30
+  heartbeat_interval: 60
+  code_ttl: 900
+
+discovery:
+  mdns_enabled: true
+  service_type: "_ados._tcp.local."
+
+vision:
+  enabled: false
+  backend: "auto"         # auto | rknn | tensorrt | opencv_dnn | tflite
+  confidence_threshold: 0.5
+  models_dir: "/opt/ados/models/vision"
+  models_cache_max_mb: 500
+  auto_download: true
+
+swarm:
+  enabled: false
+  lora:
+    interface: ""
+    frequency: 915000000
+    bandwidth: 125000
+    spreading_factor: 7
+  wifi_direct:
+    enabled: false
+    interface: ""
+  role: "auto"
+  default_formation: "line"
+  default_spacing: 10
+
+ground_station:
+  share_uplink: false
+  paired_drone_id: null
+  paired_at: null
+  ui:
+    oled: {}
+    buttons: {}
+    screens: {}
+  use_live_state_ipc: true
+```
+
+## Key settings explained
+
+### Agent profile
+
+```yaml
+agent:
+  profile: "auto"  # auto | drone | ground_station
+```
+
+When set to `auto`, the agent fingerprints the hardware at boot. If it finds an OLED on I2C, GPIO buttons, an RTL8812EU in receive mode, and no flight controller, it picks `ground_station`. Otherwise it picks `drone`.
+
+Force a specific profile by setting it explicitly.
+
+### MAVLink serial port
+
+```yaml
+mavlink:
+  serial_port: ""
+  baud_rate: 57600
+```
+
+Leave `serial_port` empty for auto-detection. The agent scans `/dev/ttyS*`, `/dev/ttyAMA*`, and `/dev/ttyACM*` based on the board profile's `uart_paths`. It tries each port at the configured baud rate and looks for MAVLink heartbeats.
+
+Common baud rates: 57600 (ArduPilot default), 115200 (PX4 default), 921600 (high-speed telemetry).
+
+### Video codec
+
+```yaml
+video:
+  camera:
+    codec: "h264"
+    bitrate_kbps: 4000
+```
+
+Use `h264` for maximum compatibility. Browser-based players (MSE, WebRTC) expect `avc1.640029` (H.264 High Profile Level 4.1). H.265 saves bandwidth but browser support is inconsistent for WebRTC.
+
+### Cloud server mode
+
+```yaml
+server:
+  mode: "cloud"  # cloud | self_hosted | disabled
+```
+
+- **cloud**: connects to the ADOS cloud backend. Default for most users.
+- **self_hosted**: connects to your own MQTT broker and Convex instance.
+- **disabled**: no cloud connectivity. Useful for air-gapped or field-only operation.
+
+### OTA channel
+
+```yaml
+ota:
+  channel: "stable"  # stable | beta | dev
+```
+
+- **stable**: production releases only. Recommended for field use.
+- **beta**: pre-release versions for testing.
+- **dev**: bleeding edge. Expect breaking changes.
+
+### Vision backend
+
+```yaml
+vision:
+  enabled: false
+  backend: "auto"
+```
+
+When `auto`, the agent probes for available inference backends in order: RKNN (Rockchip NPU), TensorRT (NVIDIA), OpenCV DNN, TFLite. It picks the first one that initializes successfully.
+
+## Reading and writing config
+
+### From the CLI
+
+```bash
+# Read full config
+ados config
+
+# Read a specific key
+ados config mavlink.baud_rate
+
+# Write a value
+ados set video.camera.fps 25
+```
+
+### From the REST API
+
+```bash
+# Read config
+curl http://localhost:8080/api/config \
+  -H "X-ADOS-Key: your_key"
+
+# Write a value
+curl -X PUT http://localhost:8080/api/config \
+  -H "X-ADOS-Key: your_key" \
+  -H "Content-Type: application/json" \
+  -d '{"key": "video.camera.fps", "value": "25"}'
+```
+
+### From the TUI
+
+Press `c` to open the Config screen. Browse sections, view values, and edit them interactively.
+
+## Per-board overrides
+
+The install script writes board-specific overrides into `/etc/ados/config.yaml` during installation. For example, a Raspberry Pi 4B gets:
+
+```yaml
+mavlink:
+  serial_port: "/dev/ttyAMA0"
+```
+
+While a Radxa ROCK 5C Lite gets:
+
+```yaml
+mavlink:
+  serial_port: "/dev/ttyS0"
+  baud_rate: 921600
+```
+
+These overrides are merged on top of the built-in defaults. Your manual edits always take priority.
+
+<Tip>
+After editing the config file manually, restart the affected service for changes to take effect. For example, `sudo systemctl restart ados-mavlink` after changing the baud rate.
+</Tip>

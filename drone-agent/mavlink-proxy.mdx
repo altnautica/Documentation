@@ -1,0 +1,167 @@
+---
+title: "MAVLink Proxy"
+description: "How the agent connects to your flight controller and distributes MAVLink data."
+icon: "satellite-dish"
+---
+
+# MAVLink Proxy
+
+The MAVLink proxy is the agent's core service. It connects to the flight controller over serial UART, parses MAVLink frames, and distributes them to every other part of the system: the GCS over WebSocket, scripts via the IPC socket, the cloud relay, and the TUI.
+
+The proxy runs as the `ados-mavlink` systemd service.
+
+## Flight controller auto-detection
+
+When `mavlink.serial_port` is empty in config (the default), the proxy scans serial ports in this order:
+
+1. Ports listed in the board profile's `uart_paths` (e.g., `/dev/ttyS0`, `/dev/ttyAMA0`)
+2. USB serial devices at `/dev/ttyACM*` and `/dev/ttyUSB*`
+
+For each candidate port, it opens the connection at the configured baud rate and listens for MAVLink heartbeat messages. The first port that sends a valid heartbeat within 5 seconds wins.
+
+If no FC is found, the proxy retries every 10 seconds. This handles cases where the FC boots slower than the companion computer or gets power-cycled mid-flight.
+
+## Serial connection
+
+| Setting | Config key | Default |
+|---------|-----------|---------|
+| Port | `mavlink.serial_port` | Auto-detect |
+| Baud rate | `mavlink.baud_rate` | 57600 |
+| System ID | `mavlink.system_id` | 1 |
+| Component ID | `mavlink.component_id` | 191 |
+
+Common baud rates by firmware:
+
+| Firmware | Default baud |
+|----------|-------------|
+| ArduPilot | 57600 or 921600 |
+| PX4 | 115200 or 921600 |
+| Betaflight | 115200 |
+
+<Tip>
+For the best telemetry rates, use 921600 baud. At 57600, you are limited to roughly 60 messages per second. At 921600, you can push 500+ messages per second, which matters for high-rate attitude data and parameter downloads.
+</Tip>
+
+## Multi-client distribution
+
+The proxy is a one-to-many bridge. A single serial connection feeds multiple consumers:
+
+```
+Flight Controller (UART)
+       │
+  ados-mavlink (proxy)
+       │
+       ├── /run/ados/mavlink.sock    (IPC, binary MAVLink)
+       ├── /run/ados/state.sock      (IPC, JSON telemetry 10Hz)
+       ├── WebSocket :8765            (GCS, browser clients)
+       └── ados-cloud                 (MQTT relay to cloud)
+```
+
+### IPC sockets
+
+Two Unix domain sockets carry data between services:
+
+**`/run/ados/mavlink.sock`** (binary): raw MAVLink frames with a 4-byte little-endian length prefix before each frame. Any service or script can connect and receive the full MAVLink stream.
+
+**`/run/ados/state.sock`** (JSON): a parsed telemetry summary published at 10 Hz. Contains attitude, position, speed, battery, GPS, and armed state as JSON. Used by the health service, cloud relay, and TUI.
+
+### WebSocket endpoint
+
+The proxy exposes a WebSocket endpoint at port 8765 (configurable via `mavlink.endpoints`). This is the primary way ADOS Mission Control and other browser-based GCS tools connect to the drone.
+
+The WebSocket carries raw binary MAVLink frames, wire-compatible with the SITL bridge tool. No encoding changes, no JSON wrapping. The GCS decodes MAVLink in the browser using the same CRC and payload tables as pymavlink.
+
+```yaml
+mavlink:
+  endpoints:
+    - type: websocket
+      host: "0.0.0.0"
+      port: 8765
+      enabled: true
+```
+
+## Companion heartbeat
+
+The proxy sends a 1 Hz companion heartbeat to the flight controller with `MAV_TYPE_ONBOARD_CONTROLLER`. This prevents ArduPilot's GCS failsafe from triggering when the companion computer is the only MAVLink endpoint.
+
+Without this heartbeat, ArduPilot assumes the GCS has disconnected after 5 seconds and can trigger RTL or land depending on failsafe settings.
+
+## Stream requests
+
+On connection, the proxy requests data streams from the FC:
+
+- `SYS_STATUS` (battery, health)
+- `ATTITUDE` (roll, pitch, yaw)
+- `GLOBAL_POSITION_INT` (GPS lat/lon/alt)
+- `GPS_RAW_INT` (fix type, satellites, HDOP)
+- `VFR_HUD` (airspeed, groundspeed, heading)
+- `RC_CHANNELS` (RC input values)
+- `HEARTBEAT` (armed state, flight mode)
+
+Stream requests are re-sent every 30 seconds to handle FC reboots and MAVLink buffer stalls. The initial request fires immediately on connection.
+
+## Reconnection
+
+If the serial connection drops (FC power cycle, USB disconnect, cable fault), the proxy:
+
+1. Closes the old connection cleanly (prevents file descriptor leaks)
+2. Waits 2 seconds
+3. Restarts auto-detection from the beginning
+4. Re-requests all data streams once reconnected
+
+The IPC sockets and WebSocket stay open during reconnection. Clients see a gap in telemetry but do not need to reconnect themselves.
+
+## MAVLink signing
+
+Optional message signing for security. When enabled, the proxy signs outgoing messages with a shared secret and rejects unsigned incoming messages.
+
+```yaml
+mavlink:
+  signing:
+    enabled: true
+    key: "your-shared-secret-key"
+```
+
+<Warning>
+Both the agent and the FC must use the same signing key. If they mismatch, all communication silently fails. Test signing on the bench before field use.
+</Warning>
+
+## State IPC format
+
+The JSON telemetry on `/run/ados/state.sock` looks like this (published at 10 Hz):
+
+```json
+{
+  "timestamp": 1713264000.123,
+  "fc_connected": true,
+  "fc_port": "/dev/ttyS0",
+  "fc_baud": 921600,
+  "armed": false,
+  "mode": "STABILIZE",
+  "attitude": {"roll": 0.02, "pitch": -0.01, "yaw": 178.5},
+  "position": {"lat": 12.9716, "lon": 77.5946, "alt_msl": 920.0, "alt_agl": 0.0},
+  "speed": {"groundspeed": 0.0, "airspeed": 0.0},
+  "battery": {"voltage": 22.8, "current": 0.5, "remaining": 98},
+  "gps": {"fix": 3, "satellites": 14, "hdop": 0.9}
+}
+```
+
+## Checking MAVLink status
+
+From the CLI:
+
+```bash
+$ ados mavlink
+Connected: True
+Port:      /dev/ttyS0
+Baud:      921600
+```
+
+From the REST API:
+
+```bash
+curl http://localhost:8080/api/status \
+  -H "X-ADOS-Key: your_key"
+```
+
+From the TUI, press `m` for the MAVLink screen.

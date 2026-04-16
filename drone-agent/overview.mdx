@@ -1,0 +1,108 @@
+---
+title: "Overview"
+description: "What the ADOS Drone Agent is and what it does on your companion computer."
+icon: "microchip"
+---
+
+# ADOS Drone Agent
+
+The ADOS Drone Agent is the software that runs on the companion computer inside your drone. It sits between the flight controller (ArduPilot, PX4, or Betaflight) and everything else: your ground station, your phone, the cloud, and any scripts you write.
+
+It is written in Python 3.11+, licensed under GPLv3, and designed to run on ARM single-board computers from Raspberry Pi to Rockchip to NVIDIA Jetson.
+
+<Frame caption="The TUI dashboard running over SSH on a Radxa ROCK 5C Lite">
+  <img src="/images/placeholder-tui-dashboard.png" alt="ADOS Drone Agent TUI dashboard showing telemetry, FC status, and service health" />
+</Frame>
+
+## What it does
+
+The agent handles five core jobs:
+
+1. **MAVLink proxy** connects to your flight controller over serial UART, then forwards telemetry to WebSocket and TCP clients. Your GCS, your scripts, and the cloud all get MAVLink data without fighting for the serial port.
+
+2. **Video pipeline** detects your camera (CSI or USB), encodes H.264 via hardware or software, pushes it to a local RTSP server (MediaMTX), and optionally transmits over WFB-ng for long-range HD video.
+
+3. **Cloud relay** sends telemetry and receives commands through three layers (Convex HTTP polling, MQTT at 2 Hz, and WebRTC peer-to-peer signaling) so your drone is reachable from anywhere.
+
+4. **Scripting engine** lets you control the drone with Python scripts, text commands (Tello-style), or the REST API.
+
+5. **Service supervisor** manages all of the above as individual systemd services with automatic restart, resource limits, and health monitoring.
+
+## Key numbers
+
+| Metric | Value |
+|--------|-------|
+| Current version | 0.5.3 |
+| Language | Python 3.11+ |
+| License | GPLv3 |
+| Supported boards | 17 board profiles |
+| Systemd services | 28 units (air + ground) |
+| REST API port | 8080 |
+| IPC sockets | `/run/ados/mavlink.sock`, `/run/ados/state.sock` |
+| Config file | `/etc/ados/config.yaml` |
+| Install method | `curl \| bash` one-liner |
+
+## Architecture at a glance
+
+The agent uses a multi-process architecture managed by systemd. Each service runs in its own process with its own cgroup resource limits. The supervisor service (`ados-supervisor`) starts and monitors child services.
+
+```
+ados-supervisor
+  ├── ados-mavlink        # FC serial <-> MAVLink proxy
+  ├── ados-api            # FastAPI REST server on :8080
+  ├── ados-cloud          # MQTT + Convex cloud relay
+  ├── ados-health         # CPU, RAM, temp, disk monitoring
+  ├── ados-video          # Camera + encoder + MediaMTX
+  ├── ados-wfb            # WFB-ng video transmitter
+  ├── ados-scripting      # Python script executor
+  ├── ados-peripherals    # USB hot-plug, sensor manager
+  ├── ados-ota            # GitHub release polling + upgrade
+  └── ados-discovery      # mDNS advertisement
+```
+
+Services communicate through two Unix domain sockets:
+
+- `/run/ados/mavlink.sock` carries raw binary MAVLink frames (4-byte length prefix + payload)
+- `/run/ados/state.sock` carries JSON telemetry at 10 Hz
+
+## Hardware auto-detection
+
+On first boot, the agent reads `/proc/device-tree/model` and matches it against 17 board profiles stored as YAML files. Each profile defines the SoC, available buses (UART, I2C, SPI, USB), video encoding capabilities, GPIO pins, and a default tier.
+
+The tier determines which features are enabled:
+
+| Tier | RAM | Features |
+|------|-----|----------|
+| 1 | 64-128 MB | MAVLink proxy only |
+| 2 | 256-512 MB | + REST API, basic telemetry |
+| 3 | 1-2 GB | + video pipeline, scripting, cloud |
+| 4 | 4 GB+ | Full autonomy, vision engine, suites |
+
+<Tip>
+You do not need to configure the tier manually. The agent detects your board and picks the right tier automatically. You can override it in `/etc/ados/config.yaml` if needed.
+</Tip>
+
+## Two profiles, one codebase
+
+The same agent binary supports two profiles:
+
+- **Drone profile** (default): runs on the companion computer mounted on the drone. Manages FC, camera, video TX, and cloud telemetry.
+- **Ground station profile**: runs on a ground-side SBC (typically a Raspberry Pi 4B). Receives WFB-ng video, creates a WiFi hotspot, serves video to your laptop or phone via WebRTC, and optionally drives an HDMI display and OLED screen.
+
+The profile is detected automatically at boot based on hardware fingerprinting. If the SBC has an OLED on I2C, four GPIO buttons, an RTL8812EU WiFi adapter, and no flight controller on UART, it picks the ground station profile.
+
+## Interfaces
+
+You can interact with the agent in four ways:
+
+1. **CLI** (`ados` command): check status, view logs, manage pairing, trigger updates. Works over SSH.
+2. **TUI** (`ados tui`): a full terminal dashboard built with Textual. Nine screens covering status, telemetry, MAVLink, video, link quality, scripting, updates, config, and logs.
+3. **REST API** (port 8080): FastAPI server with endpoints for every agent capability. Authenticated with `X-ADOS-Key` header.
+4. **ADOS Mission Control** (GCS): the companion web app that gives you a full ground control station with maps, video, mission planning, and fleet management.
+
+## What's next
+
+- [Supported Hardware](/drone-agent/supported-hardware) to see which boards work
+- [Installation](/drone-agent/installation) to get the agent running
+- [CLI Reference](/drone-agent/cli-reference) for all available commands
+- [TUI Dashboard](/drone-agent/tui-dashboard) for the terminal interface

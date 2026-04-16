@@ -1,0 +1,210 @@
+---
+title: "Installation"
+description: "Install the ADOS Drone Agent on your companion computer in one command."
+icon: "download"
+---
+
+# Installation
+
+The agent installs with a single command. It detects your board, installs dependencies, configures systemd services, and starts everything automatically.
+
+## Quick install
+
+SSH into your companion computer and run:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/altnautica/ADOSDroneAgent/main/scripts/install.sh | sudo bash
+```
+
+That is it. The script handles everything from there.
+
+<Note>
+The install script requires root access. It installs to `/opt/ados/`, creates config at `/etc/ados/`, and registers systemd services. On boards without systemd (rare), it sets up a process manager fallback.
+</Note>
+
+## What the install script does
+
+<Steps>
+  <Step title="Detect the board">
+    Reads `/proc/device-tree/model` and matches against the 17 built-in board profiles. Sets the tier and enables the right features for your hardware.
+  </Step>
+
+  <Step title="Install system packages">
+    Installs Python 3.11+, pip, virtualenv, and any board-specific packages (like the RTL8812EU DKMS driver for WFB-ng). Uses `apt` on Debian/Ubuntu systems.
+  </Step>
+
+  <Step title="Create the virtual environment">
+    Sets up a Python venv at `/opt/ados/venv/` and installs the `ados-drone-agent` package from PyPI along with all dependencies (pymavlink, FastAPI, uvicorn, paho-mqtt, structlog, Textual, and more).
+  </Step>
+
+  <Step title="Generate device identity">
+    Creates a unique device ID at `/etc/ados/device-id` using a chained fallback: Python uuid, OpenSSL random, or hostname-timestamp-pid. This ID is used for cloud pairing and mDNS.
+  </Step>
+
+  <Step title="Write default config">
+    Creates `/etc/ados/config.yaml` with defaults tuned for your detected board. Serial port, baud rate, video resolution, and tier are all pre-filled.
+  </Step>
+
+  <Step title="Install systemd services">
+    Copies service unit files to `/etc/systemd/system/` and enables them. The supervisor service starts at boot and manages all child services.
+  </Step>
+
+  <Step title="Start the agent">
+    Runs `systemctl start ados-supervisor` which brings up the full service tree: MAVLink proxy, REST API, video pipeline (if a camera is detected), cloud relay, health monitor, and everything else your tier supports.
+  </Step>
+</Steps>
+
+## Install with pairing
+
+If you have a pairing code from ADOS Mission Control, include it during install:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/altnautica/ADOSDroneAgent/main/scripts/install.sh | sudo bash -s -- --pair YOUR_CODE
+```
+
+This pairs the agent to your cloud account during installation. The drone will appear in your Mission Control dashboard as soon as it connects.
+
+## Install a specific branch
+
+For development or testing a feature branch:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/altnautica/ADOSDroneAgent/main/scripts/install.sh | sudo bash -s -- --branch feature-name
+```
+
+## Upgrade an existing installation
+
+To upgrade to the latest version without losing your config:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/altnautica/ADOSDroneAgent/main/scripts/install.sh | sudo bash -s -- --upgrade
+```
+
+Or use the built-in OTA command:
+
+```bash
+ados upgrade
+```
+
+Both methods preserve `/etc/ados/config.yaml` and your pairing state.
+
+## Install from source
+
+For contributors and developers who want to modify the agent code:
+
+```bash
+# Clone the repo
+git clone https://github.com/altnautica/ADOSDroneAgent.git
+cd ADOSDroneAgent
+
+# Create a virtual environment
+python3.11 -m venv .venv
+source .venv/bin/activate
+
+# Install in development mode
+pip install -e ".[dev]"
+
+# Run the agent
+ados start
+```
+
+<Warning>
+For deployment on actual hardware, always use the install script instead of `pip install -e`. The install script catches packaging bugs (missing data files, broken entry points) that editable installs skip silently. Editable installs are for local development on your laptop only.
+</Warning>
+
+## Install on macOS (for development)
+
+You can run the agent on macOS for development and testing. It will not have systemd, WFB-ng, or hardware GPIO, but the REST API, demo mode, CLI, and TUI all work.
+
+```bash
+pip install ados-drone-agent
+```
+
+Or with pipx for an isolated install:
+
+```bash
+pipx install ados-drone-agent
+```
+
+Then start in demo mode:
+
+```bash
+ados demo
+```
+
+Demo mode generates simulated telemetry so you can test the GCS connection, REST API, and TUI without a flight controller.
+
+## Uninstall
+
+On Linux (removes services, binary, and data, keeps config):
+
+```bash
+ados uninstall
+```
+
+To remove everything including config:
+
+```bash
+ados uninstall --purge
+```
+
+On macOS:
+
+```bash
+ados uninstall
+```
+
+The CLI auto-detects whether you installed with pip, pipx, or uv and uses the matching uninstall command.
+
+## Directory layout after install
+
+```
+/opt/ados/                  # Installation root
+  venv/                     # Python virtual environment
+  models/                   # Vision engine models (if Tier 4)
+
+/etc/ados/                  # Configuration
+  config.yaml               # Main config file
+  device-id                 # Unique device identifier
+  pairing.json              # Cloud pairing state
+  certs/                    # TLS certificates (if enabled)
+  suites/                   # Suite YAML manifests
+
+/var/ados/                  # Runtime data
+  scripts/                  # User Python scripts
+  recordings/               # Video recordings
+  logs/flights/             # Flight log archive
+
+/run/ados/                  # Unix domain sockets (tmpfs)
+  mavlink.sock              # Binary MAVLink IPC
+  state.sock                # JSON telemetry IPC
+
+/usr/local/bin/ados         # CLI symlink
+```
+
+## Verifying the installation
+
+After install, check that everything is running:
+
+```bash
+# Check the agent version
+ados version
+
+# Check service status
+ados status
+
+# Full diagnostics dump
+ados diag
+```
+
+The `ados diag` command prints board detection results, system resources, service states, FC connection status, network interfaces, and installed dependency versions. This is the first thing to run if something looks wrong.
+
+## Requirements
+
+| Requirement | Minimum | Recommended |
+|-------------|---------|-------------|
+| OS | Debian 11+ or Ubuntu 22.04+ (arm64/armv7l) | Debian 12 or Ubuntu 24.04 |
+| Python | 3.11 | 3.11 or 3.12 |
+| RAM | 64 MB (Tier 1) | 2 GB+ (Tier 3/4) |
+| Storage | 500 MB | 4 GB+ |
+| Network | Serial UART to FC | + WiFi/Ethernet/4G |

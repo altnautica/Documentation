@@ -1,0 +1,154 @@
+---
+title: "Setup and Pairing"
+description: "Get your ground station paired with a drone and ready to fly in under two minutes."
+icon: "link"
+---
+
+# Setup and Pairing
+
+First-time setup takes under two minutes if you have done it before, and under five minutes the first time. You pair the ground station with your drone, optionally join a WiFi network, and you are ready to fly.
+
+<Frame caption="The setup webapp landing page showing ground station status and quick actions">
+  <img src="/images/placeholder-setup-webapp.png" alt="Ground station setup webapp showing pairing status, network config, and display options" />
+</Frame>
+
+## Before you start
+
+Make sure you have:
+
+- A ground station with the ADOS Drone Agent installed (see [Installation](/ground-agent/installation))
+- A drone with the ADOS Drone Agent installed and powered on
+- The drone's pairing key (printed on the drone case or shown on the drone's OLED)
+
+## The setup webapp
+
+The setup webapp is a lightweight HTML page hosted on the ground station itself. It loads instantly, works on any device, and does not need internet access.
+
+You can reach it from:
+
+- **Phone:** Join the `ADOS-GS-XXXX` WiFi, and your phone's captive portal should open it automatically. If not, navigate to `http://setup.ados.local/`
+- **Laptop over WiFi:** Join the AP and open `http://setup.ados.local/` or `http://192.168.4.1/`
+- **Laptop over USB tether:** Open `http://192.168.7.1/` or `http://ground-station.local/`
+
+## First-time walkthrough
+
+<Steps>
+  <Step title="Power on the ground station">
+    Plug in power. Wait about 30 seconds for the boot to complete. The OLED shows the Link screen with "No drone" and the WiFi AP starts broadcasting.
+  </Step>
+  <Step title="Connect to the ground station">
+    From your phone or laptop, join the `ADOS-GS-XXXX` WiFi network. The passphrase is printed on the case (default for bench: `ados-ground`). The captive portal page should open automatically.
+  </Step>
+  <Step title="Pair with your drone">
+    On the setup webapp, tap "Pair with drone." Enter the drone's pairing key. The ground station and drone exchange WFB-ng encryption keys. Both OLEDs (if present) show a confirmation.
+
+    Alternatively, use the OLED menu: press B3 (Select) to open the menu, navigate to "Pair with drone", and enter the key using the B1/B2/B3 buttons.
+  </Step>
+  <Step title="Configure network (optional)">
+    If you want the ground station to connect to an existing WiFi network for cloud relay:
+
+    1. Tap "Network" on the setup webapp
+    2. Tap "Scan" to find nearby networks
+    3. Select your network and enter the password
+    4. The ground station joins as a WiFi client while keeping the AP active
+
+    Skip this step if you are flying offline.
+  </Step>
+  <Step title="Configure display (optional)">
+    If you have HDMI and a gamepad plugged in:
+
+    1. Tap "Display" on the setup webapp
+    2. Select your HDMI resolution
+    3. Pair a Bluetooth gamepad if you are using one
+
+    Skip this step if you are using a laptop or phone as your display.
+  </Step>
+  <Step title="Done">
+    Tap "Done." The ground station restarts services with the new config. The OLED switches to the Link screen showing signal strength from the drone. Video appears in your browser or on the HDMI display within a few seconds.
+  </Step>
+</Steps>
+
+## Pairing details
+
+Pairing exchanges WFB-ng encryption keys between the drone and ground station. After pairing:
+
+- The ground station only receives video from the paired drone
+- Other ground stations cannot intercept the video stream
+- The pairing persists across reboots and power cycles
+- You only need to pair once unless you factory-reset either side
+
+### QR code pairing (future)
+
+A future update will add QR code scanning. The drone's OLED shows a QR code, and you scan it with the setup webapp camera. Not available in the current release.
+
+### Re-pairing
+
+To pair with a different drone:
+
+1. Open the setup webapp or OLED menu
+2. Go to "Pair with drone"
+3. Enter the new drone's pairing key
+4. The old pairing is replaced
+
+You can also start a new pairing from the Mission Control Hardware tab by clicking the "Pair" button in the WFB-ng Radio sub-view.
+
+## Captive portal behavior
+
+When your phone joins the ground station WiFi, the operating system's captive portal detection kicks in:
+
+| Platform | Probe behavior | What happens |
+|----------|---------------|--------------|
+| Android | Sends HTTP to `connectivitycheck.gstatic.com` | Agent responds with `204 No Content` within 100 ms. Android opens the setup webapp |
+| iOS / macOS | Sends HTTP to `captive.apple.com` | Agent responds with the expected probe response. Safari opens the setup webapp |
+| Windows | Sends HTTP to `www.msftconnecttest.com` | Agent responds, Windows opens the setup webapp |
+
+<Note>
+The captive portal DNS responder runs only during the first-time setup phase. After you complete setup and dismiss the webapp, the responder deactivates so it does not re-trigger on every reconnect.
+</Note>
+
+## Setup from the OLED
+
+If you do not have a phone or laptop, you can do everything from the OLED and buttons:
+
+1. Press B3 (Select) to open the main menu
+2. Navigate to "Pair with drone" to enter the pairing key character by character using B1 (up), B2 (down), and B3 (confirm)
+3. Navigate to "Network" to scan and join WiFi
+4. Navigate to "Display" to set HDMI resolution
+
+This path is slower than the webapp but works with nothing except the ground station itself.
+
+## Setup from Mission Control
+
+Once you have a browser connected (WiFi or USB tether), Mission Control's Hardware tab provides the full setup interface:
+
+- **WFB-ng Radio** sub-view: pair with drone, change channel, set FEC profile
+- **Network** sub-view: WiFi AP config, WiFi client, Ethernet, 4G modem, uplink priority
+- **Physical UI** sub-view: OLED brightness, button remapping, screen settings
+
+The Hardware tab is the most feature-rich setup interface. The setup webapp and OLED cover the basics.
+
+## After setup
+
+Once paired and configured:
+
+- Power on both the drone and the ground station
+- Video and telemetry appear automatically within 5-10 seconds of both sides being powered
+- No setup steps needed on subsequent flights
+- The OLED shows link status, drone state, and connected clients
+
+## Resetting to factory defaults
+
+If you need to start over, factory reset clears the pairing keys, network config, and all settings:
+
+- **OLED:** Hold B4 for 10 seconds, then confirm by holding B4 again for 3 seconds
+- **Setup webapp:** Advanced page > Factory Reset
+- **Mission Control:** Hardware tab > Physical UI > Factory Reset (requires typed confirmation)
+- **CLI:** `sudo ados factory-reset`
+
+After reset, the ground station reboots and returns to the first-boot state.
+
+## What is next
+
+- [WiFi AP](/ground-agent/wifi-ap) to connect your laptop
+- [HDMI Kiosk](/ground-agent/hdmi-kiosk) for standalone flight
+- [Uplink Matrix](/ground-agent/uplink-matrix) for cloud and internet connectivity options

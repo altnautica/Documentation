@@ -1,0 +1,164 @@
+---
+title: "Installation"
+description: "Install the Ground Agent on your SBC with a single command."
+icon: "download"
+---
+
+# Installation
+
+The Ground Agent uses the same install script as the Drone Agent. One command, one SD card image, one codebase. The hardware fingerprint at first boot picks the right profile automatically.
+
+## Prerequisites
+
+- A Raspberry Pi 4B (or supported SBC) with a fresh Raspberry Pi OS Bookworm 64-bit image
+- An RTL8812EU USB WiFi adapter plugged in
+- Internet access during installation (WiFi or Ethernet)
+- An SD card with at least 16 GB (32 GB recommended)
+
+<Warning>
+The install script requires internet to download packages and the DKMS driver for the RTL8812EU. After installation completes, the ground station works fully offline.
+</Warning>
+
+## One-line install
+
+SSH into your SBC and run:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/altnautica/ADOSDroneAgent/main/scripts/install.sh | sudo bash
+```
+
+To pair with a drone at install time, add the pairing key:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/altnautica/ADOSDroneAgent/main/scripts/install.sh | sudo bash -s -- --pair YOUR_PAIRING_KEY
+```
+
+The install takes 5-10 minutes depending on your internet speed and SD card class.
+
+## What the install script does
+
+<Steps>
+  <Step title="System update">
+    Runs `apt update` and installs required packages: Python 3.11+, pip, systemd units, dnsmasq, hostapd, and build tools for the DKMS driver.
+  </Step>
+  <Step title="DKMS driver build">
+    Clones the RTL8812EU kernel module source and builds it via DKMS. This is the longest step. If kernel headers are missing, the script installs them first.
+  </Step>
+  <Step title="Agent install">
+    Installs the `ados` Python package from the GitHub release. Creates the `ados` system user, config directory at `/etc/ados/`, and runtime directory at `/run/ados/`.
+  </Step>
+  <Step title="Systemd units">
+    Deploys all systemd service units. They are not enabled yet because the profile has not been determined.
+  </Step>
+  <Step title="Profile detection">
+    Runs `ados.bootstrap.profile_detect` as the final step. The fingerprint checks for:
+    - I2C device at `0x3C` or `0x3D` (OLED present)
+    - Four GPIO pins with pull-ups (buttons wired)
+    - RTL8812EU USB device
+    - No flight controller on any serial port
+
+    If the score points to ground station, the script writes `profile: ground-station` to `/etc/ados/profile.conf` and enables the ground-station systemd units.
+  </Step>
+  <Step title="Reboot">
+    The SBC reboots once. On the second boot, the ground station is live. The WiFi AP starts, the OLED lights up, and the WFB-ng receiver begins listening.
+  </Step>
+</Steps>
+
+## First boot after install
+
+After the reboot, you should see:
+
+1. **OLED** shows the Link screen with "No drone" (if not yet paired) or signal strength (if paired during install)
+2. **WiFi AP** broadcasts `ADOS-GS-XXXX` where `XXXX` is the last four hex digits of the device ID
+3. **Setup webapp** is reachable at `http://setup.ados.local/` from any device on the AP
+
+<Note>
+The AP passphrase is printed on the case sticker for production units. For bench builds, the default passphrase is `ados-ground`. You can change it in the setup webapp or via the OLED menu.
+</Note>
+
+## Verifying the install
+
+SSH back into the SBC and run:
+
+```bash
+ados status
+```
+
+You should see output like:
+
+```
+ADOS Drone Agent v0.5.3
+Profile: ground-station
+Board: pi4b (Raspberry Pi 4B)
+
+Services:
+  ados-supervisor    active (running)
+  ados-api           active (running)
+  ados-wfb-rx        active (running)
+  ados-wifi-ap       active (running)
+  ados-oled          active (running)
+  ados-buttons       active (running)
+  ados-health        active (running)
+  ados-mediamtx-gs   active (running)
+```
+
+To check the WiFi AP:
+
+```bash
+ados gs wifi status
+```
+
+To check WFB-ng reception:
+
+```bash
+ados gs radio status
+```
+
+## Upgrading
+
+To upgrade an existing ground station:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/altnautica/ADOSDroneAgent/main/scripts/install.sh | sudo bash -s -- --upgrade
+```
+
+The upgrade preserves your config, pairing keys, and profile. Services restart automatically after the upgrade completes.
+
+## Installing a specific branch
+
+For testing pre-release features:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/altnautica/ADOSDroneAgent/main/scripts/install.sh | sudo bash -s -- --branch ground-station-phase-2
+```
+
+## Profile override
+
+If auto-detection picks the wrong profile (rare, usually means ambiguous hardware), you can force it:
+
+```bash
+sudo ados profile set ground-station
+sudo reboot
+```
+
+Or edit `/etc/ados/config.yaml` directly:
+
+```yaml
+agent:
+  profile: ground-station
+```
+
+## Troubleshooting install issues
+
+| Problem | Cause | Fix |
+|---------|-------|-----|
+| DKMS build fails | Missing kernel headers | Run `sudo apt install raspberrypi-kernel-headers` and re-run the install |
+| No WiFi AP after reboot | hostapd not started | Check `systemctl status ados-wifi-ap` |
+| OLED blank | I2C not enabled | Run `sudo raspi-config`, enable I2C under Interface Options, reboot |
+| Profile detected as "air" | Flight controller on USB | Unplug the FC and run `sudo ados profile auto` |
+
+## What is next
+
+- [Setup and Pairing](/ground-agent/setup-and-pairing) for the first-time walkthrough
+- [WiFi AP](/ground-agent/wifi-ap) to connect your laptop
+- [USB Tether](/ground-agent/usb-tether) for a wired connection

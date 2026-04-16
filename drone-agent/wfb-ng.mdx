@@ -1,0 +1,174 @@
+---
+title: "WFB-ng Video Link"
+description: "Long-range HD video using WFB-ng protocol and RTL8812EU WiFi adapters."
+icon: "wifi"
+---
+
+# WFB-ng Video Link
+
+WFB-ng (WiFi Broadcast next generation) is the protocol the agent uses for long-range HD video. It is not standard WiFi. Instead, it broadcasts raw 802.11 frames in monitor mode with forward error correction (FEC). This gives you 10-50+ km range at 30-70 ms latency.
+
+The agent manages WFB-ng directly as the `ados-wfb` systemd service. No OpenHD or other wrapper is required.
+
+## How it works
+
+Traditional WiFi requires a two-way handshake (connect, authenticate, associate). That limits range to whatever distance both sides can reliably hear each other. WFB-ng skips all of that. The transmitter broadcasts packets one-way. The receiver picks up whatever it can hear.
+
+Key differences from standard WiFi:
+
+| | Standard WiFi | WFB-ng |
+|---|---|---|
+| Mode | Managed (STA/AP) | Monitor mode (raw injection) |
+| Connection | Two-way handshake | One-way broadcast |
+| Range | ~100-300 m | 10-50+ km with directional antennas |
+| Latency | 5-50 ms | 30-70 ms |
+| Error handling | TCP retransmission | FEC (forward error correction) |
+| Encryption | WPA2/WPA3 | Custom key-based |
+
+## Hardware
+
+### WiFi adapter
+
+The recommended chipset is the **RTL8812EU** (5.8 GHz, 802.11ac). It supports monitor mode and packet injection at high TX power.
+
+| Spec | Value |
+|------|-------|
+| Chipset | RTL8812EU |
+| TX power | Up to 29 dBm (800 mW) |
+| Frequency | 5.8 GHz |
+| Interface | USB 2.0 |
+| Weight | ~25g (module form factor) |
+
+The agent auto-detects the adapter by scanning for USB devices with the RTL8812EU vendor/product IDs.
+
+<Warning>
+The RTL8812EU requires a DKMS kernel driver that is not part of the mainline Linux kernel. The install script installs this driver automatically on supported boards. If you are running a custom kernel, you need to build and install the driver manually.
+</Warning>
+
+### Antennas
+
+The adapter's built-in antenna works for short-range bench testing. For real flights, use external antennas:
+
+- **Air side (drone):** Omnidirectional dipole antenna, 3-5 dBi. The drone moves in all directions, so omnidirectional coverage is important.
+- **Ground side:** Directional patch or panel antenna, 8-14 dBi. Point it at the drone for maximum range.
+
+With a 14 dBi directional antenna on the ground and a 5 dBi dipole on the drone, expect 20-50 km line-of-sight range depending on conditions.
+
+## Configuration
+
+```yaml
+video:
+  mode: "wfb"
+  wfb:
+    interface: ""        # Auto-detected
+    channel: 149         # 5 GHz channel (149 = 5745 MHz)
+    tx_power: 25         # dBm (25 = ~300 mW)
+    fec_k: 8             # FEC data blocks
+    fec_n: 12            # FEC total blocks (data + parity)
+```
+
+### Channel selection
+
+WFB-ng operates on 5 GHz channels. Choose a channel that is not congested in your area. Common choices:
+
+| Channel | Frequency | Notes |
+|---------|-----------|-------|
+| 36 | 5180 MHz | DFS in some regions |
+| 149 | 5745 MHz | Default, usually clean |
+| 161 | 5805 MHz | Alternative |
+| 165 | 5825 MHz | Common FPV channel |
+
+<Note>
+Check your local regulations. Some 5 GHz channels require DFS (Dynamic Frequency Selection) or are restricted for outdoor use. The agent does not enforce regulatory limits. You are responsible for compliance.
+</Note>
+
+### TX power
+
+The `tx_power` setting is in dBm. Higher power means more range but also more interference and heat. Start at 25 dBm and increase only if needed.
+
+| dBm | mW | Typical use |
+|-----|-----|------------|
+| 15 | 32 | Bench testing |
+| 20 | 100 | Short range (< 1 km) |
+| 25 | 316 | Medium range (1-10 km) |
+| 29 | 800 | Long range (10-50 km) |
+
+### FEC tuning
+
+Forward Error Correction adds redundancy to the stream. The `fec_k` parameter is the number of data blocks, and `fec_n` is the total number of blocks (data + parity). The ratio `fec_k/fec_n` determines how much packet loss the stream can tolerate.
+
+| fec_k | fec_n | Parity ratio | Max loss tolerance |
+|-------|-------|-------------|-------------------|
+| 8 | 12 | 33% | 33% packet loss |
+| 4 | 8 | 50% | 50% packet loss |
+| 1 | 2 | 50% | 50% packet loss |
+| 8 | 9 | 11% | 11% packet loss |
+
+Higher parity means more resilience but also more bandwidth overhead. The default 8/12 is a good balance for most conditions.
+
+## Key management
+
+WFB-ng uses a shared key for stream encryption. The agent generates a key at install time and stores it at `/etc/ados/wfb.key`. The ground station needs the same key to receive the stream.
+
+When using the ADOS Ground Station (another instance of the agent in ground-station profile), the key is exchanged automatically during pairing.
+
+For manual key management:
+
+```bash
+# On the air unit (drone), the key is at:
+cat /etc/ados/wfb.key
+
+# Copy it to the ground station's /etc/ados/wfb.key
+```
+
+## Link quality monitoring
+
+The `ados-wfb` service reports link statistics to the state IPC socket and REST API:
+
+| Metric | Description |
+|--------|-------------|
+| RSSI | Received signal strength (dBm) |
+| SNR | Signal-to-noise ratio (dB) |
+| Channel | Current operating channel |
+| Packets received | Total packets decoded |
+| Packets lost | Total packets lost (before FEC) |
+| FEC recovered | Packets recovered by FEC |
+| FEC failed | Unrecoverable packet groups |
+| Bitrate | Current stream bitrate (kbps) |
+
+From the CLI:
+
+```bash
+$ ados link
+State:    active
+RSSI:     -42 dBm
+SNR:      28.5 dB
+Channel:  149
+Packets:  184523 rx, 12 lost
+FEC:      8 recovered, 0 failed
+Bitrate:  4200 kbps
+```
+
+## Ground station pairing
+
+The air unit (drone) runs `wfb_tx` to transmit. The ground station runs `wfb_rx` to receive. Both need to be on the same channel with the same key.
+
+When using two ADOS agents (one drone profile, one ground-station profile), channel and key synchronization happens automatically through the pairing flow.
+
+When using a standalone WFB-ng receiver (like wfb-cli or a custom setup), configure the channel and key manually on both sides.
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="No video, adapter not detected">
+    Run `lsusb` and check for the RTL8812EU device. If it is present but not recognized, the DKMS driver may not have built for your kernel version. Check `dmesg | grep 88x2eu` for driver load errors.
+  </Accordion>
+
+  <Accordion title="Short range, weak signal">
+    Check antenna connections. Verify TX power is set appropriately. Make sure the adapter is not USB-hub-connected (use a direct USB port for stable power). Try a different 5 GHz channel to avoid interference.
+  </Accordion>
+
+  <Accordion title="High FEC failure rate">
+    If `fec_failed` is climbing, you are at the edge of range or have interference. Options: increase FEC parity (lower `fec_k/fec_n` ratio), reduce video bitrate, use a directional antenna on the ground, or move to a cleaner channel.
+  </Accordion>
+</AccordionGroup>

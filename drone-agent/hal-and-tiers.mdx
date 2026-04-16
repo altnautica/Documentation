@@ -1,0 +1,250 @@
+---
+title: "HAL and Tiers"
+description: "Board auto-detection, YAML profiles, tier mapping, and adding new boards."
+icon: "layer-group"
+---
+
+# HAL and Tiers
+
+The Hardware Abstraction Layer (HAL) is how the agent adapts to different companion computers. It reads the board identity at boot, loads the matching YAML profile, and configures the agent's features based on the board's capabilities.
+
+## Board detection
+
+The detection logic lives in `ados.hal.detect` and runs at agent startup:
+
+1. Read `/proc/device-tree/model` (the Linux device tree model string)
+2. Compare against `model_patterns` in each board YAML file
+3. Pick the first profile whose pattern matches as a substring
+4. If no match, fall back to `generic-arm64.yaml`
+
+The detection also reads system information:
+
+- Total RAM from `/proc/meminfo`
+- CPU core count from `os.cpu_count()`
+- Architecture from `platform.machine()`
+
+## Board profile schema
+
+Each profile is a YAML file at `src/ados/hal/boards/<name>.yaml`. Here is the full schema:
+
+```yaml
+# Required fields
+name: "Human readable board name"
+vendor: "Board manufacturer"
+soc: "SoC model"
+arch: "aarch64"               # aarch64 | armv7l
+model_patterns:                # Strings to match in /proc/device-tree/model
+  - "Exact Match String"
+  - "alternative-match"
+default_tier: 3                # 1 | 2 | 3 | 4
+
+# Bus definitions
+gpio_pins:                     # Available GPIO pin numbers
+  - 2
+  - 3
+  - 14
+  - 15
+
+uart_paths:                    # Serial ports for FC auto-detection
+  - /dev/ttyAMA0
+  - /dev/ttyS0
+
+hw_video_codecs:               # Hardware-accelerated codecs
+  - h264_enc
+  - h264_dec
+  - h265_enc
+  - h265_dec
+  - av1_dec
+
+# Optional: detailed bus definitions
+buses:
+  uart:
+    - id: uart0
+      path: /dev/ttyS0
+      baud: 921600
+      fc_capable: true
+  usb:
+    - id: usb0
+      path: "/dev/bus/usb/001/*"
+      type: usb2
+  i2c:
+    - id: i2c0
+      path: /dev/i2c-0
+      speed_hz: 400000
+  spi:
+    - id: spi0
+      path: /dev/spidev0.0
+  pcie:
+    - id: pcie0
+      type: pcie3.0
+      lanes: 1
+
+# Optional: detailed board info
+board:
+  id: board-slug
+  manufacturer: Company
+  status: supported           # supported | experimental | community
+
+# Optional: compute details
+compute:
+  cores: 4
+  core_type: "Cortex-A76 x2 + Cortex-A55 x2"
+  max_freq_mhz: 2400
+  gpu: null                    # null if fused off or absent
+  npu_tops: 6.0               # null if no NPU
+  hw_encoder: ["h264", "h265"]
+  hw_decoder: ["h264", "h265", "vp9", "av1"]
+  ram_mb: 4096
+  ram_type: LPDDR4X
+
+# Optional: storage
+storage:
+  emmc: true
+  sd_card: true
+  nand: false
+
+# Optional: network
+network:
+  wifi: true
+  ethernet: true
+  bluetooth: true
+
+# Optional: video
+video:
+  csi_ports: 1
+  csi_connector: "31-pin 0.3mm Radxa FPC"
+  max_encode_resolution: "3840x2160"
+  max_encode_fps: 60
+  encoder_api: rkmpp
+
+# Optional: power
+power:
+  typical_watts: 4.0
+  max_watts: 8.5
+  voltage: 5.0
+  input: "USB-C 5V/3A"
+
+# Optional: feature profiles
+profiles:
+  tier: pro
+  max_features:
+    - mavlink_proxy
+    - mqtt_gateway
+    - video_pipeline
+    - rest_api
+    - vision_engine
+    - wfb_ng
+    - cloud_relay
+  video_capable: true
+  recommended_resolution: "1920x1080"
+  memory_budget_mb: 4096
+
+# Optional: ground station buttons (for boards used in GS role)
+gpio_buttons:
+  - id: btn_b1
+    pin: 5
+    header_pin: 29
+    function: "ground-station menu up"
+```
+
+## Tier mapping
+
+The tier system determines which features are active. The agent picks a tier based on three inputs (in priority order):
+
+1. **Explicit config** (`agent.tier` in config.yaml) overrides everything
+2. **Board profile** (`default_tier` in the YAML file) is the fallback
+3. **RAM-based fallback** if running on `generic-arm64` with no explicit tier
+
+### Tier feature matrix
+
+| Feature | Tier 1 | Tier 2 | Tier 3 | Tier 4 |
+|---------|--------|--------|--------|--------|
+| MAVLink proxy | Yes | Yes | Yes | Yes |
+| REST API | No | Yes | Yes | Yes |
+| Health monitoring | No | Yes | Yes | Yes |
+| mDNS discovery | No | Yes | Yes | Yes |
+| Video pipeline | No | No | Yes | Yes |
+| WFB-ng link | No | No | Yes | Yes |
+| Cloud relay | No | No | Yes | Yes |
+| Scripting engine | No | No | Yes | Yes |
+| OTA updates | No | No | Yes | Yes |
+| Peripherals manager | No | No | Yes | Yes |
+| Vision engine | No | No | No | Yes |
+| Application suites | No | No | No | Yes |
+
+### RAM guidelines
+
+| Tier | Minimum RAM | Typical boards |
+|------|------------|----------------|
+| 1 | 64 MB | Luckfox Pico (RV1103, RV1106) |
+| 2 | 256 MB | RV1126B, generic ARM64 |
+| 3 | 1 GB | Raspberry Pi 4B/CM4, Jetson Nano, Radxa CM3 |
+| 4 | 4 GB | ROCK 5C Lite, RPi 5/CM5, Jetson Orin Nano, Orange Pi 5 |
+
+## HAL modules
+
+Beyond board detection, the HAL provides several hardware abstraction modules:
+
+| Module | File | Purpose |
+|--------|------|---------|
+| `detect.py` | Board identification and profile loading |
+| `camera.py` | Camera detection (CSI, USB V4L2) |
+| `gpio.py` | GPIO pin access for buttons, LEDs |
+| `usb.py` | USB device enumeration and hot-plug |
+| `hotplug.py` | Device hot-plug event handling |
+| `modem.py` | Cellular modem AT commands |
+
+## Adding a new board
+
+To add support for a board that is not in the built-in list:
+
+<Steps>
+  <Step title="Identify the model string">
+    SSH into the board and read the device tree model:
+    ```bash
+    cat /proc/device-tree/model
+    ```
+    This is the string you will match against.
+  </Step>
+
+  <Step title="Create the YAML file">
+    Create `src/ados/hal/boards/your-board.yaml` with at minimum:
+    ```yaml
+    name: "Your Board Name"
+    vendor: "Manufacturer"
+    soc: "SoC Model"
+    arch: "aarch64"
+    model_patterns:
+      - "Exact string from /proc/device-tree/model"
+    default_tier: 3
+    uart_paths:
+      - /dev/ttyS0
+    hw_video_codecs:
+      - h264_enc
+    ```
+  </Step>
+
+  <Step title="Add bus definitions">
+    List the UART ports the FC might connect to, USB ports, I2C buses, and any other relevant hardware.
+  </Step>
+
+  <Step title="Set the right tier">
+    Based on the board's RAM and capabilities, pick an appropriate default tier. When in doubt, start lower and test.
+  </Step>
+
+  <Step title="Test">
+    Install the agent on the board and verify detection:
+    ```bash
+    ados diag
+    ```
+    The board name, tier, and features should match your YAML file.
+  </Step>
+
+  <Step title="Submit a PR">
+    Add the YAML file and submit a pull request to `altnautica/ADOSDroneAgent`. Include the board model, where to buy it, and any quirks you discovered during testing.
+  </Step>
+</Steps>
+
+<Tip>
+The `generic-arm64` fallback profile works on any 64-bit ARM board. You can use the agent without a custom profile. Adding a board profile just improves auto-detection accuracy and enables board-specific features (like the right UART path or GPIO buttons).
+</Tip>

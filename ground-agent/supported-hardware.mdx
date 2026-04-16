@@ -1,0 +1,140 @@
+---
+title: "Supported Hardware"
+description: "Which boards, radios, and peripherals work with the ADOS Ground Agent."
+icon: "circuit-board"
+---
+
+# Supported Hardware
+
+The Ground Agent runs on any Linux ARM single-board computer that can host a USB WiFi adapter in monitor mode. The bench build uses a Raspberry Pi 4B. Production builds target Radxa CM3 and CM4 boards.
+
+## Required components
+
+Every ground station needs these two things:
+
+1. **A Linux SBC** with at least 1 GB RAM, USB 2.0, and a 64-bit ARM processor
+2. **An RTL8812EU USB WiFi adapter** for WFB-ng receive on 5 GHz
+
+Everything else (OLED, buttons, HDMI, 4G modem) is optional but recommended.
+
+## Bench build (Raspberry Pi 4B)
+
+This is the cheapest and fastest way to get a ground station running. All parts are available in India.
+
+| Part | Role | Approx. price (INR) |
+|------|------|---------------------|
+| Raspberry Pi 4B (2 GB or 4 GB) | Ground SBC | 5,800 |
+| 32 GB SD card (A2 class) | Boot and logs | 400 |
+| LB-LINK BL-M8812EU2 (RTL8812EU) | WFB-ng radio receiver | 2,000 |
+| 2x 5 dBi SMA dual-band antenna | Signal reception | 400 |
+| USB-C data cable (1 m) | Tether to laptop | 250 |
+| 5V / 3A USB-C power supply | Bench power | 450 |
+
+**Subtotal: about 9,300 INR** for the minimum radio stack.
+
+### Physical UI (recommended)
+
+| Part | Role | Approx. price (INR) |
+|------|------|---------------------|
+| SSD1306 128x64 I2C OLED (0.96" or 1.3") | Status display | 250 |
+| 4x tactile pushbuttons (6mm) | Menu navigation | 40 |
+| Dupont jumper wires (M-F, 20 pack) | GPIO wiring | 80 |
+| Protoboard or JST-XH housing | Wire management | 100 |
+
+**Subtotal: about 470 INR.**
+
+### Standalone flight add-ons (optional)
+
+| Part | Role | Approx. price (INR) |
+|------|------|---------------------|
+| Micro-HDMI to HDMI cable (1.5 m) | Display output | 200 |
+| 7" HDMI monitor (1024x600) | Pilot display | 3,500 |
+| USB gamepad (Logitech F310 or similar) | Pilot input | 1,800 |
+
+**Subtotal: about 5,500 INR** if nothing is on hand.
+
+### 4G modem (optional)
+
+| Part | Role | Approx. price (INR) |
+|------|------|---------------------|
+| SIM7600G-H 4G LTE USB modem | Cellular uplink | 6,500 |
+| SIM card with data plan | Cellular service | 200/month |
+
+## Production tiers
+
+<Tabs>
+  <Tab title="Lite">
+    **Target retail: $100-150 USD**
+
+    - Radxa CM3 (RK3566) on a baseboard
+    - Single RTL8812EU radio
+    - OLED + 4 buttons on the front panel
+    - HDMI output
+    - WiFi AP on the onboard radio
+    - Compact palm-sized enclosure
+
+    Good for field pilots, bench engineers, and single-drone operations.
+  </Tab>
+  <Tab title="Pro">
+    **Target retail: $200-350 USD**
+
+    - Radxa CM4 (RK3588S2) on a baseboard
+    - Two RTL8812EU radios for antenna diversity
+    - OLED + 4 buttons on the front panel
+    - HDMI output
+    - Internal M.2 slot for 4G modem
+    - WiFi AP on the onboard radio
+    - Rugged field enclosure
+
+    Good for fleet operators, long-range operations, and commercial use.
+  </Tab>
+</Tabs>
+
+## RTL8812EU details
+
+The RTL8812EU chipset is required for WFB-ng monitor mode reception. It supports 5 GHz operation at up to 29 dBm TX power (800 mW+), though the ground side only uses RX mode.
+
+<Warning>
+Not all USB WiFi adapters work. The adapter must use the RTL8812EU or RTL8812AU chipset. Generic "WiFi 6" or "AC1200" adapters almost certainly use a different chipset that does not support monitor mode. The LB-LINK BL-M8812EU2 is the tested reference adapter.
+</Warning>
+
+**Driver note:** The RTL8812EU requires a DKMS kernel module. The `install.sh` script handles this automatically. If DKMS build fails (missing kernel headers), the install script reports the error and retries on the next boot after an `apt upgrade`.
+
+## OLED display
+
+Any SSD1306-based or SH1106-based 128x64 I2C OLED works. The agent probes I2C address `0x3C` (some clones use `0x3D`). The display connects with four wires: SDA, SCL, VCC (3.3 V), and GND.
+
+The 1.3" size is better for field use. The 0.96" size works fine on the bench.
+
+## GPIO buttons
+
+Four tactile momentary pushbuttons wired between GPIO pins and GND. The agent enables internal pull-ups, so no external resistors are needed for the bench build.
+
+| Button | Pi 4B GPIO | Header pin |
+|--------|-----------|------------|
+| B1 (Up / Record) | GPIO 5 | Pin 29 |
+| B2 (Down / WiFi toggle) | GPIO 6 | Pin 31 |
+| B3 (Select / Pair) | GPIO 13 | Pin 33 |
+| B4 (Back / Factory reset) | GPIO 19 | Pin 35 |
+
+<Tip>
+On boards other than the Pi 4B, the GPIO pin numbers are defined in the HAL board profile YAML. The agent reads the profile at boot and maps buttons accordingly.
+</Tip>
+
+## Gamepad support
+
+Any USB HID gamepad works for standalone HDMI flight. The Web Gamepad API in Chromium handles mapping. Tested controllers:
+
+- Logitech F310 (USB, reference controller)
+- Xbox Series controller (USB or Bluetooth)
+- PS4 DualShock (USB or Bluetooth)
+- PS5 DualSense (USB or Bluetooth)
+- 8BitDo Pro 2 (USB or Bluetooth)
+
+Bluetooth gamepads pair through the setup webapp or the OLED menu.
+
+## What is next
+
+- [Installation](/ground-agent/installation) to set up your ground station
+- [Physical UI](/ground-agent/physical-ui) for OLED and button details
+- [HDMI Kiosk](/ground-agent/hdmi-kiosk) for standalone flight setup

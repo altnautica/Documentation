@@ -1,0 +1,119 @@
+---
+title: "USB Tether"
+description: "Connect your laptop to the ground station with a USB-C cable for the lowest latency."
+icon: "usb"
+---
+
+# USB Tether
+
+Plug a USB-C data cable from the ground station to your Mac, Windows, or Android device. The SBC appears as a USB Ethernet adapter. No drivers to install on modern operating systems. Video latency drops to 40-70 ms because you skip the WiFi hop entirely.
+
+## How it works
+
+The Pi 4B USB-C port supports USB 2.0 OTG device mode. The agent configures a `libcomposite` USB gadget at boot that presents two Ethernet functions:
+
+- **CDC-NCM** (standards-compliant, native on macOS Sonoma+, Windows 11, Linux, Android 11+)
+- **RNDIS** (Microsoft proprietary, fallback for Windows 10)
+
+Your laptop picks whichever it supports. You get a new network interface with a static IP.
+
+| Setting | Value |
+|---------|-------|
+| Ground station IP | `192.168.7.1` |
+| Laptop / phone IP | `192.168.7.2` (DHCP assigned) |
+| Subnet | `192.168.7.0/24` |
+| mDNS hostname | `ground-station.local` |
+| Protocol | CDC-NCM + RNDIS composite |
+
+## Platform support
+
+<Tabs>
+  <Tab title="macOS">
+    **macOS Sonoma and later.** Plug the cable. System Settings shows a new "ADOS Ground Station" network interface. Open your browser and go to `http://192.168.7.1:4000` or `http://ground-station.local:4000`. No driver install needed.
+
+    macOS selects CDC-NCM automatically.
+  </Tab>
+  <Tab title="Windows 11">
+    **Windows 11.** Plug the cable. A new Ethernet adapter appears in Network Connections. Navigate to `http://192.168.7.1:4000` in your browser.
+
+    Windows 11 has native CDC-NCM support since 2022.
+  </Tab>
+  <Tab title="Windows 10">
+    **Windows 10.** Usually works out of the box via the RNDIS fallback. Some older Windows 10 builds may not auto-install the RNDIS driver. If the adapter shows a yellow exclamation mark in Device Manager, install the RNDIS INF driver from the setup webapp's help page.
+  </Tab>
+  <Tab title="Linux">
+    **Linux.** Both CDC-NCM and RNDIS bind automatically. NetworkManager shows the new interface. You may need to set the connection to the "trusted" firewall zone if your distro blocks LAN traffic by default.
+  </Tab>
+  <Tab title="Android">
+    **Android 11+.** CDC-NCM is supported via the USB tethering path. Plug a USB-C cable and approve the "USB Ethernet" notification. The phone gets `192.168.7.2` and can reach the ground station at `192.168.7.1`.
+  </Tab>
+</Tabs>
+
+## What you can reach over USB tether
+
+All the same endpoints as WiFi, but at `192.168.7.1` instead of `192.168.4.1`:
+
+| Endpoint | URL |
+|----------|-----|
+| Mission Control | `http://192.168.7.1:4000` |
+| Setup webapp | `http://ground-station.local/` |
+| WebRTC WHEP | `http://192.168.7.1:8889/ados/whep` |
+| MAVLink WebSocket | `ws://192.168.7.1:8088/mavlink` |
+| Agent REST API | `http://192.168.7.1:8080/api/v1/` |
+
+## Why USB tether
+
+| Advantage | Details |
+|-----------|---------|
+| Lower latency | 40-70 ms glass-to-glass vs 80-100 ms over WiFi |
+| Zero spectrum contention | No 2.4 GHz competition with the WiFi AP or nearby networks |
+| Wired reliability | No packet loss from WiFi interference |
+| Charging | Android phones charge while tethered |
+| Sub-1 ms ping | Measured on Pi 4B to Mac mini M2 |
+
+## Throughput
+
+| Metric | Value |
+|--------|-------|
+| USB 2.0 raw throughput | ~40 Mbps sustained |
+| CDC-NCM overhead | ~5% |
+| Video at 6 Mbps | ~12% of the link |
+| MAVLink + REST | Under 100 Kbps |
+
+More than enough for multiple video streams and telemetry. USB 3.0 is not needed at these rates.
+
+## Power and cables
+
+<Warning>
+Many cheap USB-C cables are power-only and do not carry data. If your laptop does not detect a new network interface after plugging in, try a different cable. Look for cables explicitly labeled "data" or "USB 2.0/3.0 data capable."
+</Warning>
+
+The Pi 4B USB-C port is both data and power. A laptop that provides USB-C power may back-power the Pi, but some laptops only provide 500 mA. The Pi under WiFi AP and RTL8812EU load needs about 2 A. Brownouts cause instability.
+
+**Recommended setup:** Power the Pi from its own 5V/3A power supply. Use a separate data-capable USB-C cable for the tether. This separates power from data and avoids brownout issues.
+
+## Combining USB tether with WiFi AP
+
+You can use both at the same time. One client connects over USB tether for the lowest latency pilot view. Other clients connect over WiFi AP to observe. The agent serves both subnets simultaneously.
+
+The two subnets do not bridge by default. A client on `192.168.7.x` (USB) cannot see clients on `192.168.4.x` (WiFi) unless you enable uplink sharing in the network config.
+
+## HTTPS caveat
+
+Same as WiFi: if your browser loaded Mission Control from `https://command.altnautica.com`, it blocks `http://192.168.7.1` connections. Use the local build at `http://192.168.7.1:4000` or run Mission Control on your laptop at `http://localhost:4000`.
+
+## Troubleshooting
+
+| Problem | Cause | Fix |
+|---------|-------|-----|
+| No new network interface | Power-only cable | Try a data-capable USB-C cable |
+| No new network interface | USB gadget service not running | SSH in and check `systemctl status ados-usb-gadget` |
+| No new network interface | `dwc2` not loaded | Check that `dtoverlay=dwc2` is in `/boot/firmware/config.txt` |
+| Windows yellow exclamation | RNDIS driver not installed | Install the INF from the setup webapp help page |
+| Intermittent disconnects | Brownout from laptop power | Use a separate 5V/3A PSU for the Pi |
+
+## What is next
+
+- [WiFi AP](/ground-agent/wifi-ap) for the wireless alternative
+- [HDMI Kiosk](/ground-agent/hdmi-kiosk) for standalone flight without a laptop
+- [Uplink Matrix](/ground-agent/uplink-matrix) for all five connectivity options

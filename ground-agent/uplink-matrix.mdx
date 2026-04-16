@@ -1,0 +1,155 @@
+---
+title: "Uplink Matrix"
+description: "Five connectivity options for reaching the cloud, with automatic failover and data caps."
+icon: "arrows-up-to-line"
+---
+
+# Uplink Matrix
+
+The ground station supports five uplink modes. Any combination can run at the same time. The agent routes cloud relay traffic across them based on a priority list with health checks and automatic failover.
+
+## The five uplinks
+
+| Mode | How it works | Typical use |
+|------|-------------|-------------|
+| WiFi AP | Creates a local hotspot for laptops and phones | Always on by default |
+| WiFi client | Joins an existing WiFi network | Home WiFi, venue hotspot, field near a known AP |
+| Ethernet | Wired connection via the Pi 4B onboard Gigabit Ethernet | Lab, hangar, any switch |
+| USB tether | SBC appears as USB Ethernet to a connected laptop | Bench, indoor lab |
+| 4G LTE modem | USB cellular modem (SIM7600G-H or similar) | Field with no WiFi |
+
+## Two traffic classes
+
+The ground station handles two types of traffic, and they are independent:
+
+**Client access** is the traffic between connected laptops, phones, and the HDMI kiosk. This always stays on the local network (WiFi AP subnet, USB tether subnet, or Ethernet). It does not touch the internet.
+
+**Cloud relay** is the traffic between the ground station and the Altnautica cloud (Convex HTTP, MQTT telemetry, optional video). This goes out over whichever uplink currently has internet access.
+
+A client on the WiFi AP can stream video at full quality even if the 4G modem is down. Client access and cloud relay are decoupled.
+
+## Priority and failover
+
+Each uplink has a priority number. Lower number means higher preference. The agent uses the highest-priority uplink that has internet access.
+
+Default priorities:
+
+| Priority | Uplink | Why |
+|----------|--------|-----|
+| 1 | Ethernet | Fastest, most reliable, no data cap |
+| 2 | WiFi client | Good throughput, no cost |
+| 3 | 4G LTE modem | Everywhere, but costs money |
+| 4 | USB tether | Typically a bench setup |
+
+WiFi AP does not appear in the priority list because it provides client access, not internet.
+
+### Health checks
+
+Every 15 seconds, the agent sends an HTTPS HEAD request to `convex.altnautica.com` on the current uplink. If three consecutive checks fail, the agent switches to the next available uplink.
+
+Recovery checks run every 60 seconds on lower-priority uplinks. If a higher-priority uplink recovers (three consecutive successes), the agent switches back.
+
+Failover events are logged and visible on the OLED Network screen, the Hardware tab Network sub-view, and the agent log.
+
+## Default configuration
+
+```yaml
+ground_station:
+  wifi_ap:
+    enabled: true
+    ssid: "ADOS-GS-{short_id}"
+    band: "2.4GHz"
+  wifi_client:
+    enabled: false
+    priority: 2
+  ethernet:
+    enabled: true
+    priority: 1
+  usb_tether:
+    enabled: true
+    priority: 4
+    share_uplink: false
+  modem_4g:
+    enabled: false
+    priority: 3
+    data_cap_gb: 5.0
+    throttle_on_cap: true
+```
+
+<Note>
+4G is never enabled by default. You must opt in from the setup webapp, the OLED menu, or the Mission Control Hardware tab. This prevents unexpected cellular data charges.
+</Note>
+
+## Data cap and throttle cascade
+
+When a 4G modem is active, the agent tracks data usage via the kernel network statistics. Three thresholds trigger automatic responses:
+
+| Threshold | Action |
+|-----------|--------|
+| 80% of cap | INFO notification sent to Mission Control. Normal operation continues. |
+| 95% of cap | Video bitrate pushed to cloud drops to 1 Mbps. Telemetry continues normally. |
+| 100% of cap | Cloud relay switches to telemetry-only. No video pushed to cloud. Local clients are unaffected. |
+
+The data cap resets on the 1st of each month at midnight local time.
+
+You can set the cap from the setup webapp Network page or the Hardware tab. The default is 5 GB per month.
+
+## Bandwidth profile
+
+| Traffic type | Typical rate |
+|-------------|-------------|
+| MAVLink telemetry (local) | 10-30 Kbps |
+| MAVLink to cloud (MQTT, 2 Hz downsample) | 5-15 Kbps |
+| Video to local client (WebRTC LAN) | 4-8 Mbps |
+| Video to cloud relay (if enabled) | 1-4 Mbps |
+| Agent status beacon to Convex | Under 1 Kbps |
+| Worst case over 4G (video to cloud on) | ~5 Mbps |
+
+Over 4G with video-to-cloud disabled (the default), steady state is 50-100 KB/s. That is about 300-700 MB per month for telemetry only.
+
+## WiFi AP and WiFi client on one radio
+
+The Pi 4B has one onboard WiFi radio. By default, it hosts the AP on 2.4 GHz. If you enable WiFi client mode, the AP shuts down and the same radio joins the upstream network. You cannot run AP and client on the same radio at the same time.
+
+<Tip>
+If you need both AP and WiFi client simultaneously, plug in a second USB WiFi dongle (any cheap RTL8188 works). The agent HAL profile detects the second interface and assigns it to client duty while the onboard radio stays on AP.
+</Tip>
+
+The RTL8812EU stays on 5 GHz in monitor mode for WFB-ng. It is never used for WiFi AP or client.
+
+## Uplink sharing with AP clients
+
+By default, devices connected to the WiFi AP cannot use the ground station's internet connection. This prevents phones from burning 4G data on background app updates.
+
+If you want to share internet access with AP clients:
+
+1. Open the setup webapp Network page or Mission Control Hardware tab
+2. Enable "Share uplink with AP clients"
+3. The agent enables IP forwarding and NAT
+
+This is an advanced feature. The data cap throttle still applies.
+
+<Warning>
+When uplink sharing is enabled, every phone on the AP can use the ground station's 4G data. Background app updates, push notifications, and cloud sync will all count against the data cap. Disable this if you are on a tight data plan.
+</Warning>
+
+## Configuring uplinks
+
+You can change uplink settings from three places:
+
+| Setting | OLED menu | Setup webapp | Hardware tab |
+|---------|-----------|-------------|-------------|
+| WiFi AP on/off | Yes | Yes | Yes |
+| WiFi client scan and join | Yes (limited) | Yes | Yes |
+| Ethernet | Auto-detected | Status only | Full config |
+| 4G modem enable | Yes | Yes | Yes |
+| APN config | No | Yes | Yes |
+| Data cap | No | Yes | Yes |
+| Priority reorder | No | No | Yes (drag and drop) |
+| Share uplink toggle | No | Yes | Yes |
+
+## What is next
+
+- [Hardware Tab](/ground-agent/hardware-tab) for the full Mission Control management interface
+- [WiFi AP](/ground-agent/wifi-ap) for laptop and phone connections
+- [Troubleshooting](/ground-agent/troubleshooting) for connectivity issues

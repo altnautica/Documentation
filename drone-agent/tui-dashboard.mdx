@@ -1,0 +1,156 @@
+---
+title: "TUI Dashboard"
+description: "A full terminal dashboard for monitoring and managing the agent over SSH."
+icon: "table-layout"
+---
+
+# TUI Dashboard
+
+The ADOS Drone Agent includes a terminal user interface (TUI) built with [Textual](https://textual.textualize.io/). It gives you a visual dashboard directly in your terminal, works over SSH, and does not require a browser or GUI.
+
+Launch it with:
+
+```bash
+ados tui
+```
+
+<Frame caption="The TUI dashboard showing the main status screen with telemetry gauges">
+  <img src="/images/placeholder-tui-main.png" alt="ADOS TUI dashboard with service status, telemetry gauges, and system health" />
+</Frame>
+
+## Screens
+
+The TUI has nine screens. Switch between them using the keyboard shortcuts shown in the footer bar.
+
+| Key | Screen | What it shows |
+|-----|--------|---------------|
+| `d` | Dashboard | Agent version, uptime, board info, FC status, service health summary |
+| `t` | Telemetry | Live attitude (roll/pitch/yaw), GPS position, altitude, speed, battery |
+| `m` | MAVLink | FC connection details, serial port, baud rate, MAVLink message rates |
+| `v` | Video | Camera list, encoder state, MediaMTX status, recording toggle |
+| `w` | Link | WFB-ng signal strength, SNR, FEC stats, packet loss, bitrate |
+| `s` | Scripting | Running scripts, script output, text command input |
+| `u` | Updates | OTA status, current version, available updates, upgrade trigger |
+| `c` | Config | Live config editor, dot-path key/value pairs, save to disk |
+| `l` | Logs | Scrollable log viewer with auto-tail |
+
+Press `q` to quit.
+
+### Dashboard screen
+
+The default screen when you launch the TUI. Shows a summary of everything at a glance: agent version, uptime, detected board and tier, flight controller connection status, and a service health grid.
+
+<Frame caption="Dashboard screen with service health indicators">
+  <img src="/images/placeholder-tui-dashboard.png" alt="TUI dashboard screen showing board, FC, and service status" />
+</Frame>
+
+### Telemetry screen
+
+Live flight data pulled from the agent's REST API. Updates every second. Shows:
+
+- Attitude: roll, pitch, yaw in degrees
+- Position: latitude, longitude, altitude (MSL and AGL)
+- Speed: ground speed and airspeed
+- Battery: voltage, current, remaining percentage
+- GPS: fix type, satellite count, HDOP
+
+### MAVLink screen
+
+Details about the flight controller connection:
+
+- Connection state (connected/disconnected/searching)
+- Serial port path and baud rate
+- MAVLink system/component IDs
+- Message receive rate (msgs/sec)
+- Last heartbeat timestamp
+
+### Video screen
+
+Camera and encoding pipeline status:
+
+- Detected cameras (CSI and USB) with names and types
+- Encoder state (idle, encoding, error)
+- MediaMTX process status (running/stopped)
+- RTSP stream URL
+- Recording state and file path
+
+### Link screen
+
+WFB-ng radio link telemetry (only active when WFB-ng is running):
+
+- RSSI in dBm
+- Signal-to-noise ratio in dB
+- Channel number
+- TX power
+- Packets received and lost
+- FEC recovered and failed counts
+- Current bitrate in kbps
+
+### Scripting screen
+
+Manage scripts from the terminal:
+
+- List of running scripts with state (running, paused, stopped)
+- Script output log
+- Text command input bar for sending Tello-style commands
+
+### Updates screen
+
+OTA update management:
+
+- Current installed version
+- Update channel (stable, beta, dev)
+- Last check timestamp
+- Available update details and changelog preview
+- Trigger check and upgrade from within the TUI
+
+### Config screen
+
+A live configuration editor:
+
+- Browse all config sections (agent, mavlink, video, network, server, etc.)
+- View current values
+- Edit values using dot-path keys
+- Save changes to `/etc/ados/config.yaml`
+
+<Note>
+Config changes made in the TUI take effect on the next service restart. Some settings (like `mavlink.baud_rate`) require a restart of the specific service.
+</Note>
+
+### Logs screen
+
+Scrollable log viewer that reads from the agent's log output:
+
+- Auto-scrolls to follow new entries
+- Scroll up to pause auto-scroll
+- Color-coded log levels (info, warning, error)
+
+## Using over SSH
+
+The TUI works well over SSH. Make sure your terminal supports 256 colors and is at least 80 columns wide.
+
+```bash
+ssh user@your-drone.local -t "ados tui"
+```
+
+The `-t` flag allocates a PTY, which is required for the Textual interface to render correctly.
+
+<Tip>
+For the best experience, use a modern terminal emulator (Ghostty, iTerm2, Kitty, WezTerm) with a monospace font. The TUI uses Unicode box-drawing characters and color codes that render best in terminals with good Unicode support.
+</Tip>
+
+## API connection
+
+The TUI connects to the agent's REST API at `http://localhost:8080` by default. If the agent is running on a different port, configure it in `/etc/ados/config.yaml` under `scripting.rest_api.port`.
+
+The TUI uses the `AgentFetcher` class to poll the API periodically. It reads the API key from `/etc/ados/pairing.json` for authenticated endpoints, same as the CLI.
+
+## Requirements
+
+The TUI requires the `textual` Python package. It is included as a dependency of the agent and installed automatically by the install script. If you see an import error when running `ados tui`, install it manually:
+
+```bash
+pip install textual
+```
+
+The TUI is available on all platforms (Linux, macOS) but is most useful on the companion computer itself or over SSH to the drone.

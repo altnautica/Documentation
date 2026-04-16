@@ -1,0 +1,250 @@
+---
+title: "Project Structure"
+description: "Directory maps and key files for both ADOS repositories."
+icon: "folder-tree"
+---
+
+# Project Structure
+
+ADOS lives in two repositories. Both are open-source under GPLv3.
+
+## ADOS Mission Control (GCS)
+
+**Repository:** [github.com/altnautica/ADOSMissionControl](https://github.com/altnautica/ADOSMissionControl)
+
+**Stack:** Next.js 16, React 19, TypeScript, Zustand, Tailwind CSS, Leaflet, CesiumJS
+
+```
+ADOSMissionControl/
+├── src/
+│   ├── app/                        # Next.js App Router pages
+│   │   ├── page.tsx                # Dashboard (home)
+│   │   ├── command/                # Drone Command tab
+│   │   ├── plan/                   # Mission Planning tab
+│   │   ├── configure/              # FC Configuration tab
+│   │   ├── simulate/               # Simulation tab
+│   │   ├── airspace/               # Airspace zones tab
+│   │   ├── hardware/               # Ground station Hardware tab
+│   │   │   ├── overview/
+│   │   │   ├── network/
+│   │   │   ├── wfb/
+│   │   │   ├── ui/
+│   │   │   └── storage/
+│   │   ├── hud/                    # Standalone HUD (kiosk mode)
+│   │   ├── history/                # Flight History tab
+│   │   ├── community/              # Changelog, roadmap, kanban
+│   │   └── api/                    # Auth route handler
+│   │
+│   ├── components/                 # React components
+│   │   ├── command/                # Command tab components
+│   │   ├── configure/              # FC panel components (38 panels)
+│   │   ├── plan/                   # Mission planning components
+│   │   ├── hardware/               # Ground station components
+│   │   ├── map/                    # Leaflet map layers
+│   │   ├── video/                  # VideoFeedCard, transport switcher
+│   │   ├── hud/                    # HUD overlay widgets
+│   │   └── ui/                     # Shared UI primitives
+│   │
+│   ├── stores/                     # Zustand state stores (54 files)
+│   │   ├── telemetry-store.ts
+│   │   ├── drone-manager.ts
+│   │   ├── video-store.ts
+│   │   ├── ground-station-store.ts
+│   │   ├── settings-store.ts
+│   │   ├── parameter-store.ts
+│   │   └── ...
+│   │
+│   ├── lib/                        # Core libraries
+│   │   ├── protocol/               # MAVLink + MSP protocol layer
+│   │   │   ├── mavlink-parser.ts   # Streaming v1/v2 parser
+│   │   │   ├── mavlink-adapter.ts  # MAVLinkAdapter (83 decoders)
+│   │   │   ├── msp-adapter.ts      # MSPAdapter (34 decoders, 21 encoders)
+│   │   │   ├── drone-protocol.ts   # DroneProtocol interface
+│   │   │   ├── mavlink-constants.ts # CRC_EXTRA, payload lengths
+│   │   │   └── encoders/           # 6 encoder modules
+│   │   ├── video/
+│   │   │   ├── webrtc-client.ts    # WHEP + P2P MQTT WebRTC
+│   │   │   └── mse-player.ts       # MediaSource fallback
+│   │   ├── api/
+│   │   │   └── ground-station-api.ts
+│   │   └── utils/
+│   │
+│   ├── hooks/                      # Custom React hooks
+│   │   ├── use-panel-params.ts     # Parameter read/write for panels
+│   │   ├── use-video-transport-cascade.ts
+│   │   └── use-ground-station-subscriptions.ts
+│   │
+│   └── locales/                    # i18n translations (16 languages)
+│       ├── en.json
+│       ├── hi.json
+│       ├── ja.json
+│       └── ...
+│
+├── convex/                         # Convex backend (OSS standalone)
+│   ├── schema.ts                   # 25 tables (7 auth + 18 custom)
+│   ├── profiles.ts
+│   ├── communityChangelog.ts
+│   ├── cmdDroneStatus.ts           # Cloud relay drone status
+│   ├── cmdDroneCommands.ts         # Cloud relay command queue
+│   └── ...
+│
+├── tools/
+│   ├── sitl/                       # ArduPilot SITL launcher + TCP-to-WS bridge
+│   ├── mqtt-bridge/                # Mosquitto + MQTT-to-Convex bridge (Docker)
+│   └── video-relay/                # RTSP-to-fMP4 relay (Docker)
+│
+├── public/                         # Static assets
+├── electron/                       # Electron wrapper for desktop builds
+├── package.json
+├── next.config.ts
+├── tailwind.config.ts
+└── tsconfig.json
+```
+
+### Key files to know
+
+| File | What it does |
+|------|-------------|
+| `src/lib/protocol/drone-protocol.ts` | The interface every protocol adapter implements |
+| `src/lib/protocol/mavlink-adapter.ts` | MAVLink v2 adapter with 83 decoders and 33 command handlers |
+| `src/lib/protocol/msp-adapter.ts` | MSP adapter for Betaflight with 34 decoders and 105 virtual params |
+| `src/stores/drone-manager.ts` | Central coordinator between protocol and stores |
+| `src/stores/telemetry-store.ts` | Ring-buffered telemetry with attitude, GPS, battery history |
+| `src/lib/video/webrtc-client.ts` | WHEP and P2P MQTT WebRTC client |
+| `src/hooks/use-panel-params.ts` | Universal parameter hook used by all 38 configure panels |
+| `src/stores/settings-store.ts` | Persisted user settings (version 31) |
+| `convex/schema.ts` | Convex database schema for the OSS standalone backend |
+
+## ADOS Drone Agent
+
+**Repository:** [github.com/altnautica/ADOSDroneAgent](https://github.com/altnautica/ADOSDroneAgent)
+
+**Stack:** Python 3.11+, FastAPI, pymavlink, structlog, Textual, systemd
+
+```
+ADOSDroneAgent/
+├── src/
+│   └── ados/
+│       ├── __init__.py             # Version (single source of truth)
+│       ├── core/
+│       │   ├── supervisor.py       # Service lifecycle manager
+│       │   ├── config.py           # Pydantic config models
+│       │   ├── circuit_breaker.py  # 5-in-60s failure detection
+│       │   └── ipc.py              # Unix socket read/write
+│       │
+│       ├── services/
+│       │   ├── mavlink/
+│       │   │   ├── proxy.py        # FC serial <-> MAVLink socket
+│       │   │   └── stream_manager.py
+│       │   ├── video/
+│       │   │   ├── pipeline.py     # Camera detect + ffmpeg launch
+│       │   │   └── mediamtx.py     # MediaMTX config + management
+│       │   ├── cloud/
+│       │   │   ├── mqtt_bridge.py  # MQTT publish (paho)
+│       │   │   ├── convex_relay.py # HTTP POST to Convex
+│       │   │   └── webrtc_signaling.py  # P2P SDP relay over MQTT
+│       │   ├── wfb/
+│       │   │   ├── wfb_tx.py       # WFB-ng transmit (air)
+│       │   │   └── wfb_rx.py       # WFB-ng receive (ground)
+│       │   ├── network/
+│       │   │   ├── wifi_ap_manager.py
+│       │   │   ├── wifi_client_manager.py
+│       │   │   ├── ethernet_manager.py
+│       │   │   ├── modem_manager.py
+│       │   │   └── uplink_router.py
+│       │   ├── ui/
+│       │   │   ├── oled_service.py
+│       │   │   ├── button_service.py
+│       │   │   └── screens/
+│       │   ├── setup_webapp/
+│       │   │   ├── server.py
+│       │   │   ├── static/         # Drone setup pages
+│       │   │   ├── static-ground/  # Ground station setup pages
+│       │   │   └── captive_dns.py
+│       │   └── kiosk/
+│       │       └── kiosk_service.py
+│       │
+│       ├── api/
+│       │   └── routes/
+│       │       ├── status.py       # /api/v1/status, /api/v1/status/full
+│       │       ├── video.py        # /api/v1/video/*
+│       │       ├── commands.py     # /api/v1/commands/*
+│       │       ├── config.py       # /api/v1/config/*
+│       │       └── ground_station.py  # /api/v1/ground-station/*
+│       │
+│       ├── hal/
+│       │   └── boards/             # Board profile YAMLs
+│       │       ├── pi4b.yaml
+│       │       ├── rock-5c-lite.yaml
+│       │       ├── rk3576.yaml
+│       │       └── ... (17 profiles)
+│       │
+│       ├── cli/
+│       │   ├── main.py             # Click CLI entry point
+│       │   ├── status.py           # ados status
+│       │   ├── gs.py               # ados gs (ground station subcommands)
+│       │   └── ...
+│       │
+│       ├── tui/
+│       │   ├── app.py              # Textual TUI application
+│       │   └── screens/            # 9 TUI screens
+│       │
+│       └── bootstrap/
+│           └── profile_detect.py   # Hardware fingerprint scoring
+│
+├── scripts/
+│   ├── install.sh                  # One-line installer
+│   └── usb-gadget/                 # libcomposite setup scripts
+│
+├── data/
+│   └── systemd/                    # All systemd unit files
+│       ├── ados-supervisor.service
+│       ├── ados-mavlink.service
+│       ├── ados-api.service
+│       ├── ados-video.service
+│       ├── ados-wfb.service
+│       ├── ados-wifi-ap.service
+│       ├── ados-oled.service
+│       ├── ados-buttons.service
+│       ├── ados-kiosk.service
+│       └── ... (28 units total)
+│
+├── docs/
+│   ├── oem/                        # OEM deployment, provisioning, white-label
+│   └── ground-station/             # Ground station reference
+│
+├── pyproject.toml
+├── README.md
+└── CONTRIBUTING.md
+```
+
+### Key files to know
+
+| File | What it does |
+|------|-------------|
+| `src/ados/__init__.py` | Version string (single source of truth for pip and `ados version`) |
+| `src/ados/core/supervisor.py` | Starts, stops, and monitors child systemd services |
+| `src/ados/core/circuit_breaker.py` | 5-in-60s breaker pattern for service restarts |
+| `src/ados/services/mavlink/proxy.py` | Reads FC serial, writes to `/run/ados/mavlink.sock` |
+| `src/ados/services/video/pipeline.py` | Camera detection, ffmpeg launch, watchdog |
+| `src/ados/services/video/mediamtx.py` | MediaMTX config generation (STUN, ICE, ports) |
+| `src/ados/bootstrap/profile_detect.py` | Score-based hardware fingerprint for air vs ground |
+| `src/ados/hal/boards/*.yaml` | Board-specific GPIO, UART, video, and USB config |
+| `scripts/install.sh` | The one-line installer that does everything |
+
+## Config files on a deployed system
+
+| Path | Purpose |
+|------|---------|
+| `/etc/ados/config.yaml` | Main agent configuration (profile, cloud, network, video) |
+| `/etc/ados/profile.conf` | Detected profile with fingerprint snapshot |
+| `/opt/ados/` | Installed agent code and virtual environment |
+| `/run/ados/mavlink.sock` | Runtime MAVLink IPC socket |
+| `/run/ados/state.sock` | Runtime JSON telemetry socket |
+| `/var/log/ados/` | Agent logs (rotated daily) |
+
+## What is next
+
+- [Contributing Guide](/architecture/contributing-guide) for how to add features to both repos
+- [Agent Services](/architecture/agent-services) for the systemd architecture
+- [MAVLink Protocol](/architecture/mavlink-protocol) for the protocol layer

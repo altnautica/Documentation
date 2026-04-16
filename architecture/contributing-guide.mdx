@@ -1,0 +1,399 @@
+---
+title: "Contributing Guide"
+description: "How to set up the dev environment, add features, and submit pull requests."
+icon: "code-pull-request"
+---
+
+# Contributing Guide
+
+ADOS Mission Control and ADOS Drone Agent are open-source under GPLv3. Contributions are welcome. This guide covers the dev setup for both repos, the patterns for adding common feature types, and the pull request process.
+
+## Dev environment setup
+
+### Mission Control (GCS)
+
+<Steps>
+  <Step title="Clone the repo">
+    ```bash
+    git clone https://github.com/altnautica/ADOSMissionControl.git
+    cd ADOSMissionControl
+    ```
+  </Step>
+  <Step title="Install dependencies">
+    ```bash
+    npm install
+    ```
+
+    Requires Node.js 20+ and npm 10+.
+  </Step>
+  <Step title="Start the dev server">
+    ```bash
+    npm run dev
+    ```
+
+    Opens at `http://localhost:4000`. Turbopack provides fast hot module replacement.
+  </Step>
+  <Step title="Launch demo mode">
+    Open the app in your browser. The welcome modal offers a "Try Demo" button that starts 5 simulated drones. No hardware needed.
+  </Step>
+</Steps>
+
+### SITL testing
+
+To test with a real ArduPilot simulator:
+
+<Steps>
+  <Step title="Build ArduPilot from source">
+    Follow the [ArduPilot build docs](https://ardupilot.org/dev/docs/building-setup-linux.html). The SITL tool expects the ArduPilot repo at `~/.ardupilot`.
+  </Step>
+  <Step title="Launch SITL">
+    ```bash
+    cd tools/sitl
+    npm install
+    npm start
+    ```
+
+    This starts ArduPilot SITL with full physics simulation and a TCP-to-WebSocket bridge. Mission Control connects to `ws://localhost:5001`.
+  </Step>
+  <Step title="Connect from Mission Control">
+    In Mission Control, click Connect > WebSocket and enter `ws://localhost:5001`. You now have a real autopilot with simulated GPS, IMU, and battery.
+  </Step>
+</Steps>
+
+### Drone Agent
+
+<Steps>
+  <Step title="Clone the repo">
+    ```bash
+    git clone https://github.com/altnautica/ADOSDroneAgent.git
+    cd ADOSDroneAgent
+    ```
+  </Step>
+  <Step title="Create a virtual environment">
+    ```bash
+    python3 -m venv venv
+    source venv/bin/activate
+    pip install -e ".[dev]"
+    ```
+
+    Requires Python 3.11+.
+  </Step>
+  <Step title="Run the CLI">
+    ```bash
+    ados --help
+    ados status
+    ```
+  </Step>
+  <Step title="Run the TUI">
+    ```bash
+    ados tui
+    ```
+
+    The Textual-based terminal dashboard works in any terminal emulator.
+  </Step>
+</Steps>
+
+## Adding a configure panel (Mission Control)
+
+Configure panels are the most common contribution. Each panel lets the user adjust a group of flight controller parameters.
+
+<Steps>
+  <Step title="Create the component">
+    Add a new file in `src/components/configure/`:
+
+    ```typescript
+    // src/components/configure/MyNewPanel.tsx
+    import { usePanelParams } from "@/hooks/use-panel-params"
+
+    const PARAMS = [
+      "MY_PARAM_1",
+      "MY_PARAM_2",
+      "MY_PARAM_3",
+    ]
+
+    export function MyNewPanel() {
+      const { values, setParam, isLoading } = usePanelParams(PARAMS)
+
+      if (isLoading) return <PanelSkeleton />
+
+      return (
+        <div>
+          <h3>My New Panel</h3>
+          <NumberInput
+            label="Parameter 1"
+            value={values.MY_PARAM_1}
+            onChange={(v) => setParam("MY_PARAM_1", v)}
+          />
+          {/* ... more inputs */}
+        </div>
+      )
+    }
+    ```
+  </Step>
+  <Step title="Register the panel">
+    Add the panel to the navigation in `src/components/configure/DroneConfigureTab.tsx`:
+
+    ```typescript
+    {
+      id: "my-new-panel",
+      label: "My New Panel",
+      icon: MyIcon,
+      component: lazy(() => import("./MyNewPanel")),
+      requiredCapability: "supportsParams",
+    }
+    ```
+  </Step>
+  <Step title="Test with SITL">
+    Launch SITL, connect, and verify the panel loads, reads parameters, and writes them back.
+  </Step>
+</Steps>
+
+The `usePanelParams` hook handles all protocol details. It works with MAVLink native parameters (ArduPilot, PX4) and MSP virtual parameters (Betaflight) without any changes to your panel code.
+
+## Adding a MAVLink decoder (Mission Control)
+
+When you need to handle a new MAVLink message type:
+
+<Steps>
+  <Step title="Add constants">
+    In `src/lib/protocol/mavlink-constants.ts`, add the message ID, CRC_EXTRA, and payload length:
+
+    ```typescript
+    export const MSG_MY_NEW_MSG = 999
+    export const CRC_EXTRA: Record<number, number> = {
+      // ... existing entries
+      [MSG_MY_NEW_MSG]: 0xAB,  // from MAVLink XML definition
+    }
+    export const PAYLOAD_LENGTHS: Record<number, number> = {
+      // ... existing entries
+      [MSG_MY_NEW_MSG]: 24,
+    }
+    ```
+  </Step>
+  <Step title="Add the decoder">
+    In `src/lib/protocol/mavlink-adapter.ts`, add a case to `handleMessage()`:
+
+    ```typescript
+    case MSG_MY_NEW_MSG: {
+      const field1 = view.getFloat32(0, true)
+      const field2 = view.getUint16(4, true)
+      this._onMyNewMsg.forEach((cb) => cb({ field1, field2 }))
+      break
+    }
+    ```
+  </Step>
+  <Step title="Add the callback to DroneProtocol">
+    In `src/lib/protocol/drone-protocol.ts`:
+
+    ```typescript
+    onMyNewMsg(cb: (msg: MyNewMsg) => void): Unsubscribe
+    ```
+  </Step>
+  <Step title="Subscribe in DroneManager">
+    In `src/stores/drone-manager.ts` inside `bridgeTelemetry()`:
+
+    ```typescript
+    protocol.onMyNewMsg?.((msg) => {
+      myStore.update(msg)
+    })
+    ```
+  </Step>
+</Steps>
+
+## Adding a Zustand store (Mission Control)
+
+<Steps>
+  <Step title="Create the store">
+    ```typescript
+    // src/stores/my-new-store.ts
+    import { create } from "zustand"
+
+    interface MyNewState {
+      value: number
+      setValue: (v: number) => void
+    }
+
+    export const useMyNewStore = create<MyNewState>((set) => ({
+      value: 0,
+      setValue: (v) => set({ value: v }),
+    }))
+    ```
+  </Step>
+  <Step title="Use selectors in components">
+    ```typescript
+    const value = useMyNewStore((s) => s.value)
+    ```
+
+    Always select specific fields. Never destructure the entire store.
+  </Step>
+</Steps>
+
+If the store needs to persist across page reloads, use the `persist` middleware with a version number:
+
+```typescript
+import { persist } from "zustand/middleware"
+
+export const useMyNewStore = create<MyNewState>()(
+  persist(
+    (set) => ({
+      value: 0,
+      setValue: (v) => set({ value: v }),
+    }),
+    {
+      name: "my-new-store",
+      version: 1,
+    }
+  )
+)
+```
+
+## Adding a board profile (Drone Agent)
+
+<Steps>
+  <Step title="Create the YAML profile">
+    ```yaml
+    # src/ados/hal/boards/my-board.yaml
+    vendor: "Board Manufacturer"
+    name: "My Board Name"
+    soc: "RK3566"
+    ram_mb: 2048
+    tier: 3
+    uart:
+      - path: /dev/ttyS0
+        baud: 921600
+        purpose: mavlink
+    i2c:
+      - bus: 3
+        purpose: oled
+    gpio:
+      buttons: [5, 6, 13, 19]
+    usb:
+      ports: 4
+    video:
+      encode: "rkmpp"
+    hdmi:
+      available: true
+    usb_gadget:
+      available: false
+    ```
+  </Step>
+  <Step title="Test detection">
+    On the target board, run:
+
+    ```bash
+    ados diag board
+    ```
+
+    This prints the detected board, matched profile, and any fallback to defaults.
+  </Step>
+</Steps>
+
+## Adding an agent service (Drone Agent)
+
+<Steps>
+  <Step title="Create the service module">
+    Add a new file in `src/ados/services/my_service/`:
+
+    ```python
+    # src/ados/services/my_service/__main__.py
+    import asyncio
+    import structlog
+
+    log = structlog.get_logger()
+
+    async def main():
+        log.info("my_service.started")
+        while True:
+            # Service logic here
+            await asyncio.sleep(1)
+
+    if __name__ == "__main__":
+        asyncio.run(main())
+    ```
+  </Step>
+  <Step title="Create the systemd unit">
+    Add `data/systemd/ados-my-service.service`:
+
+    ```ini
+    [Unit]
+    Description=ADOS My Service
+    After=ados-supervisor.service
+    PartOf=ados-supervisor.service
+
+    [Service]
+    Type=simple
+    User=ados
+    ExecStart=/opt/ados/venv/bin/python -m ados.services.my_service
+    Restart=on-failure
+    RestartSec=3
+    MemoryMax=64M
+    CPUQuota=25%
+
+    [Install]
+    WantedBy=ados-supervisor.service
+    ```
+  </Step>
+  <Step title="Register in the supervisor">
+    Add the service to the `SERVICE_REGISTRY` in `src/ados/core/supervisor.py` with its profile gate and hardware dependencies.
+  </Step>
+</Steps>
+
+## Pull request guidelines
+
+### Before submitting
+
+- Run `tsc --noEmit` for Mission Control (zero errors required)
+- Run `python -m py_compile` on any modified Python files
+- Check for em dashes in any user-facing strings (there should be none)
+- Make sure new files do not reference any partner company names or internal decision IDs
+- Test with demo mode or SITL for Mission Control changes
+- Bump the version in `src/ados/__init__.py` for agent changes
+
+### PR format
+
+```markdown
+## What
+
+Brief description of the change.
+
+## Why
+
+What problem does this solve or what feature does it add.
+
+## How to test
+
+Steps to verify the change works.
+
+## Screenshots
+
+If the change affects the UI, include before/after screenshots.
+```
+
+### Branch naming
+
+- `feature/short-description` for new features
+- `fix/short-description` for bug fixes
+- `docs/short-description` for documentation
+
+### Review process
+
+1. Open a PR against `main`
+2. Automated checks run (TypeScript build, linting)
+3. A maintainer reviews the code
+4. Once approved, the maintainer merges
+
+<Tip>
+For large features, open a draft PR early with a description of what you plan to build. This helps avoid wasted effort if the design needs changes.
+</Tip>
+
+## Code style
+
+**Mission Control:** Follow the existing patterns. Zustand for state, `usePanelParams` for configure panels, selectors for subscriptions. Tailwind for styling. No CSS modules.
+
+**Drone Agent:** Use `structlog` for logging, `asyncio` for async code, Pydantic for config models. Type hints on all function signatures. `black` for formatting.
+
+## Getting help
+
+- [Discord](https://discord.gg/uxbvuD4d5q) for questions and discussion
+- [GitHub Issues](https://github.com/altnautica/ADOSMissionControl/issues) for bug reports and feature requests
+- [ArduPilot Discuss](https://discuss.ardupilot.org/t/ados-mission-control-open-source-web-based-gcs/142617) for ArduPilot-specific topics

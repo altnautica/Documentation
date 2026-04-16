@@ -1,0 +1,166 @@
+---
+title: "Troubleshooting"
+description: "Common ground station issues and how to fix them."
+icon: "wrench"
+---
+
+# Troubleshooting
+
+This page covers the most common ground station problems and their fixes. If your issue is not listed here, check the agent logs or ask in the [Discord community](https://discord.gg/uxbvuD4d5q).
+
+## No video from the drone
+
+**Symptom:** The ground station is running, your laptop is connected, but the video feed is black or shows "No video."
+
+| Possible cause | How to check | Fix |
+|---------------|-------------|-----|
+| Drone not paired | OLED Link screen shows "No drone" | Run the pairing flow from the setup webapp or OLED menu |
+| Drone powered off or out of range | OLED Link screen shows RSSI "---" | Power on the drone or move closer |
+| Wrong WFB-ng channel | Drone and ground on different channels | Match channels in the Radio config on both sides |
+| RTL8812EU not plugged in | `lsusb` does not show RTL8812 | Plug in the USB WiFi adapter |
+| DKMS driver not built | `dmesg | grep 8812` shows errors | Reinstall with `install.sh --upgrade` |
+| MediaMTX not running | `systemctl status ados-mediamtx-gs` shows failed | Check logs with `journalctl -u ados-mediamtx-gs -n 50` |
+
+```bash
+# Quick diagnostic commands
+ados status              # Check all services
+ados gs radio status     # Check WFB-ng link
+journalctl -u ados-wfb-rx -n 30  # WFB-ng receiver logs
+```
+
+## WiFi AP not broadcasting
+
+**Symptom:** Your phone or laptop cannot find the `ADOS-GS-XXXX` network.
+
+| Possible cause | How to check | Fix |
+|---------------|-------------|-----|
+| AP service not started | `systemctl status ados-wifi-ap` | Check if the ground-station profile was detected. Run `ados status` |
+| WiFi AP disabled | OLED Net screen shows "AP: off" | Press B2 long-press to toggle AP, or enable via setup webapp |
+| WiFi radio conflict | `iw dev` shows no AP interface | Make sure hostapd is installed. Run `install.sh --upgrade` |
+| 5 GHz selected on Pi 4B | Pi 4B 5 GHz AP mode is unreliable | Switch to 2.4 GHz in the Radio config |
+
+## Laptop cannot reach the ground station after joining WiFi
+
+**Symptom:** You joined the AP but `http://192.168.4.1:4000` does not load.
+
+<Steps>
+  <Step title="Check your IP">
+    Make sure your laptop got an IP on the `192.168.4.x` subnet. If it has a `169.254.x.x` address, dnsmasq is not running.
+
+    ```bash
+    # On the ground station
+    systemctl status dnsmasq
+    ```
+  </Step>
+  <Step title="Check the agent API">
+    Try pinging the ground station:
+
+    ```bash
+    ping 192.168.4.1
+    ```
+
+    If ping works but the browser does not load, try `http://192.168.4.1:8080/api/v1/status` to see if the REST API is responding.
+  </Step>
+  <Step title="Check Mission Control">
+    If the REST API responds but port 4000 does not, Mission Control may not be installed locally on the ground node. Use `http://192.168.4.1:8080/` (the agent API) or `http://setup.ados.local/` (the setup webapp) instead.
+  </Step>
+</Steps>
+
+## USB tether not working
+
+**Symptom:** You plugged in a USB-C cable but no new network interface appeared on your laptop.
+
+| Possible cause | How to check | Fix |
+|---------------|-------------|-----|
+| Power-only cable | Try a known data cable | Replace with a cable explicitly rated for USB data |
+| USB gadget service not running | `systemctl status ados-usb-gadget` | Check that `dtoverlay=dwc2` is in `/boot/firmware/config.txt` and reboot |
+| Old Windows 10 build | Device Manager shows yellow exclamation | Install the RNDIS driver from the setup webapp help page |
+| Laptop providing insufficient power | Pi brownouts under load | Use a separate 5V/3A PSU for the Pi |
+
+## OLED is blank
+
+**Symptom:** The ground station is running but the OLED shows nothing.
+
+| Possible cause | How to check | Fix |
+|---------------|-------------|-----|
+| I2C not enabled | `sudo i2cdetect -y 1` shows no device at 0x3C | Enable I2C in `raspi-config` > Interface Options > I2C, then reboot |
+| Wiring issue | `sudo i2cdetect -y 1` shows nothing | Check SDA, SCL, VCC (3.3V), and GND connections |
+| Wrong I2C address | Device shows at 0x3D instead of 0x3C | Edit `/etc/ados/config.yaml` to set `oled.address: 0x3D` |
+| OLED service not running | `systemctl status ados-oled` | Check logs with `journalctl -u ados-oled -n 20` |
+
+## Profile detected incorrectly
+
+**Symptom:** The agent started in drone (air) profile instead of ground-station, or vice versa.
+
+Check the fingerprint snapshot:
+
+```bash
+cat /etc/ados/profile.conf
+```
+
+This shows the detected profile, the ground and air scores, and which signals contributed. Common causes of wrong detection:
+
+- A flight controller is plugged into the SBC via USB (raises the air score)
+- No OLED or buttons wired (lowers the ground score)
+- Ambiguous setup (both FC and OLED present)
+
+To force the correct profile:
+
+```bash
+sudo ados profile set ground-station
+sudo reboot
+```
+
+## Android shows "No internet" and disconnects
+
+**Symptom:** After joining the WiFi AP, Android keeps dropping the connection or showing "no internet" warnings.
+
+The ground station serves `204 No Content` responses to Android's connectivity probes. If Android still complains:
+
+1. Tap "Stay connected" or "Use without internet" on the notification
+2. In Android WiFi settings, tap the network > Advanced > "Use this network" or disable "Auto-switch to mobile data"
+3. If the captive portal page does not appear automatically, open Chrome and navigate to `http://192.168.4.1/`
+
+<Tip>
+On some Android devices, you may need to disable "Smart network switch" or "Wi-Fi assistant" in WiFi settings to prevent Android from preferring mobile data over a network without internet.
+</Tip>
+
+## High video latency
+
+**Symptom:** Video works but has noticeable delay (more than 150 ms).
+
+| Possible cause | Fix |
+|---------------|-----|
+| WiFi AP congestion (many clients) | Reduce to 1-2 video viewers, or switch to USB tether |
+| 2.4 GHz interference | Move to a less crowded channel, or use 5 GHz AP on supported boards |
+| Ground station CPU overloaded | Check `ados gs system` for CPU usage. Lower video resolution to 720p |
+| Browser hardware decode not enabled | In Chrome, check `chrome://gpu` for "Video Decode: Hardware accelerated" |
+| WFB-ng packet loss | Check the OLED Link screen for FEC lost packets. Reposition antennas |
+
+## HDMI kiosk shows a blank screen
+
+**Symptom:** Monitor is connected but shows nothing or a black screen.
+
+| Possible cause | Fix |
+|---------------|-----|
+| No display device detected | Check that `/dev/dri/card0` exists. Make sure HDMI is plugged in before boot |
+| Cage compositor not installed | Run `sudo apt install cage chromium` and reboot |
+| Mission Control not installed locally | The kiosk needs a local MC build. Run `install.sh --upgrade` to install it |
+| Resolution mismatch | SSH in and check `ados gs display status`. Try setting resolution to 720p |
+
+## Factory reset
+
+If nothing else works, you can reset the ground station to factory defaults:
+
+- **OLED:** Hold B4 for 10 seconds, confirm by holding B4 again for 3 seconds
+- **CLI:** `sudo ados factory-reset`
+- **Setup webapp:** Advanced > Factory Reset
+
+This erases pairing keys, network config, and all custom settings. The ground station reboots to the first-boot state. You will need to pair with your drone again.
+
+## Getting help
+
+- **Agent logs:** `journalctl -u ados-supervisor -n 100` shows the supervisor log. Replace `ados-supervisor` with any service name.
+- **Full diagnostic dump:** `ados diag` generates a tarball with all logs, config, and system info. Attach it when reporting bugs.
+- **Discord:** [discord.gg/uxbvuD4d5q](https://discord.gg/uxbvuD4d5q) for community support
+- **GitHub Issues:** [github.com/altnautica/ADOSDroneAgent/issues](https://github.com/altnautica/ADOSDroneAgent/issues) for bug reports

@@ -1,0 +1,140 @@
+---
+title: "Telemetry"
+description: "Live readouts for attitude, GPS, battery, EKF, vibration, and radio link."
+icon: "chart-line"
+---
+
+Mission Control displays telemetry from your flight controller in real time. Data flows through the MAVLink or MSP protocol at up to 10 Hz and is stored in ring-buffered Zustand stores, keeping memory usage bounded even during long flights.
+
+<Frame caption="Telemetry panel with position, power, and GPS readouts">
+  <img src="/images/placeholder-telemetry.png" alt="Telemetry panel showing live flight data" />
+</Frame>
+
+## Telemetry Categories
+
+### Position
+
+| Readout | Source | Description |
+|---------|--------|-------------|
+| Altitude (AGL) | `GLOBAL_POSITION_INT` / `VFR_HUD` | Meters above ground level |
+| Speed | `VFR_HUD` / `GLOBAL_POSITION_INT` | Ground speed in km/h |
+| Heading | `VFR_HUD` | Compass heading in degrees (0-360) |
+| Climb Rate | `VFR_HUD` | Vertical speed in m/s |
+| Latitude / Longitude | `GLOBAL_POSITION_INT` | GPS coordinates |
+
+### Power
+
+| Readout | Source | Description |
+|---------|--------|-------------|
+| Battery Voltage | `SYS_STATUS` / `BATTERY_STATUS` | Total pack voltage |
+| Battery Current | `SYS_STATUS` / `BATTERY_STATUS` | Current draw in amps |
+| Battery Remaining | `SYS_STATUS` | Percentage remaining |
+| Consumed mAh | `BATTERY_STATUS` | Cumulative current consumption |
+| Power (Watts) | Calculated | Voltage times current |
+| Estimated Flight Time | Calculated | Based on current draw and remaining capacity |
+
+### GPS
+
+| Readout | Source | Description |
+|---------|--------|-------------|
+| Fix Type | `GPS_RAW_INT` | No Fix, 2D Fix, 3D Fix, DGPS, RTK Float, RTK Fixed |
+| Satellites | `GPS_RAW_INT` | Number of visible satellites |
+| HDOP | `GPS_RAW_INT` | Horizontal dilution of precision (lower is better) |
+
+### Attitude
+
+| Readout | Source | Description |
+|---------|--------|-------------|
+| Roll | `ATTITUDE` | Bank angle in degrees |
+| Pitch | `ATTITUDE` | Nose up/down angle in degrees |
+| Yaw | `ATTITUDE` | Heading from IMU |
+
+### Radio Link
+
+| Readout | Source | Description |
+|---------|--------|-------------|
+| RSSI | `RADIO_STATUS` | Local radio signal strength |
+| Remote RSSI | `RADIO_STATUS` | Remote radio signal strength |
+| Noise | `RADIO_STATUS` | Local noise floor |
+| Remote Noise | `RADIO_STATUS` | Remote noise floor |
+| RX Errors | `RADIO_STATUS` | Receive error count |
+| TX Buffer | `RADIO_STATUS` | Transmit buffer usage |
+
+### EKF Status
+
+The Extended Kalman Filter (EKF) estimates the drone's position and velocity by fusing sensor data. Mission Control shows EKF health as colored bars:
+
+| Metric | Meaning |
+|--------|---------|
+| Velocity Ratio | Quality of velocity estimates |
+| Position Horizontal | Quality of horizontal position |
+| Position Vertical | Quality of vertical position |
+| Compass Ratio | Quality of compass heading |
+| Terrain Ratio | Quality of terrain altitude estimate |
+
+Green means good. Yellow is marginal. Red means the EKF is not converged, and the drone should not fly in GPS-dependent modes.
+
+### Vibration
+
+| Readout | Source | Description |
+|---------|--------|-------------|
+| Vibe X | `VIBRATION` | X-axis vibration level (m/s/s) |
+| Vibe Y | `VIBRATION` | Y-axis vibration level |
+| Vibe Z | `VIBRATION` | Z-axis vibration level |
+| Clipping | `VIBRATION` | Accelerometer clipping event counts |
+
+<Warning>
+High vibration values (above 30 m/s/s) indicate mechanical issues. Vibration affects EKF performance and can cause flyaways. Check motor balance, prop condition, and mounting before flying.
+</Warning>
+
+## Telemetry Deck
+
+The telemetry deck is a configurable panel that lets you choose which metrics to display and how they are organized. It supports four pages:
+
+| Page | Focus |
+|------|-------|
+| Flight | Altitude, speed, heading, climb rate, throttle |
+| Link | RSSI, noise, errors, buffer |
+| Power | Voltage, current, consumed, estimated flight time |
+| Tuning | Roll/pitch/yaw rates, PID response, EKF, vibration |
+
+Each page shows selected metrics as compact blocks with the current value and a mini sparkline.
+
+## Sensor Health Grid
+
+The sensor health grid shows the status of all connected sensors:
+
+- **Gyro, Accelerometer, Magnetometer:** Per-sensor health with individual status indicators
+- **Barometer:** Altitude consistency check
+- **GPS:** Fix quality and satellite count
+- **Optical Flow:** If equipped, flow quality indicator
+- **Rangefinder:** If equipped, altitude measurement status
+
+Sensors that report errors or degraded performance are highlighted in yellow or red.
+
+## Alert Feed
+
+The GCS generates alerts based on telemetry thresholds:
+
+- **Low battery** warnings at configurable thresholds
+- **GPS degradation** when satellite count drops or HDOP increases
+- **Failsafe triggers** relayed from the flight controller
+- **Fence breach** alerts when the drone crosses a geofence boundary
+- **EKF status** changes from good to warning or error
+- **Radio link** degradation based on RSSI thresholds
+
+## Freshness Indicators
+
+Every telemetry value has a freshness check:
+
+- **Fresh:** Data received within the last 10 seconds. Displayed normally.
+- **Stale:** No update for 10-30 seconds. Values dim to indicate they may be outdated.
+- **Offline:** No update for over 30 seconds. Values show a disconnected state.
+
+This prevents you from trusting old data during connection interruptions.
+
+## Data Storage
+
+Telemetry data is stored in ring buffers with fixed capacity. A 30-minute flight at 10 Hz produces about 18,000 samples per channel. Ring buffers automatically discard the oldest samples when full, keeping memory usage constant.
+
+For long-term storage, use the [History](/mission-control/simulation) tab which records flight logs that can be replayed later.

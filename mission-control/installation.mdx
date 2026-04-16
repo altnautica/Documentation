@@ -1,0 +1,179 @@
+---
+title: "Installation"
+description: "Install and run ADOS Mission Control on your machine."
+icon: "download"
+---
+
+Mission Control is a Next.js 16 application. You can run it in your browser during development, or build a standalone Electron desktop app.
+
+## System Requirements
+
+| Requirement | Minimum | Recommended |
+|-------------|---------|-------------|
+| Node.js | 20.x | 22.x (LTS) |
+| Browser | Chrome 89+ / Edge 89+ | Latest Chrome |
+| RAM | 4 GB | 8 GB |
+| OS | macOS, Windows 10+, Linux | Any |
+
+<Note>
+WebSerial (USB connections) only works in Chromium-based browsers. Safari and Firefox do not support it.
+</Note>
+
+## Quick Start
+
+<Steps>
+  <Step title="Clone the repository">
+    ```bash
+    git clone https://github.com/altnautica/ADOSMissionControl.git
+    cd ADOSMissionControl
+    ```
+  </Step>
+  <Step title="Install dependencies">
+    ```bash
+    npm install
+    ```
+  </Step>
+  <Step title="Start the dev server">
+    ```bash
+    npm run dev
+    ```
+    This starts the development server on port 4000 with Turbopack.
+  </Step>
+  <Step title="Open in your browser">
+    Navigate to [http://localhost:4000](http://localhost:4000). You will see the dashboard.
+  </Step>
+</Steps>
+
+## Available Scripts
+
+| Command | Description |
+|---------|-------------|
+| `npm run dev` | Development server on port 4000 (Turbopack). No demo data. |
+| `npm run demo` | Development server with 5 simulated drones. Great for exploring the UI. |
+| `npm run build` | Production build. |
+| `npm run start` | Start the production server on port 4000. |
+| `npm run lint` | Run ESLint. |
+| `npm run test` | Run Vitest unit tests. |
+| `npm run test:e2e` | Run Playwright end-to-end tests (demo mode). |
+| `npm run test:e2e:sitl` | Run Playwright tests against a real SITL instance. |
+
+## Demo Mode
+
+Demo mode is the fastest way to explore Mission Control without hardware.
+
+```bash
+npm run demo
+```
+
+This sets `NEXT_PUBLIC_DEMO_MODE=true` and starts the dev server. Five simulated drones appear on the dashboard with realistic telemetry, GPS tracks, and flight modes. All configuration panels work with mock parameters.
+
+You can also activate demo mode by adding `?demo=true` to any URL:
+
+```
+http://localhost:4000?demo=true
+```
+
+## Environment Variables
+
+Create a `.env` file in the project root for optional features. A `.env.example` file is included in the repo.
+
+```bash
+# Required only for cloud features (auth, fleet sync, community)
+NEXT_PUBLIC_CONVEX_URL=https://your-convex-deployment.convex.cloud
+CONVEX_DEPLOY_KEY=your_deploy_key
+
+# Optional: Cesium token for 3D simulation globe
+NEXT_PUBLIC_CESIUM_TOKEN=your_cesium_ion_token
+
+# Demo mode (alternative to npm run demo)
+NEXT_PUBLIC_DEMO_MODE=true
+```
+
+<Tip>
+Cloud features are entirely optional. Mission Control works fully offline for direct USB and WebSocket connections. The Convex backend adds fleet sync, authentication, and community features.
+</Tip>
+
+## Electron Desktop App
+
+Build a standalone desktop application for macOS, Windows, or Linux.
+
+<Steps>
+  <Step title="Build the Next.js app and compile Electron">
+    ```bash
+    # macOS
+    npm run desktop:build:mac
+
+    # Windows
+    npm run desktop:build:win
+
+    # Linux
+    npm run desktop:build:linux
+    ```
+  </Step>
+  <Step title="Find the output">
+    The built application is in the `dist/` directory. On macOS, look for the `.dmg` file. On Windows, the `.exe` installer. On Linux, the `.AppImage` or `.deb`.
+  </Step>
+</Steps>
+
+For development, you can run the Electron app without building a distributable:
+
+```bash
+# Standard dev mode
+npm run desktop:dev
+
+# Demo mode in Electron
+npm run desktop:demo
+```
+
+### Electron Architecture
+
+The Electron app wraps the same Next.js standalone server. No proxy layer is needed. The main process starts the Node.js server and opens a BrowserWindow pointed at `http://127.0.0.1:4000`.
+
+<Warning>
+The Electron app always uses `127.0.0.1` instead of `localhost`. On macOS, `localhost` can resolve to `::1` (IPv6), causing connection failures when the server only listens on IPv4.
+</Warning>
+
+## Convex Backend (Optional)
+
+If you want cloud features (authentication, fleet sync, community changelog, cloud relay), deploy a Convex backend.
+
+```bash
+# Start the Convex dev server
+npx convex dev
+```
+
+The `convex/` directory in the repo contains the standalone backend with 25 tables (7 auth + 18 custom). Community users can deploy their own instance without depending on any external service.
+
+## Updating
+
+Pull the latest changes and reinstall dependencies:
+
+```bash
+git pull origin main
+npm install
+npm run dev
+```
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Port 4000 is already in use">
+    Another process is using port 4000. Kill it or change the port:
+    ```bash
+    # Find the process
+    lsof -i :4000
+
+    # Or use a different port
+    PORT=4001 npm run dev
+    ```
+  </Accordion>
+  <Accordion title="WebSerial not available">
+    WebSerial requires a Chromium-based browser (Chrome 89+, Edge 89+). It is not available in Firefox or Safari. Make sure you are not running in an incognito window with restricted permissions.
+  </Accordion>
+  <Accordion title="Convex connection fails">
+    Check that your `NEXT_PUBLIC_CONVEX_URL` is correct and the Convex backend is running. Cloud features are optional. The GCS works fine without Convex for local connections.
+  </Accordion>
+  <Accordion title="Electron build fails on macOS">
+    Make sure Xcode command line tools are installed: `xcode-select --install`. Electron Builder needs native compilation tools for the packaging step.
+  </Accordion>
+</AccordionGroup>
