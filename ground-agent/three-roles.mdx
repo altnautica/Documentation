@@ -99,10 +99,10 @@ Switching to **relay** requires the node to have already completed a pair with a
 
 Even with the role config set, a node will not bring up mesh services unless it is **mesh-capable**. Mesh capability requires:
 
-- A second USB WiFi dongle present at runtime (more than one `/sys/class/net/wlan*` interface).
-- The `--with-mesh` flag passed to `install.sh` (which installs `batctl`, `avahi-daemon`, and `wpasupplicant`, and writes `mesh_capable: true` to `/etc/ados/profile.conf`).
+- A second **USB-attached** WiFi adapter present at runtime. `profile_detect` walks `/sys/class/net/wlan*` and checks that each interface is behind a USB bus (onboard SDIO or PCIe wireless on the SBC does not count, so Pi 4B's built-in WiFi is not mistaken for the mesh carrier).
+- The mesh dependencies (`batctl`, `avahi-daemon`, `wpasupplicant`, and the 802.11s SAE backend) installed on the host. The ground-station install path pulls these by default; no flag is required.
 
-Without `mesh_capable=true`, the GCS hides the Distributed RX and Mesh sub-views, the OLED Mesh submenu disappears, and `PUT /api/v1/ground-station/role` returns `409 E_MESH_NOT_CAPABLE` for relay or receiver targets.
+Default mesh carrier adapter: a second RTL8812EU (same chip as the primary). Any 802.11s-capable USB WiFi adapter also works. Without `mesh_capable=true`, the GCS hides the Distributed RX and Mesh sub-views, the OLED Mesh submenu disappears, and `PUT /api/v1/ground-station/role` returns `409 E_MESH_NOT_CAPABLE` for relay or receiver targets.
 
 ## Where to next
 

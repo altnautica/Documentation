@@ -49,7 +49,7 @@ ground_station:
     bat_iface: "bat0"
 ```
 
-802.11s requires the `wpasupplicant-mesh-sae` (or `wpad-mesh-wolfssl`) package, which `install.sh --with-mesh` tries to install. If neither is available on your distro, fall back to IBSS by setting `carrier: ibss`.
+802.11s requires the `wpasupplicant-mesh-sae` (or `wpad-mesh-wolfssl`) package, which the ground-station install path tries to pull in by default. If neither is available on your distro, fall back to IBSS by setting `carrier: ibss`.
 
 ## Mesh ID and PSK
 

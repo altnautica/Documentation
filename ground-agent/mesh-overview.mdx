@@ -45,9 +45,21 @@ A deployment with mesh always has exactly one **receiver** and one or more **rel
 
 ## How the nodes find each other
 
-Each relay and receiver carries a **second** USB WiFi dongle dedicated to the mesh carrier (the first dongle stays on WFB-ng monitor mode for the drone link). The second dongle runs `batman-adv`, a kernel-level wireless mesh that handles routing, neighbor discovery, and self-healing automatically.
+Each relay and receiver carries a **second RTL8812EU USB adapter** dedicated to the mesh carrier (the first adapter stays on WFB-ng monitor mode for the drone link). Same-chip on both is the default: one SKU per node, one driver, matched 29 dBm TX power on both radios, which triples practical node-to-node range versus 100 mW alternatives.
 
-Receivers advertise themselves on the mesh interface with mDNS (`_ados-receiver._tcp` on `bat0`). Relays resolve and forward to whichever receiver answers.
+The mesh adapter runs `batman-adv`, a kernel-level wireless mesh that handles routing, neighbor discovery, and self-healing automatically. Receivers advertise themselves on the mesh interface with mDNS (`_ados-receiver._tcp` on `bat0`). Relays resolve and forward to whichever receiver answers.
+
+### Hardware metrics
+
+Stock 6 dBi omni antennas, same antenna class on both radios. A 13 dBi panel antenna is a common next step for long-range deployments.
+
+| Mesh carrier | TX power | Node-to-node range (stock omni) | With 13 dBi panel | Driver |
+|---|---|---|---|---|
+| RTL8812EU (default, same chip as primary) | 29 dBm / 800 mW | ~1.5-2.5 km LOS | ~5-8 km LOS | Vendored DKMS build |
+| MT7612U (alternative) | 20 dBm / 100 mW | ~500-800 m LOS | ~1.5-2.5 km LOS | Mainline `mt76` |
+| MT7921AU (alternative, WiFi 6) | 20-23 dBm / 100-200 mW | ~500-900 m LOS | ~1.5-3 km LOS | Mainline `mt7921u` |
+
+A three-node linear deployment (one receiver plus two relays along a corridor) covers roughly 22-25 km on same-chip 29 dBm mesh carriers versus 12-15 km on 100 mW alternatives. Corridor length is the decision driver when picking the adapter.
 
 [Read the batman-adv setup details](/ground-agent/batman-adv)
 
@@ -71,8 +83,8 @@ Pairing is **field-only**. There is no laptop, no QR code, no cloud service invo
 
 ## What you do have to manage
 
-- **Hardware:** every relay and receiver needs a second USB WiFi dongle in addition to the primary RTL8812EU. The mesh carrier dongle does not need to be RTL8812EU; any dongle that supports 802.11s or IBSS works.
-- **Channel planning:** the WFB-ng radio (typically 5 GHz) and the mesh carrier (default 2.4 GHz, channel 1) sit on different bands so they do not interfere. If you change either, plan around it.
+- **Hardware:** every relay and receiver needs a second USB WiFi adapter in addition to the primary RTL8812EU. Default is a second RTL8812EU for inventory simplicity and matched TX power. MT7612U or MT7921AU work as alternatives when a mainline kernel driver is preferred on the mesh side.
+- **Channel planning:** the primary WFB-ng radio sits on 5 GHz UNII-3 (channel 149 or 153). The mesh carrier on same-chip 5 GHz deployments sits on UNII-1 (channel 36 or 40) with a 100 MHz guard band. 2.4 GHz mesh carriers stay on channel 1. Either works; pick band at install time based on the interference picture at the deployment site.
 - **Role assignment:** decide which node is the receiver before you head out. The receiver is also the GCS connection target by default.
 
 ## Where to next

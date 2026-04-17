@@ -15,21 +15,21 @@ There is exactly one receiver per deployment. Every other mesh node is a relay.
 | Item | Notes |
 |---|---|
 | Ground Agent SBC | Pi 4B is the bench reference |
-| RTL8812EU USB WiFi adapter | Drone-facing radio. Same as a single-node setup. |
-| Second USB WiFi dongle | Mesh carrier. Any dongle that supports 802.11s or IBSS works. |
-| Antennas | One on the RTL8812EU (5 GHz), one on the mesh dongle (2.4 GHz default) |
+| RTL8812EU USB WiFi adapter (primary) | Drone-facing radio. Same as a single-node setup. |
+| Second RTL8812EU USB adapter (default mesh carrier) | Same chip as the primary for inventory simplicity and matched 29 dBm TX power. Any 802.11s-capable USB WiFi dongle also works; MT7612U and MT7921AU are common alternatives when mainline kernel coverage is preferred on the mesh side. |
+| Antennas | 5 GHz omni on each radio. Primary on UNII-3 (channel 149 or 153), mesh on UNII-1 (channel 36 or 40). Keep 30 cm minimum between antennas on the same chassis. |
 | OLED + 4 buttons | For the Accept window during pairing |
 | Power, case, cabling | Same shape as a relay |
 
-## Install with mesh support
+## Install
 
-Same flag as a relay:
+Same as any ground-station install. Mesh dependencies are always pulled on this profile; no flag is required.
 
 ```bash
-sudo ./install.sh --with-mesh
+sudo ./install.sh
 ```
 
-This installs `batctl`, `avahi-daemon`, `wpasupplicant`, writes `mesh_capable: true` to `/etc/ados/profile.conf`, creates `/etc/ados/mesh/`, and lays down the three role-gated systemd units.
+This installs `batctl`, `avahi-daemon`, `wpasupplicant`, creates `/etc/ados/mesh/`, and lays down the three role-gated systemd units. `profile_detect` scans for the second USB WiFi adapter at boot and sets `mesh_capable: true` in `/etc/ados/profile.conf` when present.
 
 ## Switch the role to receiver
 

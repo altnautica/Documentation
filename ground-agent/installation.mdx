@@ -132,25 +132,16 @@ For testing pre-release features:
 curl -sSL https://raw.githubusercontent.com/altnautica/ADOSDroneAgent/main/scripts/install.sh | sudo bash -s -- --branch ground-station-phase-2
 ```
 
-## Installing with mesh support
+## Mesh support
 
-If you plan to deploy this node as a `relay` or `receiver` in a multi-node mesh, pass the `--with-mesh` flag:
-
-```bash
-curl -sSL https://raw.githubusercontent.com/altnautica/ADOSDroneAgent/main/scripts/install.sh | sudo bash -s -- --with-mesh
-```
-
-The `--with-mesh` flag does three things on top of the standard install:
+Every ground-station install already pulls the mesh dependencies. There is no flag to set. On a fresh image or on `--upgrade`, the installer runs these steps:
 
 1. apt-installs `batctl`, `avahi-daemon`, `wpasupplicant` (and tries `wpasupplicant-mesh-sae` or `wpad-mesh-wolfssl` for the 802.11s SAE backend; falls back to IBSS carrier if neither is available).
-2. Writes `mesh_capable: true` to `/etc/ados/profile.conf`. This unlocks the OLED Mesh submenu, the GCS Distributed RX and Mesh Hardware sub-views, and the `/api/v1/ground-station/role` REST PUT for relay/receiver targets.
-3. Creates `/etc/ados/mesh/` (mode 0755) so role-transition flows have somewhere to land mesh identity files.
+2. Creates `/etc/ados/mesh/` (mode 0755) so role-transition flows have somewhere to land mesh identity files.
+3. Installs the three role-gated systemd units (`ados-batman.service`, `ados-wfb-relay.service`, `ados-wfb-receiver.service`). They stay masked until a role transition starts them. The node stays in `direct` mode by default.
+4. `profile_detect` scans for a second USB-attached WiFi adapter at boot and sets `mesh_capable: true` in `/etc/ados/profile.conf` when one is present. That flag unlocks the OLED Mesh submenu, the GCS Distributed RX and Mesh Hardware sub-views, and the `/api/v1/ground-station/role` REST PUT for relay/receiver targets.
 
-Mesh support installs the three role-gated systemd units (`ados-batman.service`, `ados-wfb-relay.service`, `ados-wfb-receiver.service`) but leaves them masked. The role transition flow (OLED, CLI, or REST) is what actually starts them. The node stays in `direct` mode by default until you change it.
-
-You also need a **second USB WiFi dongle** for the mesh carrier. The first dongle stays on the RTL8812EU for the drone link; the second dongle runs batman-adv on a different band (default 2.4 GHz, channel 1). Any dongle whose Linux driver supports 802.11s mesh mode or IBSS works.
-
-`--with-mesh` is safe to combine with `--upgrade` on an existing install. The mesh extras land idempotently and the node stays in whatever role it was already in.
+To act as a `relay` or `receiver`, plug a **second RTL8812EU USB adapter** into the node (default). This matches the primary adapter one-for-one so inventory stays simple and both radios run at the same 29 dBm for matched mesh range. Any 802.11s-capable USB WiFi adapter also works; MediaTek MT7612U (mainline `mt76`) and MT7921AU (mainline `mt7921u`) are the common alternatives when an operator prefers a mainline kernel driver for the mesh carrier.
 
 [Read the Mesh & Distributed Receive overview](/ground-agent/mesh-overview) for the full picture.
 

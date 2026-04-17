@@ -15,26 +15,26 @@ This page walks you through bringing up a relay end to end.
 | Item | Notes |
 |---|---|
 | Ground Agent SBC | Pi 4B is the bench reference |
-| RTL8812EU USB WiFi adapter | Drone-facing radio. Same as a single-node setup. |
-| Second USB WiFi dongle | Mesh carrier. Any dongle that supports 802.11s or IBSS works. |
-| Antennas | One on the RTL8812EU (5 GHz), one on the mesh dongle (2.4 GHz default) |
+| RTL8812EU USB WiFi adapter (primary) | Drone-facing radio. Same as a single-node setup. |
+| Second RTL8812EU USB adapter (default mesh carrier) | Same chip as the primary for inventory simplicity and matched 29 dBm TX power. Any 802.11s-capable USB WiFi dongle also works; MT7612U and MT7921AU are common alternatives when mainline kernel coverage is preferred on the mesh side. |
+| Antennas | 5 GHz omni on each radio. Primary on UNII-3 (channel 149 or 153), mesh on UNII-1 (channel 36 or 40). Keep 30 cm minimum between antennas on the same chassis. |
 | OLED + 4 buttons | Field pairing without a laptop needs the front-panel UI |
 | Power, case, cabling | Same as a direct-mode Ground Agent |
 
 A receiver on the same mesh deployment must already exist. A fresh box cannot become a relay until it has paired with a receiver and received a mesh invite bundle.
 
-## Install with mesh support
+## Install
 
-Start with a fresh Ground Agent install or upgrade an existing one. Pass the `--with-mesh` flag:
+Start with a fresh Ground Agent install or upgrade an existing one. No mesh flag is required; the ground-station install path always pulls the mesh dependencies:
 
 ```bash
-sudo ./install.sh --with-mesh
+sudo ./install.sh
 ```
 
-The `--with-mesh` flag does three things:
+On a ground-station profile, the install does these steps:
 
 1. apt-installs `batctl`, `avahi-daemon`, `wpasupplicant` (and tries `wpasupplicant-mesh-sae` or `wpad-mesh-wolfssl` for the 802.11s SAE backend).
-2. Writes `mesh_capable: true` to `/etc/ados/profile.conf`.
+2. `profile_detect` scans for a second USB-attached WiFi adapter and writes `mesh_capable: true` to `/etc/ados/profile.conf` when one is present.
 3. Creates `/etc/ados/mesh/` (mode 0755) so the role-transition flow has somewhere to land identity files.
 
 The install also lays down the three role-gated systemd units:

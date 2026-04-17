@@ -141,7 +141,7 @@ Main Menu
 └── Back to status
 ```
 
-The Mesh submenu only appears when `mesh_capable: true` in `/etc/ados/profile.conf` (set by `install.sh --with-mesh`). Children inside the submenu are filtered by the current role: a receiver sees "Accept relay" but not "Join mesh"; a relay sees the inverse; "Leave mesh" only appears when a mesh is up.
+The Mesh submenu only appears when `mesh_capable: true` in `/etc/ados/profile.conf`. `profile_detect` sets this flag at boot when a second USB WiFi adapter is present on the node. Children inside the submenu are filtered by the current role: a receiver sees "Accept relay" but not "Join mesh"; a relay sees the inverse; "Leave mesh" only appears when a mesh is up.
 
 ## Mesh overlay screens
 

@@ -25,8 +25,10 @@ ls /sys/class/net | grep wlan
 cat /etc/ados/profile.conf
 # Expected: mesh_capable: true
 
-# If the flag is missing, re-run the installer with --with-mesh
-sudo ./install.sh --with-mesh
+# If the flag is still false after plugging the second dongle in,
+# re-run the installer or restart the bootstrap service to trigger
+# a profile_detect rescan.
+sudo systemctl restart ados-bootstrap
 ```
 
 If the second dongle is plugged in but not enumerating, check `dmesg` for driver bind messages and confirm the dongle's chipset has Linux mesh-mode (`802.11s` or `IBSS`) driver support.
@@ -52,9 +54,9 @@ If the second dongle is plugged in but not enumerating, check `dmesg` for driver
 
 **Symptom:** any non-direct role target returns `409 E_MESH_NOT_CAPABLE`.
 
-**Cause:** `mesh_capable` is `false` in `/etc/ados/profile.conf`. The installer was run without `--with-mesh`, or the second WiFi dongle is missing.
+**Cause:** `mesh_capable` is `false` in `/etc/ados/profile.conf`. The second USB WiFi adapter was not present when `profile_detect` ran last.
 
-**Recovery:** re-run the installer with `--with-mesh`, or manually flip the flag if the dongle is hot-plugged after install:
+**Recovery:** plug in the second USB WiFi adapter and rerun `profile_detect` by restarting the bootstrap service (`sudo systemctl restart ados-bootstrap`), or manually flip the flag if the dongle is already up:
 
 ```bash
 sudo sed -i 's/^mesh_capable:.*/mesh_capable: true/' /etc/ados/profile.conf

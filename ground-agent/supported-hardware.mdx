@@ -127,11 +127,13 @@ Bluetooth gamepads pair through the setup webapp or the OLED menu.
 
 If you plan to deploy this node as a `relay` or `receiver` in a multi-node mesh, you need one extra item beyond the bench build:
 
-| Item | Notes |
-|---|---|
-| Second USB WiFi dongle | The mesh carrier. Different USB port from the RTL8812EU. Any dongle whose Linux driver supports 802.11s mesh mode or IBSS works. Default channel is 2.4 GHz channel 1, which keeps it out of the 5 GHz WFB-ng band. |
+| Item | Default | Notes |
+|---|---|---|
+| Second RTL8812EU USB adapter | Yes | The default mesh carrier. Same chip as the primary for inventory simplicity and matched 29 dBm TX power. Plug into a different USB port from the primary. Runs 802.11s for batman-adv on UNII-1 (channel 36 or 40), ~100 MHz guard band from the primary WFB-ng radio on UNII-3. |
+| MT7612U USB adapter (e.g. ALFA AWUS036ACM) | Alternative | Mainline `mt76` driver. 20 dBm TX power. Good fit when mainline kernel coverage is preferred on the mesh side. |
+| MT7921AU USB adapter (e.g. Brostrend AX9L) | Alternative | Mainline `mt7921u` driver. WiFi 6. 20-23 dBm TX power. Good fit when mesh scales to 3+ nodes and OFDMA helps. |
 
-The first RTL8812EU stays on the drone-facing radio job. The second dongle handles batman-adv between Ground Agents. A `direct`-mode node does not need a second dongle.
+The first RTL8812EU stays on the drone-facing radio job. The second adapter handles batman-adv between Ground Agents. A `direct`-mode node does not need a second adapter.
 
 [Read more about mesh hardware planning in the Local Mesh page](/ground-agent/batman-adv).
 
