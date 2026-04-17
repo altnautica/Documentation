@@ -74,7 +74,7 @@ sudo batctl n           # do they see each other?
 ip addr show bat0       # both nodes must have bat0 up with an IP
 ```
 
-If the neighbor list is empty, check `/etc/ados/mesh/id` matches on both nodes (relays only have it after a pair, so on a first-time pair the relay is using the receiver's mesh_id from the invite — which is exactly what you are trying to receive). The node sending the request has not yet received the bundle, so it does not know the mesh_id and is broadcasting on the local subnet instead.
+If the neighbor list is empty, check `/etc/ados/mesh/id` matches on both nodes (relays only have it after a pair, so on a first-time pair the relay is using the receiver's mesh_id from the invite - which is exactly what you are trying to receive). The node sending the request has not yet received the bundle, so it does not know the mesh_id and is broadcasting on the local subnet instead.
 
 **Likely cause two:** the relay sent the request before the Accept window was open. Open the window first, then send the request.
 
@@ -159,6 +159,6 @@ Then retry the Accept window.
 
 ## Where to next
 
-- [Field Tap-to-Pair](/ground-agent/field-pairing) — the protocol.
-- [Local Mesh (batman-adv)](/ground-agent/batman-adv) — the carrier.
-- [Troubleshooting](/ground-agent/troubleshooting) — for non-mesh issues.
+- [Field Tap-to-Pair](/ground-agent/field-pairing) - the protocol.
+- [Local Mesh (batman-adv)](/ground-agent/batman-adv) - the carrier.
+- [Troubleshooting](/ground-agent/troubleshooting) - for non-mesh issues.

@@ -161,9 +161,9 @@ When using a standalone WFB-ng receiver (like wfb-cli or a custom setup), config
 
 The drone always transmits with `wfb_tx`. On the ground side, ADOS supports three receive modes depending on the Ground Agent's role:
 
-- **direct** — single-node, runs plain `wfb_rx`. The default.
-- **relay** — runs `wfb_rx -f <receiver>` to forward heard fragments over the local mesh to the receiver.
-- **receiver** — runs `wfb_rx -a` to aggregate fragments from its own radio plus every paired relay, then runs the same Reed-Solomon FEC combine across the merged stream.
+- **direct** - single-node, runs plain `wfb_rx`. The default.
+- **relay** - runs `wfb_rx -f <receiver>` to forward heard fragments over the local mesh to the receiver.
+- **receiver** - runs `wfb_rx -a` to aggregate fragments from its own radio plus every paired relay, then runs the same Reed-Solomon FEC combine across the merged stream.
 
 The same WFB-ng key works across all three modes; the receiver handles dedup and FEC across the combined inputs.
 

@@ -14,7 +14,7 @@ This page walks through the operator flow and then explains the protocol underne
 
 You have two Ground Agents. One is already a `receiver`. The other is a fresh `direct`-mode box you want to add as a `relay`.
 
-### Step 1 — On the receiver: open the Accept window
+### Step 1 - On the receiver: open the Accept window
 
 1. On the receiver's OLED, press B3 to enter the menu.
 2. Scroll to **Mesh -> Accept relay**.
@@ -22,14 +22,14 @@ You have two Ground Agents. One is already a `receiver`. The other is a fresh `d
 
 The receiver is now listening on the mesh interface for join requests.
 
-### Step 2 — On the relay: send a join request
+### Step 2 - On the relay: send a join request
 
 1. On the relay's OLED, press B3 to enter the menu.
 2. Scroll to **Mesh -> Join mesh**.
 3. The screen scans for receivers via mDNS. When it finds one, it shows the host name. (If nothing shows, the receiver is out of reach or the Accept window is not open yet.)
 4. Press B1 to send the join request.
 
-### Step 3 — Back on the receiver: approve
+### Step 3 - Back on the receiver: approve
 
 1. The pending list now shows the relay's device id.
 2. Highlight it with B2/B3 (if more than one is pending).
@@ -37,7 +37,7 @@ The receiver is now listening on the mesh interface for join requests.
 
 The receiver immediately encrypts the invite bundle and sends it back to the relay over the mesh.
 
-### Step 4 — On the relay: write to disk and join
+### Step 4 - On the relay: write to disk and join
 
 1. The relay receives the encrypted bundle, decrypts it with its ephemeral key, and writes the contents to disk:
    - `/etc/ados/mesh/id` (the deployment mesh id)
@@ -139,6 +139,6 @@ The node returns to a fresh `direct` state. To rejoin a different deployment lat
 
 ## Where to next
 
-- [Relay Mode](/ground-agent/relay-mode) — full relay setup.
-- [Receiver Mode](/ground-agent/receiver-mode) — the hub side.
-- [Mesh Troubleshooting](/ground-agent/mesh-troubleshooting) — when pairing does not complete.
+- [Relay Mode](/ground-agent/relay-mode) - full relay setup.
+- [Receiver Mode](/ground-agent/receiver-mode) - the hub side.
+- [Mesh Troubleshooting](/ground-agent/mesh-troubleshooting) - when pairing does not complete.

@@ -39,9 +39,9 @@ The `--with-mesh` flag does three things:
 
 The install also lays down the three role-gated systemd units:
 
-- `ados-batman.service` — brings up batman-adv on the second USB dongle
-- `ados-wfb-relay.service` — runs `wfb_rx -f` against the RTL8812EU
-- `ados-wfb-receiver.service` — runs `wfb_rx -a` (only used in receiver mode)
+- `ados-batman.service` - brings up batman-adv on the second USB dongle
+- `ados-wfb-relay.service` - runs `wfb_rx -f` against the RTL8812EU
+- `ados-wfb-receiver.service` - runs `wfb_rx -a` (only used in receiver mode)
 
 All three start masked and stay inactive until the role sentinel at `/etc/ados/mesh/role` says otherwise.
 
@@ -139,6 +139,6 @@ The transition stops the relay services, masks them, removes the role sentinel, 
 
 ## Where to next
 
-- [Receiver Mode](/ground-agent/receiver-mode) — set up the hub.
-- [Field Tap-to-Pair](/ground-agent/field-pairing) — pairing protocol details.
-- [Mesh Troubleshooting](/ground-agent/mesh-troubleshooting) — if the relay does not see the receiver.
+- [Receiver Mode](/ground-agent/receiver-mode) - set up the hub.
+- [Field Tap-to-Pair](/ground-agent/field-pairing) - pairing protocol details.
+- [Mesh Troubleshooting](/ground-agent/mesh-troubleshooting) - if the relay does not see the receiver.

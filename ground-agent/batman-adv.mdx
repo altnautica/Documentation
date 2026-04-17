@@ -6,7 +6,7 @@ icon: "network-wired"
 
 # Local Mesh (batman-adv)
 
-Distributed Receive needs a way for two or three Ground Agents to find each other and exchange WFB-ng fragments without a central router. We use **batman-adv** (Better Approach To Mobile Ad-hoc Networking, advanced) — a Linux kernel mesh routing layer that has shipped with mainline since 2011.
+Distributed Receive needs a way for two or three Ground Agents to find each other and exchange WFB-ng fragments without a central router. We use **batman-adv** (Better Approach To Mobile Ad-hoc Networking, advanced) - a Linux kernel mesh routing layer that has shipped with mainline since 2011.
 
 batman-adv handles every layer-2 routing decision: who can talk to whom, what the best path is when there are multiple hops, when a neighbor has gone silent, and which node should advertise the cloud uplink. It runs as a kernel module (`modprobe batman-adv`) and exposes a virtual `bat0` interface that looks like an ordinary Ethernet bridge to userspace.
 
@@ -55,8 +55,8 @@ ground_station:
 
 Two adjacent deployments on the same channel must not see each other's traffic. batman-adv uses two pieces of identity:
 
-- **mesh_id** — a short string like `ados-XXXXXXXXXX` shared by every node in the deployment. It becomes the 802.11s SSID (or IBSS name).
-- **mesh_psk** — a 32-byte shared key that authenticates 802.11s mesh peers via SAE.
+- **mesh_id** - a short string like `ados-XXXXXXXXXX` shared by every node in the deployment. It becomes the 802.11s SSID (or IBSS name).
+- **mesh_psk** - a 32-byte shared key that authenticates 802.11s mesh peers via SAE.
 
 Both are generated automatically on the **receiver** when the mesh services first come up. The mesh_id is derived from the receiver's `device_id` via SHA-256 truncation; the PSK is 32 random bytes from `secrets.token_bytes(32)` saved to `/etc/ados/mesh/psk.key` (mode 0600).
 
@@ -124,6 +124,6 @@ The `mesh_manager` service writes its working snapshot to `/run/ados/mesh-state.
 
 ## Where to next
 
-- [Three Deployment Roles](/ground-agent/three-roles) — direct, relay, receiver.
-- [Field Tap-to-Pair](/ground-agent/field-pairing) — how nodes get the mesh ID and PSK in the first place.
-- [Mesh Troubleshooting](/ground-agent/mesh-troubleshooting) — when batman-adv does not come up.
+- [Three Deployment Roles](/ground-agent/three-roles) - direct, relay, receiver.
+- [Field Tap-to-Pair](/ground-agent/field-pairing) - how nodes get the mesh ID and PSK in the first place.
+- [Mesh Troubleshooting](/ground-agent/mesh-troubleshooting) - when batman-adv does not come up.
