@@ -148,8 +148,33 @@ You can change uplink settings from three places:
 | Priority reorder | No | No | Yes (drag and drop) |
 | Share uplink toggle | No | Yes | Yes |
 
+## Mesh gateway election (relay or receiver only)
+
+When a node joins a mesh as a `relay` or `receiver`, batman-adv adds a sixth path: the cloud uplink can be carried by **any node on the mesh**, not just the local box. If a relay has a 4G modem and the receiver does not, batman-adv elects the relay's uplink as the deployment-wide gateway.
+
+Each mesh node makes its own gateway-server decision based on `ground_station.cloud_uplink`:
+
+| Setting | Behavior |
+|---|---|
+| `auto` (default) | Advertises this node as a batman-adv gateway when `uplink_router` reports an active local uplink. Drops the advertisement when uplink dies. |
+| `force_on` | Always advertises (useful for nodes you trust to be the deployment gateway) |
+| `force_off` | Never advertises (this node will never be elected even if it has uplink) |
+
+The receiver runs `batctl gw_mode client` and picks the best gateway by Transmit Quality (TQ). If the active gateway dies, the next-best one takes over within a few seconds. You can pin a specific gateway via the GCS Hardware tab Mesh sub-view, the CLI, or the REST API:
+
+```bash
+curl -X PUT http://localhost:8080/api/v1/ground-station/mesh/gateway_preference \
+  -H "Content-Type: application/json" \
+  -d '{"mode": "pinned", "pinned_mac": "AA:BB:CC:DD:EE:01"}'
+```
+
+`mode: auto` releases the pin.
+
+[Read the Local Mesh details](/ground-agent/batman-adv) for how gateway election interacts with the rest of batman-adv.
+
 ## What is next
 
 - [Hardware Tab](/ground-agent/hardware-tab) for the full Mission Control management interface
 - [WiFi AP](/ground-agent/wifi-ap) for laptop and phone connections
 - [Troubleshooting](/ground-agent/troubleshooting) for connectivity issues
+- [Local Mesh (batman-adv)](/ground-agent/batman-adv) for cloud gateway election in mesh deployments

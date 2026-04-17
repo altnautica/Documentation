@@ -1,0 +1,111 @@
+---
+title: "Three Deployment Roles"
+description: "direct, relay, and receiver explained side by side. What each does, what it needs, when to pick which."
+icon: "shapes"
+---
+
+# Three Deployment Roles
+
+Every Ground Agent runs in one of three roles. The role is a single config key (`ground_station.role`) that decides which services start and what the OLED, CLI, and GCS show.
+
+<CardGroup cols={3}>
+  <Card title="direct" icon="circle-dot" href="#direct">
+    Single-node receiver. The default. No mesh services. Same as a one-Ground-Agent setup.
+  </Card>
+  <Card title="relay" icon="arrow-right-arrow-left" href="#relay">
+    Forwards drone fragments to a receiver over a local mesh. Drone-facing radio is RTL8812EU.
+  </Card>
+  <Card title="receiver" icon="tower-cell" href="#receiver">
+    Hub. Combines fragments from itself and every paired relay. Publishes the clean stream.
+  </Card>
+</CardGroup>
+
+## At a glance
+
+| | direct | relay | receiver |
+|---|---|---|---|
+| Mesh services | off | on | on |
+| Needs second USB WiFi dongle | no | yes | yes |
+| Needs prior pairing | no | yes (with a receiver) | no |
+| Drone-facing radio runs | `wfb_rx` | `wfb_rx -f` (forwarder) | `wfb_rx -a` (aggregator) |
+| Publishes mDNS `_ados-receiver._tcp` | no | no | yes |
+| GCS Hardware tab "Distributed RX" sub-view | hidden | shown | shown |
+| Default config value | yes | no | no |
+
+## direct
+
+Single-node behavior. The Ground Agent receives WFB-ng video from the drone, runs `wfb_rx` against the RTL8812EU, and serves the stream to laptops, phones, and HDMI clients exactly the same way a Ground Agent has always done.
+
+No mesh services run. The `ados-batman.service`, `ados-wfb-relay.service`, and `ados-wfb-receiver.service` units stay masked and inactive.
+
+**Pick direct if:**
+
+- You only have one Ground Agent.
+- The flight area is small and one ground point sees everything.
+- You want the simplest, lowest-overhead setup.
+
+**Hardware:** one Ground Agent SBC, one RTL8812EU USB WiFi adapter, antennas, OLED, and four buttons.
+
+## relay
+
+A relay sits at a vantage point that the receiver cannot reach directly: behind a hill, across a field, on the far side of a building. It listens to the drone with its own RTL8812EU, takes the WFB-ng fragments it heard, and forwards them over the local mesh to the receiver.
+
+Behind the scenes the relay runs `wfb_rx -f`, which streams every received fragment to the receiver's UDP listener instead of decoding locally. The receiver does the FEC combine across all fragments it gets from itself and from every relay.
+
+A relay needs to know which receiver to forward to. It learns that during pairing: when an operator joins the mesh, the receiver hands the relay an encrypted invite bundle that includes the receiver's mDNS service name, the mesh PSK, and the drone's WFB-ng key. The relay writes this to `/etc/ados/mesh/` and brings up its mesh services automatically.
+
+**Pick relay if:**
+
+- You want to extend the receive footprint across an obstructed area.
+- A receiver already exists in the deployment and you want to add a node.
+
+**Hardware:** Ground Agent SBC + RTL8812EU (drone-facing) + a second USB WiFi dongle (mesh carrier). The second dongle does not need to be RTL8812EU. Any dongle that supports 802.11s or IBSS works.
+
+## receiver
+
+The receiver is the hub. It runs `wfb_rx` in aggregator mode (`wfb_rx -a`), which means it accepts fragments from two sources at the same time:
+
+- Its own RTL8812EU listening to the drone directly (when within range).
+- UDP forwards from every paired relay over the mesh.
+
+WFB-ng's native Reed-Solomon FEC combine runs across the merged stream. If a packet is missed by the local radio but heard by a relay, the receiver recovers it. If the drone is too far to be heard locally but two relays cover the area, the receiver still gets a clean stream.
+
+The combined output goes to the same downstream pipeline a single-node setup uses: `mediamtx` republishes the video to WHEP, the GCS connects on the same port, and HDMI clients see the same view.
+
+The receiver is also the **mDNS publisher** on the mesh. It advertises `_ados-receiver._tcp` on the `bat0` interface so relays can resolve and connect.
+
+**Pick receiver if:**
+
+- You want one node to be the hub for the whole deployment.
+- This is where the pilot and the GCS sit.
+
+**Hardware:** Ground Agent SBC + RTL8812EU (drone-facing) + a second USB WiFi dongle (mesh carrier). Same shape as a relay.
+
+## Switching roles
+
+You can change a node's role at any time:
+
+- **From the OLED:** open the Mesh menu, pick "Set role", cycle the choice with B1 / B2, confirm with B3.
+- **From the CLI on the node:** `ados gs role set receiver` (or `relay`, or `direct`).
+- **From the REST API:** `PUT /api/v1/ground-station/role` with `{"role": "receiver"}`.
+
+The role transition stops the previous role's services, masks them in systemd, unmasks the new role's services, restarts in dependency order, and clears stale runtime state files. The OLED and the GCS RoleBadge update on the next status poll.
+
+<Note>
+Switching to **relay** requires the node to have already completed a pair with a receiver (the `mesh_id` and `psk.key` files must exist on disk). If you have not paired, the API returns `409 E_NOT_PAIRED`. Pair first, then transition.
+</Note>
+
+## Capability gating
+
+Even with the role config set, a node will not bring up mesh services unless it is **mesh-capable**. Mesh capability requires:
+
+- A second USB WiFi dongle present at runtime (more than one `/sys/class/net/wlan*` interface).
+- The `--with-mesh` flag passed to `install.sh` (which installs `batctl`, `avahi-daemon`, and `wpasupplicant`, and writes `mesh_capable: true` to `/etc/ados/profile.conf`).
+
+Without `mesh_capable=true`, the GCS hides the Distributed RX and Mesh sub-views, the OLED Mesh submenu disappears, and `PUT /api/v1/ground-station/role` returns `409 E_MESH_NOT_CAPABLE` for relay or receiver targets.
+
+## Where to next
+
+- [Relay Mode](/ground-agent/relay-mode) — full setup walkthrough for a relay.
+- [Receiver Mode](/ground-agent/receiver-mode) — full setup walkthrough for a receiver.
+- [Field Tap-to-Pair](/ground-agent/field-pairing) — the OLED-only pairing flow.

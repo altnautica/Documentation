@@ -1,0 +1,144 @@
+---
+title: "Relay Mode"
+description: "Set up a Ground Agent as a relay node. Hardware, install, role transition, and what runs on the box once it joins a mesh."
+icon: "arrow-right-arrow-left"
+---
+
+# Relay Mode
+
+A relay is a Ground Agent that listens to your drone with its own RTL8812EU and forwards the WFB-ng fragments it heard to a receiver elsewhere on the mesh. The receiver does the FEC combine across its own radio plus every relay.
+
+This page walks you through bringing up a relay end to end.
+
+## What you need
+
+| Item | Notes |
+|---|---|
+| Ground Agent SBC | Pi 4B is the bench reference |
+| RTL8812EU USB WiFi adapter | Drone-facing radio. Same as a single-node setup. |
+| Second USB WiFi dongle | Mesh carrier. Any dongle that supports 802.11s or IBSS works. |
+| Antennas | One on the RTL8812EU (5 GHz), one on the mesh dongle (2.4 GHz default) |
+| OLED + 4 buttons | Field pairing without a laptop needs the front-panel UI |
+| Power, case, cabling | Same as a direct-mode Ground Agent |
+
+A receiver on the same mesh deployment must already exist. A fresh box cannot become a relay until it has paired with a receiver and received a mesh invite bundle.
+
+## Install with mesh support
+
+Start with a fresh Ground Agent install or upgrade an existing one. Pass the `--with-mesh` flag:
+
+```bash
+sudo ./install.sh --with-mesh
+```
+
+The `--with-mesh` flag does three things:
+
+1. apt-installs `batctl`, `avahi-daemon`, `wpasupplicant` (and tries `wpasupplicant-mesh-sae` or `wpad-mesh-wolfssl` for the 802.11s SAE backend).
+2. Writes `mesh_capable: true` to `/etc/ados/profile.conf`.
+3. Creates `/etc/ados/mesh/` (mode 0755) so the role-transition flow has somewhere to land identity files.
+
+The install also lays down the three role-gated systemd units:
+
+- `ados-batman.service` — brings up batman-adv on the second USB dongle
+- `ados-wfb-relay.service` — runs `wfb_rx -f` against the RTL8812EU
+- `ados-wfb-receiver.service` — runs `wfb_rx -a` (only used in receiver mode)
+
+All three start masked and stay inactive until the role sentinel at `/etc/ados/mesh/role` says otherwise.
+
+## Pair with the receiver
+
+Pairing happens in the field, on the OLED, with the 4 buttons. There is no laptop step.
+
+1. On the **receiver** node, navigate the OLED menu to `Mesh -> Accept relay`. The receiver opens a 60 second Accept window and starts listening for join requests on the mesh.
+2. On the **relay** node (this one), navigate the OLED to `Mesh -> Join mesh`. The relay scans for receivers on the mesh interface (`bat0`) via mDNS and shows what it found.
+3. On the relay, press B1 to send a join request.
+4. On the receiver, the pending request appears in the Accept window screen. Press B1 to approve.
+5. The receiver encrypts an invite bundle (mesh ID, mesh PSK, drone WFB key, receiver mDNS name) with Curve25519 + ChaCha20-Poly1305 and sends it back over UDP on the mesh.
+6. The relay decrypts the bundle, writes `mesh_id`, `psk.key` (mode 0600), and `receiver.json` into `/etc/ados/mesh/`, and reports success.
+
+[Full pairing protocol details](/ground-agent/field-pairing)
+
+## Switch the role to relay
+
+Once pairing has completed, transition the node's role to `relay`. Three paths:
+
+**OLED:** Mesh menu -> Set role -> select `relay` with B1/B2 -> confirm with B3.
+
+**CLI on the box:**
+
+```bash
+ados gs role set relay
+```
+
+**REST API:**
+
+```bash
+curl -X PUT http://localhost:8080/api/v1/ground-station/role \
+  -H "Content-Type: application/json" \
+  -d '{"role": "relay"}'
+```
+
+The transition stops any direct-mode `wfb_rx`, masks `ados-wfb-receiver.service`, unmasks `ados-batman.service` and `ados-wfb-relay.service`, writes `relay` to `/etc/ados/mesh/role`, and starts the new units in dependency order. The whole thing takes a couple of seconds.
+
+<Note>
+The REST handler returns `409 E_NOT_PAIRED` if you try to transition to relay before completing a pair. The agent is protecting you from a service thrash loop where `mesh_manager` would crash repeatedly because there is no `mesh_id` or `psk.key` on disk.
+</Note>
+
+## Verify
+
+After the transition, confirm the node is running as a relay:
+
+```bash
+ados gs role show
+```
+
+Expected output: `current: relay`, `configured: relay`, `mesh_capable: true`.
+
+Confirm the relay's forwarder is talking to the receiver:
+
+```bash
+ados gs mesh neighbors
+```
+
+You should see the receiver's MAC address with a non-zero TQ (Transmit Quality, batman-adv's link metric).
+
+Check the relay's forwarding stats:
+
+```bash
+curl http://localhost:8080/api/v1/ground-station/wfb/relay/status
+```
+
+Expected fields: `receiver_ip`, `receiver_port`, `fragments_seen`, `fragments_forwarded`, `up: true`. If `up` is `false` after a few seconds, the relay has not yet resolved the receiver via mDNS; check that the receiver is up and reachable on the mesh.
+
+## What runs on the box
+
+After the role transition, three new systemd units are active:
+
+| Unit | What it does |
+|---|---|
+| `ados-batman.service` | Brings up the second USB WiFi dongle in 802.11s or IBSS mode, joins the mesh by ID + PSK, attaches the interface to `bat0`, and watches batman-adv neighbors and gateway state |
+| `ados-wfb-relay.service` | Runs `wfb_rx -f <receiver_ip>:<port>` against the RTL8812EU and writes fragment counters to `/run/ados/wfb-relay.json` |
+| (existing) `ados-mediamtx-gs.service` | Stays masked because the relay does not republish video; the receiver does |
+
+The original direct-mode `ados-wfb-rx.service` is now masked. The supervisor refuses to start it on a node where role is not `direct`, and the systemd unit's `ConditionPathExists` plus the role gate ensure both layers agree.
+
+## Where to monitor
+
+- **OLED:** the status header shows `Rly` as the role badge. The Mesh -> Joined Status screen shows the receiver's mDNS name and current fragment count.
+- **GCS Mission Control:** Hardware tab -> Distributed RX shows a `ReceiverCard` with the relay's view of the receiver: mDNS name, `bat0` IP, fragment counters, last-seen age.
+- **CLI:** `ados gs mesh neighbors` and `curl /api/v1/ground-station/wfb/relay/status`.
+
+## Going back to direct
+
+If you want to take a relay out of the mesh:
+
+- **OLED:** Mesh menu -> Leave mesh -> confirm with B3.
+- **CLI:** `ados gs role set direct`.
+
+The transition stops the relay services, masks them, removes the role sentinel, and brings the direct-mode `wfb_rx` back up. The mesh identity files in `/etc/ados/mesh/` stay on disk so a later `ados gs role set relay` can resume without re-pairing. To wipe identity entirely, run a factory reset.
+
+## Where to next
+
+- [Receiver Mode](/ground-agent/receiver-mode) — set up the hub.
+- [Field Tap-to-Pair](/ground-agent/field-pairing) — pairing protocol details.
+- [Mesh Troubleshooting](/ground-agent/mesh-troubleshooting) — if the relay does not see the receiver.

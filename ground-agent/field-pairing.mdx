@@ -1,0 +1,144 @@
+---
+title: "Field Tap-to-Pair"
+description: "How a relay joins a receiver in the field with no laptop, no cloud, no QR codes. The OLED-only flow, the protocol, and the security model."
+icon: "hand-pointer"
+---
+
+# Field Tap-to-Pair
+
+A field crew can drop a relay onto a deployment without a laptop, a phone app, or a cloud service. The whole pairing flow runs on the OLED screen and the four front-panel buttons of both the receiver and the new relay.
+
+This page walks through the operator flow and then explains the protocol underneath.
+
+## The operator flow
+
+You have two Ground Agents. One is already a `receiver`. The other is a fresh `direct`-mode box you want to add as a `relay`.
+
+### Step 1 — On the receiver: open the Accept window
+
+1. On the receiver's OLED, press B3 to enter the menu.
+2. Scroll to **Mesh -> Accept relay**.
+3. Press B3 to confirm. The screen flips to the Accept window: a 60 second countdown and an empty pending-relay list.
+
+The receiver is now listening on the mesh interface for join requests.
+
+### Step 2 — On the relay: send a join request
+
+1. On the relay's OLED, press B3 to enter the menu.
+2. Scroll to **Mesh -> Join mesh**.
+3. The screen scans for receivers via mDNS. When it finds one, it shows the host name. (If nothing shows, the receiver is out of reach or the Accept window is not open yet.)
+4. Press B1 to send the join request.
+
+### Step 3 — Back on the receiver: approve
+
+1. The pending list now shows the relay's device id.
+2. Highlight it with B2/B3 (if more than one is pending).
+3. Press B1 to approve.
+
+The receiver immediately encrypts the invite bundle and sends it back to the relay over the mesh.
+
+### Step 4 — On the relay: write to disk and join
+
+1. The relay receives the encrypted bundle, decrypts it with its ephemeral key, and writes the contents to disk:
+   - `/etc/ados/mesh/id` (the deployment mesh id)
+   - `/etc/ados/mesh/psk.key` (the shared mesh PSK, mode 0600)
+   - `/etc/ados/mesh/receiver.json` (the receiver mDNS hint and ports)
+   - `/etc/ados/wfb/rx.key` (the drone-paired WFB receive key)
+2. The OLED flips to the Joined Status screen showing the mesh id, the receiver host, and the live fragment count.
+
+The relay still needs to transition its role from `direct` to `relay` for the mesh services to start. That can happen on the same screen via the Mesh -> Set role flow, or any other role-change path.
+
+### Done
+
+Total time, three nodes, cold start, no laptop: under two minutes once you have the buttons memorized.
+
+## The protocol
+
+Pairing uses a small, simple wire protocol over UDP on the mesh interface.
+
+### Wire layout
+
+| Element | Value |
+|---|---|
+| Transport | UDP, port 5801 |
+| Bind interface | `bat0` (the batman-adv mesh interface) |
+| Request format | One JSON datagram |
+| Reply format | One opaque encrypted blob |
+| Key exchange | Curve25519 ECDH (X25519) |
+| Symmetric cipher | ChaCha20-Poly1305 with HKDF key derivation |
+| Accept window default | 60 seconds (configurable 5-300 s via REST) |
+| Invite bundle TTL | 120 seconds from issue |
+| Invite retransmit | 2 sends, 100 ms gap |
+
+### Request (relay -> receiver)
+
+```json
+{
+  "type": "join",
+  "device_id": "relay-alpha",
+  "pubkey_hex": "<32 bytes hex>"
+}
+```
+
+The relay generates a fresh X25519 keypair for every pair attempt. The keypair is ephemeral; it is discarded once the relay has decrypted the invite reply.
+
+### Reply (receiver -> relay)
+
+The reply is a single binary blob with this layout:
+
+| Offset | Length | Field |
+|---|---|---|
+| 0 | 32 bytes | Receiver ephemeral X25519 public key |
+| 32 | 12 bytes | ChaCha20-Poly1305 nonce |
+| 44 | N bytes | Ciphertext + 16-byte authentication tag |
+
+The plaintext (after decryption) is a JSON object:
+
+```json
+{
+  "mesh_id": "ados-XXXXXXXXXX",
+  "mesh_psk": "<64 hex chars (32 bytes)>",
+  "drone_channel": 149,
+  "wfb_rx_key": "<hex>",
+  "receiver_mdns_host": "<hostname>",
+  "receiver_mdns_port": 5800,
+  "issued_at_ms": 1700000000000,
+  "expires_at_ms": 1700000120000
+}
+```
+
+If the relay decrypts a bundle whose `expires_at_ms` is in the past, it drops the bundle and falls back to a re-request.
+
+### Why two sends
+
+UDP is lossy. The receiver's `approve` handler `sendto`s the encrypted blob twice with a 100 ms gap. The relay's listener accepts both copies; the second one fails to decrypt as a duplicate (because we use the first one and tear down the keypair) and gets dropped silently. Net effect: a single dropped packet does not force the operator to redo the whole flow.
+
+## Security model
+
+This is field-only field pairing. The threat model is "an operator with physical access to both nodes for one minute". Out of scope: hostile actors on the same channel, capture-and-replay attacks against historical pairings, side-channel attacks. In scope:
+
+- **Mutual authentication via ECDH.** The receiver's encrypted reply only opens with the relay's ephemeral private key. A passive listener with the same SSID + PSK cannot read the bundle.
+- **Authenticated encryption.** ChaCha20-Poly1305 detects any tampering with the ciphertext.
+- **Bundle expiry.** Invite bundles include `expires_at_ms` 120 seconds in the future. A captured bundle replayed later is rejected by the relay.
+- **Revocation.** A receiver operator can revoke a relay's device id from the GCS or via `ados gs mesh revoke <device_id>`. Revoked device ids are persisted in `/etc/ados/mesh/revocations.json` (mode 0600). On any future pair attempt, the receiver drops the join request before it reaches the approval queue and emits a `revoked` pairing event.
+
+## Factory reset
+
+If you decommission a node and want to wipe its mesh identity completely:
+
+- **OLED:** long-press B4 to enter factory reset, confirm.
+- **REST:** `POST /api/v1/ground-station/factory-reset?confirm=<token>`.
+
+The factory reset, in order:
+
+1. Calls `apply_role("direct")` to stop mesh services and mask their units.
+2. Runs the existing `pair_manager.factory_reset()` which clears the WFB drone pair and AP passphrase.
+3. Wipes `/etc/ados/mesh/id`, `/etc/ados/mesh/psk.key`, `/etc/ados/mesh/receiver.json`, `/etc/ados/mesh/revocations.json`, and `/etc/ados/mesh/role`.
+
+The node returns to a fresh `direct` state. To rejoin a different deployment later, repeat the pairing flow with the new receiver.
+
+## Where to next
+
+- [Relay Mode](/ground-agent/relay-mode) — full relay setup.
+- [Receiver Mode](/ground-agent/receiver-mode) — the hub side.
+- [Mesh Troubleshooting](/ground-agent/mesh-troubleshooting) — when pairing does not complete.

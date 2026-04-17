@@ -145,10 +145,19 @@ If you need to start over, factory reset clears the pairing keys, network config
 - **Mission Control:** Hardware tab > Physical UI > Factory Reset (requires typed confirmation)
 - **CLI:** `sudo ados factory-reset`
 
-After reset, the ground station reboots and returns to the first-boot state.
+After reset, the ground station reboots and returns to the first-boot state. On a mesh-capable node the reset additionally clears the mesh identity (`mesh_id`, `psk.key`, receiver hint, revocation list) and transitions the role back to `direct` so the box can be paired into a different deployment.
+
+## Mesh field pairing
+
+The pairing flow above is for the drone-to-Ground-Agent pair (the WFB-ng key).
+
+If you are setting up a multi-node deployment with `relay` and `receiver` roles, there is a separate **field pairing** flow that runs entirely on the OLED, with no laptop or webapp. The receiver opens a 60 second Accept window, each relay sends a join request over the local mesh, and the receiver returns an encrypted invite bundle that the relay writes to disk.
+
+[Read the Field Tap-to-Pair walkthrough and protocol](/ground-agent/field-pairing).
 
 ## What is next
 
 - [WiFi AP](/ground-agent/wifi-ap) to connect your laptop
 - [HDMI Kiosk](/ground-agent/hdmi-kiosk) for standalone flight
 - [Uplink Matrix](/ground-agent/uplink-matrix) for cloud and internet connectivity options
+- [Mesh & Distributed Receive](/ground-agent/mesh-overview) when one Ground Agent is not enough

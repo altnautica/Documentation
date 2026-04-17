@@ -220,6 +220,18 @@
             ]
           },
           {
+            "group": "Distributed Receive & Mesh",
+            "pages": [
+              "ground-agent/mesh-overview",
+              "ground-agent/three-roles",
+              "ground-agent/relay-mode",
+              "ground-agent/receiver-mode",
+              "ground-agent/batman-adv",
+              "ground-agent/field-pairing",
+              "ground-agent/mesh-troubleshooting"
+            ]
+          },
+          {
             "group": "Operations",
             "pages": [
               "ground-agent/physical-ui",

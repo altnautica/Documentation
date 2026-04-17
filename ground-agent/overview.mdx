@@ -83,9 +83,20 @@ The simplest ground station is a Raspberry Pi 4B, an RTL8812EU USB WiFi adapter,
 
 Production boards (Radxa CM3 Lite tier, Radxa CM4 Pro tier) are smaller, more rugged, and support features like antenna diversity and internal 4G modems.
 
+## Three deployment modes
+
+A single Ground Agent runs in `direct` mode by default and that covers most setups. When the flight area has obstructions, when you want to extend coverage along a long corridor, or when you want a backup receiver in case the primary fails, you can deploy two or three Ground Agents together as a mesh. The roles in a mesh are:
+
+- **direct** — single-node behavior. The default.
+- **relay** — forwards drone fragments to a receiver elsewhere on the mesh.
+- **receiver** — hub that combines fragments from itself and every paired relay.
+
+[Read the Distributed Receive & Mesh overview](/ground-agent/mesh-overview) for when to use mesh and how it works. [Three Deployment Roles](/ground-agent/three-roles) covers the three options side by side.
+
 ## What is next
 
 - [Supported Hardware](/ground-agent/supported-hardware) for the full parts list
 - [Installation](/ground-agent/installation) to set up your ground station
 - [WiFi AP](/ground-agent/wifi-ap) to connect your laptop
 - [Setup and Pairing](/ground-agent/setup-and-pairing) for the first-time walkthrough
+- [Mesh & Distributed Receive](/ground-agent/mesh-overview) when you need more than one Ground Agent

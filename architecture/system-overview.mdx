@@ -88,6 +88,12 @@ The drone has its own 4G modem and pushes telemetry and video to the cloud. A re
 
 The ground station receives WFB-ng for local low-latency flight, and simultaneously bridges telemetry to the cloud for remote observers. This is the best-of-both-worlds setup for commercial operations.
 
+### Distributed Receive (multiple Tier 2 nodes)
+
+When one ground station cannot see the whole flight area (terrain, obstructions, long corridor), two or three Ground Agents can be deployed together. They form a small private mesh over batman-adv on a second USB WiFi dongle. One node takes the `receiver` role and serves as the hub; every other node is a `relay` that forwards WFB-ng fragments it heard. The receiver runs WFB-ng's native FEC combine across the merged stream and republishes the clean video on the same downstream pipeline a single-node setup uses.
+
+[Read the Mesh & Distributed Receive overview](/ground-agent/mesh-overview) for when to deploy mesh and how it works.
+
 ## Protocol stack
 
 Each connection between components uses a specific protocol:

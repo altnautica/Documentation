@@ -132,6 +132,28 @@ For testing pre-release features:
 curl -sSL https://raw.githubusercontent.com/altnautica/ADOSDroneAgent/main/scripts/install.sh | sudo bash -s -- --branch ground-station-phase-2
 ```
 
+## Installing with mesh support
+
+If you plan to deploy this node as a `relay` or `receiver` in a multi-node mesh, pass the `--with-mesh` flag:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/altnautica/ADOSDroneAgent/main/scripts/install.sh | sudo bash -s -- --with-mesh
+```
+
+The `--with-mesh` flag does three things on top of the standard install:
+
+1. apt-installs `batctl`, `avahi-daemon`, `wpasupplicant` (and tries `wpasupplicant-mesh-sae` or `wpad-mesh-wolfssl` for the 802.11s SAE backend; falls back to IBSS carrier if neither is available).
+2. Writes `mesh_capable: true` to `/etc/ados/profile.conf`. This unlocks the OLED Mesh submenu, the GCS Distributed RX and Mesh Hardware sub-views, and the `/api/v1/ground-station/role` REST PUT for relay/receiver targets.
+3. Creates `/etc/ados/mesh/` (mode 0755) so role-transition flows have somewhere to land mesh identity files.
+
+Mesh support installs the three role-gated systemd units (`ados-batman.service`, `ados-wfb-relay.service`, `ados-wfb-receiver.service`) but leaves them masked. The role transition flow (OLED, CLI, or REST) is what actually starts them. The node stays in `direct` mode by default until you change it.
+
+You also need a **second USB WiFi dongle** for the mesh carrier. The first dongle stays on the RTL8812EU for the drone link; the second dongle runs batman-adv on a different band (default 2.4 GHz, channel 1). Any dongle whose Linux driver supports 802.11s mesh mode or IBSS works.
+
+`--with-mesh` is safe to combine with `--upgrade` on an existing install. The mesh extras land idempotently and the node stays in whatever role it was already in.
+
+[Read the Mesh & Distributed Receive overview](/ground-agent/mesh-overview) for the full picture.
+
 ## Profile override
 
 If auto-detection picks the wrong profile (rare, usually means ambiguous hardware), you can force it:

@@ -1,0 +1,182 @@
+---
+title: "Receiver Mode"
+description: "Set up the hub of a distributed-receive deployment. Aggregator, mDNS publisher, FEC combine, and cloud gateway election."
+icon: "tower-cell"
+---
+
+# Receiver Mode
+
+A receiver is the hub of a distributed-receive deployment. It listens to the drone with its own RTL8812EU, accepts forwarded fragments from every paired relay over the local mesh, runs WFB-ng's native FEC combine across the merged stream, and republishes the clean video to the same downstream pipeline a single-node Ground Agent uses.
+
+There is exactly one receiver per deployment. Every other mesh node is a relay.
+
+## What you need
+
+| Item | Notes |
+|---|---|
+| Ground Agent SBC | Pi 4B is the bench reference |
+| RTL8812EU USB WiFi adapter | Drone-facing radio. Same as a single-node setup. |
+| Second USB WiFi dongle | Mesh carrier. Any dongle that supports 802.11s or IBSS works. |
+| Antennas | One on the RTL8812EU (5 GHz), one on the mesh dongle (2.4 GHz default) |
+| OLED + 4 buttons | For the Accept window during pairing |
+| Power, case, cabling | Same shape as a relay |
+
+## Install with mesh support
+
+Same flag as a relay:
+
+```bash
+sudo ./install.sh --with-mesh
+```
+
+This installs `batctl`, `avahi-daemon`, `wpasupplicant`, writes `mesh_capable: true` to `/etc/ados/profile.conf`, creates `/etc/ados/mesh/`, and lays down the three role-gated systemd units.
+
+## Switch the role to receiver
+
+Unlike relay, **receiver does not require prior pairing.** A fresh receiver can come up cold; it generates its own mesh identity (`mesh_id` and `psk.key`) on first boot of `mesh_manager`.
+
+**OLED:** Mesh menu -> Set role -> select `receiver` with B1/B2 -> confirm with B3.
+
+**CLI:**
+
+```bash
+ados gs role set receiver
+```
+
+**REST:**
+
+```bash
+curl -X PUT http://localhost:8080/api/v1/ground-station/role \
+  -H "Content-Type: application/json" \
+  -d '{"role": "receiver"}'
+```
+
+The transition masks the direct-mode `ados-wfb-rx.service`, masks `ados-wfb-relay.service`, unmasks `ados-batman.service` and `ados-wfb-receiver.service`, writes `receiver` to `/etc/ados/mesh/role`, and starts the mesh + aggregator units.
+
+## Verify
+
+```bash
+ados gs role show
+# current: receiver, configured: receiver, mesh_capable: true
+
+ados gs mesh health
+# up: true, peer_count: 0 (no relays paired yet)
+
+curl http://localhost:8080/api/v1/ground-station/wfb/receiver/relays
+# {"relays": []}
+```
+
+The mesh is up. There are no peers yet because no relay has joined.
+
+## Open the Accept window for pairing
+
+To accept a relay, the receiver must open a 60 second Accept window:
+
+**OLED:** Mesh menu -> Accept relay. The screen shows a countdown and an empty pending-relay list.
+
+**CLI:**
+
+```bash
+ados gs mesh accept --window 60
+```
+
+**REST:**
+
+```bash
+curl -X POST http://localhost:8080/api/v1/ground-station/pair/accept \
+  -H "Content-Type: application/json" \
+  -d '{"duration_s": 60}'
+```
+
+The receiver binds a UDP listener on `bat0:5801`. When a relay sends a join request over the mesh, it appears in the pending list (visible on the OLED, in `ados gs mesh pending`, and in the GCS Hardware tab's PairingStatusCard).
+
+To approve a pending relay:
+
+**OLED:** highlight the relay with B2/B3, press B1 to approve.
+
+**CLI:**
+
+```bash
+ados gs mesh approve <device_id>
+```
+
+**REST:**
+
+```bash
+curl -X POST http://localhost:8080/api/v1/ground-station/pair/approve/<device_id>
+```
+
+The receiver assembles an invite bundle (mesh ID, mesh PSK, drone WFB key, receiver mDNS name + port), encrypts it with Curve25519 ECDH + ChaCha20-Poly1305 keyed off the relay's ephemeral public key, and sends it back over UDP. The blob is sent twice 100 ms apart to survive a single dropped packet on the lossy mesh.
+
+[Full pairing protocol details](/ground-agent/field-pairing)
+
+## What runs on the box
+
+After role=receiver:
+
+| Unit | What it does |
+|---|---|
+| `ados-batman.service` | batman-adv on the second USB dongle. Same module as a relay uses. |
+| `ados-wfb-receiver.service` | Runs `wfb_rx -a <listen_port>` (default port 5800). Accepts UDP forwards from relays. With `accept_local_nic: true` (default), also reads the local RTL8812EU directly. |
+| `ados-mediamtx-gs.service` | Republishes the clean stream as WHEP. Unchanged from a single-node setup. |
+
+The receiver also publishes `_ados-receiver._tcp` on the mesh interface via mDNS so relays can resolve it without manual configuration.
+
+## FEC combine
+
+WFB-ng's native Reed-Solomon FEC runs at the receiver. The `WfbConfig` defaults are `fec_k = 8` (data fragments per block) and `fec_n = 12` (total fragments per block, so 4 parity). This means the receiver can recover the original block as long as it has any 8 of the 12 fragments, regardless of which radio (local or any relay) saw which fragment.
+
+The combine stats land in `/run/ados/wfb-receiver.json`. Surface them via:
+
+```bash
+curl http://localhost:8080/api/v1/ground-station/wfb/receiver/combined
+```
+
+Fields: `fragments_after_dedup`, `fec_repaired`, `output_kbps`, `up`.
+
+## Cloud uplink election
+
+The receiver runs batman-adv in `gw client` mode by default. If any node on the mesh (a relay or the receiver itself) advertises a cloud gateway via `gw server` (because it has 4G, Ethernet, or a WiFi client connection), the receiver picks the best one by TQ and routes cloud-bound traffic over it.
+
+When a gateway dies, batman-adv evicts it and the receiver picks the next best automatically. No operator action needed.
+
+You can pin a specific gateway from the GCS Hardware tab's Mesh sub-view, or:
+
+```bash
+curl -X PUT http://localhost:8080/api/v1/ground-station/mesh/gateway_preference \
+  -H "Content-Type: application/json" \
+  -d '{"mode": "pinned", "pinned_mac": "AA:BB:CC:DD:EE:01"}'
+```
+
+Set `mode: auto` to release the pin.
+
+## Where to monitor
+
+- **OLED:** the status header shows `Rx<id>` as the role badge. Mesh -> Neighbors lists every paired relay with TQ. The Accept window screen shows pending relays during pairing.
+- **GCS Mission Control:** Hardware tab -> Distributed RX renders a RelayCard for each paired relay with fragment counts, plus a CombinedStreamStats card showing FEC-repaired fragments and output kbps. Mesh tab shows MeshHealthCard, MeshNeighborsTable, MeshGatewaysTable.
+- **CLI:**
+  - `ados gs mesh health`
+  - `ados gs mesh neighbors`
+  - `ados gs mesh gateways`
+  - `curl /api/v1/ground-station/wfb/receiver/relays`
+  - `curl /api/v1/ground-station/wfb/receiver/combined`
+
+## Decommissioning a relay
+
+To revoke a relay so it can no longer rejoin without re-pairing:
+
+**GCS:** Hardware tab -> Distributed RX -> RelayCard -> Revoke. Type the relay's device id to confirm.
+
+**CLI:**
+
+```bash
+ados gs mesh revoke <device_id>
+```
+
+The device id goes into `/etc/ados/mesh/revocations.json` (mode 0600). On any future pair attempt from this device, the receiver drops the join request silently and the GCS surfaces a `relay_revoked` toast.
+
+## Where to next
+
+- [Relay Mode](/ground-agent/relay-mode) — set up the relays.
+- [Local Mesh (batman-adv)](/ground-agent/batman-adv) — the carrier underneath.
+- [Field Tap-to-Pair](/ground-agent/field-pairing) — the pairing protocol.

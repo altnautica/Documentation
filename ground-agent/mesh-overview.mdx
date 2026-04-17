@@ -1,0 +1,85 @@
+---
+title: "Mesh & Distributed Receive"
+description: "Run more than one Ground Agent and let them share the receive job. The why, the what, and the high-level shape."
+icon: "share-nodes"
+---
+
+# Mesh & Distributed Receive
+
+A single Ground Agent listens to your drone with one antenna at one location. That works most of the time. It does not work when there is a hill in the way, when the flight area is long and narrow, or when you want a backup node in case the primary loses line of sight.
+
+Distributed Receive lets you put two or three Ground Agents around the flight area, link them together over a small private mesh, and have them share the receive job. The drone keeps transmitting once. The mesh decides who heard what and combines fragments back into the clean stream.
+
+<Frame caption="Three Ground Agents covering an obstructed flight area. The receiver combines fragments from itself and the relays.">
+  <img src="/images/placeholder-mesh-topology.png" alt="Mesh topology with one receiver hub and two relay nodes" />
+</Frame>
+
+## When to deploy mesh
+
+You probably want mesh if:
+
+- The flight area has terrain, buildings, or vegetation that blocks line-of-sight from a single ground point.
+- You want a redundant receiver in case the primary node fails or is occupied.
+- You want to extend coverage along a long corridor (a road, a fence line, a runway).
+- You have a 4G uplink only at one node but you want all nodes to feel like they have one.
+
+You probably do not need mesh if:
+
+- One Ground Agent at the takeoff point sees the whole flight envelope.
+- You are flying line-of-sight for short hops.
+- You have only one Ground Agent and adding more is not on the table.
+
+## The shape
+
+Each Ground Agent picks one of three deployment roles:
+
+| Role | What it does |
+|---|---|
+| **direct** | Single-node behavior. Same as you would run today. No mesh. |
+| **relay** | Forwards WFB-ng fragments to a receiver over a local mesh. Drone-facing radio is the same RTL8812EU. |
+| **receiver** | Hub. Combines fragments from its own radio plus every paired relay. Publishes the clean stream to the same downstream pipeline a single-node setup uses. |
+
+A deployment with mesh always has exactly one **receiver** and one or more **relays**. **direct** is the single-node case and never participates in a mesh.
+
+[Read the full role breakdown](/ground-agent/three-roles)
+
+## How the nodes find each other
+
+Each relay and receiver carries a **second** USB WiFi dongle dedicated to the mesh carrier (the first dongle stays on WFB-ng monitor mode for the drone link). The second dongle runs `batman-adv`, a kernel-level wireless mesh that handles routing, neighbor discovery, and self-healing automatically.
+
+Receivers advertise themselves on the mesh interface with mDNS (`_ados-receiver._tcp` on `bat0`). Relays resolve and forward to whichever receiver answers.
+
+[Read the batman-adv setup details](/ground-agent/batman-adv)
+
+## How nodes get paired
+
+Pairing is **field-only**. There is no laptop, no QR code, no cloud service involved.
+
+- The receiver operator presses a button on the OLED to open a 60 second Accept window.
+- Each relay operator presses a button on their OLED to send a join request over the mesh.
+- The receiver shows the request, the operator presses approve, and an encrypted invite bundle (mesh ID, shared key, drone WFB key) flies back over the same wire.
+- The relay writes the bundle to disk, brings up its mesh services, and starts forwarding.
+
+[Read the field tap-to-pair walkthrough](/ground-agent/field-pairing)
+
+## What you do not have to manage
+
+- **Routing.** batman-adv handles every hop, every reroute, every neighbor join, and every dead-neighbor eviction without manual config.
+- **Cloud uplink.** If any one node has 4G, Ethernet, or a WiFi client connection, the mesh elects it as the cloud gateway. If that node loses uplink, another node takes over.
+- **Per-relay FEC math.** WFB-ng's native Reed-Solomon FEC combine runs at the receiver. Fragments from any relay or the local radio all feed the same recovery loop.
+- **Stream republishing.** The combined output reaches the existing mediamtx pipeline at the receiver. Browsers, phones, and HDMI clients connect to the receiver exactly as they would on a single-node setup.
+
+## What you do have to manage
+
+- **Hardware:** every relay and receiver needs a second USB WiFi dongle in addition to the primary RTL8812EU. The mesh carrier dongle does not need to be RTL8812EU; any dongle that supports 802.11s or IBSS works.
+- **Channel planning:** the WFB-ng radio (typically 5 GHz) and the mesh carrier (default 2.4 GHz, channel 1) sit on different bands so they do not interfere. If you change either, plan around it.
+- **Role assignment:** decide which node is the receiver before you head out. The receiver is also the GCS connection target by default.
+
+## Where to next
+
+- [Three Deployment Roles](/ground-agent/three-roles) — direct, relay, receiver in detail.
+- [Relay Mode](/ground-agent/relay-mode) — set up a relay node end-to-end.
+- [Receiver Mode](/ground-agent/receiver-mode) — set up the hub.
+- [Local Mesh (batman-adv)](/ground-agent/batman-adv) — what runs under the hood.
+- [Field Tap-to-Pair](/ground-agent/field-pairing) — the OLED-only join flow.
+- [Mesh Troubleshooting](/ground-agent/mesh-troubleshooting) — symptoms and fixes.

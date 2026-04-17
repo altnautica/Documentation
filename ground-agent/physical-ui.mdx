@@ -93,6 +93,18 @@ Agent v0.5.3
 
 All text renders at 8x16 pixel font size so you can read it with reading glasses at arm's length.
 
+### Role badge
+
+When the node is mesh-capable (`mesh_capable: true` in `/etc/ados/profile.conf`), the status screen header carries a small role tag at the top right:
+
+| Tag | Meaning |
+|---|---|
+| `Dir` | direct mode (single-node) |
+| `Rly` | relay mode |
+| `Rx<id>` | receiver mode (with the first three characters of the mesh id) |
+
+On a fresh box where no role has been picked yet, the OLED replaces the status cycle entirely with a "Role: unset" prompt that points at the Mesh menu. Pressing any button enters the Mesh -> Set role flow directly.
+
 ## Menu system
 
 Press B3 (Select) from any status screen to enter the menu. Navigation uses the same four buttons:
@@ -110,6 +122,12 @@ Main Menu
 │   ├── WiFi client scan and join
 │   ├── 4G modem status
 │   └── Uplink priority
+├── Mesh                            (visible only when mesh_capable)
+│   ├── Set role                    (cycle direct / relay / receiver)
+│   ├── Accept relay                (receiver only)
+│   ├── Join mesh                   (relay only, when not joined)
+│   ├── Neighbors                   (relay or receiver)
+│   └── Leave mesh                  (when on a mesh)
 ├── Radio
 │   ├── Channel (1-165)
 │   └── Bitrate / FEC profile
@@ -122,6 +140,25 @@ Main Menu
 │   └── Factory reset
 └── Back to status
 ```
+
+The Mesh submenu only appears when `mesh_capable: true` in `/etc/ados/profile.conf` (set by `install.sh --with-mesh`). Children inside the submenu are filtered by the current role: a receiver sees "Accept relay" but not "Join mesh"; a relay sees the inverse; "Leave mesh" only appears when a mesh is up.
+
+## Mesh overlay screens
+
+Mesh actions take over the OLED with dedicated screens that override the normal status cycle. Each overlay rebinds the four buttons to actions specific to that screen.
+
+| Screen | Triggered by | Buttons |
+|---|---|---|
+| **Role picker** | Mesh -> Set role | B1/B2 cycle direct/relay/receiver, B3 apply, B4 back |
+| **Accept window** | Mesh -> Accept relay (receiver) | B1 approve highlighted pending, B2/B3 scroll, B4 close window |
+| **Join scan** | Mesh -> Join mesh (relay) | B1 send join request to discovered receiver, B4 cancel |
+| **Joined status** | After successful join | B4 back to status |
+| **Hub unreachable** | Relay loses receiver via mDNS timeout | B1 wait longer, B4 transition to direct |
+| **Neighbors** | Mesh -> Neighbors | B1/B2 scroll, B4 back |
+| **Leave confirm** | Mesh -> Leave mesh | B3 confirm leave (transitions to direct), B4 cancel |
+| **Error states** | Any pairing or role error | B4 dismiss; the screen shows a short message keyed off the agent error code |
+
+The first-boot unset screen (when a mesh-capable node has no role yet) is its own override that any button press dismisses by entering the Mesh submenu.
 
 ## Factory reset
 
@@ -140,6 +177,8 @@ Factory reset is a two-step process to prevent accidents:
 </Steps>
 
 If you release B4 during either hold, or if the 5-second confirm window passes, nothing happens.
+
+On a mesh-capable node the factory reset additionally transitions the role to `direct`, stops the mesh services, and wipes `/etc/ados/mesh/*` (the mesh id, the shared PSK, the receiver hint, the revocation list, and the role sentinel). The node returns to a fresh state and can be paired into a different deployment.
 
 ## Power saving and burn-in protection
 

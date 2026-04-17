@@ -1,0 +1,164 @@
+---
+title: "Mesh Troubleshooting"
+description: "Symptoms and fixes for the most common mesh and pairing failures. journalctl queries, ados gs commands, and recovery paths."
+icon: "wrench"
+---
+
+# Mesh Troubleshooting
+
+This page collects the failure modes we have observed during mesh and pairing development. Each entry has a symptom, the root cause, and the recovery path.
+
+## Mesh services do not start after role transition
+
+**Symptom:** `ados gs role show` reports the configured role correctly, but `ados gs mesh health` returns 404 or shows `up: false`. `systemctl status ados-batman` shows `inactive (dead)`.
+
+**Likely cause:** the second USB WiFi dongle is not detected, or `mesh_capable` is `false` in `/etc/ados/profile.conf`.
+
+**Recovery:**
+
+```bash
+# Confirm the second dongle is present
+ls /sys/class/net | grep wlan
+# Expected: at least two wlan* interfaces
+
+# Confirm mesh_capable is set
+cat /etc/ados/profile.conf
+# Expected: mesh_capable: true
+
+# If the flag is missing, re-run the installer with --with-mesh
+sudo ./install.sh --with-mesh
+```
+
+If the second dongle is plugged in but not enumerating, check `dmesg` for driver bind messages and confirm the dongle's chipset has Linux mesh-mode (`802.11s` or `IBSS`) driver support.
+
+## PUT /role returns 409 E_NOT_PAIRED
+
+**Symptom:** Trying to transition a node to `relay` returns:
+
+```json
+{"error": {"code": "E_NOT_PAIRED", "message": "relay role requires a completed pair with a receiver"}}
+```
+
+**Cause:** the node has no `mesh_id` or `psk.key` on disk. The agent guards relay mode behind a successful pair so `mesh_manager` does not enter a restart loop.
+
+**Recovery:**
+
+1. Bring the receiver up first if it is not already.
+2. On the receiver: open the Accept window (`ados gs mesh accept --window 60`).
+3. On this node (still in direct mode): use the OLED `Mesh -> Join mesh` flow OR call `POST /api/v1/ground-station/pair/join` from the local CLI.
+4. After the pair completes, retry the role transition.
+
+## PUT /role returns 409 E_MESH_NOT_CAPABLE
+
+**Symptom:** any non-direct role target returns `409 E_MESH_NOT_CAPABLE`.
+
+**Cause:** `mesh_capable` is `false` in `/etc/ados/profile.conf`. The installer was run without `--with-mesh`, or the second WiFi dongle is missing.
+
+**Recovery:** re-run the installer with `--with-mesh`, or manually flip the flag if the dongle is hot-plugged after install:
+
+```bash
+sudo sed -i 's/^mesh_capable:.*/mesh_capable: true/' /etc/ados/profile.conf
+```
+
+Then retry the role transition.
+
+## OLED Accept window shows no pending relay
+
+**Symptom:** receiver's OLED Accept window is open and counting down, the relay's OLED says it sent the request, but the receiver shows no pending entries.
+
+**Likely cause one:** the join request never reached the receiver because the mesh interface is not actually connected.
+
+```bash
+# On both nodes:
+sudo batctl n           # do they see each other?
+ip addr show bat0       # both nodes must have bat0 up with an IP
+```
+
+If the neighbor list is empty, check `/etc/ados/mesh/id` matches on both nodes (relays only have it after a pair, so on a first-time pair the relay is using the receiver's mesh_id from the invite — which is exactly what you are trying to receive). The node sending the request has not yet received the bundle, so it does not know the mesh_id and is broadcasting on the local subnet instead.
+
+**Likely cause two:** the relay sent the request before the Accept window was open. Open the window first, then send the request.
+
+**Likely cause three:** the receiver bound the UDP listener but it failed silently. Check:
+
+```bash
+sudo journalctl -u ados-supervisor -n 100 | grep -i pairing
+```
+
+A `pairing_bind_failed` log entry means port 5801 is in use. Investigate with `lsof -i :5801`.
+
+## Relay says "received invite" but stays in direct mode
+
+**Symptom:** the relay's OLED briefly shows the Joined Status screen but then reverts to direct mode, or `ados gs role show` still says `direct`.
+
+**Cause:** decrypting the invite and writing files to disk does not automatically transition the role. The relay operator must explicitly switch the role to `relay` via the OLED Mesh menu, the CLI (`ados gs role set relay`), or the REST API.
+
+**Recovery:** transition the role. The pair files are already on disk so the next role transition succeeds.
+
+## Receiver picks the wrong cloud gateway
+
+**Symptom:** the receiver routes cloud traffic over a slow gateway when a faster one is available.
+
+**Cause:** batman-adv ranks gateways by Transmit Quality (TQ) over the mesh, not by uplink speed. A nearby node with a 3G modem and high TQ can outrank a distant node with a 4G LTE modem if the LTE node's mesh signal is poor.
+
+**Recovery:** pin the gateway you want.
+
+```bash
+curl -X PUT http://localhost:8080/api/v1/ground-station/mesh/gateway_preference \
+  -H "Content-Type: application/json" \
+  -d '{"mode": "pinned", "pinned_mac": "AA:BB:CC:DD:EE:01"}'
+```
+
+Or from the GCS: Hardware tab -> Mesh -> Gateways -> Pin.
+
+To release the pin: `mode: auto`.
+
+## Receiver shows partition warning
+
+**Symptom:** GCS Mesh tab shows the partition indicator. Some neighbors disappear but the local mesh interface is up.
+
+**Cause:** the mesh has split. Some nodes can no longer reach the others. Common reasons: a node running on battery died, RF interference dropped a link past the recovery threshold, or someone walked between nodes while carrying the mesh dongle.
+
+**Recovery:** wait. batman-adv re-merges partitions automatically as soon as a path is restored. The `partition_healed` event fires on the GCS when this happens. If the partition lasts longer than the operator expected, walk between nodes and check antenna orientation.
+
+## Stale state files after a role transition
+
+**Symptom:** the GCS Distributed RX page shows a relay or stream that is no longer on the mesh. The OLED status header is correct but the GCS lags.
+
+**Cause:** `/run/ados/mesh-state.json`, `/run/ados/wfb-relay.json`, or `/run/ados/wfb-receiver.json` have stale snapshots. role_manager wipes these on every transition, but if the transition was interrupted they might persist.
+
+**Recovery:** force a clean transition:
+
+```bash
+ados gs role set direct
+sleep 2
+ados gs role set <previous role>
+```
+
+The transition out of mesh role wipes the state files; the transition back in starts fresh.
+
+## Pairing UDP listener bind fails
+
+**Symptom:** `POST /api/v1/ground-station/pair/accept` returns 503 with:
+
+```json
+{"error": {"code": "E_BIND_FAILED", "message": "pairing UDP bind failed on port 5801"}}
+```
+
+**Cause:** another process on the receiver is already bound to port 5801, or `bat0` is not up.
+
+**Recovery:**
+
+```bash
+sudo lsof -i :5801    # who has the port?
+ip link show bat0     # is the mesh interface up?
+sudo systemctl restart ados-batman
+sudo systemctl restart ados-supervisor
+```
+
+Then retry the Accept window.
+
+## Where to next
+
+- [Field Tap-to-Pair](/ground-agent/field-pairing) — the protocol.
+- [Local Mesh (batman-adv)](/ground-agent/batman-adv) — the carrier.
+- [Troubleshooting](/ground-agent/troubleshooting) — for non-mesh issues.

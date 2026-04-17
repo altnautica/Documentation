@@ -157,6 +157,18 @@ When using two ADOS agents (one drone profile, one ground-station profile), chan
 
 When using a standalone WFB-ng receiver (like wfb-cli or a custom setup), configure the channel and key manually on both sides.
 
+## Distributed receive on the ground
+
+The drone always transmits with `wfb_tx`. On the ground side, ADOS supports three receive modes depending on the Ground Agent's role:
+
+- **direct** — single-node, runs plain `wfb_rx`. The default.
+- **relay** — runs `wfb_rx -f <receiver>` to forward heard fragments over the local mesh to the receiver.
+- **receiver** — runs `wfb_rx -a` to aggregate fragments from its own radio plus every paired relay, then runs the same Reed-Solomon FEC combine across the merged stream.
+
+The same WFB-ng key works across all three modes; the receiver handles dedup and FEC across the combined inputs.
+
+[Read the Mesh & Distributed Receive overview](/ground-agent/mesh-overview) and the [Three Deployment Roles](/ground-agent/three-roles) page for the full picture on the ground side.
+
 ## Troubleshooting
 
 <AccordionGroup>

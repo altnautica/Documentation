@@ -133,6 +133,18 @@ Any USB HID gamepad works for standalone HDMI flight. The Web Gamepad API in Chr
 
 Bluetooth gamepads pair through the setup webapp or the OLED menu.
 
+## Mesh role hardware
+
+If you plan to deploy this node as a `relay` or `receiver` in a multi-node mesh, you need one extra item beyond the bench build:
+
+| Item | Notes |
+|---|---|
+| Second USB WiFi dongle | The mesh carrier. Different USB port from the RTL8812EU. Any dongle whose Linux driver supports 802.11s mesh mode or IBSS works. Default channel is 2.4 GHz channel 1, which keeps it out of the 5 GHz WFB-ng band. |
+
+The first RTL8812EU stays on the drone-facing radio job. The second dongle handles batman-adv between Ground Agents. A `direct`-mode node does not need a second dongle.
+
+[Read more about mesh hardware planning in the Local Mesh page](/ground-agent/batman-adv).
+
 ## What is next
 
 - [Installation](/ground-agent/installation) to set up your ground station

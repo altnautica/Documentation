@@ -72,6 +72,47 @@ Recorded files and diagnostics:
 - **Log download:** select a time range and download agent logs as a zip file
 - **Auto-clean policy:** toggle "delete recordings older than 30 days" to free SD card space automatically
 
+### 6. Distributed RX (mesh-capable nodes only)
+
+Appears in the sub-view tab strip when the connected ground station has `mesh_capable: true` in its profile config. The page is role-aware:
+
+- **On a receiver:** renders a list of paired relays as `RelayCard` rows (device id, fragment count, last-seen age, Revoke button gated by typed-phrase confirm). Shows a `PairingStatusCard` with the Accept window state, pending join requests, and an Approve button per pending request. Shows a `CombinedStreamStats` card with FEC-repaired fragments, post-dedup fragment count, and output bitrate.
+- **On a relay:** renders a `ReceiverCard` showing the configured receiver mDNS host, the current `bat0` address, fragments seen vs forwarded, and reachability state.
+- **On a direct-mode node:** renders an empty state explaining that distributed receive is off in this mode.
+
+The page polls `/api/v1/ground-station/{role,wfb/relay/status,wfb/receiver/relays,wfb/receiver/combined,pair/pending}` at 2 second cadence while the tab is visible and pauses on `document.hidden`.
+
+### 7. Mesh (mesh-capable nodes only)
+
+Also gated on `mesh_capable: true` and only useful on `relay` or `receiver` roles. Renders four cards:
+
+- **`MeshHealthCard`:** mesh id, peer count, partition indicator, currently selected gateway.
+- **`MeshNeighborsTable`:** semantic table of every batman-adv neighbor with the link interface, TQ, and last-seen age. Sorted by TQ.
+- **`MeshGatewaysTable`:** every advertised cloud gateway with bandwidth class, TQ, and a Pin button that pins the receiver's gateway selection. The currently selected gateway is highlighted.
+- **`MeshLogAggregator`:** placeholder action for pulling mesh logs. The agent endpoint that bundles logs is not yet shipped, so the button is disabled with a "coming soon" tooltip.
+
+The page polls `/api/v1/ground-station/mesh/{health,neighbors,routes,gateways}` at 3 second cadence and pauses on `document.hidden`. Live deltas come in via the `/api/v1/ground-station/ws/mesh` WebSocket stream which the GCS subscribes to centrally.
+
+## Top-bar role badge
+
+The Mission Control TopBar now carries a `RoleBadge` pill that is **always visible** when the connected agent is in the `ground_station` profile. The pill shows `Direct`, `Rly`, `Rx<id>` (receiver, with the first three characters of the mesh id), or `Unset` (mesh-capable but no role chosen). It hides entirely on `drone` or `auto` profiles.
+
+Hover the pill for a tooltip with the mesh id and current peer count when on a mesh.
+
+## Mesh event toasts
+
+A small bridge component listens to the `/ws/mesh` event stream centrally and surfaces transient events as toast notifications:
+
+| Event | Toast | Severity |
+|---|---|---|
+| `mesh_partitioned` | "Mesh partitioned" | error |
+| `gateway_failover` | "Gateway failover to {mac}" | info |
+| `receiver_unreachable` (relay-side) | "Receiver unreachable: {id}" | warning |
+| `relay_revoked` (receiver-side) | "Relay revoked: {id}" | info |
+| `relay_disconnected` (receiver-side) | "Relay disconnected: {id}" | warning |
+
+Toasts dedup within 1.5 seconds so a flapping link does not spam the operator.
+
 ## Data flow
 
 The Hardware tab communicates with the ground station through two channels:
