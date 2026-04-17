@@ -33,9 +33,8 @@ mavlink:
   baud_rate: 57600        # Common: 57600, 115200, 921600
   system_id: 1
   component_id: 191
-  signing:
-    enabled: false
-    key: ""
+  # MAVLink v2 message signing is managed from the GCS. The key lives in
+  # the browser; the agent holds no key material. See /drone-agent/mavlink-signing.
   endpoints:
     - type: websocket
       host: "0.0.0.0"

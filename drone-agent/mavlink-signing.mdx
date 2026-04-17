@@ -1,0 +1,140 @@
+---
+title: "MAVLink Signing"
+description: "HMAC-SHA256 authentication of every command sent to the flight controller, with the key held in the GCS browser."
+icon: "lock"
+---
+
+# MAVLink Signing
+
+MAVLink v2 includes an optional message-signing layer that stamps every outgoing frame with an HMAC-SHA256 tag keyed to a 32-byte shared secret. A vehicle configured with `SIGNING_REQUIRE=1` rejects any unsigned command. This closes a real attack surface: a peer on the same WiFi, a compromised cloud relay, or a rogue user on the local network cannot inject arm, takeoff, or parameter-write commands even if they reach the MAVLink stream.
+
+In ADOS, the signing key lives in the GCS browser (ADOS Mission Control) as a non-extractable Web Crypto key. The agent never persists the key. It exposes a small REST surface so the GCS can detect capability, push the key to the flight controller once, and toggle the FC's `SIGNING_REQUIRE` parameter.
+
+<Info>
+The key never touches the agent's disk. Raw key bytes exist in the browser only during generation and the one-shot enrollment call. From then on the browser holds a CryptoKey handle that can sign and verify but cannot be exported back to raw bytes, even by the same JavaScript.
+</Info>
+
+## How it works
+
+1. The GCS generates 32 random bytes using `crypto.getRandomValues`.
+2. The GCS POSTs the key as hex to `/api/mavlink/signing/enroll-fc` over the agent's HMAC-authenticated REST channel.
+3. The agent sends a `SETUP_SIGNING` message to the flight controller twice, 200 ms apart, then zeroizes the raw key buffer.
+4. The GCS imports the raw bytes as a non-extractable `CryptoKey`, stores the handle in IndexedDB keyed by drone id, and zeroizes its own buffer.
+5. Every outgoing MAVLink v2 frame from this drone gets a 13-byte signature tail appended: 1-byte link id, 6-byte timestamp, 6-byte truncated HMAC-SHA256.
+6. The agent passes signed frames through the IPC socket to the flight controller unchanged.
+7. The flight controller validates each frame. When `SIGNING_REQUIRE=1`, unsigned or invalid frames are silently dropped.
+
+## Enabling signing
+
+<Steps>
+<Step title="Open the Signing panel">
+In the GCS, select your drone, open the Configure tab, and pick the Security section. Choose MAVLink Signing.
+</Step>
+<Step title="Check capability">
+The panel reads the flight controller's firmware and parameter dump to confirm signing is available. ArduPilot 4.0 and newer is supported today. If the panel shows "not available", see the [Firmware support](#firmware-support) table below.
+</Step>
+<Step title="Click Enable signing">
+The browser generates a fresh 32-byte key and enrolls it with the flight controller. Enrollment usually completes in under two seconds.
+</Step>
+<Step title="Verify the fingerprint">
+The panel shows an 8-character key id (the first bytes of SHA-256 over the key). Note it if you want to sanity-check that another browser is on the same key later.
+</Step>
+</Steps>
+
+After enrollment, signed and unsigned commands both work. The flight controller accepts either until you enable require mode.
+
+## Requiring signed commands
+
+Flip `Require signed commands` from the Signing panel to set `SIGNING_REQUIRE=1` on the flight controller. From that moment the flight controller silently drops any frame without a valid signature.
+
+<Warning>
+Require mode can lock you out of your own drone. If every browser that holds the key gets wiped or replaced and you have not exported a copy, the flight controller will reject every command. Recovery requires physical access: SSH into the companion computer and run `ados signing clear-fc` to send a zero-key `SETUP_SIGNING`, then re-enroll from a fresh GCS session.
+</Warning>
+
+## Rotating keys
+
+Click `Rotate key` in the Signing panel to generate a new 32-byte key, enroll it with the flight controller, and evict the old one. Any other browser still holding the previous key loses its ability to sign until you re-enroll it.
+
+Phase 3 (opt-in cloud sync across signed-in browsers) will propagate rotated keys automatically. Until that lands, rotation is a per-browser action.
+
+## Firmware support
+
+| Firmware | Supported | Why |
+|---|---|---|
+| ArduPilot 4.0+ | Yes | Exposes `SIGNING_*` parameters and a persistent EEPROM key store. |
+| ArduPilot < 4.0 | No | Pre-dates signing. Upgrade the firmware. |
+| PX4 | No (for now) | Supports the signing protocol but has no persistent on-board key store. The operator would have to re-provision on every reboot. |
+| Betaflight | Not applicable | Uses MSP, not MAVLink. |
+| iNav | Not applicable | Uses MSP, not MAVLink. |
+
+The `supportsMavlinkSigning` capability flag in the GCS flips to true only when the autopilot is ArduPilot and at least one `SIGNING_*` parameter appears in the cached parameter dump. Custom ArduPilot builds that stripped signing will correctly report unsupported.
+
+## Agent REST surface
+
+All routes live under `/api/mavlink/signing/` and are gated by the existing `X-ADOS-Key` header.
+
+| Route | Verb | Purpose |
+|---|---|---|
+| `/capability` | GET | Returns whether the connected FC supports signing, with the firmware name and reason code. |
+| `/enroll-fc` | POST | Body: `{ key_hex, link_id }`. Sends `SETUP_SIGNING` to the FC, zeroizes the key buffer, returns the fingerprint. |
+| `/disable-on-fc` | POST | Sends `SETUP_SIGNING` with an all-zero key, clearing the FC's signing store. |
+| `/require` | GET | Returns the current `SIGNING_REQUIRE` value cached from the FC. |
+| `/require` | PUT | Body: `{ require }`. Writes `SIGNING_REQUIRE` on the FC. |
+| `/counters` | GET | Returns `{ tx_signed_count, rx_signed_count, last_signed_rx_at }` from the passive IPC observer. |
+
+Request-body redaction strips `key_hex` from structured logs. The fingerprint (`key_id`) is safe to log and appears in audit entries.
+
+## CLI
+
+The `ados` CLI exposes a smaller signing surface for SSH-only diagnostics.
+
+```bash
+ados signing capability       # print FC support status
+ados signing counters         # show signed-frame counters
+ados signing require on|off   # read or set SIGNING_REQUIRE on the FC
+ados signing clear-fc         # emergency recovery: zero the FC signing store
+```
+
+`clear-fc` requires a typed `CLEAR` confirmation. Use it only when you have lost every browser copy of the key and need the flight controller back.
+
+## Troubleshooting
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| Panel shows "not available" on ArduPilot 4.5 | Parameters not yet dumped | Click Refresh in the parameters panel, then reopen Signing. |
+| Panel shows "Key missing" | Another browser enabled signing but this browser never had the key | Rotate from the other browser, or clear the FC and re-enroll from this browser. |
+| Every command silently fails after enabling require | Second GCS connected with stale key, or FC was reset externally | Check the signed-frame counters; if rx valid is climbing for one browser and tx is climbing for another, a second GCS is connected with a different key. |
+| Fingerprint changed after a reboot | Another browser rotated the key while this one was offline | Re-enroll this browser by clicking Enable signing again. |
+
+The FC logs `bad signing` messages when it rejects a frame. `journalctl -u ados-mavlink` on the companion computer shows them alongside normal MAVLink traffic.
+
+## Security posture
+
+What signing protects against:
+
+- Unauthorized command injection over the cloud relay path.
+- A WiFi peer on the same access point sending arm or takeoff commands to your drone.
+- A compromised agent host (shared cloud relay tenancy, rogue OTA) forging commands to the flight controller, because the agent does not hold the key.
+
+What signing does not cover:
+
+- An operator with physical access to the flight controller's UART.
+- A browser whose JavaScript execution is compromised by a same-origin XSS payload. The attacker cannot exfiltrate the key thanks to the non-extractable CryptoKey, but they can use it to sign while the session is open.
+- Lost-key recovery. Keep a copy of the key fingerprint somewhere you can re-locate.
+
+## Related
+
+<CardGroup cols={2}>
+<Card title="Mission Control signing UI" icon="shield-check" href="/mission-control/mavlink-signing">
+Operator-facing guide: enable, rotate, and verify signing from the Configure panel.
+</Card>
+<Card title="MAVLink Proxy" icon="satellite-dish" href="/drone-agent/mavlink-proxy">
+How the agent forwards signed frames to the flight controller.
+</Card>
+<Card title="REST API" icon="code" href="/drone-agent/rest-api">
+Full API surface including authentication headers.
+</Card>
+<Card title="Pairing" icon="handshake" href="/drone-agent/pairing">
+How the browser authenticates to the agent before enrolling a key.
+</Card>
+</CardGroup>

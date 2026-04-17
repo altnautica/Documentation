@@ -113,18 +113,13 @@ The IPC sockets and WebSocket stay open during reconnection. Clients see a gap i
 
 ## MAVLink signing
 
-Optional message signing for security. When enabled, the proxy signs outgoing messages with a shared secret and rejects unsigned incoming messages.
+The agent is a transparent pipe for signed frames. The 32-byte signing key lives in the GCS browser as a non-extractable Web Crypto key. The agent exposes `/api/mavlink/signing/capability`, `/api/mavlink/signing/enroll-fc`, and a few related endpoints so the GCS can push the key to the flight controller once via `SETUP_SIGNING`. The agent never persists the key.
 
-```yaml
-mavlink:
-  signing:
-    enabled: true
-    key: "your-shared-secret-key"
-```
+See [MAVLink Signing](/drone-agent/mavlink-signing) for the full guide, enable steps, and troubleshooting.
 
-<Warning>
-Both the agent and the FC must use the same signing key. If they mismatch, all communication silently fails. Test signing on the bench before field use.
-</Warning>
+<Info>
+The agent config file does not carry a signing key. Any legacy `mavlink.signing` block in an old config is ignored with a deprecation warning on agent start.
+</Info>
 
 ## State IPC format
 
