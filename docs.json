@@ -120,6 +120,7 @@
             "group": "Configuration",
             "pages": [
               "mission-control/fc-configuration",
+              "mission-control/mavlink-signing",
               "mission-control/parameters",
               "mission-control/firmware-flashing",
               "mission-control/calibration"
@@ -162,6 +163,7 @@
             "group": "Core Systems",
             "pages": [
               "drone-agent/mavlink-proxy",
+              "drone-agent/mavlink-signing",
               "drone-agent/video-pipeline",
               "drone-agent/cloud-relay",
               "drone-agent/wfb-ng",
