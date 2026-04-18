@@ -28,5 +28,5 @@ Found an error or want to improve the docs? Open a pull request. See the [contri
 
 ## License
 
-Documentation content is licensed under [CC-BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
+Documentation content is dedicated to the public domain under [CC0 1.0 Universal](https://creativecommons.org/publicdomain/zero/1.0/).
 The ADOS software it documents is licensed under [GPLv3](https://www.gnu.org/licenses/gpl-3.0.en.html).

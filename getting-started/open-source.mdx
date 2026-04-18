@@ -1,6 +1,6 @@
 ---
 title: "Open Source"
-description: "GPLv3 software, CERN-OHL-S v2 hardware. What you can do and how ADOS compares."
+description: "GPLv3 software, CC0 1.0 hardware and docs. What you can do with ADOS."
 icon: "code-branch"
 ---
 
@@ -44,22 +44,28 @@ All ADOS software repositories use the **GNU General Public License v3.0**. This
 GPLv3 does not prevent commercial use. You can sell drones running ADOS. You can sell services built on ADOS. You can charge for support, customization, and integration. You just cannot close the source.
 </Note>
 
-### Hardware: CERN-OHL-S v2
+### Hardware: CC0 1.0 Universal
 
-Hardware designs (schematics, PCB layouts, mechanical drawings, enclosures) use the **CERN Open Hardware Licence v2, Strongly Reciprocal**. This is the standard copyleft license for open-source electronics, maintained by CERN and endorsed by OSHWA.
+Hardware designs (schematics, PCB layouts, mechanical drawings, enclosures, 3D-printable accessories) are dedicated to the public domain under **CC0 1.0 Universal**.
 
-**What CERN-OHL-S v2 means for you:**
+**What CC0 1.0 means for you:**
 
 - You can manufacture boards from the designs
 - You can modify the designs
-- If you distribute modified hardware designs, they must also be CERN-OHL-S v2
-- You must provide the design files to anyone who receives your hardware
+- You can sell the modified designs commercially with no obligation to share your revisions
+- You do not need to credit Altnautica
+- You can re-licence a derivative under any licence, including closed and proprietary
+- There is nothing for your legal team to review
 
-This is the same license family used by KiCad, the Open Hardware Observatory, and many OSHWA-certified projects.
+CC0 is the most permissive open-licence option available. It is a public domain dedication with a fallback permissive licence for jurisdictions that do not recognise public domain.
 
-### Documentation: CC-BY-SA 4.0
+<Note>
+Not everything Altnautica builds is open. The open platform (hardware under CC0, firmware under GPLv3, docs under CC0) is deliberately maximally open. Altnautica also ships commercial products on top of the open layer which are fully proprietary. Both tracks are first-class.
+</Note>
 
-Documentation (this site, guides, tutorials) uses **Creative Commons Attribution-ShareAlike 4.0**. You can share and adapt it, as long as you give credit and use the same license for derivatives.
+### Documentation: CC0 1.0 Universal
+
+Documentation (this site, guides, tutorials) is dedicated to the public domain under **CC0 1.0 Universal**. Share it, adapt it, translate it, embed it in a book or a course, with no obligations.
 
 ## The Full Stack is Open
 
@@ -76,7 +82,7 @@ flowchart TB
         VIDEO[Video Relay<br/>RTSP to WebSocket]
     end
 
-    subgraph "Open Source (CERN-OHL-S v2)"
+    subgraph "Public Domain (CC0 1.0)"
         HW[Hardware Designs<br/>Schematics + PCB]
     end
 
@@ -108,7 +114,7 @@ Compare this to the typical proprietary drone stack:
 | Cloud telemetry | Vendor cloud, subscription | Self-hosted or Altnautica cloud |
 | FC configuration | Vendor-only tool | ADOS Mission Control (36+ panels) |
 | Mission planning | Vendor-only tool | ADOS Mission Control (7 patterns) |
-| Hardware designs | Proprietary | CERN-OHL-S v2 |
+| Hardware designs | Proprietary | CC0 1.0 (public domain) |
 
 ## How ADOS Compares to Other Open-Source Tools
 
