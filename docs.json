@@ -130,7 +130,6 @@
             "group": "Advanced",
             "pages": [
               "mission-control/simulation",
-              "mission-control/airspace",
               "mission-control/cloud-features",
               "mission-control/sitl-testing",
               "mission-control/settings"
