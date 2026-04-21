@@ -1,0 +1,97 @@
+---
+title: Firmware Comparison
+description: Side-by-side feature matrix for ArduPilot, PX4, Betaflight, and iNav in Mission Control.
+---
+
+Mission Control supports four firmware families. Pick the one that matches your flight controller and your mission profile. This page shows what works where.
+
+## Quick matrix
+
+| Feature | ArduPilot | PX4 | Betaflight | iNav |
+|---|---|---|---|---|
+| Protocol | MAVLink v2 | MAVLink v2 | MSP v1/v2 | MSP v1/v2 |
+| Primary use case | Autonomous missions, long-range survey, VTOL, sub, rover | Autonomous missions, research, defense | FPV racing and freestyle | FPV freestyle with autonomous navigation, fixed-wing |
+| Detection | HEARTBEAT `autopilot = 3` | HEARTBEAT `autopilot = 12` | MSP `FC_VARIANT = BTFL` | MSP `FC_VARIANT = INAV` |
+| Parameter count | 800+ | 1000+ (63 mapped in handler) | ~300 | ~400 (name-based settings) |
+| Parameter access | Numeric index | Numeric index | Numeric index + virtual params | Name-based settings client |
+| Auto-save on set | Yes | Yes | No (explicit save) | No (explicit save) |
+| Mission upload | Yes (MAVLink mission protocol) | Yes | Not supported | Yes (MSP_WP + multi-mission) |
+| Waypoint actions | ~16 MAV_CMD types | ~16 MAV_CMD types | None | 8 (WAYPOINT, POSHOLD_UNLIM, POSHOLD_TIME, RTH, LAND, SET_POI, JUMP, SET_HEAD) |
+| Multi-mission storage | No | No | No | Yes (up to 9 missions on FC) |
+| Geofence | Polygon + circular | Polygon + circular | No | Polygon + circular (up to 15 zones, 10 vertices per polygon) |
+| Rally points | Yes | No | No | No |
+| Safehomes | No | No | No | Yes (16 slots) |
+| Flight modes | 18+ (mode switch via MAV_CMD) | 18+ | Box-mode via AUX channels | Box-mode + nav modes (POSHOLD, RTH, WP, CRUISE, COURSE HOLD, LAUNCH, LAND, ALT_HOLD) |
+| OSD configuration | Standard elements + 4 independent screens | Not supported (no OSD in PX4 stack) | Full MSP OSD (25 elements) | Extended element set (100+) + 8 custom text elements |
+| Blackbox | Yes | Yes | Yes | Yes (with iNav nav-extended fields) |
+| CLI | Yes | Yes (shell via SERIAL_CONTROL) | Yes | Yes |
+| Firmware flashing | APJ / DFU | .px4 format | WebUSB DFU | WebUSB DFU (same path as Betaflight) |
+| LED strip | Yes | No (DroneCAN) | Yes | Yes (extended LED config) |
+| Gimbal | Gimbal Manager v2 | Yes | No | No |
+| Camera | Servo + distance trigger | Yes | No | No |
+| MAVLink v2 signing | Yes (ArduPilot 4.0+) | No | N/A | N/A |
+| Manual control input | MANUAL_CONTROL at 50 Hz | MANUAL_CONTROL at 50 Hz | MSP_SET_RAW_RC at 50 Hz | MSP_SET_RAW_RC at 50 Hz |
+| Demo mode coverage | 4 ArduPilot copters in the fleet | 0 dedicated (handler works) | 0 dedicated | 2 drones (copter + fixed-wing) |
+| Panels in Configure tab | 25+ shared | 22 shared + 3 PX4-specific | 22 shared + 8 Betaflight-specific | 22 shared + 13 iNav-specific |
+
+## Shared panels
+
+All four firmwares share the same Configure-tab base: Flight Modes, Failsafe, PID Tuning, Power, Receiver, Ports, Sensors, GPS, LED, OSD, CLI, Calibration, Firmware Flasher, Blackbox. Mission Control adapts each shared panel to the connected firmware. For example, the Receiver panel reads RC configuration via MAVLink parameters on ArduPilot / PX4 and via `MSP_RX_CONFIG` on Betaflight / iNav. Operators see a single panel, the protocol layer handles the dispatch.
+
+## iNav-specific panels
+
+13 panels only appear when iNav is connected:
+
+- Safehome (16 alternate RTH points)
+- Geozones (polygon and circular fences)
+- Nav Config (waypoint speed, RTH altitude, landing slowdown)
+- INav Failsafe (FAILSAFE_PROCEDURE: DROP, LAND, RTH)
+- Battery Profiles (4)
+- Control Profiles (3)
+- Mixer Profiles (3)
+- Output Mapping (timer-to-output with mode override)
+- Servos (fixed-wing and tricopter)
+- Temp Sensors (8)
+- MC Braking (multirotor)
+- Rate Dynamics
+- iNav Mission (read-only mission summary with planner link)
+
+Plus the Tier B panels: Logic Conditions, Global Variables, Programming PID, EZ Tune, FW Approach, iNav OSD, Custom OSD Elements.
+
+## Betaflight-specific panels
+
+Aux Modes, Betaflight Config, Betaflight Motors, VTX, Rate Profile, Adjustments, Blackbox config, OSD editor.
+
+## PX4-specific panels
+
+Airframe selector (SYS_AUTOSTART), Actuator configuration, MAVLink Shell.
+
+## ArduPilot-specific panels
+
+Frame class selector, Gimbal Manager, Camera, Rally Points, MAVLink Signing.
+
+## Choosing a firmware
+
+Some quick rules of thumb:
+
+- **Building a survey, mapping, or delivery drone?** ArduPilot on a larger flight controller gives the widest feature surface. iNav on a smaller F7 / H7 board gives enough for most civilian autonomous missions at lower weight and cost.
+- **Flying FPV with occasional position hold or RTH?** iNav is the sweet spot.
+- **Pure FPV racing or freestyle?** Betaflight stays the leanest and lowest-latency.
+- **Research or defense requiring MAVLink ecosystem integration?** PX4 or ArduPilot, depending on the mission profile.
+
+All four firmwares are fully configurable, flashable, and flyable through Mission Control.
+
+## What is not covered by the GCS
+
+This is where the GCS draws scope lines regardless of which firmware you use:
+
+- **Telemetry-over-RC-link displays (SmartPort, CRSF, LTM).** Mission Control connects over USB WebSerial or TCP. Telemetry that flows up a radio link to the transmitter screen is handled by the RC system itself.
+- **FPV OSD rendering on goggles.** DJI, Walksnail, and analog OSD are rendered on the drone by the flight controller or VTX chip. The GCS configures what appears, not how it renders in-flight.
+- **Real-time dense SLAM, terrain mesh, or multi-drone aggregation.** These live in the separate drone agent + DroneNet track, not in the Mission Control GCS.
+- **Mobile phone-first UI.** Mission Control is desktop and laptop first. Tablet landscape works. Phones are not specifically targeted.
+
+## Cross-references
+
+- [iNav guide](./inav-guide) detailed walkthrough of iNav-specific workflows.
+- [Connecting](./connecting) general serial, WebSocket, and Bluetooth flows.
+- [Configure tab reference](./fc-configuration) if a dedicated panel reference page exists.

@@ -95,7 +95,9 @@
             "pages": [
               "mission-control/overview",
               "mission-control/installation",
-              "mission-control/connecting"
+              "mission-control/connecting",
+              "mission-control/firmware-comparison",
+              "mission-control/inav-guide"
             ]
           },
           {

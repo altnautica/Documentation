@@ -15,7 +15,7 @@ ADOS Mission Control is an open-source ground control station (GCS) that runs in
 Traditional GCS tools are desktop-only, platform-locked, and built for a single firmware. Mission Control takes a different approach.
 
 - **Runs in any Chromium browser.** Chrome, Edge, Brave, or the Electron desktop app. No install required for the web version.
-- **Three firmware families.** Full support for ArduPilot and PX4 via MAVLink v2. Full MSP support for Betaflight. iNav support is planned.
+- **Four firmware families.** Full support for ArduPilot and PX4 via MAVLink v2. Full MSP v1/v2 support for Betaflight and iNav.
 - **Real flight controls.** Gamepad and HOTAS input at 50 Hz with `MANUAL_CONTROL` messages. Keyboard shortcuts for guided mode.
 - **Mission planning.** Waypoints, 9 pattern generators, terrain following, geofence editor, rally points, and KML/CSV import/export.
 - **Video.** WebRTC with a 4-mode transport switcher (LAN, P2P via MQTT signaling, Auto cascade, or Off).
@@ -51,7 +51,7 @@ Traditional GCS tools are desktop-only, platform-locked, and built for a single 
 | ArduPilot | MAVLink v2 | Full support | Tested on real hardware. 200+ parameters, 18 flight modes, 9 calibrations. |
 | PX4 | MAVLink v2 | Full support | 63+ parameter mappings, 18 modes. Airframe and actuator panels. |
 | Betaflight | MSP v1/v2 | Full support | 34 decoders, 21 encoders, ~105 virtual params. Aux modes, rate profiles, BF OSD. |
-| iNav | MSP | Planned | Architecture prepared. iNav-specific decoders to come. |
+| iNav | MSP v1/v2 | Full support | ~65 iNav decoders, ~15 encoders, name-based settings client. Missions (8 waypoint actions, multi-mission), 16 safehomes, 15 geozones, navigation modes, battery + control + mixer profiles, Programming Framework, EZ Tune, FW Approach, extended and custom OSD. iNav 7.0+. |
 
 ## Browser vs Desktop
 

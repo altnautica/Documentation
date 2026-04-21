@@ -108,8 +108,8 @@ When you connect over serial, Mission Control auto-detects the firmware type:
 |----------|-----------------|
 | ArduPilot | MAVLink `HEARTBEAT` message with `autopilot = MAV_AUTOPILOT_ARDUPILOTMEGA` |
 | PX4 | MAVLink `HEARTBEAT` message with `autopilot = MAV_AUTOPILOT_PX4` |
-| Betaflight | MSP `API_VERSION` response |
-| iNav | MSP `API_VERSION` with iNav-specific FC variant |
+| Betaflight | MSP `FC_VARIANT` returns `BTFL` |
+| iNav | MSP `FC_VARIANT` returns `INAV`. iNav 7.0 or later recommended. Older versions degrade gracefully via `MSP2_COMMON_PG_LIST` feature detection. |
 
 The GCS automatically loads the correct protocol adapter, parameter set, and UI panels for the detected firmware.
 
