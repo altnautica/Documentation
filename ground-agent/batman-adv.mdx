@@ -24,16 +24,16 @@ batman-adv gives us self-healing, automatic neighbor discovery, multi-hop routin
 
 ## The second USB WiFi dongle
 
-batman-adv runs on **a second USB WiFi dongle**, separate from the RTL8812EU that handles WFB-ng to the drone. Two different dongles for two different jobs:
+batman-adv runs on **a second RTL8812EU adapter**, separate from the primary RTL8812EU that handles WFB-ng to the drone. Two adapters, same chipset, two jobs:
 
-| Dongle | Role | Default band |
+| Adapter | Role | Default channel |
 |---|---|---|
 | Primary RTL8812EU | WFB-ng monitor mode for the drone link | 5 GHz, channel 149 |
-| Mesh carrier (any 802.11s/IBSS-capable dongle) | batman-adv mesh between Ground Agents | 2.4 GHz, channel 1 |
+| Mesh carrier RTL8812EU | batman-adv mesh between Ground Agents | 5 GHz, channel 36 |
 
-The two dongles sit on different bands so they do not interfere. If you change either band, plan around it.
+The two adapters sit on separated 5 GHz channels so they do not interfere. If you change either channel, plan around it.
 
-The mesh carrier dongle does **not** need to be RTL8812EU. Any USB WiFi adapter whose Linux driver supports 802.11s mesh mode or IBSS ad-hoc mode works. Generic Ralink, Realtek, and Atheros chipsets all qualify. We pick channel 1 by default to maximize separation from common access-point bands.
+Both adapters use the same RTL8812EU chipset. One driver, one antenna ecosystem, one inventory. See the supported-hardware page for the current adapter list.
 
 ## Carrier: 802.11s or IBSS
 

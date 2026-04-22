@@ -112,7 +112,7 @@ Over 4G with video-to-cloud disabled (the default), steady state is 50-100 KB/s.
 The Pi 4B has one onboard WiFi radio. By default, it hosts the AP on 2.4 GHz. If you enable WiFi client mode, the AP shuts down and the same radio joins the upstream network. You cannot run AP and client on the same radio at the same time.
 
 <Tip>
-If you need both AP and WiFi client simultaneously, plug in a second USB WiFi dongle (any cheap RTL8188 works). The agent HAL profile detects the second interface and assigns it to client duty while the onboard radio stays on AP.
+If you need both AP and WiFi client simultaneously, plug in a second supported USB WiFi adapter. The agent HAL profile detects the second interface and assigns it to client duty while the onboard radio stays on AP. See the supported-hardware page for the current list of tested adapters.
 </Tip>
 
 The RTL8812EU stays on 5 GHz in monitor mode for WFB-ng. It is never used for WiFi AP or client.
