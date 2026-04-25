@@ -1,10 +1,10 @@
 ---
 title: "Firmware Flashing"
-description: "Flash ArduPilot, PX4, or Betaflight firmware over WebSerial."
+description: "Flash ArduPilot, PX4, Betaflight, or iNav firmware over WebSerial."
 icon: "microchip"
 ---
 
-Mission Control can flash firmware directly to your flight controller from the browser. No external tools needed. The firmware panel supports ArduPilot, PX4, and Betaflight with board auto-detection.
+Mission Control can flash firmware directly to your flight controller from the browser. No external tools needed. The firmware panel supports ArduPilot, PX4, Betaflight, and iNav with board auto-detection.
 
 <Frame caption="Firmware panel showing board info and flash progress">
   <img src="/images/placeholder-firmware-flashing.png" alt="Firmware flashing interface with board detection and progress bar" />
@@ -16,6 +16,7 @@ Firmware flashing uses the WebSerial API to communicate with the flight controll
 
 - **ArduPilot and PX4:** The board enters DFU (Device Firmware Upgrade) mode, and the firmware binary is written over the serial connection.
 - **Betaflight:** The board enters DFU mode via MSP command or manual boot button, and firmware is flashed via the STM32 bootloader protocol.
+- **iNav:** Same WebUSB DFU path as Betaflight. The board enters DFU mode via MSP command or manual boot button, and the iNav binary is flashed through the STM32 bootloader.
 
 <Note>
 WebSerial is required for firmware flashing. This means Chrome 89+, Edge 89+, or another Chromium-based browser. Firefox and Safari do not support WebSerial.

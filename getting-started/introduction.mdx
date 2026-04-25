@@ -8,7 +8,7 @@ icon: "circle-info"
 
 ADOS (Autonomous Drone Operating System) is an open-source software stack for drones. It covers the full vertical: companion computer software on the drone, a browser-based ground control station, and a dedicated ground station node for long-range video.
 
-You do not need to buy a specific drone. ADOS works with any flight controller running ArduPilot, PX4, or Betaflight. Plug in a companion computer (a Raspberry Pi, a Radxa board, or any Linux SBC), install the agent, and your drone gains video streaming, cloud telemetry, a REST API, scripting, and over-the-air updates.
+You do not need to buy a specific drone. ADOS works with any flight controller running ArduPilot, PX4, Betaflight, or iNav. Plug in a companion computer (a Raspberry Pi, a Radxa board, or any Linux SBC), install the agent, and your drone gains video streaming, cloud telemetry, a REST API, scripting, and over-the-air updates.
 
 The ground control station runs in your browser. No installs. Connect over USB, WiFi, or the internet. Configure your flight controller, plan missions, fly with a gamepad, flash firmware, and watch live video. All from one tab.
 
@@ -18,7 +18,7 @@ ADOS ships as three open-source projects that work together.
 
 <CardGroup cols={3}>
   <Card title="Mission Control" icon="display" href="/getting-started/quickstart-mission-control">
-    Browser-based GCS. Configure, fly, plan missions, flash firmware. Supports ArduPilot, PX4, and Betaflight.
+    Browser-based GCS. Configure, fly, plan missions, flash firmware. Supports ArduPilot, PX4, Betaflight, and iNav.
   </Card>
   <Card title="Drone Agent" icon="microchip" href="/getting-started/quickstart-drone-agent">
     Python software running on a companion computer aboard your drone. MAVLink proxy, video pipeline, cloud relay, REST API.
@@ -30,12 +30,12 @@ ADOS ships as three open-source projects that work together.
 
 ## How They Fit Together
 
-Here is the full picture. The flight controller runs ArduPilot or PX4. The companion computer runs the Drone Agent. On the ground, a small SBC runs the Ground Agent. Your browser runs Mission Control.
+Here is the full picture. The flight controller runs ArduPilot, PX4, Betaflight, or iNav. The companion computer runs the Drone Agent. On the ground, a small SBC runs the Ground Agent. Your browser runs Mission Control.
 
 ```mermaid
 flowchart LR
     subgraph Drone
-        FC[Flight Controller<br/>ArduPilot / PX4]
+        FC[Flight Controller<br/>ArduPilot / PX4 / Betaflight / iNav]
         CAM[Camera]
         SBC[Companion SBC<br/>Drone Agent]
         RADIO_TX[WFB-ng TX<br/>RTL8812EU]
@@ -84,7 +84,7 @@ You do not need all three products at once. Mission Control works standalone wit
 Here is a concrete list of things ADOS supports right now.
 
 ### Mission Control (GCS)
-- Connect to ArduPilot, PX4, or Betaflight flight controllers over WebSerial (USB in browser)
+- Connect to ArduPilot, PX4, Betaflight, or iNav flight controllers over WebSerial (USB in browser)
 - 36+ configuration panels: failsafe, PID tuning, power, OSD editor, ports, sensors, gimbal, LED, and more
 - 9 calibration wizards: accelerometer, gyro, compass, level, airspeed, barometer, RC, ESC, CompassMot
 - Mission planning with 7 pattern generators (survey grid, circular survey, corridor, search, spiral, crosshatch, perimeter)
