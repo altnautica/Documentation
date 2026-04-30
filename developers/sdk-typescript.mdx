@@ -1,0 +1,170 @@
+---
+title: "TypeScript SDK"
+description: "@altnautica/plugin-sdk reference. The SDK every GCS plugin uses."
+---
+
+The TypeScript SDK is the public package every GCS plugin imports.
+It hides the postMessage envelope shape and gives you a typed
+`PluginContext` instead.
+
+## Install
+
+```sh
+pnpm add @altnautica/plugin-sdk
+```
+
+The package is a peer of the host iframe runtime; it has no runtime
+dependencies and ships ESM only.
+
+## `definePlugin`
+
+The single entry point:
+
+```ts
+import { definePlugin } from "@altnautica/plugin-sdk";
+
+definePlugin({
+  id: "com.example.my-plugin",
+  version: "1.0.0",
+  locale: { "hello.title": "Hello" },
+  async mount(ctx, info) {
+    // wire up subscriptions, render the panel, etc.
+  },
+  async unmount(ctx, info) {
+    // optional, runs when the host disposes the iframe
+  },
+});
+```
+
+`mount` is awaited; if it throws, the host receives a `handler_error`
+envelope and surfaces it in the install dialog.
+
+## `PluginContext`
+
+The argument the SDK hands to `mount`:
+
+```ts
+interface PluginContext {
+  client: PluginClient;
+  telemetry: {
+    subscribe<T>(topic: string, handler: (args: T) => void): Promise<() => void>;
+  };
+  command: {
+    send(command: string, args?: unknown): Promise<unknown>;
+  };
+  notifications: {
+    publish(payload: NotificationPayload): Promise<unknown>;
+  };
+  recording: {
+    mark(payload: RecordingMark): Promise<unknown>;
+  };
+  mission: {
+    read(missionId: string): Promise<unknown>;
+    write(update: MissionUpdate): Promise<unknown>;
+  };
+  config: {
+    onChange<T>(handler: (next: T) => void): () => void;
+  };
+  theme: {
+    onChange(handler: (vars: Record<string, string>) => void): () => void;
+  };
+  i18n: {
+    t(key: string, params?: Record<string, string | number>): string;
+  };
+}
+```
+
+Each domain group is small on purpose. Plugins drop down to
+`ctx.client.request(method, capability, args)` for any RPC the
+helpers do not expose.
+
+## `PluginClient`
+
+The lower-level RPC client:
+
+```ts
+import { PluginClient } from "@altnautica/plugin-sdk";
+
+const client = new PluginClient();
+const result = await client.request<{ ok: boolean }>(
+  "telemetry.subscribe",
+  "telemetry.subscribe.battery",
+  { topic: "battery" },
+  { timeoutMs: 3000 },
+);
+```
+
+Methods:
+
+- `request(method, capability, args, options?)`: send a request and
+  await the response. Default timeout 5s.
+- `on(method, handler)`: subscribe to host-pushed events.
+- `subscribeTelemetry(topic, handler)`: convenience that does both
+  `request("telemetry.subscribe", ...)` and `on("telemetry.<topic>", ...)`.
+- `dispose()`: tear down listeners and reject in-flight RPCs.
+
+## `HostError`
+
+Thrown by `client.request` when the host returns an error envelope:
+
+```ts
+import { HostError } from "@altnautica/plugin-sdk";
+
+try {
+  await ctx.command.send("ARM");
+} catch (err) {
+  if (err instanceof HostError && err.code === "permission_denied") {
+    // show a banner
+  } else {
+    throw err;
+  }
+}
+```
+
+The `code` field is the machine-readable error code from the
+envelope. The `message` is human-readable; do not branch on it.
+
+## Test harness
+
+```ts
+import { createPluginHarness } from "@altnautica/plugin-sdk/harness";
+
+const harness = createPluginHarness({
+  grantedCapabilities: ["telemetry.subscribe.battery"],
+  mount: async (ctx) => {
+    await ctx.telemetry.subscribe("battery", (s) => store.ingest(s));
+  },
+});
+
+await harness.start();
+harness.pushTelemetry("battery", mockSample);
+expect(harness.notifications).toEqual([...]);
+await harness.teardown();
+```
+
+The harness:
+
+- mounts the plugin against an in-memory transport (no real iframe);
+- captures every RPC in `harness.calls`, grouped helpers in
+  `harness.notifications` and `harness.recordingMarks`;
+- accepts `pushTelemetry`, `pushEvent`, `pushConfig`, `pushTheme`;
+- supports `failNext(method, code, message)` to simulate host
+  failures;
+- mirrors the real bridge's capability gate.
+
+This means you can validate a plugin end-to-end inside Vitest without
+running Mission Control or a real drone.
+
+## Building the bundle
+
+The SDK does not ship a build step. Plugin repos use esbuild,
+Vite, or any other bundler that emits ESM. The `create-ados-plugin`
+template uses esbuild for zero-config builds:
+
+```sh
+esbuild src/plugin.ts --bundle --format=esm --target=es2022 --outfile=plugin.bundle.js --minify
+```
+
+Output goes to `gcs/plugin.bundle.js`. The manifest's `gcs.bundle`
+field points at the same path. The pack script computes the
+SHA-256 and writes it into `assets[].sha256`.

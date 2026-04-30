@@ -1,0 +1,112 @@
+---
+title: "Event hooks"
+description: "Every event the host pushes and every RPC the plugin can call."
+---
+
+The host runs the bridge; plugins consume two flavors of message:
+
+- **Events**: pushed from the host, no response expected
+  (`config.changed`, `theme.changed`, `telemetry.<topic>`).
+- **Responses**: returned by the host in reply to a plugin
+  **request**.
+
+Plugins themselves only **subscribe** to events and **send** requests.
+
+## Events the host pushes
+
+| Method | Capability | Args | When |
+|--------|-----------|------|------|
+| `theme.changed` | `theme.useTheme` | `Record<string, string>` of CSS variables | Initial mount; whenever the host theme changes. |
+| `config.changed` | none | the plugin's full config object | Operator saves a new config under Settings -> Plugins. |
+| `telemetry.<topic>` | `telemetry.subscribe.<topic>` | topic-specific payload | After the plugin called `telemetry.subscribe`. |
+| `lifecycle.tick` | none | `{ uptimeMs }` | Once a minute while the plugin is running. |
+| `recording.started` | none | `{ recordingId, startedAtMs }` | Operator starts a recording. |
+| `recording.stopped` | none | `{ recordingId, durationMs }` | Operator stops a recording. |
+
+Subscribe via `ctx.client.on("config.changed", handler)` or via the
+typed wrappers on `ctx.config.onChange`, `ctx.theme.onChange`, etc.
+
+## Requests the plugin can send
+
+Every RPC carries `{ method, capability, args }`. The host
+re-resolves the required capability from `method` and `args` and
+checks the granted set. The plugin never has to compute the
+capability id itself.
+
+| Method | Capability | Args | Returns |
+|--------|-----------|------|---------|
+| `telemetry.subscribe` | `telemetry.subscribe.<topic>` | `{ topic }` | `{ ok }` |
+| `telemetry.unsubscribe` | derived | `{ topic }` | `{ ok }` |
+| `command.send` | `command.send` | `{ command, args }` | host-defined |
+| `mission.read` | `mission.read` | `{ missionId }` | mission body |
+| `mission.write` | `mission.write` | `{ missionId, payload }` | `{ ok, version }` |
+| `notification.publish` | `ui.slot.notification` | `{ channelId, severity, title, body, meta }` | `{ ok }` |
+| `recording.mark` | `recording.write` | `{ label, meta }` | `{ ok }` |
+| `event.publish` | `event.publish` | `{ topic, payload }` | `{ ok }` |
+| `event.subscribe` | `event.subscribe` | `{ topic }` | `{ ok }` |
+
+## Wire shape
+
+```ts
+interface RpcEnvelope {
+  id: string;
+  type: "request" | "response" | "event";
+  method: string;
+  capability: string;
+  args: unknown;
+  version: 1;
+  error?: { code: string; message: string };
+}
+```
+
+The plugin never builds these by hand. The SDK's `PluginClient`
+generates the `id`, attaches the protocol version, and waits for the
+correlated response.
+
+## Error envelopes
+
+When the host rejects a request it returns a response with
+`error: { code, message }`. The SDK throws a `HostError` whose `code`
+field carries the machine-readable error code:
+
+| Code | Meaning |
+|------|---------|
+| `permission_denied` | The required capability is not in the granted set. |
+| `method_unknown` | The method is not in the host's registry. |
+| `schema_invalid` | Args failed schema validation. |
+| `handler_unset` | The host knows the method but no handler is wired. |
+| `handler_error` | The host's handler threw. The message is the thrown error's message. |
+
+Plugins should branch on `code`, not on `message`. Messages are for
+log lines.
+
+## Theming
+
+`theme.changed` arrives once on mount and again on every theme
+toggle. The payload is a `Record<string, string>` of CSS variables.
+Apply them by walking the entries:
+
+```ts
+ctx.theme.onChange((vars) => {
+  for (const [key, value] of Object.entries(vars)) {
+    document.documentElement.style.setProperty(key, value);
+  }
+});
+```
+
+The SDK does not auto-apply because plugins choose how granular they
+want to be (full root, scoped to a panel, or ignored).
+
+## i18n
+
+Plugin authors ship a locale bundle in their archive; the host
+streams the active bundle to the plugin on mount. The SDK formats
+keys with `ctx.i18n.t(key, params)`:
+
+```ts
+ctx.i18n.t("anomaly.cellLow", { voltage: 3.4 });
+// "Cell low: 3.4 V"
+```
+
+Missing keys fall back to the key itself; missing parameters render
+the `{name}` placeholder so it is visible in QA.

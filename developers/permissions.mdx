@@ -1,0 +1,115 @@
+---
+title: "Permissions"
+description: "The capability taxonomy, the four risk bands, and the install dialog flow."
+---
+
+A plugin can only do what its manifest declares and the operator
+approves. This page lists the full permission set, the risk bands
+they map to, and how the install dialog presents them.
+
+## Risk bands
+
+| Band | Trigger | Visual |
+|------|---------|--------|
+| **Low** | No critical or high permission requested. | Plain badge. |
+| **Medium** | Reads battery / GPS / mavlink raw stream, writes to recordings. | Yellow badge. |
+| **High** | Reads or writes the host filesystem outside the plugin's data dir, opens network sockets. | Orange badge. |
+| **Critical** | Sends MAVLink commands, arms the vehicle, modifies missions in flight. | Red badge with warning icon. |
+
+The band is computed automatically from the most-privileged
+permission in the manifest. Operators see it on every install dialog
+and on every plugin's detail page.
+
+## Agent permissions
+
+| Permission | Band | Lets the plugin... |
+|------------|------|-----|
+| `event.subscribe` | Low | Receive events the agent or other plugins publish. |
+| `event.publish` | Low | Publish events to the agent bus. |
+| `mavlink.read` | Medium | Read parsed MAVLink messages from the FC. |
+| `mavlink.write` | Critical | Send arbitrary MAVLink to the FC. Includes `vehicle.command`. |
+| `vehicle.command` | Critical | Send canonical commands (ARM, DISARM, RTL, MODE_SET). |
+| `mission.read` | Medium | Read mission, geofence, rally points. |
+| `mission.write` | High | Modify mission, geofence, rally points. |
+| `telemetry.subscribe.*` | Low | Subscribe to a normalized topic (battery, gps, etc.). The `*` is the topic name. |
+| `recording.write` | Medium | Add markers to active recordings. |
+| `filesystem.host` | High | Read or write outside the plugin's own data dir. |
+| `network.outbound` | High | Open outbound TCP / UDP / HTTP sockets. |
+| `usb.read` | Medium | Open a USB device by vendor / product id. |
+| `usb.write` | High | Write to a USB device. |
+| `serial.read` | Medium | Read from a UART. |
+| `serial.write` | High | Write to a UART. |
+| `vision.frame.read` | Medium | Subscribe to camera frames from the Vision Engine. |
+
+## GCS permissions
+
+| Permission | Band | Lets the plugin... |
+|------------|------|-----|
+| `ui.slot.fc-tab` | Low | Mount a panel in the FC tab. |
+| `ui.slot.video-overlay` | Low | Render an overlay on top of live video. |
+| `ui.slot.sidebar-left` | Low | Mount a panel in the left sidebar. |
+| `ui.slot.sidebar-right` | Low | Mount a panel in the right sidebar. |
+| `ui.slot.status-bar` | Low | Add an item to the bottom status bar. |
+| `ui.slot.command-tab` | Low | Mount under the Command tab. |
+| `ui.slot.planner-tab` | Low | Mount under the Planner tab. |
+| `ui.slot.hardware-tab` | Low | Mount under the Hardware tab. |
+| `ui.slot.settings-section` | Low | Render a settings section. |
+| `ui.slot.notification` | Low | Publish to the host notification rail. |
+| `ui.slot.smart-function` | Low | Register a smart function entry. |
+| `ui.slot.telemetry-detail` | Low | Mount in the per-channel telemetry detail panel. |
+| `command.send` | Critical | Issue a canonical vehicle command from the GCS half. |
+| `mission.read` | Medium | Read the active mission state. |
+| `mission.write` | High | Modify the active mission. |
+| `telemetry.subscribe.*` | Low | Subscribe to a host-normalized telemetry topic. |
+| `recording.write` | Medium | Write recording markers. |
+| `cloud.read` | Low | Read public cloud config. |
+
+## Required vs optional
+
+```yaml
+permissions:
+  - id: telemetry.subscribe.battery
+    required: true
+  - id: recording.write
+    required: false
+```
+
+Required permissions are **pinned on** in the install dialog; the
+operator cannot install while leaving them off. Optional permissions
+default to off and are flipped on by the operator only when wanted.
+
+## Two-stage install
+
+1. The operator drags a `.adosplug` into the install dialog.
+2. The host calls `POST /api/plugins/parse` (agent) or the
+   equivalent GCS bridge call. The host returns a manifest summary
+   with the requested permissions, the signer id, and the risk band.
+3. The dialog renders the summary plus a permission grid. The
+   operator flips optional toggles and clicks **Install**.
+4. Only then does the host call `POST /api/plugins/install`, which
+   actually unpacks the archive and writes state to disk.
+
+A plugin that never makes it past step 3 leaves no traces.
+
+## Re-prompt on update
+
+Installing version 1.1 of a plugin that requests one new optional
+permission re-opens the install dialog with only the **new**
+permission highlighted. Existing grants are preserved; the operator
+just decides whether to grant the new one. Removing permissions in
+v1.1 is silent. The host drops the no-longer-declared grants.
+
+## Capability tokens on the wire
+
+Every privileged RPC carries a capability id in the envelope. The
+host bridge:
+
+1. Resolves the required capability from the method name. For
+   `telemetry.subscribe`, the required cap is
+   `telemetry.subscribe.<topic>` derived from `args.topic`.
+2. Looks up the granted set for the plugin.
+3. Rejects the call with `permission_denied` if the required cap is
+   not in the set.
+
+The plugin cannot forge a capability by lying in the envelope; the
+host always re-resolves from the method.

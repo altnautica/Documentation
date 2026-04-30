@@ -1,0 +1,73 @@
+---
+title: "Concepts"
+description: "Manifest, signing, sandboxing, and capability tokens. The four primitives every plugin author works with."
+---
+
+Four primitives describe every plugin in ADOS: a **manifest**, a
+**signature**, a **sandbox**, and a set of **capability tokens**. If
+you understand those four, the rest of the system follows.
+
+## Manifest
+
+A `manifest.yaml` at the root of the archive declares everything the
+host needs to install the plugin: the id, the version, which halves
+(`agent`, `gcs`, or both), the permissions each half requests, the
+slots the GCS panels mount into, and the SHA-256 of every shipped
+asset.
+
+The host validates the manifest against
+`schemas/plugin-manifest.schema.json` before unpacking anything. A
+malformed manifest is rejected with code `12` (`manifest_invalid`).
+
+See [manifest reference](/developers/manifest) for the full field list.
+
+## Signature
+
+The archive is an Ed25519-signed zip. The signing pass:
+
+1. Computes a SHA-256 over each declared asset.
+2. Writes the hashes back into `manifest.yaml`.
+3. Signs the canonical manifest body with an Ed25519 private key.
+4. Embeds the base64 signature back into `manifest.yaml`'s `signing`
+   block.
+
+On install the agent verifies the signature against its trust list.
+First-party publishers (e.g. `altnautica-2026-A`) are pre-trusted.
+Third-party keys must be added explicitly. Unsigned archives install
+only when the agent is in **developer mode** (red banner, manual
+toggle).
+
+## Sandbox
+
+Each half runs in a separate sandbox.
+
+- **Agent half**: a Python subprocess under `ados-supervisor`. cgroup
+  v2 controls cap CPU percent, memory, and PIDs. seccomp tightens the
+  syscall surface. The plugin reaches the host only through a Unix
+  domain socket; it cannot open arbitrary network sockets unless it
+  declared `network.outbound`.
+- **GCS half**: an `<iframe sandbox="allow-scripts">` with no
+  `allow-same-origin`. Null origin means no shared cookies, no shared
+  storage, no DOM access to the host. The plugin reaches the host
+  only through `postMessage`. The host validates every envelope.
+
+The sandbox is the boundary that turns a manifest's permissions into
+real authority. The plugin cannot lie about what it can do.
+
+## Capability tokens
+
+Permissions in the manifest become **capabilities** at runtime. When
+the operator approves a permission, the host mints a capability
+token: a short string that names the permission and is bound to the
+plugin's session. The plugin presents the token (or an automatically
+attached one) on every privileged call. The host re-checks it on the
+critical path.
+
+Why tokens and not just a permission flag? Because they expire.
+Because they bind to a session, so a stolen token does not work in a
+later session. Because they let the host audit which call exercised
+which permission.
+
+For the wire shape and the validation pipeline, see
+[event hooks](/developers/event-hooks) and the
+[permissions reference](/developers/permissions).

@@ -1,0 +1,146 @@
+---
+title: "Manifest reference"
+description: "Every field of plugin manifest.yaml, in dependency order."
+---
+
+The manifest is the entire contract between a plugin and the host.
+Get it right and everything else (install, permission grants, slot
+mounting, capability checks) falls into place automatically.
+
+## File location
+
+`manifest.yaml` lives at the root of the `.adosplug` archive. The
+host opens the archive, reads the manifest first, and refuses to
+unpack anything else if the manifest fails validation.
+
+## Top-level shape
+
+```yaml
+plugin:           # required, identity block
+compatibility:    # required, version + profile gates
+agent:            # optional, agent half
+gcs:              # optional, GCS half
+assets:           # required, file list with hashes
+signing:          # required, Ed25519 signature
+```
+
+At least one of `agent` or `gcs` must be present. The host accepts
+plugins that ship only one half; first-party Battery Health Panel,
+for example, is GCS-only.
+
+## `plugin`
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `id` | string | Reverse-DNS, lowercase, dotted. Regex `^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)+$`. |
+| `version` | string | Semver. |
+| `name` | string | Operator-facing display name. |
+| `author` | string | Free-form. Single name or organization. |
+| `license` | string | SPDX expression. `GPL-3.0-or-later` recommended. |
+| `description` | string | One sentence under 200 chars. |
+| `homepage` | url | Optional. Direct link to the plugin's source. |
+| `source` | url | Optional. The repository URL. |
+| `tags` | string[] | Optional. For registry search later. |
+
+## `compatibility`
+
+| Field | Notes |
+|-------|-------|
+| `ados_version` | semver range. The agent half compares against `ados version`. |
+| `gcs_version` | semver range. The GCS half compares against the running build. |
+| `python_version` | optional. Required only if `agent:` is set. |
+| `min_tier` | integer. Vehicle integration tier. `0` means any drone. |
+| `supported_boards` | array. Either `["*"]` or specific board ids the plugin needs. |
+| `profiles` | array. Subset of `["drone", "ground-station"]`. |
+
+## `agent`
+
+```yaml
+agent:
+  entrypoint: "agent/plugin.py"
+  isolation: "subprocess"        # or "inprocess" for first-party
+  permissions:
+    - event.publish
+    - event.subscribe
+    - mavlink.read
+  resources:
+    max_ram_mb: 64
+    max_cpu_percent: 10
+    max_pids: 4
+  contributes:
+    services: []                 # optional, named services on the agent bus
+```
+
+`isolation: subprocess` is the default and the only mode third-party
+plugins are allowed to declare. `inprocess` is reserved for built-in
+plugins that ship inside the agent itself.
+
+## `gcs`
+
+```yaml
+gcs:
+  bundle: "gcs/plugin.bundle.js"
+  isolation: "iframe-sandbox"    # only mode supported
+  permissions:
+    - ui.slot.fc-tab
+    - telemetry.subscribe.battery
+  contributes:
+    panels:
+      - id: battery-health-tab
+        slot: fc.tab
+        title: "Battery Health"
+        icon: "battery"
+        order: 30
+    notifications:
+      - id: battery-anomaly
+        title: "Battery anomaly"
+        severity: warning
+    settings_sections:
+      - id: battery-health-settings
+        title: "Battery Health"
+    locales:
+      - "en"
+```
+
+Slots from the [12-slot taxonomy](/developers/permissions) live in
+`contributes.panels[].slot`. Each panel needs an id unique within the
+plugin, a slot, and a human-readable title.
+
+## `assets`
+
+Every file the host needs to extract must be listed:
+
+```yaml
+assets:
+  - path: "gcs/plugin.bundle.js"
+    role: "gcs-bundle"
+    sha256: "<computed-by-pack.sh>"
+  - path: "locales/en.json"
+    role: "gcs-locale"
+    sha256: "<computed-by-pack.sh>"
+```
+
+The role catalog: `gcs-bundle`, `gcs-style`, `gcs-locale`, `icon`,
+`config-schema`, `agent-entrypoint`, `agent-source`. The host
+verifies SHA-256 on every asset at install time. If a hash mismatches
+the install is rejected with code `12` (`manifest_invalid`).
+
+## `signing`
+
+```yaml
+signing:
+  signature: "<base64 ed25519>"
+  signer_key_id: "altnautica-2026-A"
+  algorithm: "ed25519"
+```
+
+Sign the canonical manifest body (signature placeholder set to `""`
+during signing). The host re-canonicalizes the same way on verify.
+Unknown signer ids are rejected with code `10` unless the agent is
+in developer mode.
+
+## See also
+
+- [Permissions reference](/developers/permissions)
+- [Lifecycle](/developers/lifecycle)
+- [Distribution](/developers/distribution-local-install)

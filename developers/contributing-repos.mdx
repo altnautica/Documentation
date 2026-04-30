@@ -1,0 +1,74 @@
+---
+title: "Contributing"
+description: "How to land a plugin in the official ADOSExtensions repo, and where to file issues for the host itself."
+---
+
+Anyone can publish a plugin. A subset of plugins ship under the
+Altnautica name in the official extensions repo. This page covers
+how those two tracks differ.
+
+## Your own repo
+
+The default. Build a plugin, sign it with your own key, publish on
+GitHub or anywhere else. Operators install by URL or downloaded
+file. Altnautica does not gate distribution; the host gates trust
+through the publisher key list.
+
+You decide license, release cadence, supported platforms, and
+support policy. The host enforces only the manifest schema and the
+permission model.
+
+## Altnautica-published extensions
+
+[`altnautica/ADOSExtensions`](https://github.com/altnautica/ADOSExtensions)
+is the public monorepo for first-party extensions Altnautica builds
+and signs. Inclusion is by invitation; the bar is:
+
+- **Generic**: useful to most operators, not a niche feature for
+  one user.
+- **GPL-3.0-or-later**: matches the host license.
+- **Tested**: unit tests at minimum, ideally integration tests
+  against ArduPilot SITL.
+- **Maintained**: the maintainer commits to triaging issues and
+  shipping security fixes.
+- **Reviewed**: the code passes a review for the operating rules
+  the public repo follows (no business content, no upstream
+  attribution other than protocol names, no internal planning
+  tags).
+
+If you have a candidate, open an issue in `ADOSExtensions` describing
+the plugin and link a working repo. We will review and either
+upstream it or point you at the registry once it lands.
+
+## Filing host issues
+
+Bugs in the plugin host itself live in the host repos:
+
+- Agent host bugs: [`altnautica/ADOSDroneAgent`](https://github.com/altnautica/ADOSDroneAgent).
+- GCS host bugs: [`altnautica/ADOSMissionControl`](https://github.com/altnautica/ADOSMissionControl).
+
+Include a minimal `.adosplug` that reproduces the bug whenever
+possible. The host repo CI knows how to run signed archives in a
+sandboxed test agent.
+
+## Spec drift
+
+If a manifest field, a capability, or a slot id is documented one
+way here and behaves a different way in the host code, the host code
+is authoritative. File a docs issue against
+[`altnautica/Documentation`](https://github.com/altnautica) and we
+will reconcile.
+
+## Code of conduct
+
+Both repos follow the contributor covenant. Be useful, be patient,
+be specific. Plugins in the official repo additionally follow the
+Altnautica content rules: no marketing copy in the source tree, no
+named-competitor references, technical scope only.
+
+## Discussion
+
+Discord is the fastest way to ask questions:
+[discord.gg/uxbvuD4d5q](https://discord.gg/uxbvuD4d5q). The
+`#plugins` channel is for plugin authors specifically; the rest of
+the server is for general ADOS questions.

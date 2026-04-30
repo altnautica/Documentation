@@ -1,0 +1,133 @@
+---
+title: "Distribution and local install"
+description: "Pack, sign, and ship a plugin operators can install."
+---
+
+A plugin is just a signed zip. This page covers the build pipeline,
+the publishing options, and how operators install what you ship.
+
+## Build the bundle
+
+```sh
+pnpm install
+pnpm test
+pnpm build
+```
+
+`pnpm build` emits `gcs/plugin.bundle.js`. Verify it exists before
+packing.
+
+## Pack
+
+Vendor `pack.sh` from
+[`altnautica/ADOSExtensions/scripts/pack.sh`](https://github.com/altnautica/ADOSExtensions/blob/main/scripts/pack.sh)
+into your repo. Run it with the extension folder name:
+
+```sh
+./scripts/pack.sh my-plugin
+```
+
+The script:
+
+1. Builds the GCS bundle (skips if absent).
+2. Stages every file the manifest declares.
+3. Computes SHA-256 for each asset.
+4. Rewrites the `<computed-by-pack.sh>` placeholders.
+5. Zips into `dist/<plugin-id>-<version>.adosplug`.
+
+## Sign
+
+Sign with your Ed25519 private key:
+
+```sh
+ADOS_SIGNING_KEY=./keys/publisher.pem \
+ADOS_SIGNING_KEY_ID=my-publisher-2026-A \
+./scripts/sign.sh dist/com.example.my-plugin-1.0.0.adosplug
+```
+
+The signed archive lands at
+`dist/com.example.my-plugin-1.0.0.signed.adosplug`. The signature
+covers the canonical manifest body; the signer key id is stamped
+into `signing.signer_key_id` in the manifest.
+
+`ADOS_SIGNING_KEY_INLINE=1` accepts a base64 key in the env var
+itself (used by GitHub Actions secrets):
+
+```yaml
+env:
+  ADOS_SIGNING_KEY: ${{ secrets.ADOS_SIGNING_KEY }}
+  ADOS_SIGNING_KEY_INLINE: "1"
+  ADOS_SIGNING_KEY_ID: ${{ secrets.ADOS_SIGNING_KEY_ID }}
+```
+
+## Publish on GitHub
+
+Tag your release with `<plugin-folder>-v<version>`:
+
+```sh
+git tag my-plugin-v1.0.0
+git push --tags
+```
+
+The reference workflow at
+[`altnautica/ADOSExtensions/.github/workflows/release.yml`](https://github.com/altnautica/ADOSExtensions/blob/main/.github/workflows/release.yml)
+runs tests, packs, signs, and uploads the `.signed.adosplug` to a
+GitHub release. Copy it into your own repo and adjust the tag
+prefix.
+
+Operators install by downloading the `.adosplug` from your release
+page.
+
+## Install on the GCS
+
+In **Mission Control -> Settings -> Plugins -> Install plugin**:
+
+1. Drag the `.adosplug` into the dialog or click **Choose file**.
+2. The host parses the archive and shows a manifest preview: name,
+   version, signer, risk band, requested permissions.
+3. Approve required permissions (pinned on) and any optional
+   permissions you want to grant.
+4. Click **Install**.
+
+The plugin appears in the plugin list; its panels mount in their
+declared slots.
+
+## Install on the agent
+
+```sh
+ados plugin install ./com.example.my-plugin-1.0.0.signed.adosplug
+ados plugin perms com.example.my-plugin --grant event.publish
+ados plugin enable com.example.my-plugin
+ados plugin logs com.example.my-plugin -f
+```
+
+The agent CLI follows the same lifecycle: install, grant, enable,
+remove. Logs are journaled under the plugin's systemd unit.
+
+## Trust the publisher
+
+A plugin signed by a key the agent does not know is rejected with
+exit code `10`. Add the public key to the agent's trust list:
+
+```sh
+ados plugin keys add my-publisher-2026-A ./publisher.pub
+```
+
+Or run the agent in **developer mode** to install unsigned archives
+during local iteration:
+
+```sh
+ados plugin install --dev ./my-plugin.adosplug
+```
+
+The GCS shows a red banner whenever a developer-mode plugin is
+loaded.
+
+## Registry
+
+A hosted registry is on the roadmap. Once it lands, publishing
+becomes a one-click flow from the GCS, and operators install by
+search instead of by file. Until then GitHub Releases is the
+recommended channel; when the registry opens, your existing release
+process keeps working unchanged. The registry just adds a metadata
+overlay.

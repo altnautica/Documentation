@@ -1,0 +1,135 @@
+---
+title: "Python SDK"
+description: "ados.sdk reference. The SDK every agent-side plugin uses."
+---
+
+The agent half of a plugin runs as a Python subprocess under
+`ados-supervisor`. The SDK gives you a typed wrapper around the IPC
+channel the supervisor opens at startup.
+
+## Install
+
+```sh
+uv pip install ados-sdk
+# or
+pip install ados-sdk
+```
+
+Once the SDK lands on PyPI, plugins depend on it as a normal Python
+package. Until then, plugin source can vendor the contract types
+directly from
+[`altnautica/ADOSDroneAgent/src/ados/plugins`](https://github.com/altnautica/ADOSDroneAgent/tree/main/src/ados/plugins).
+
+## Hello plugin
+
+```python
+from __future__ import annotations
+
+import asyncio
+
+from ados.sdk import (
+    Plugin,
+    Context,
+    BatterySample,
+    publish_event,
+    subscribe_telemetry,
+)
+
+
+class MyPlugin(Plugin):
+    id = "com.example.hello"
+    version = "0.1.0"
+
+    async def on_start(self, ctx: Context) -> None:
+        async for sample in subscribe_telemetry(ctx, "battery"):
+            await self.handle(sample)
+
+    async def handle(self, sample: BatterySample) -> None:
+        if sample.remaining_percent < 25:
+            await publish_event(
+                "battery.low",
+                payload={"pack_id": sample.pack_id, "percent": sample.remaining_percent},
+            )
+
+
+if __name__ == "__main__":
+    asyncio.run(Plugin.run(MyPlugin()))
+```
+
+`Plugin.run(...)` opens the IPC channel, reads the `Context`
+(includes the granted capabilities, the operator-edited config, the
+plugin's data dir), and dispatches lifecycle hooks (`on_start`,
+`on_stop`, `on_config_change`).
+
+## IPC
+
+The supervisor passes the path to a Unix domain socket via the
+`ADOS_PLUGIN_SOCKET` environment variable. The SDK opens the socket
+and speaks msgpack RPC against it.
+
+```
+plugin -> {"id": "...", "type": "request", "method": "event.publish", "args": {...}}
+host   -> {"id": "...", "type": "response", "args": {...}}
+host   -> {"id": "...", "type": "event",    "method": "telemetry.battery", "args": {...}}
+```
+
+Identical envelope to the GCS bridge; identical capability gate.
+
+## Capabilities
+
+Every privileged call must be backed by a manifest permission. The
+SDK reads the granted set from the host on startup and rejects
+requests that exercise an undeclared capability before they reach
+the wire:
+
+```python
+try:
+    await ctx.mavlink.send_command(...)
+except CapabilityError as exc:
+    log.warning("plugin lacks capability %s", exc.capability)
+```
+
+This catches missing manifest entries during development before
+they reach the host.
+
+## Resource limits
+
+The supervisor enforces the resource block from the manifest:
+
+```yaml
+agent:
+  resources:
+    max_ram_mb: 64
+    max_cpu_percent: 10
+    max_pids: 4
+```
+
+On Linux these become cgroup v2 controllers under
+`ados-plugins.slice/<plugin-id>.scope`. The plugin sees them as
+hard caps; an OOM kill is reported to the host as a
+`crashed` lifecycle event.
+
+## Testing
+
+Until the SDK ships its own harness, `pytest` against in-memory
+transports works the same way as the TypeScript harness. The agent
+repo's `tests/test_api_plugins.py` and `tests/test_plugin_runner.py`
+have working examples.
+
+## What is in the SDK today
+
+The agent host module at
+[`altnautica/ADOSDroneAgent/src/ados/plugins/`](https://github.com/altnautica/ADOSDroneAgent/tree/main/src/ados/plugins)
+already exposes:
+
+- `manifest.PluginManifest` (Pydantic schema)
+- `signing` (Ed25519 verification + revocation list)
+- `archive` (pack / unpack with traversal protection)
+- `state` (persistent install / permission state)
+- `supervisor` (lifecycle: install / enable / disable / remove)
+- `runner` (the entrypoint shim plugin code calls into)
+
+The standalone `ados-sdk` PyPI package is in flight; it will
+re-export the contracts above plus an async event loop helper. Watch
+the [Discord](https://discord.gg/uxbvuD4d5q) and the
+[GitHub releases](https://github.com/altnautica) for the publish.

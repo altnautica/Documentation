@@ -1,0 +1,153 @@
+---
+title: "Your first plugin"
+description: "Walk through the Battery Health Panel from manifest to packed archive, line by line."
+---
+
+The Battery Health Panel is the first first-party extension on the
+new plugin host. It is a GCS-only plugin that reads the host's
+normalized battery telemetry, runs an anomaly engine, and emits
+notifications when a rule fires. Source lives at
+[`altnautica/ADOSExtensions/extensions/battery-health-panel`](https://github.com/altnautica/ADOSExtensions/tree/main/extensions/battery-health-panel).
+
+This page walks through the parts that matter for plugin authors.
+
+## Manifest
+
+```yaml
+plugin:
+  id: com.altnautica.battery-health-panel
+  name: "ADOS Battery Health Panel"
+  version: "1.0.0"
+  license: "GPL-3.0-or-later"
+
+compatibility:
+  ados_version: ">=0.10.0"
+  gcs_version: ">=0.5.0"
+  profiles: ["drone"]
+
+gcs:
+  bundle: "gcs/plugin.bundle.js"
+  isolation: "iframe-sandbox"
+  permissions:
+    - ui.slot.fc-tab
+    - ui.slot.notification
+    - telemetry.subscribe.battery
+    - telemetry.subscribe.mavlink
+    - recording.write
+  contributes:
+    panels:
+      - id: battery-health-tab
+        slot: fc.tab
+        title: "Battery Health"
+        order: 30
+```
+
+Six permissions, three contributes blocks, no agent half. Risk band:
+`low` (no `vehicle.command`, no host file system, no network).
+
+## Entry point
+
+```ts
+import { definePlugin } from "@altnautica/plugin-sdk";
+import { createBatteryStore } from "./batteryStore";
+import type { BatterySample } from "./types";
+
+const store = createBatteryStore();
+
+definePlugin({
+  id: "com.altnautica.battery-health-panel",
+  version: "1.0.0",
+  async mount(ctx) {
+    await ctx.telemetry.subscribe<BatterySample>(
+      "battery",
+      (sample) => store.ingest(sample),
+    );
+    store.onAnomaly(async (fired) => {
+      for (const event of fired) {
+        await ctx.notifications.publish({
+          channelId: "battery-anomaly",
+          severity: event.severity,
+          title: event.title,
+          body: event.body,
+        });
+        await ctx.recording.mark({ label: event.title });
+      }
+    });
+  },
+});
+```
+
+`definePlugin` is the only SDK call. Everything else is plain
+TypeScript: a store, a rule engine, a render loop. The SDK gets out
+of the way.
+
+## Anomaly rule
+
+```ts
+const ruleCellLow: Rule = ({ curr, config }) => {
+  const min = minDefined(curr.cellVoltagesV);
+  if (min === null || min >= config.lowCellVoltageV) return null;
+  if (min < config.criticalCellVoltageV) return null;
+  return mk("cell_low", curr, "warning", "Cell low", `${min.toFixed(2)} V`);
+};
+```
+
+A rule is a pure function from `(prev, curr, config)` to
+`AnomalyEvent | null`. The store calls every rule on every new
+sample. Hysteresis is the store's job: an anomaly stays in the live
+list until the underlying condition has been clear for at least 5
+seconds.
+
+## Testing without a host
+
+The SDK ships a synthetic-host harness:
+
+```ts
+import { createPluginHarness } from "@altnautica/plugin-sdk/harness";
+
+const harness = createPluginHarness({
+  grantedCapabilities: [
+    "telemetry.subscribe.battery",
+    "ui.slot.notification",
+    "recording.write",
+  ],
+  mount: async (ctx) => {
+    await ctx.telemetry.subscribe("battery", (s) => store.ingest(s));
+    store.onAnomaly(async (fired) => {
+      for (const e of fired) {
+        await ctx.notifications.publish({ ... });
+      }
+    });
+  },
+});
+
+await harness.start();
+harness.pushTelemetry("battery", { cellVoltagesV: [3.9, 3.4, 3.9, 3.9], ... });
+expect(harness.notifications).toHaveLength(1);
+expect(harness.notifications[0]).toMatchObject({ severity: "warning" });
+await harness.teardown();
+```
+
+The harness lets a single Vitest run validate the whole plugin
+without spinning up Mission Control or a real drone.
+
+## Packing and installing
+
+```sh
+pnpm test
+pnpm build
+./scripts/pack.sh battery-health-panel
+```
+
+Drag `dist/com.altnautica.battery-health-panel-1.0.0.adosplug` into
+**Mission Control -> Settings -> Plugins -> Install plugin**. Approve
+the six declared permissions. The panel mounts under the FC tab.
+
+## What is next
+
+- See [permissions](/developers/permissions) to plan the smallest
+  surface a real plugin needs.
+- See [event hooks](/developers/event-hooks) to learn the host RPC
+  catalog.
+- See [distribution and local install](/developers/distribution-local-install)
+  to publish a signed release on GitHub.

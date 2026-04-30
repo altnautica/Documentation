@@ -264,6 +264,50 @@
             ]
           }
         ]
+      },
+      {
+        "tab": "Developers",
+        "icon": "code",
+        "groups": [
+          {
+            "group": "Start here",
+            "pages": [
+              "developers/overview",
+              "developers/concepts",
+              "developers/glossary"
+            ]
+          },
+          {
+            "group": "Tutorials",
+            "pages": [
+              "developers/quickstart",
+              "developers/your-first-plugin"
+            ]
+          },
+          {
+            "group": "Reference",
+            "pages": [
+              "developers/manifest",
+              "developers/lifecycle",
+              "developers/permissions",
+              "developers/event-hooks"
+            ]
+          },
+          {
+            "group": "SDKs",
+            "pages": [
+              "developers/sdk-typescript",
+              "developers/sdk-python"
+            ]
+          },
+          {
+            "group": "Ship it",
+            "pages": [
+              "developers/distribution-local-install",
+              "developers/contributing-repos"
+            ]
+          }
+        ]
       }
     ]
   }

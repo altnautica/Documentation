@@ -1,0 +1,101 @@
+---
+title: "Quickstart"
+description: "Scaffold and install your first plugin in five minutes."
+---
+
+This page takes you from an empty folder to a working plugin
+installed in Mission Control. No prior ADOS experience required.
+
+## What you need
+
+- Node.js 20+ and pnpm 9+ (or npm).
+- A working Mission Control install (`>=0.5.0`).
+- A working ADOS Drone Agent if you plan to ship the agent half
+  (`>=0.10.0`); the rest of this page only needs the GCS half.
+
+## 1. Scaffold
+
+```sh
+npx create-ados-plugin my-first-plugin --half gcs-only
+cd my-first-plugin
+pnpm install
+```
+
+The CLI lays out a minimal repo:
+
+```
+my-first-plugin/
+├── manifest.yaml
+├── README.md
+├── locales/en.json
+└── gcs/
+    ├── package.json
+    ├── tsconfig.json
+    └── src/plugin.ts
+```
+
+## 2. Edit the plugin
+
+Open `gcs/src/plugin.ts`. The starter calls `definePlugin` from the
+SDK and shows a one-line greeting:
+
+```ts
+import { definePlugin } from "@altnautica/plugin-sdk";
+
+definePlugin({
+  id: "com.example.my-first-plugin",
+  version: "0.1.0",
+  async mount(ctx) {
+    document.body.textContent = "Hello from a plugin";
+  },
+});
+```
+
+Change the text. Save.
+
+## 3. Build
+
+```sh
+pnpm build
+```
+
+This produces `gcs/plugin.bundle.js`. The build is plain esbuild;
+no React or Vite required.
+
+## 4. Pack
+
+Vendor `pack.sh` from
+[`altnautica/ADOSExtensions`](https://github.com/altnautica/ADOSExtensions/blob/main/scripts/pack.sh)
+into your repo, then:
+
+```sh
+./scripts/pack.sh .
+```
+
+`pack.sh` computes the SHA-256 of every asset, rewrites the
+placeholders in `manifest.yaml`, and zips into
+`dist/com.example.my-first-plugin-0.1.0.adosplug`.
+
+## 5. Install
+
+Open Mission Control. Go to **Settings -> Plugins** and click
+**Install plugin**. Drag the `.adosplug` into the dialog, review the
+manifest preview, approve the requested permissions, and click
+**Install**.
+
+The plugin mounts in the FC tab. Reload to see it again.
+
+## What just happened
+
+The host:
+
+1. Parsed your archive and showed a non-committing manifest preview.
+2. After your consent, unpacked the bundle to a per-user blob URL.
+3. Mounted an `<iframe sandbox="allow-scripts">` and loaded your
+   bundle inside it.
+4. Wired the postMessage bridge so your plugin can call back into
+   the host.
+5. Held your plugin's capabilities in the operator's Convex profile
+   so they survive reload.
+
+For the deep tour, head to [your first plugin](/developers/your-first-plugin).

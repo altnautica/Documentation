@@ -1,0 +1,115 @@
+---
+title: "Lifecycle"
+description: "Install, parse, enable, disable, remove. The states a plugin moves through and the operator actions that drive them."
+---
+
+A plugin lives through six observable states. The host is the state
+machine; the plugin reacts to events the host pushes.
+
+## States
+
+| State | Meaning |
+|-------|---------|
+| `installed` | Archive unpacked, manifest validated, signature accepted. Permissions are recorded as `granted=false`. The plugin is dormant. |
+| `enabled` | Operator approved the manifest's permissions. The plugin can run but has not been started yet. |
+| `running` | The agent half is alive under `ados-supervisor`; the GCS half is mounted in its iframe. |
+| `disabled` | Operator stopped the plugin. The agent subprocess is dead; the iframe is unmounted. State on disk is preserved. |
+| `crashed` | The supervisor circuit-breaker fired (too many restarts in too short a window). Manual intervention required. |
+| `removed` | The plugin is gone. Disk state is wiped unless the operator chose `--keep-data`. |
+
+## Parse before install
+
+The install flow is deliberately two-stage:
+
+1. **Parse**: the host opens the archive in memory, validates the
+   manifest, verifies the signature, and returns a manifest summary.
+   Nothing is written to disk.
+2. **Install**: only after the operator approves the requested
+   permissions does the host commit the install. The agent unpacks
+   the archive into `/var/ados/plugins/<id>/`; the GCS records the
+   install in the user's Convex profile.
+
+This means a malicious archive cannot leave traces just by being
+"previewed". The dialog runs `parse`; the **Install** button calls
+`install`.
+
+## Enable / disable
+
+Enable is the first time the plugin actually runs. The agent host
+generates a systemd unit, writes it to `/etc/systemd/system/`,
+reloads the daemon, and starts the unit. The GCS host sets the
+status to `enabled` and mounts the iframe in every contributing
+slot.
+
+Disable stops the agent subprocess and unmounts the iframe. State
+on disk persists. Re-enable resumes from where it left off.
+
+## Crash and circuit breaker
+
+The agent half can fail. Three restarts within five minutes trips
+the circuit breaker, the host marks the install `crashed`, and the
+operator sees the failure under **Settings -> Plugins -> [plugin] ->
+Events**. The operator decides whether to disable, remove, or
+investigate the logs. The plugin does not auto-recover from a tripped
+breaker; that would mask underlying bugs.
+
+## Remove
+
+`ados plugin remove <id>` (or the GCS UI button) tears the plugin
+out:
+
+1. Stop the systemd unit if running.
+2. Delete the unit file.
+3. Reload the daemon.
+4. Remove the install directory.
+5. Drop the install row from the GCS Convex profile.
+6. Drop every permission grant.
+
+`--keep-data` preserves the plugin's data directory at
+`/var/ados/plugins-data/<id>/` for later reinstall.
+
+## Lifecycle hooks in plugin code
+
+Plugins can react to lifecycle events in their `mount` and `unmount`
+callbacks:
+
+```ts
+import { definePlugin } from "@altnautica/plugin-sdk";
+
+definePlugin({
+  id: "com.example.lifecycle",
+  version: "0.1.0",
+  async mount(ctx, info) {
+    console.info(`mounted ${info.id} v${info.version}`);
+  },
+  async unmount(ctx, info) {
+    console.info(`unmounting ${info.id}`);
+  },
+});
+```
+
+`unmount` runs when the host disposes the iframe (operator disabled
+the plugin, navigated away, or removed it). Use it to flush any
+in-flight state.
+
+## Configuration changes
+
+`config.changed` is an event the host pushes whenever the operator
+edits the plugin's configuration. It is not a separate state. The
+plugin stays `running` and subscribes to recompute internal state
+without restarting:
+
+```ts
+ctx.config.onChange<MyConfig>((next) => {
+  store.setConfig(next);
+});
+```
+
+See [event hooks](/developers/event-hooks) for the full list of
+events the host pushes.
+
+## State observability
+
+Every transition is recorded as a row in `cmd_pluginEvents` (GCS) and
+mirrored on the agent's plugin event log. Operators see the full
+history under **Settings -> Plugins -> [plugin] -> Events**.
