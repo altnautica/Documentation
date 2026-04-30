@@ -301,6 +301,20 @@
             ]
           },
           {
+            "group": "Driver layer",
+            "pages": [
+              "developers/driver-layer",
+              "developers/camera-driver",
+              "developers/gimbal-driver",
+              "developers/lidar-driver",
+              "developers/gps-driver",
+              "developers/esc-driver",
+              "developers/payload-actuator-driver",
+              "developers/vendor-binaries",
+              "developers/hardware-testing"
+            ]
+          },
+          {
             "group": "Ship it",
             "pages": [
               "developers/distribution-local-install",

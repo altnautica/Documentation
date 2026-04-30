@@ -1,0 +1,90 @@
+---
+title: "GPS driver"
+description: "Implement a GpsDriver to add a new GNSS receiver."
+---
+
+A `GpsDriver` decodes a position-fix stream from a u-blox, NMEA,
+RTK, or vendor-custom receiver and exposes it as a series of
+`GpsFix` samples. Drivers that support RTK can also accept RTCM
+correction payloads.
+
+## The interface
+
+```python
+from ados.sdk.drivers.gps import (
+    GpsDriver,
+    GpsCandidate,
+    GpsCapabilities,
+    GpsSession,
+    GpsFix,
+)
+
+class MyGpsDriver(GpsDriver):
+    async def discover(self) -> list[GpsCandidate]:
+        ...
+
+    async def open(self, candidate, config) -> GpsSession:
+        ...
+
+    async def close(self, session) -> None:
+        ...
+
+    def capabilities(self, session) -> GpsCapabilities:
+        ...
+
+    async def fix_iterator(self, session):
+        # async generator yielding GpsFix
+        ...
+
+    async def inject_rtcm(self, session, payload: bytes) -> None:
+        ...
+```
+
+`inject_rtcm` is a no-op for non-RTK drivers.
+
+## Capabilities
+
+```python
+GpsCapabilities(
+    protocol="ubx",
+    constellations=["GPS", "GLONASS", "Galileo", "BeiDou"],
+    max_update_hz=10.0,
+    supports_rtk=True,
+    supports_dual_band=False,
+    supports_heading=False,
+)
+```
+
+## Fix samples
+
+```python
+GpsFix(
+    timestamp_ns=ns,
+    latitude_deg=12.97,
+    longitude_deg=77.59,
+    altitude_msl_m=920.0,
+    horizontal_accuracy_m=1.4,
+    vertical_accuracy_m=2.1,
+    fix_type=3,
+    satellites_in_view=14,
+    speed_mps=0.0,
+    heading_deg=None,
+)
+```
+
+`fix_type` follows the common convention: 0 no fix, 2 2D, 3 3D, 4
+DGPS, 5 RTK float, 6 RTK fixed.
+
+## Manifest permissions
+
+```yaml
+agent:
+  permissions:
+    - sensor.gps.register
+    - serial.read_write
+    - mavlink.gps_inject       # only if the driver forwards RTCM to the FC
+```
+
+## See also
+
+- [Driver layer](/developers/driver-layer) for the contract.

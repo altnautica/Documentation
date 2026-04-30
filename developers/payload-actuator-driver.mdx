@@ -1,0 +1,101 @@
+---
+title: "Payload actuator driver"
+description: "Implement a PayloadActuatorDriver to control a sprayer, dropper, claw, or sampler."
+---
+
+A `PayloadActuatorDriver` controls a non-imaging mission payload:
+sprayer, dropper, claw, sampler, winch, or any other actuator that
+the operator triggers from a panel or a scripted mission step.
+
+## The interface
+
+```python
+from ados.sdk.drivers.payload_actuator import (
+    PayloadActuatorDriver,
+    PayloadCandidate,
+    PayloadCapabilities,
+    PayloadSession,
+    PayloadCommand,
+    PayloadState,
+)
+
+class MyPayloadDriver(PayloadActuatorDriver):
+    async def discover(self) -> list[PayloadCandidate]:
+        ...
+
+    async def open(self, candidate, config) -> PayloadSession:
+        ...
+
+    async def close(self, session) -> None:
+        ...
+
+    def capabilities(self, session) -> PayloadCapabilities:
+        ...
+
+    async def execute(self, session, command: PayloadCommand) -> None:
+        ...
+
+    async def get_state(self, session) -> PayloadState:
+        ...
+```
+
+## Capabilities
+
+```python
+PayloadCapabilities(
+    actions=["arm", "trigger", "stop", "set_flow_rate"],
+    has_telemetry=True,
+    max_payload_kg=2.5,
+    update_hz=10.0,
+)
+```
+
+`actions` is the list of `action_id` strings the driver accepts in
+`PayloadCommand`. The GCS panel discovers these and renders one
+button per action.
+
+## Commands
+
+```python
+PayloadCommand(
+    action_id="trigger",
+    args={"duration_s": 1.5, "intensity": 0.8},
+)
+```
+
+`action_id` is mandatory. `args` is a free-form dict that the
+driver validates. Unknown keys should raise `ValueError`.
+
+## State
+
+```python
+PayloadState(
+    armed=True,
+    busy=False,
+    last_action_id="trigger",
+    last_action_at_ns=ns,
+    error=None,
+    telemetry={"flow_lpm": 0.0, "tank_pct": 65.0},
+)
+```
+
+## Manifest permissions
+
+```yaml
+agent:
+  permissions:
+    - sensor.payload.register
+    - vehicle.payload.actuate    # required to call execute()
+    - serial.read_write          # if the driver speaks raw serial
+```
+
+`vehicle.payload.actuate` is a high-risk capability. The host
+prompts per-action consent the first time a session calls
+`execute(...)` unless the operator has pre-approved auto-confirm
+in the plugin's permission detail page.
+
+## See also
+
+- [Driver layer](/developers/driver-layer) for the contract.
+- [Permissions](/developers/permissions) for the consent model
+  around `vehicle.*` capabilities.

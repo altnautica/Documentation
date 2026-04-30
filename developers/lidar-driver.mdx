@@ -1,0 +1,90 @@
+---
+title: "LiDAR driver"
+description: "Implement a LidarDriver to add a new ranging sensor."
+---
+
+A `LidarDriver` yields point-cloud frames from a spinning,
+solid-state, or single-line ranging device.
+
+## The interface
+
+```python
+from ados.sdk.drivers.lidar import (
+    LidarDriver,
+    LidarCandidate,
+    LidarCapabilities,
+    LidarSession,
+    LidarFrame,
+    LidarPoint,
+)
+
+class MyLidarDriver(LidarDriver):
+    async def discover(self) -> list[LidarCandidate]:
+        ...
+
+    async def open(self, candidate, config) -> LidarSession:
+        ...
+
+    async def close(self, session) -> None:
+        ...
+
+    def capabilities(self, session) -> LidarCapabilities:
+        ...
+
+    async def frame_iterator(self, session):
+        # async generator yielding LidarFrame
+        ...
+```
+
+## Capabilities
+
+```python
+LidarCapabilities(
+    min_range_m=0.1,
+    max_range_m=40.0,
+    horizontal_fov_deg=360.0,
+    vertical_fov_deg=1.0,
+    points_per_frame=1024,
+    fps=10.0,
+    has_intensity=True,
+    has_dual_return=False,
+)
+```
+
+## Frames
+
+Each `LidarFrame` carries a list of `LidarPoint` in the sensor body
+frame: `+x` forward, `+y` left, `+z` up. Coordinates are metres.
+
+```python
+LidarPoint(
+    x_m=2.13, y_m=-0.42, z_m=0.05,
+    intensity=0.74,
+    return_index=0,
+)
+```
+
+Drivers that report misses for some angles should skip those points
+rather than emit zeros.
+
+## Manifest permissions
+
+```yaml
+agent:
+  permissions:
+    - sensor.lidar.register
+    - serial.read_write       # most LiDARs are USB-CDC or UART
+```
+
+## Single-line vs spinning
+
+The agent does not distinguish single-beam rangefinders from full
+3D LiDARs at the driver layer. A 1D rangefinder ships frames with
+`points_per_frame=1`. The host's avoidance and SLAM consumers
+already handle the degenerate case.
+
+## See also
+
+- [Driver layer](/developers/driver-layer) for the contract.
+- [Hardware testing](/developers/hardware-testing) for replay
+  patterns when no LiDAR is on the bench.

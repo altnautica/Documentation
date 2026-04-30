@@ -1,0 +1,107 @@
+---
+title: "Hardware testing"
+description: "SITL, hardware-in-loop, and bench-rig patterns for plugin development."
+---
+
+A plugin's tests have to run somewhere. This page covers the four
+test surfaces ADOS plugin authors use, in order of cost and
+fidelity.
+
+## 1. Pure-Python unit tests with a mock backend
+
+The cheapest pass. Most driver plugins ship a `Mock<Bus>Backend`
+fixture (`MockUvcBackend`, `MockSerialBackend`, `MockMavlinkRouter`)
+that the driver constructor accepts in place of the real device.
+
+```python
+def test_open_yields_correct_capabilities():
+    backend = MockUvcBackend(width=160, height=120, fps=8.7)
+    driver = LeptonUvcDriver(backend=backend)
+    candidate = (await driver.discover())[0]
+    session = await driver.open(candidate, config={})
+    caps = driver.capabilities(session)
+    assert caps.width == 160
+    assert caps.radiometric is True
+```
+
+This catches the bulk of bugs and runs in milliseconds. Every
+first-party reference plugin uses this pattern.
+
+## 2. The plugin harness, GCS side
+
+`@altnautica/plugin-sdk/harness` mounts your plugin against an
+in-memory transport, captures every RPC, and lets you inject
+telemetry, events, config changes, and theme updates without
+running Mission Control.
+
+```ts
+import { createPluginHarness } from "@altnautica/plugin-sdk/harness";
+
+const harness = createPluginHarness({
+  grantedCapabilities: ["telemetry.subscribe.battery"],
+  mount: async (ctx) => {
+    await ctx.telemetry.subscribe("battery", store.ingest);
+  },
+});
+await harness.start();
+harness.pushTelemetry("battery", mockSample);
+expect(harness.notifications).toMatchObject([{ severity: "warning" }]);
+await harness.teardown();
+```
+
+See [`sdk-typescript`](/developers/sdk-typescript) for the full
+harness reference.
+
+## 3. SITL (software in the loop)
+
+ArduPilot SITL covers everything FC-side: arming, modes, missions,
+parameters, mount commands, ROI. Run it on the dev machine and
+have the agent talk to it the same way it would talk to a real
+flight controller.
+
+The reference MAVLink Gimbal v2 plugin tests against ArduPilot
+SITL exactly this way. SITL launches via the ADOS Mission Control
+"SITL launcher" tool. Once SITL is running, the agent's MAVLink
+router connects to `tcp:127.0.0.1:5760`, the gimbal driver
+registers, and `command_attitude(pitch=-30, yaw=45)` flows through
+to a simulated mount whose state the test asserts on.
+
+SITL does not simulate cameras, LiDARs, payloads, or vendor
+serial protocols. For those, fall back to the mock backend.
+
+## 4. Hardware in the loop on a bench rig
+
+The full pass. A real SBC (Pi 4B or Rock 5C Lite) with the agent
+installed via `install.sh`, the real device on USB or serial, and
+your plugin packed and installed via `ados plugin install <archive>`.
+
+Bench-rig testing is what closes the loop on radiometric accuracy,
+timing jitter, hotplug behaviour, and vendor-binary integration.
+Run it before cutting a release tag.
+
+A good bench-rig session captures:
+
+- `journalctl -u ados-plugin-<id>` while exercising the device
+- A `.bag` of telemetry over the test window
+- A photo or short video of the rig and the device under test
+
+These three artifacts go in the release notes for the tag.
+
+## What our reference plugins ship
+
+| Plugin | Mock backend | Harness | SITL | Bench |
+|--------|--------------|---------|------|-------|
+| Battery Health Panel | n/a (no device) | yes | n/a | yes |
+| FLIR Lepton USB UVC | `MockUvcBackend` | yes | n/a | gated on hardware |
+| MAVLink Gimbal v2 | `MockMavlinkRouter` | yes | yes | gated on hardware |
+
+"Gated on hardware" means CI passes against the mock and harness
+passes; the real bench rig is exercised before the release tag is
+cut.
+
+## See also
+
+- [SDK TypeScript](/developers/sdk-typescript) for the harness
+  reference.
+- [Driver layer](/developers/driver-layer) for the driver
+  base-class contract.

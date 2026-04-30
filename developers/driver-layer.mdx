@@ -1,0 +1,98 @@
+---
+title: "Driver layer"
+description: "Typed base classes hardware-driver plugins subclass."
+---
+
+The driver layer is a sub-pattern of agent plugins. Same manifest,
+same lifecycle, same sandbox. What is new is a set of typed base
+classes that the host knows how to register, discover, and route
+data to and from. A driver is just a plugin that subclasses one of
+these bases and declares the matching `sensor.*.register` capability
+in its manifest.
+
+## Why a driver layer
+
+Hardware-driver plugins are the highest-value class of extensions.
+A vendor shipping a thermal camera, a LiDAR, a custom GPS, a
+payload actuator, or a vendor-specific gimbal wants their hardware
+to "just work" once installed. They do not want to fork the agent.
+They want a stable interface that says "implement these methods
+and we will route the rest."
+
+## The six driver kinds
+
+| Kind | Base class | Page |
+|------|------------|------|
+| Camera (visible, thermal, depth, multi-spectral) | `CameraDriver` | [Camera driver](/developers/camera-driver) |
+| Gimbal (SBGC, MAVLink mount, vendor serial) | `GimbalDriver` | [Gimbal driver](/developers/gimbal-driver) |
+| LiDAR (RPLidar, Livox, Velodyne, custom) | `LidarDriver` | [LiDAR driver](/developers/lidar-driver) |
+| GPS (u-blox, NMEA, RTK, vendor-custom) | `GpsDriver` | [GPS driver](/developers/gps-driver) |
+| ESC telemetry (DShot, KISS, BLHeli32) | `EscDriver` | [ESC driver](/developers/esc-driver) |
+| Payload actuator (sprayer, dropper, claw, sampler) | `PayloadActuatorDriver` | [Payload actuator driver](/developers/payload-actuator-driver) |
+
+All six share the same shape:
+
+```python
+class XDriver(ABC):
+    async def discover(self) -> list[XCandidate]: ...
+    async def open(self, candidate: XCandidate, config: dict) -> XSession: ...
+    async def close(self, session: XSession) -> None: ...
+    def capabilities(self, session: XSession) -> XCapabilities: ...
+    # plus kind-specific I/O methods
+```
+
+The kind-specific methods are the meat. A `CameraDriver` yields
+`FrameBuffer`s. A `GpsDriver` yields `GpsFix`es. A `GimbalDriver`
+takes attitude commands. The shared four-method preamble lets the
+agent's peripheral manager handle every kind uniformly.
+
+## Lifecycle
+
+1. The plugin's `on_start` hook constructs the driver and registers
+   it: `peripheral_manager.register_camera_driver(driver)`. The
+   manifest must declare the matching `sensor.camera.register`
+   capability or registration is rejected.
+2. The peripheral manager calls `discover()` on every registered
+   driver at boot and on USB / serial hotplug events. Each driver
+   reports a list of `XCandidate`s for devices it claims it can
+   open.
+3. Multiple drivers may claim the same device. The peripheral
+   manager arbitrates by priority (manifest's `driver_priority`
+   field) and falls back to first-registered when ties occur.
+4. The winning driver gets `open(candidate, config)` called against
+   it. `config` is the operator-edited config validated against
+   `config-schema.json`.
+5. The driver yields data through its kind-specific stream method
+   (`frame_iterator`, `fix_iterator`, `state_iterator`, etc.).
+6. On unload or hotplug-disappear, `close(session)` runs.
+
+## Errors
+
+Drivers raise from `ados.sdk.drivers.errors`:
+
+```python
+from ados.sdk.drivers.errors import (
+    DriverError,
+    DriverDeviceNotFound,
+    DriverPermissionDenied,
+)
+```
+
+`DriverError` is the base. `DriverDeviceNotFound` says "the
+candidate disappeared between discover and open." `DriverPermissionDenied`
+says "the device exists but the agent process cannot open it"
+(missing udev rule, locked USB, etc.).
+
+The host catches these, logs them, and surfaces them in the GCS
+plugin event stream. A driver that raises bare `Exception` is
+treated as crashed and the plugin is moved to the circuit-breaker
+state per the lifecycle rules.
+
+## Where to go next
+
+- [Camera driver](/developers/camera-driver) for the worked
+  example, including the FLIR Lepton USB UVC reference plugin.
+- [Vendor binaries](/developers/vendor-binaries) when your driver
+  needs a closed-source `.so` to talk to the device.
+- [Hardware testing](/developers/hardware-testing) for SITL,
+  hardware-in-loop, and rig-on-bench testing patterns.

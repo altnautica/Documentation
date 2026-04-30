@@ -1,0 +1,102 @@
+---
+title: "Vendor binaries"
+description: "Ship a closed-source .so or vendor SDK alongside an open plugin."
+---
+
+Hardware drivers sometimes need a closed-source shared library to
+talk to the device. A FLIR camera SDK, a vendor LiDAR
+decompressor, or a mount-control DLL fall into this bucket. ADOS
+plugins can include these binaries, but the manifest must declare
+them honestly so operators see the trust signal in the install
+dialog.
+
+## Declare the binary
+
+In `manifest.yaml`:
+
+```yaml
+agent:
+  vendor_binaries:
+    - path: "agent/vendor/libfooflir.so"
+      sha256: "<computed-by-pack.sh>"
+      vendor: "FLIR"
+      license: "Proprietary"
+      purpose: "Decode radiometric Y16 frames into Celsius"
+```
+
+`pack.sh` computes the hash from the staged file. The signer key
+covers the binary too via the manifest signature, so any tampering
+between sign and install fails verification.
+
+## Trust signal in the install dialog
+
+The two-stage install flow shows a "Vendor binary" badge on the
+risk panel whenever `vendor_binaries` is non-empty. The operator
+sees:
+
+- The binary's path inside the archive
+- The vendor name and license string
+- The purpose line, in the operator's locale
+
+The dialog labels the plugin as "Mixed source" rather than
+"Open source" in the trust column. Operators can still install,
+but the signal is loud.
+
+## Loading the binary at runtime
+
+The agent unpacks the archive into the plugin's data dir at
+install time. The binary lives at
+`/var/ados/plugins/<plugin-id>/agent/vendor/libfooflir.so`.
+
+```python
+import ctypes
+from pathlib import Path
+
+class FooFlirDriver(CameraDriver):
+    def __init__(self) -> None:
+        sdk_path = Path(__file__).parent.parent / "vendor" / "libfooflir.so"
+        self._lib = ctypes.CDLL(str(sdk_path))
+```
+
+The plugin runs inside its sandbox, so the binary cannot escape the
+plugin's permission set. A vendor `.so` that tries to open
+`/dev/video0` still requires the plugin to declare
+`hal.dev_video` in its manifest.
+
+## License note
+
+Open hardware files and developer docs that Altnautica ships are
+dedicated to the public domain under CC0 1.0. Plugins that wrap
+GPL or CC0 source are themselves GPLv3 by default. A plugin that
+wraps a closed-source vendor `.so` is still GPLv3 in its own
+source files, but operators see the "Mixed source" badge because
+of the vendor binary inclusion.
+
+## Architecture support
+
+The pack script does not validate that the `.so` matches the
+target SBC's architecture. Ship architecture-specific subfolders if
+your plugin runs on both `aarch64` and `armv7l`:
+
+```
+agent/vendor/
+├── aarch64/
+│   └── libfooflir.so
+└── armv7l/
+    └── libfooflir.so
+```
+
+And resolve at runtime:
+
+```python
+import platform
+arch = platform.machine()
+sdk_path = Path(__file__).parent.parent / "vendor" / arch / "libfooflir.so"
+```
+
+## See also
+
+- [Manifest reference](/developers/manifest) for the full
+  `vendor_binaries` schema.
+- [Distribution and local install](/developers/distribution-local-install)
+  for the pack and sign flow.

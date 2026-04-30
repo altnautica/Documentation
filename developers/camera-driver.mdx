@@ -1,0 +1,151 @@
+---
+title: "Camera driver"
+description: "Implement a CameraDriver to ship a new imager as a plugin."
+---
+
+A `CameraDriver` pumps frames from a physical or networked imaging
+device into the agent's frame bus. Visible, thermal, depth, and
+multi-spectral devices all share this interface.
+
+The first-party reference is the FLIR Lepton USB UVC plugin at
+[`altnautica/ADOSExtensions/extensions/thermal-camera-flir-lepton-usb`](https://github.com/altnautica/ADOSExtensions/tree/main/extensions/thermal-camera-flir-lepton-usb).
+
+## The interface
+
+```python
+from ados.sdk.drivers.camera import (
+    CameraDriver,
+    CameraCandidate,
+    CameraCapabilities,
+    CameraSession,
+    FrameBuffer,
+)
+
+class MyCameraDriver(CameraDriver):
+    async def discover(self) -> list[CameraCandidate]:
+        ...
+
+    async def open(self, candidate, config) -> CameraSession:
+        ...
+
+    async def close(self, session) -> None:
+        ...
+
+    def capabilities(self, session) -> CameraCapabilities:
+        ...
+
+    async def frame_iterator(self, session):
+        # async generator yielding FrameBuffer
+        ...
+
+    async def set_param(self, session, param, value) -> None:
+        ...
+```
+
+## Candidates
+
+`CameraCandidate` carries the four fields the host needs to render
+a "select a device" UI:
+
+```python
+CameraCandidate(
+    driver_id="com.example.my-camera",
+    device_id="usb-1.2.3",
+    label="MyCorp ThermalCam on USB 1.2.3",
+    bus="usb",
+    vid_pid=(0x1e4e, 0x0100),
+)
+```
+
+`device_id` should be stable across reboots when the bus can
+produce a stable identifier (USB serial, CSI lane, RTSP URL).
+Where stability is impossible (raw v4l2 indexing) the driver
+should still produce a deterministic id within a single boot.
+
+## Capabilities
+
+Returned once per session, after `open`. The host uses these to
+size buffers, set the GCS preview, and gate features:
+
+```python
+CameraCapabilities(
+    radiometric=True,
+    bit_depth=14,
+    width=160,
+    height=120,
+    fps=8.7,
+    pixel_format="Y16",
+    streaming_protocol="uvc",
+    color_spaces=[],
+    has_audio=False,
+)
+```
+
+`radiometric=True` tells the host every pixel encodes a temperature
+and `FrameBuffer.radiometric_k` will carry the per-pixel K matrix.
+
+## Frame buffers
+
+```python
+FrameBuffer(
+    timestamp_ns=ns,
+    sequence=seq,
+    width=160,
+    height=120,
+    pixel_format="Y16",
+    data=memoryview(raw_bytes),
+    radiometric_k=memoryview(temp_K_matrix),
+    metadata={"shutter_open": True},
+)
+```
+
+`data` is a `memoryview` so downstream consumers can avoid copying
+when feasible. Drivers may attach driver-specific fields under
+`metadata`.
+
+## Manifest permissions
+
+```yaml
+agent:
+  permissions:
+    - sensor.camera.register   # required, gates registration
+    - usb.read                 # if the device sits on USB
+    - hal.dev_video            # if the device shows up as /dev/videoN
+```
+
+Without `sensor.camera.register` the host rejects
+`peripheral_manager.register_camera_driver(self)` and the plugin
+is moved to the failed state.
+
+## Registering
+
+```python
+class Plugin:
+    id = "com.example.my-camera"
+    version = "1.0.0"
+
+    async def on_start(self, ctx):
+        self.driver = MyCameraDriver()
+        await ctx.peripheral_manager.register_camera_driver(self.driver)
+```
+
+The host calls `discover()` immediately and then on every USB
+hotplug and on operator-triggered rescan.
+
+## Testing without hardware
+
+Build a `MockUvcBackend` (or `MockSerialBackend`, etc.) that
+produces synthetic frames and inject it into the driver via the
+constructor. The reference plugin ships exactly this fixture under
+`tests/`. The `PluginHarness` from
+[`@altnautica/plugin-sdk/harness`](/developers/sdk-typescript) is
+the GCS-side equivalent.
+
+## See also
+
+- [Driver layer](/developers/driver-layer) for the cross-kind
+  contract.
+- [Vendor binaries](/developers/vendor-binaries) when libuvc or a
+  vendor `.so` is required.
+- [Hardware testing](/developers/hardware-testing) for the
+  bench-rig patterns.

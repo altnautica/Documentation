@@ -1,0 +1,145 @@
+---
+title: "Gimbal driver"
+description: "Implement a GimbalDriver to add a new mount to the agent."
+---
+
+A `GimbalDriver` moves a stabilised mount to a commanded attitude
+or rate, and reports back the current pointing state.
+
+The first-party reference is the MAVLink Gimbal v2 driver at
+[`altnautica/ADOSExtensions/extensions/mavlink-gimbal-v2`](https://github.com/altnautica/ADOSExtensions/tree/main/extensions/mavlink-gimbal-v2),
+which targets ArduPilot's Gimbal Manager Protocol v2 and stubs out
+SimpleBGC, Storm32 NT, and Gremsy serial drivers behind the same
+base.
+
+## The interface
+
+```python
+from ados.sdk.drivers.gimbal import (
+    GimbalDriver,
+    GimbalCandidate,
+    GimbalCapabilities,
+    GimbalSession,
+    GimbalState,
+)
+
+class MyGimbalDriver(GimbalDriver):
+    async def discover(self) -> list[GimbalCandidate]:
+        ...
+
+    async def open(self, candidate, config) -> GimbalSession:
+        ...
+
+    async def close(self, session) -> None:
+        ...
+
+    def capabilities(self, session) -> GimbalCapabilities:
+        ...
+
+    async def command_attitude(
+        self, session, pitch_deg, yaw_deg, roll_deg=0.0
+    ) -> None:
+        ...
+
+    async def command_rate(
+        self, session, pitch_dps, yaw_dps, roll_dps=0.0
+    ) -> None:
+        ...
+
+    async def get_state(self, session) -> GimbalState:
+        ...
+
+    async def state_iterator(self, session):
+        # async generator yielding GimbalState at the gimbal's update rate
+        ...
+```
+
+## Capabilities
+
+```python
+GimbalCapabilities(
+    has_pitch=True,
+    has_yaw=True,
+    has_roll=False,
+    pitch_min_deg=-135.0,
+    pitch_max_deg=45.0,
+    yaw_min_deg=-180.0,
+    yaw_max_deg=180.0,
+    roll_min_deg=0.0,
+    roll_max_deg=0.0,
+    max_rate_dps=120.0,
+    supports_follow_mode=True,
+    supports_lock_mode=True,
+)
+```
+
+Limits are degrees from neutral. `None` on `max_rate_dps` means the
+gimbal is position-controlled only.
+
+## State
+
+```python
+GimbalState(
+    pitch_deg=-22.5,
+    yaw_deg=10.0,
+    roll_deg=0.0,
+    pitch_rate_dps=0.0,
+    yaw_rate_dps=0.0,
+    mode="follow",
+    error=None,
+)
+```
+
+Drivers that cannot report rates fill `*_rate_dps` with `0.0`.
+`error` is `None` on the happy path; populate it with a short
+human-readable string when the gimbal reports a fault.
+
+## Manifest permissions
+
+```yaml
+agent:
+  permissions:
+    - sensor.gimbal.register    # required
+    - mavlink.command.send      # if the driver speaks MAVLink
+    - serial.read_write         # if the driver speaks raw serial
+```
+
+## ROI vs attitude
+
+Two separate motion modes:
+
+- **Attitude / rate**: the GCS sets pitch and yaw directly via
+  `command_attitude` or `command_rate`. The driver propagates the
+  command verbatim.
+- **ROI (region of interest)**: the GCS hands the driver a
+  geographic point (lat, lon, alt). The driver figures out the
+  attitude that points the camera at that point and tracks it as
+  the vehicle moves. ROI is implemented inside the driver because
+  the mount hardware sometimes resolves it in firmware.
+
+The reference MAVLink driver maps ROI to
+`MAV_CMD_DO_SET_ROI_LOCATION` (cmd 195) and release-ROI to
+`MAV_CMD_DO_SET_ROI_NONE` (cmd 197).
+
+## Registering
+
+```python
+class Plugin:
+    async def on_start(self, ctx):
+        self.driver = MyGimbalDriver(mavlink_router=ctx.mavlink_router)
+        await ctx.peripheral_manager.register_gimbal_driver(self.driver)
+```
+
+## Testing without hardware
+
+Construct the driver against a mock MAVLink router (or a mock
+serial port). The reference plugin's `tests/` shows the round-trip
+pattern: command pitch=-30 yaw=45, capture the encoded
+`COMMAND_LONG` byte payload, inject a `GIMBAL_MANAGER_STATUS`
+reply, assert state updates.
+
+## See also
+
+- [Driver layer](/developers/driver-layer) for the contract.
+- [Hardware testing](/developers/hardware-testing) for the
+  ArduPilot SITL harness.

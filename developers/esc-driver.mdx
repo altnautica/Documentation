@@ -1,0 +1,85 @@
+---
+title: "ESC driver"
+description: "Implement an EscDriver to read motor telemetry."
+---
+
+An `EscDriver` reads per-motor telemetry from electronic speed
+controllers and surfaces it as a stream of `EscTelemetry` samples.
+DShot-telemetry, KISS, and BLHeli32 protocols all share this
+interface.
+
+ESC drivers are read-only by design. Setpoint commands flow
+through the FC over MAVLink, not through the agent.
+
+## The interface
+
+```python
+from ados.sdk.drivers.esc import (
+    EscDriver,
+    EscCandidate,
+    EscCapabilities,
+    EscSession,
+    EscTelemetry,
+)
+
+class MyEscDriver(EscDriver):
+    async def discover(self) -> list[EscCandidate]:
+        ...
+
+    async def open(self, candidate, config) -> EscSession:
+        ...
+
+    async def close(self, session) -> None:
+        ...
+
+    def capabilities(self, session) -> EscCapabilities:
+        ...
+
+    async def telemetry_iterator(self, session):
+        # async generator yielding EscTelemetry, one per motor per update
+        ...
+```
+
+## Capabilities
+
+```python
+EscCapabilities(
+    protocol="dshot-telemetry",
+    motor_count=4,
+    has_rpm=True,
+    has_temperature=True,
+    has_voltage=True,
+    has_current=False,
+    update_hz=200.0,
+)
+```
+
+## Telemetry samples
+
+```python
+EscTelemetry(
+    timestamp_ns=ns,
+    motor_index=0,
+    rpm=12500,
+    temperature_c=42.0,
+    voltage_v=22.1,
+    current_a=0.0,
+    throttle_pct=37.5,
+)
+```
+
+`current_a` is `0.0` when the protocol does not carry it. Set
+`temperature_c=None` for sensors with no thermistor.
+
+## Manifest permissions
+
+```yaml
+agent:
+  permissions:
+    - sensor.esc.register
+    - mavlink.read       # for ESC_TELEMETRY MAVLink message ingestion
+```
+
+## See also
+
+- [Driver layer](/developers/driver-layer) for the contract.
