@@ -8,8 +8,11 @@ the publishing options, and how operators install what you ship.
 
 ## Build the bundle
 
+From your plugin folder (under `extensions/<your-plugin>/` in the
+ADOSExtensions monorepo):
+
 ```sh
-pnpm install
+pnpm install   # once, at the monorepo root
 pnpm test
 pnpm build
 ```
@@ -19,12 +22,13 @@ packing.
 
 ## Pack
 
-Vendor `pack.sh` from
-[`altnautica/ADOSExtensions/scripts/pack.sh`](https://github.com/altnautica/ADOSExtensions/blob/main/scripts/pack.sh)
-into your repo. Run it with the extension folder name:
+`pack.sh` lives at the monorepo root. From there, pass either the
+folder name or a path:
 
 ```sh
-./scripts/pack.sh my-plugin
+./scripts/pack.sh my-plugin                  # under extensions/
+./scripts/pack.sh extensions/my-plugin       # path also works
+./scripts/pack.sh /abs/path/to/my-plugin     # absolute path also works
 ```
 
 The script:

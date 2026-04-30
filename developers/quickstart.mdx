@@ -8,23 +8,44 @@ installed in Mission Control. No prior ADOS experience required.
 
 ## What you need
 
-- Node.js 20+ and pnpm 9+ (or npm).
-- A working Mission Control install (`>=0.5.0`).
+- Node.js 20+ and pnpm 9+.
+- Python 3.11+ (used by `pack.sh`).
+- A working Mission Control install (`>=0.6.0`).
 - A working ADOS Drone Agent if you plan to ship the agent half
   (`>=0.10.0`); the rest of this page only needs the GCS half.
 
-## 1. Scaffold
+## 1. Get the SDK and templates
+
+The plugin SDK and `create-ados-plugin` scaffolder live in the
+[`altnautica/ADOSExtensions`](https://github.com/altnautica/ADOSExtensions)
+monorepo. The standalone `@altnautica/plugin-sdk` npm publish lands
+with the hosted registry; until then the supported workflow is to
+clone the monorepo and develop your plugin alongside it as a pnpm
+workspace member.
 
 ```sh
-npx create-ados-plugin my-first-plugin --half gcs-only
-cd my-first-plugin
+git clone https://github.com/altnautica/ADOSExtensions.git
+cd ADOSExtensions
 pnpm install
 ```
 
-The CLI lays out a minimal repo:
+## 2. Scaffold
+
+Run the scaffolder against a new folder under `extensions/`:
+
+```sh
+node packages/create-ados-plugin/bin/cli.mjs \
+  --target extensions/my-first-plugin \
+  --id com.example.my-first-plugin \
+  --half gcs-only \
+  --author "Your Name"
+```
+
+The CLI lays out a minimal plugin:
 
 ```
-my-first-plugin/
+extensions/my-first-plugin/
+├── package.json
 ├── manifest.yaml
 ├── README.md
 ├── locales/en.json
@@ -34,10 +55,18 @@ my-first-plugin/
     └── src/plugin.ts
 ```
 
-## 2. Edit the plugin
+The new `gcs/package.json` declares `@altnautica/plugin-sdk` as a
+`workspace:^` dependency so pnpm wires it directly to the in-tree
+package.
 
-Open `gcs/src/plugin.ts`. The starter calls `definePlugin` from the
-SDK and shows a one-line greeting:
+```sh
+pnpm install
+```
+
+## 3. Edit the plugin
+
+Open `extensions/my-first-plugin/gcs/src/plugin.ts`. The starter
+calls `definePlugin` from the SDK and shows a one-line greeting:
 
 ```ts
 import { definePlugin } from "@altnautica/plugin-sdk";
@@ -53,37 +82,38 @@ definePlugin({
 
 Change the text. Save.
 
-## 3. Build
+## 4. Build
+
+From the plugin folder:
 
 ```sh
+cd extensions/my-first-plugin
 pnpm build
 ```
 
 This produces `gcs/plugin.bundle.js`. The build is plain esbuild;
 no React or Vite required.
 
-## 4. Pack
+## 5. Pack
 
-Vendor `pack.sh` from
-[`altnautica/ADOSExtensions`](https://github.com/altnautica/ADOSExtensions/blob/main/scripts/pack.sh)
-into your repo, then:
+From the monorepo root:
 
 ```sh
-./scripts/pack.sh .
+./scripts/pack.sh my-first-plugin
 ```
 
 `pack.sh` computes the SHA-256 of every asset, rewrites the
 placeholders in `manifest.yaml`, and zips into
-`dist/com.example.my-first-plugin-0.1.0.adosplug`.
+`extensions/my-first-plugin/dist/com.example.my-first-plugin-0.1.0.adosplug`.
 
-## 5. Install
+## 6. Install
 
 Open Mission Control. Go to **Settings -> Plugins** and click
 **Install plugin**. Drag the `.adosplug` into the dialog, review the
 manifest preview, approve the requested permissions, and click
 **Install**.
 
-The plugin mounts in the FC tab. Reload to see it again.
+The plugin mounts in the FC tab.
 
 ## What just happened
 

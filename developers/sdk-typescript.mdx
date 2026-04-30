@@ -9,11 +9,16 @@ It hides the postMessage envelope shape and gives you a typed
 
 ## Install
 
-```sh
-pnpm add @altnautica/plugin-sdk
-```
+The standalone npm publish lands with the hosted registry. Until
+then the supported workflow is to develop your plugin inside the
+[`altnautica/ADOSExtensions`](https://github.com/altnautica/ADOSExtensions)
+monorepo as a pnpm workspace member; the SDK resolves via
+`workspace:^` against the in-tree
+[`packages/plugin-sdk`](https://github.com/altnautica/ADOSExtensions/tree/main/packages/plugin-sdk).
+The [Quickstart](/developers/quickstart) walks through the clone and
+scaffold flow.
 
-The package is a peer of the host iframe runtime; it has no runtime
+The package is a peer of the host iframe runtime. It has no runtime
 dependencies and ships ESM only.
 
 ## `definePlugin`
@@ -38,6 +43,11 @@ definePlugin({
 
 `mount` is awaited; if it throws, the host receives a `handler_error`
 envelope and surfaces it in the install dialog.
+
+`info` is optional. Most plugins write `async mount(ctx)` and ignore
+it; the second argument carries the host build version, the
+plugin's resolved permission set, and the operator-edited config.
+The same pattern applies to `unmount`.
 
 ## `PluginContext`
 
