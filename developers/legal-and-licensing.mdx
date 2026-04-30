@@ -1,54 +1,122 @@
 ---
 title: "Legal and licensing"
-description: "License expectations, vendor binaries, trademark policy, and the registry's hosting role."
+description: "Plugin authors keep their rights. Pick any license, monetize freely, and ship through the channel that fits your terms."
 ---
 
-The plugin system is designed for an open-source default. The
-registry will host plugins that are clearly licensed, clearly
-authored, and do not borrow Altnautica's brand assets. This page
-covers the rules.
+You wrote it; you keep the rights. The plugin system is designed
+around the idea that plugin authors own their work and pick the
+licensing model that suits their goals. The Altnautica registry is
+one distribution channel among several; it does not change who owns
+or licenses what.
 
-## Accepted licenses out of the box
+## You can monetize plugins
 
-The registry's auto-publish gate accepts these licenses without
-review:
+Nothing in the plugin system stops you from charging for your
+plugin. You can:
 
-| License | SPDX id | Notes |
-|---------|---------|-------|
-| GNU General Public License v3.0 or later | `GPL-3.0-or-later` | Recommended for plugins that link with the agent or the GCS, both of which are GPL-3.0-or-later. |
-| Apache License 2.0 | `Apache-2.0` | Compatible with GPLv3 in the consumer direction (Apache code in a GPL plugin). Patent grant is a feature. |
-| MIT License | `MIT` | Permissive, compatible with GPLv3. |
-| BSD 3-Clause License | `BSD-3-Clause` | Permissive, compatible with GPLv3. |
+- Sell licences directly to operators.
+- Ship a closed-source proprietary plugin under your own EULA.
+- Run a subscription or activation server and have your plugin
+  check in against it.
+- Bundle paid support, updates, or a hardware product.
+- Offer a free open-source community edition plus a paid pro
+  edition under different licenses.
 
-Declare the license in the manifest:
+How you handle pricing, billing, taxes, refunds, support, EULAs,
+and commercial contracts is entirely up to you. Altnautica is not a
+party to your transaction with your customers.
+
+## Pick any license
+
+Declare the license in the manifest using a valid SPDX identifier
+or expression:
 
 ```yaml
 plugin:
-  license: "GPL-3.0-or-later"
+  license: "GPL-3.0-or-later"      # OSS
+  # or
+  license: "Apache-2.0"            # OSS, permissive
+  # or
+  license: "MIT"                   # OSS, permissive
+  # or
+  license: "BSD-3-Clause"          # OSS, permissive
+  # or
+  license: "LicenseRef-MyProductEULA-1.0"   # your own commercial EULA
 ```
 
-The string must be a valid SPDX identifier or a valid SPDX
-expression (`Apache-2.0 AND MIT`). Invalid expressions reject at
-submission.
+For SPDX, see [spdx.org/licenses](https://spdx.org/licenses/). For
+custom or proprietary licenses, use the `LicenseRef-<your-id>`
+form and ship the full license text in the archive at
+`LICENSE.txt`.
 
-## Other licenses
+The host runtime does not gate plugins by license at install time.
+Operators see the declared license string in the install dialog
+and can decide whether they accept it.
 
-Anything outside the four above routes the submission to human
-review. Review focuses on:
+## What changes when you link against GPL code
 
-- Compatibility with the GPLv3 host runtime when the plugin links
-  into agent or GCS process memory.
-- Clarity of the license terms (vague or hand-rolled licenses get
-  rejected).
-- Whether the license restricts the registry's ability to
-  redistribute (the registry needs a redistribution right; most
-  closed-source EULAs do not give one).
+The agent and the GCS are licensed GPL-3.0-or-later. If your
+plugin links into the same process (the GCS iframe is a separate
+process by default; the agent's `inprocess` isolation mode is the
+case that matters) then the GPL's copyleft can apply. The
+practical patterns:
 
-Proprietary plugins distributed via the registry are accepted only
-when the publisher provides an explicit redistribution grant for
-the registry to host the artifact. Otherwise, host the archive
-yourself and ship a URL install link instead. URL install does not
-require the registry's redistribution right.
+- **GPL-friendly host integration.** Default. The agent runs
+  third-party plugins as separate subprocesses over a defined IPC
+  surface. The GCS sandboxes plugins inside iframes that
+  communicate by `postMessage`. Subprocess and iframe boundaries
+  are widely treated as license boundaries; your plugin can ship
+  under a license different from the host without copyleft
+  reaching into your code.
+- **Inprocess isolation.** Reserved for first-party Altnautica
+  plugins. Third-party plugins do not get inprocess linkage today,
+  so the GPL-linkage question does not arise.
+- **Vendor SDKs.** A proprietary SDK loaded by your plugin runs
+  inside your plugin's subprocess, not the host's. You are
+  responsible for whether the SDK's licence allows distribution
+  with your plugin. See [Vendor binaries](#vendored-binaries).
+
+If you are uncertain whether your distribution model is compatible
+with the GPL, talk to your own counsel. Altnautica is not your
+lawyer.
+
+## How distribution channels interact with licensing
+
+There are three distribution channels for plugins. Each one has
+different requirements.
+
+| Channel | Hosting | License requirement |
+|---------|---------|---------------------|
+| Local file install | Operator drops a `.adosplug` archive on the device. | Any license. The archive moves between two parties without Altnautica in the loop. |
+| URL install | You host the archive on your own server. The agent fetches it. | Any license. The agent verifies the signature; it does not check the licence string against an allowlist. |
+| Hosted registry | Altnautica hosts the archive on its registry. | The publisher must grant Altnautica the right to redistribute the archive. |
+
+For commercial closed-source plugins, **URL install is usually the
+right channel**. You keep your archive on your own infrastructure,
+your own gating logic decides who gets the download URL, and your
+EULA is part of your transaction with the operator. The agent
+does not need to know any of that.
+
+The hosted registry is best for OSS plugins where free
+redistribution is the intent. For commercial offerings, the
+registry's auto-publish gate is OSS-licence-only and discretion
+on hosted distribution rests with the registry operator.
+
+## The hosted registry's auto-publish list
+
+The Altnautica-hosted registry's auto-publish path accepts these
+licenses without manual review (when the registry is live):
+
+| License | SPDX id | Notes |
+|---------|---------|-------|
+| GPL-3.0-or-later | `GPL-3.0-or-later` | Recommended for plugins that link with the agent or the GCS, both of which are GPL-3.0-or-later. |
+| Apache-2.0 | `Apache-2.0` | Permissive. GPL-compatible in the consumer direction. Includes a patent grant. |
+| MIT | `MIT` | Permissive. GPL-compatible. |
+| BSD-3-Clause | `BSD-3-Clause` | Permissive. GPL-compatible. |
+
+Anything else routes to manual review at the registry operator's
+discretion. The same plugin can ship through URL install with no
+review involved.
 
 ## Vendored binaries
 
@@ -107,7 +175,7 @@ The file should cover:
 
 1. How to report a security issue (preferred contact channel).
 2. PGP key or signal channel for sensitive reports.
-3. Your response SLA targets.
+3. Your typical response cadence so reporters know what to expect.
 4. The current major versions you support with security fixes.
 5. Whether you publish post-mortems.
 
@@ -142,8 +210,9 @@ manifest (`com.your-name.something`) makes namespace ownership
 explicit.
 
 If you are an integrator or partner who wants to use the trademarks
-in marketing material, contact `legal@altnautica.com` for a
-trademark usage agreement.
+in marketing material, get in touch through the contact channel on
+[altnautica.com](https://altnautica.com) for a trademark usage
+agreement.
 
 ## The registry's role: distributor, not author
 
@@ -180,26 +249,18 @@ that risk visible (risk badge, permission set, signer trust,
 revocation list) and bounded (subprocess isolation, capability
 checks, resource limits).
 
-## Best-effort SLA
+## Hosted-registry availability
 
-Altnautica operates the registry on a best-effort basis. Targets:
+The Altnautica-hosted registry is best-effort and is not yet live.
+When it ships, the operations terms (availability targets, status
+page, incident communication) will be published alongside the
+launch. Until then, the local-file install path and the URL
+install path are the supported channels.
 
-| Surface | Target |
-|---------|--------|
-| Catalog and search availability | 99.5 percent monthly. |
-| Download endpoint availability | 99.5 percent monthly. |
-| Submission processing (auto-approve path) | Under 5 minutes. |
-| Submission processing (queued for review) | 5 business days. |
-| Revocation list update propagation | Under 1 hour from publisher request to public list. |
-| Security report acknowledgement | Per [Revocation and incidents](/developers/revocation-and-incidents). |
-
-These are targets, not contractual commitments. Outages happen; we
-publish status at `status.altnautica.com` and post-mortems at
-`docs.altnautica.com/incidents/`.
-
-For deployments that need contractual SLAs, run a self-hosted
-registry. The agent and the GCS work identically against your own
-endpoint.
+If your deployment needs contractual availability terms, run a
+self-hosted registry. The agent and the GCS work identically
+against your own endpoint, and the operating terms become whatever
+your own infrastructure provides.
 
 ## See also
 

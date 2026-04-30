@@ -8,6 +8,13 @@ submission. Low-risk, OSS-licensed, signed-by-known-publisher
 plugins auto-publish. High-permission or vendor-binary plugins queue
 for human review. Either way you upload the same archive.
 
+<Note>
+The hosted registry is on the roadmap and is not yet live. The
+submission contract on this page is the shape we will ship; the
+local-file-install and URL-install paths are the two channels
+available today, and they do not require a registry account.
+</Note>
+
 ## Prerequisites
 
 1. A built and tested plugin (see
@@ -108,7 +115,7 @@ form (repo URL, category, release notes), submit.
 |-------|---------|-----------------|
 | `pending` | Static analyzer is still running. | Poll `GET /v1/me/submissions/:id`. Typical wait under 5 minutes. |
 | `auto_approved` | Risk band Low or Medium, OSS license (GPL, Apache, MIT, BSD), all analyzer checks pass, signer is registered. | Plugin is published. Visible in catalog within 60 seconds. |
-| `queued_for_review` | Risk band High or Critical, vendor-binary flag set, license is non-OSS, or the analyzer flagged a critical pattern. | Wait for human review. Typical SLA target 5 business days. |
+| `queued_for_review` | Risk band High or Critical, vendor-binary flag set, license is non-OSS, or the analyzer flagged a critical pattern. | Wait for human review. Cadence is best-effort and depends on queue depth; the submission API exposes an estimated wait when available. |
 | `approved` | Reviewer accepted a queued submission. | Plugin is published. |
 | `rejected` | Reviewer or analyzer rejected. | Read the reasoning in the response, fix, resubmit. |
 

@@ -19,11 +19,10 @@ You can issue both at once for a confirmed compromise.
 
 ## Where the revocation list lives
 
-The Altnautica registry serves the list at:
-
-```
-https://registry.ados.altnautica.com/v1/revoked.json
-```
+The hosted Altnautica registry will serve the list at a stable
+path under its domain when the registry ships. The exact URL will
+be published with the registry launch and configured into the
+agent's default registry config.
 
 Self-hosted registries serve the same shape at the same path on
 their host.
@@ -138,9 +137,13 @@ way that affects flight safety, or is leaking data:
 
 ### Where to report
 
-Email `security@altnautica.com`. PGP key fingerprint published at
-`altnautica.com/security` and on the GitHub organization's
-`SECURITY.md`.
+Open a private security advisory on the affected repository under
+[github.com/altnautica](https://github.com/altnautica). GitHub's
+private vulnerability reporting flow keeps the report off the
+public issue tracker until a fix ships. If GitHub is not an option
+for you, use the contact channel on
+[altnautica.com](https://altnautica.com) and mark the message as a
+security report.
 
 ### What to include
 
@@ -163,33 +166,26 @@ acceptable for first contact.
 
 ### What we do
 
-1. Acknowledge within 2 business days.
-2. Triage the report. Severity and scope drive next steps.
-3. For confirmed issues, push a revocation through OTA and the
-   registry within the SLA below.
+1. Acknowledge the report and start triage. Critical safety
+   reports get prioritized over everything else.
+2. Investigate severity and scope.
+3. For confirmed issues, push a revocation through the registry
+   and ship a fix.
 4. Coordinate disclosure with the reporter.
-5. Publish a post-mortem at `docs.altnautica.com/security/incidents/`
-   that names what happened, how we caught it, and what changed in
-   the host to prevent recurrence.
+5. Publish a post-mortem with what happened, how the issue was
+   caught, and what changed in the host to prevent recurrence.
 
-### Response SLA targets
-
-| Severity | First response | Mitigation pushed |
-|----------|----------------|-------------------|
-| Critical (active exploitation, vehicle safety, data exfiltration in flight) | 24 hours | 72 hours |
-| High (confirmed malicious behavior, no active exploitation observed) | 48 hours | 7 business days |
-| Medium (privacy issue, undeclared permission usage) | 5 business days | 30 days |
-| Low (informational, hardening) | 10 business days | Next minor release |
-
-These are targets, not contractual guarantees. We will keep you
-informed if any single step is going to slip.
+We do not publish contractual response SLAs. If you have a
+deployment that requires contractual security response terms, talk
+to us about a support arrangement.
 
 ### Coordinated disclosure
 
-We default to coordinated disclosure. Public report after the fix is
-shipped and the post-mortem is published. We will not block you from
-disclosing on your own timeline; we will ask for the courtesy of a
-heads-up so the post-mortem and the public report land together.
+We default to coordinated disclosure. Public report after the fix
+is shipped and the post-mortem is published. We do not block you
+from disclosing on your own timeline; we ask for the courtesy of a
+heads-up so a coordinated public statement and the fix land
+together.
 
 ## Operator-side checklist when a revocation lands
 
