@@ -1,0 +1,236 @@
+---
+title: "Multi-component plugins"
+description: "Patterns for plugins that span agent, GCS, and driver halves. Lifecycle ordering, cross-half RPC, version compatibility."
+---
+
+A plugin can ship up to three pieces in one archive:
+
+- An **agent** half (Python subprocess on the drone).
+- A **GCS** half (TypeScript bundle in a sandboxed iframe).
+- One or more **drivers** registered by the agent half.
+
+Each half has its own runtime, its own SDK, and its own sandbox.
+What makes them one plugin is the shared manifest, shared id,
+shared version, and shared install state.
+
+## When to ship two halves
+
+Ship two halves when the plugin needs both of:
+
+- Hardware or low-level system access on the drone.
+- An operator-facing UI in the GCS.
+
+The Battery Health plugin is GCS-only because it reads normalized
+telemetry and renders a chart. The Thermal Camera plugin is
+hybrid because it needs `usb.read` on the drone (driver half) plus
+a video overlay in the GCS.
+
+Do not split work that belongs in one half. If the plugin only
+needs telemetry and renders a panel, it is GCS-only. If the
+plugin only does background analytics with no operator UI, it is
+agent-only.
+
+## Lifecycle ordering
+
+Install order is fixed:
+
+1. Operator drops `.adosplug` into the GCS install dialog.
+2. Manifest is parsed (no disk writes).
+3. Operator approves permissions. Both halves' permissions appear
+   in one grid.
+4. Host calls install on both halves in parallel. The agent host
+   unpacks the agent half; the GCS host registers the bundle in
+   the user's Convex profile.
+5. On enable, the **agent half starts first**. The supervisor
+   waits for `Type=notify` ready signal (default 30 s timeout).
+6. Once the agent reports ready, the GCS half mounts. The GCS
+   bridge gates outbound RPC until the agent acknowledges it is
+   listening.
+
+Disable runs in reverse: GCS unmounts first, then the supervisor
+sends `SIGTERM` to the agent.
+
+## Cross-half communication
+
+The two halves do **not** speak directly. They speak through the
+host's event bus.
+
+```
+GCS plugin (iframe)
+  | postMessage RPC
+  v
+Mission Control host
+  | mqtt or local socket
+  v
+ADOS Drone Agent host
+  | unix-socket IPC
+  v
+Agent plugin (subprocess)
+```
+
+Use the plugin's own `plg.<id>.*` topics:
+
+```python
+# agent half
+await ctx.events.publish("frame.ready", {"frame_id": 42, "ts_ms": now_ms()})
+```
+
+```ts
+// GCS half (same plugin id)
+ctx.events.subscribe("plg.com.example.thermal.frame.ready", (evt) => {
+  redrawOverlay(evt.frame_id);
+});
+```
+
+The host enforces that subscribers and publishers in the same
+plugin id can talk freely without an explicit grant; the
+`event.publish` and `event.subscribe` capabilities are sufficient.
+
+## Shared manifest
+
+One manifest. Two contributing blocks:
+
+```yaml
+plugin:
+  id: com.example.thermal
+  version: 0.1.0
+  name: "Thermal Camera"
+  license: GPL-3.0-or-later
+
+compatibility:
+  ados_version: ">=0.9.0 <1.0.0"
+  gcs_version: ">=0.5.0 <1.0.0"
+  python_version: ">=3.11"
+  min_tier: 1
+  profiles: ["drone"]
+
+agent:
+  entrypoint: "agent/plugin.py"
+  permissions:
+    - event.publish
+    - event.subscribe
+    - usb.read
+    - sensor.camera.register
+  resources:
+    max_ram_mb: 256
+    max_cpu_percent: 30
+
+gcs:
+  bundle: "gcs/plugin.bundle.js"
+  permissions:
+    - ui.slot.video-overlay
+    - ui.slot.fc-tab
+    - event.subscribe
+  contributes:
+    panels:
+      - id: thermal-overlay
+        slot: video.overlay
+      - id: thermal-tab
+        slot: fc.tab
+```
+
+Both halves carry the same `id` and `version`. The host treats
+them as one install row.
+
+## Version compatibility between halves
+
+Both halves ship in the same archive, so they always carry the
+same version. The supervisor refuses to load mismatched halves;
+that case can only happen if someone unpacks an archive and
+hand-edits one side.
+
+What can drift across versions:
+
+- Topic schemas published from the agent and consumed by the GCS.
+  Use a `schema_version` field in your published payload and
+  branch on it in the GCS.
+- Persistent state on disk written by the agent and read by the
+  GCS via Convex. Carry a `data_version` in those rows.
+
+The SDK does not inspect topic payload schemas; it is your job
+to keep them backward compatible inside a major version.
+
+## Driver halves
+
+Drivers are agent plugins that subclass one of the typed driver
+base classes (`CameraDriver`, `GimbalDriver`, etc.) and register
+with the peripheral manager. See [driver layer](/developers/driver-layer)
+for the contract.
+
+A plugin can ship multiple drivers. The Thermal Camera plugin
+registers a `CameraDriver` for the FLIR sensor. A multi-sensor
+plugin can register a `CameraDriver` plus a `GpsDriver` from the
+same agent half:
+
+```python
+async def on_start(self, ctx: Context) -> None:
+    cam = ThermalCameraDriver()
+    gps = ExternalGpsDriver()
+    await ctx.peripherals.register_camera_driver(cam)
+    await ctx.peripherals.register_gps_driver(gps)
+```
+
+Each registration is gated by its own capability
+(`sensor.camera.register`, `sensor.gps.register`). Both must be
+declared in the manifest.
+
+## Worked example: hybrid plugin skeleton
+
+```
+com.example.thermal/
+├── manifest.yaml
+├── agent/
+│   ├── plugin.py
+│   └── thermal_driver.py
+├── gcs/
+│   ├── plugin.bundle.js
+│   └── overlay.tsx
+├── locales/
+│   └── en.json
+└── icon.png
+```
+
+Agent entry point:
+
+```python
+from ados.sdk import Plugin, Context
+from ados.sdk.drivers import CameraDriver
+from .thermal_driver import ThermalDriver
+
+class MyPlugin(Plugin):
+    async def on_start(self, ctx: Context) -> None:
+        driver = ThermalDriver()
+        await ctx.peripherals.register_camera_driver(driver)
+```
+
+GCS entry point:
+
+```tsx
+import { definePlugin, getMountSlot } from "@altnautica/plugin-sdk";
+import Overlay from "./overlay";
+import Tab from "./tab";
+
+definePlugin({
+  id: "com.example.thermal",
+  version: "0.1.0",
+  mount(ctx) {
+    if (getMountSlot() === "video.overlay") return <Overlay ctx={ctx} />;
+    if (getMountSlot() === "fc.tab") return <Tab ctx={ctx} />;
+  },
+});
+```
+
+## Failure modes
+
+| Scenario | What the host does |
+|----------|---------|
+| Agent half crashes, GCS still running. | GCS half stays mounted; outbound RPC to the agent returns `handler_error`. The GCS half should render an "offline" state. |
+| GCS half fails to load (bundle 404). | Agent half keeps running. The slot orchestrator marks the iframe failed and shows an error tile. |
+| Operator revokes a permission used by only one half. | That half's affected calls return `permission_denied`; the other half is unaffected. |
+
+## See also
+
+- [Agent plugin deep dive](/developers/agent-plugin-deep-dive)
+- [GCS plugin deep dive](/developers/gcs-plugin-deep-dive)
+- [Driver layer](/developers/driver-layer)
+- [Versioning and updates](/developers/versioning-and-updates)

@@ -1,0 +1,183 @@
+---
+title: "Submitting to the registry"
+description: "Pack, sign, register your publisher key, and submit a plugin."
+---
+
+The registry is gated by signature, not gated by review for every
+submission. Low-risk, OSS-licensed, signed-by-known-publisher
+plugins auto-publish. High-permission or vendor-binary plugins queue
+for human review. Either way you upload the same archive.
+
+## Prerequisites
+
+1. A built and tested plugin (see
+   [Your first plugin](/developers/your-first-plugin)).
+2. An Ed25519 publisher key
+   (see [Signing keys](/developers/signing-keys)).
+3. A registry account with a registered publisher key id.
+4. A registry token (`REGISTRY_TOKEN` env var) for the REST API, or
+   the equivalent web sign-in for the UI.
+
+## Step 1: Pack
+
+```sh
+./scripts/pack.sh my-plugin
+```
+
+Output: `dist/<plugin-id>-<version>.adosplug`.
+
+The archive is deterministic. Two pack runs against the same source
+tree produce byte-identical archives.
+
+## Step 2: Sign
+
+```sh
+ADOS_SIGNING_KEY=./keys/publisher.pem \
+ADOS_SIGNING_KEY_ID=example-2026-A \
+  ./scripts/sign.sh dist/com.example.foo-1.0.0.adosplug
+```
+
+Output: `dist/com.example.foo-1.0.0.signed.adosplug`. The signature
+covers the per-asset SHA-256 list and the root hash. The signer key
+id is stamped into the in-archive `SIGNATURES` file.
+
+## Step 3: Register your publisher key
+
+Once per key. The registry needs the public half so it can verify
+your submitted archives.
+
+Web UI: log in at `registry.ados.altnautica.com`, open
+`Account, Signing keys, Add key`, paste the raw 32-byte hex public
+key, and pick a key id that matches `ADOS_SIGNING_KEY_ID`.
+
+REST:
+
+```sh
+curl -X POST \
+  -H "Authorization: Bearer $REGISTRY_TOKEN" \
+  -F "key_id=example-2026-A" \
+  -F "public_key_hex=$(cat keys/publisher.pub.hex)" \
+  -F "valid_from=2026-04-30T00:00:00Z" \
+  -F "valid_to=2027-12-31T23:59:59Z" \
+  https://registry.ados.altnautica.com/v1/me/keys
+```
+
+The response includes the registered key id and the SHA-256
+fingerprint shown to operators on the install dialog.
+
+To become a verified publisher (green badge in the catalog), follow
+`registry.ados.altnautica.com/verify`. It is a domain ownership
+proof plus six months of activity on the registry. Verified status
+is not required for submission; it just changes the operator-facing
+trust signal.
+
+## Step 4: Submit
+
+REST upload:
+
+```sh
+curl -X POST \
+  -H "Authorization: Bearer $REGISTRY_TOKEN" \
+  -F "archive=@dist/com.example.foo-1.0.0.signed.adosplug" \
+  -F "repo_url=https://github.com/example/ados-foo" \
+  -F "category=drivers" \
+  -F "release_notes=@CHANGELOG.md" \
+  https://registry.ados.altnautica.com/v1/plugins/submit
+```
+
+Web UI: `Submit, Upload archive`. Drop the file, fill the metadata
+form (repo URL, category, release notes), submit.
+
+## What happens server-side
+
+1. The registry validates the manifest against the JSON Schema. A
+   schema failure rejects the submission immediately.
+2. The Ed25519 signature is verified against your registered public
+   key. Mismatch rejects with the signer key id and fingerprint in
+   the error body.
+3. The static analyzer runs over the agent half (Python source
+   detection of `subprocess`, `eval`, `os.system`, undeclared
+   `requests` / `socket` calls, file writes outside `ctx.data_dir`)
+   and the GCS bundle (detection of `eval`, `Function()`,
+   `top.location`, `document.cookie`, `localStorage`).
+4. The submission is routed to one of the states below.
+
+## Submission states
+
+| State | Trigger | Operator action |
+|-------|---------|-----------------|
+| `pending` | Static analyzer is still running. | Poll `GET /v1/me/submissions/:id`. Typical wait under 5 minutes. |
+| `auto_approved` | Risk band Low or Medium, OSS license (GPL, Apache, MIT, BSD), all analyzer checks pass, signer is registered. | Plugin is published. Visible in catalog within 60 seconds. |
+| `queued_for_review` | Risk band High or Critical, vendor-binary flag set, license is non-OSS, or the analyzer flagged a critical pattern. | Wait for human review. Typical SLA target 5 business days. |
+| `approved` | Reviewer accepted a queued submission. | Plugin is published. |
+| `rejected` | Reviewer or analyzer rejected. | Read the reasoning in the response, fix, resubmit. |
+
+Check status:
+
+```sh
+curl -H "Authorization: Bearer $REGISTRY_TOKEN" \
+  https://registry.ados.altnautica.com/v1/me/submissions
+```
+
+## Manifest fields the analyzer reads
+
+The analyzer relies on accurate manifest declarations. Fields that
+matter at submission time:
+
+| Field | Why it matters |
+|-------|----------------|
+| `plugin.id` | Must match the directory and the archive name. |
+| `plugin.license` | Drives the OSS auto-approve gate. |
+| `plugin.source` | The static analyzer diffs the archive against this repo at the declared tag. Discrepancies are flagged. |
+| `agent.permissions` | Drives the risk band. Undeclared `subprocess` calls or network access in the source fail the analyzer. |
+| `gcs.permissions` | Same as above for the GCS half. |
+| `agent.resources` | cgroup limits applied at runtime. |
+| `assets[].sha256` | Verified during signature check. Mismatch rejects the submission. |
+| `signing.signer_key_id` | Must match a registered publisher key on your account. |
+
+## Categories
+
+Pick the closest match. The analyzer does not block on category
+choice, but the wrong category is a soft signal and can route a
+submission to review when it would have auto-published.
+
+```
+drivers          (camera, gimbal, lidar, gps, esc, payload-actuator)
+panels           (telemetry visualizations, mission overlays)
+mission-tools    (planners, pattern generators, geofence helpers)
+analytics        (post-flight, log replay, aggregate)
+integrations     (third-party services, fleet management bridges)
+utilities        (developer tools, log inspectors, diagnostics)
+```
+
+## Resubmitting after rejection
+
+Fix what the rejection reason called out. Bump the version (semver
+patch is fine for analyzer fixes). Re-run pack and sign. Submit the
+new archive.
+
+The previous submission stays in `rejected` state for the audit
+trail; the new submission gets its own state machine.
+
+## Withdrawal
+
+To remove a published version:
+
+```sh
+curl -X POST \
+  -H "Authorization: Bearer $REGISTRY_TOKEN" \
+  https://registry.ados.altnautica.com/v1/plugins/com.example.foo/1.0.0/withdraw
+```
+
+Withdrawal removes the version from search and the download
+endpoint. Already-installed copies keep running; operators see a
+"withdrawn by author" badge on the detail page. For active
+malicious-version recall, use revocation instead (see
+[Revocation and incidents](/developers/revocation-and-incidents)).
+
+## See also
+
+- [Signing keys](/developers/signing-keys)
+- [Manifest reference](/developers/manifest)
+- [Permissions](/developers/permissions)
+- [Hosted registry](/developers/distribution-registry)

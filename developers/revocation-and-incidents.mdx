@@ -1,0 +1,211 @@
+---
+title: "Revocation and incidents"
+description: "What happens when a plugin or signer is revoked, and how to report a security issue."
+---
+
+Revocation is the response when a plugin or a signing key turns out
+to be unsafe after the fact. The system is designed to be loud,
+auditable, and operator-controllable. The agent never auto-removes
+a plugin, even a revoked one; removal stays an operator decision.
+
+## Two kinds of revocation
+
+| Kind | Granularity | When to use |
+|------|-------------|-------------|
+| Key revocation | Every plugin signed by a `signer_key_id`. | The publisher's signing key was compromised, or the publisher has been removed from trust. |
+| Plugin revocation | A specific `(plugin_id, version)` tuple. | A specific version is malicious or critically broken; the rest of the publisher's catalog is still trusted. |
+
+You can issue both at once for a confirmed compromise.
+
+## Where the revocation list lives
+
+The Altnautica registry serves the list at:
+
+```
+https://registry.ados.altnautica.com/v1/revoked.json
+```
+
+Self-hosted registries serve the same shape at the same path on
+their host.
+
+```json
+{
+  "schema_version": 1,
+  "fetched_at": "2026-04-30T12:00:00Z",
+  "revoked_keys": [
+    {
+      "signer_key_id": "example-2025-X",
+      "reason": "key_compromised",
+      "revoked_at": "2026-04-29T18:00:00Z"
+    }
+  ],
+  "revoked_plugins": [
+    {
+      "plugin_id": "com.example.foo",
+      "version": "1.0.3",
+      "reason": "malware_confirmed",
+      "revoked_at": "2026-04-30T09:00:00Z"
+    }
+  ]
+}
+```
+
+Standard reason codes:
+`key_compromised`, `key_expired`, `policy_violation`,
+`malware_confirmed`, `data_exfiltration`, `critical_safety_bug`,
+`publisher_request`.
+
+## How agents poll
+
+The agent polls the configured registry every 24 hours when the
+network is available. Successful fetches are cached under
+`/var/cache/ados/revocations/` with a fetch timestamp. The cached
+list is consulted on every plugin start, so a recently-revoked
+plugin loses trust on the next start even if the agent is offline at
+that moment.
+
+Cache entries age out after 30 days. If the agent has gone more than
+30 days without a fresh revocation list and the operator has not
+manually pushed one, the GCS surfaces a "revocation list stale"
+warning on the plugin list view.
+
+To force a poll:
+
+```sh
+ados plugin revocations refresh
+```
+
+To inspect the current cache:
+
+```sh
+ados plugin revocations list
+ados plugin revocations show com.example.foo 1.0.3
+```
+
+## How Mission Control polls
+
+The GCS host fetches the same endpoint when the operator opens the
+Plugins view. Cached revocations are kept in IndexedDB with a
+24-hour TTL. The detail page shows the revocation badge and the
+reason text the moment the cache refreshes.
+
+## What a revoked plugin does next time the operator boots
+
+| Surface | Behavior |
+|---------|----------|
+| Agent supervisor | The plugin is moved to a `disabled-revoked` state. It does not start. |
+| systemd unit | Disabled with `WantedBy` removed. Status text reflects the revocation reason. |
+| Mission Control | A red banner appears on the plugin list and the plugin detail page: "RECALLED" for plugin revocations, "REVOKED" for key revocations. |
+| Logs | A structured log line under `journalctl -u ados-supervisor` records the revocation event with the reason code. |
+| On-disk artifacts | Retained as-is under `/var/lib/ados/plugins/<plugin_id>/` so a forensic image can be taken before the operator chooses to remove. |
+| Audit log | An append-only entry is written to the plugin events table with `event_kind=plugin_revoked` and the reason code. |
+
+The operator's options:
+
+```sh
+ados plugin info com.example.foo
+ados plugin logs com.example.foo
+ados plugin remove com.example.foo
+```
+
+Or via the GCS: open the detail page, click "Remove" or "Keep
+disabled, retain files for forensics".
+
+## Why the agent does not auto-remove
+
+In a fleet, a plugin might be load-bearing. Auto-removal could take
+a vehicle out of service mid-mission. The right default is loud
+disable plus operator decision. The disable is immediate and
+non-bypassable; the removal is a separate explicit step.
+
+## Re-installing after revocation lifts
+
+A revocation can be lifted (publisher rotated their key, the
+registry republishes a fixed version). The agent picks up the new
+state on the next poll. Reinstall as usual:
+
+```sh
+ados plugin install com.example.foo@1.0.4
+```
+
+The audit log keeps both the original revocation event and the new
+install event.
+
+## Reporting a security issue
+
+If you believe a plugin in the registry is malicious, broken in a
+way that affects flight safety, or is leaking data:
+
+### Where to report
+
+Email `security@altnautica.com`. PGP key fingerprint published at
+`altnautica.com/security` and on the GitHub organization's
+`SECURITY.md`.
+
+### What to include
+
+1. The plugin id and version.
+2. The signer key id (from `ados plugin info <id>` or the manifest
+   `signing.signer_key_id` field).
+3. A description of the behavior, with reproduction steps where
+   possible.
+4. The operator-facing impact (data loss, vehicle behavior,
+   information disclosure, anything else).
+5. Whether you have already disclosed publicly. If yes, include the
+   link.
+6. Any logs, packet captures, or static-analysis artifacts that
+   support the report.
+7. How you would like to be credited if at all (full credit,
+   pseudonym, or anonymous).
+
+Encrypt the email if it contains sensitive material. Plain text is
+acceptable for first contact.
+
+### What we do
+
+1. Acknowledge within 2 business days.
+2. Triage the report. Severity and scope drive next steps.
+3. For confirmed issues, push a revocation through OTA and the
+   registry within the SLA below.
+4. Coordinate disclosure with the reporter.
+5. Publish a post-mortem at `docs.altnautica.com/security/incidents/`
+   that names what happened, how we caught it, and what changed in
+   the host to prevent recurrence.
+
+### Response SLA targets
+
+| Severity | First response | Mitigation pushed |
+|----------|----------------|-------------------|
+| Critical (active exploitation, vehicle safety, data exfiltration in flight) | 24 hours | 72 hours |
+| High (confirmed malicious behavior, no active exploitation observed) | 48 hours | 7 business days |
+| Medium (privacy issue, undeclared permission usage) | 5 business days | 30 days |
+| Low (informational, hardening) | 10 business days | Next minor release |
+
+These are targets, not contractual guarantees. We will keep you
+informed if any single step is going to slip.
+
+### Coordinated disclosure
+
+We default to coordinated disclosure. Public report after the fix is
+shipped and the post-mortem is published. We will not block you from
+disclosing on your own timeline; we will ask for the courtesy of a
+heads-up so the post-mortem and the public report land together.
+
+## Operator-side checklist when a revocation lands
+
+1. Read the reason text. Critical safety reasons mean ground the
+   fleet first.
+2. Check `ados plugin list` on every SBC. Disabled-revoked entries
+   are flagged.
+3. If the plugin was load-bearing, plan a replacement or rollback
+   before removing.
+4. Once a replacement is in place, `ados plugin remove <id>` to
+   clean the on-disk artifacts.
+5. Verify with `ados plugin events <id>` that the audit log captured
+   the revocation, the disable, and the eventual remove.
+
+## See also
+
+- [Signing keys](/developers/signing-keys)
+- [Hosted registry](/developers/distribution-registry)
+- [Lifecycle](/developers/lifecycle)

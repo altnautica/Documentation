@@ -1,0 +1,219 @@
+---
+title: "GCS plugin deep dive"
+description: "iframe sandbox, postMessage RPC, capability tokens, the 12 named UI slots, slot orchestrator, CSP rules."
+---
+
+The GCS half of a plugin runs inside a sandboxed iframe served by
+Mission Control. Same envelope shape as the agent half, different
+transport (postMessage instead of msgpack-over-Unix-socket), same
+capability re-resolution.
+
+## Iframe sandbox
+
+Every GCS plugin gets one iframe per host instance. The iframe is
+mounted with the strictest sandbox flags that still allow
+JavaScript and lazy-load:
+
+```html
+<iframe
+  src="/plugins/com.example.battery/index.html"
+  sandbox="allow-scripts"
+  csp="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; ..."
+  loading="lazy"
+  referrerpolicy="no-referrer"
+></iframe>
+```
+
+The flags that are deliberately absent:
+
+- `allow-same-origin` is **not** set. The iframe runs in a null
+  origin. It cannot read host cookies, localStorage, or the host's
+  document.
+- `allow-top-navigation` is **not** set. The plugin cannot redirect
+  the parent window.
+- `allow-forms` is **not** set. The plugin renders forms using its
+  own React tree, not browser-native form submission.
+- `allow-popups` is **not** set. No new windows.
+
+The plugin can run JavaScript, fetch its own bundle, render its
+own UI, and call back to the host via postMessage. That is all.
+
+## CSP
+
+The host serves each plugin from `/plugins/<id>/` with a per-plugin
+Content Security Policy:
+
+```
+Content-Security-Policy:
+  default-src 'self';
+  script-src 'self' 'wasm-unsafe-eval';
+  style-src 'self' 'unsafe-inline';
+  img-src 'self' blob: data:;
+  connect-src 'self';
+  font-src 'self' data:;
+  frame-ancestors 'self';
+  base-uri 'none';
+  form-action 'none';
+```
+
+`connect-src 'self'` means a plugin cannot fetch from the public
+internet. If your plugin needs an outbound HTTP call, route it
+through the agent half with the `network.outbound` capability.
+The GCS half must not be your network egress point.
+
+## postMessage RPC envelope
+
+Same shape as the agent IPC envelope, just delivered via
+`window.parent.postMessage`:
+
+```ts
+interface RpcEnvelope {
+  id: string;                  // ULID, plugin-generated
+  type: "request" | "response" | "event";
+  method: string;
+  capability: string;
+  args: unknown;
+  version: 1;
+  error?: { code: string; message: string };
+}
+```
+
+The plugin posts to `window.parent` with `targetOrigin` set to the
+host origin. The host posts back to the iframe's `contentWindow`
+with `targetOrigin` set to the null origin (`"*"`, justified
+because the iframe is sandboxed and there is no privileged origin
+to leak to).
+
+The SDK hides this. You write:
+
+```ts
+const result = await ctx.client.request("mission.read", {
+  missionId: "active",
+});
+```
+
+and the SDK builds the envelope, attaches `version: 1`, generates
+the id, awaits the correlated response, and throws `HostError` on
+error envelopes.
+
+## Capability tokens on the GCS side
+
+Every privileged RPC carries `capability` in the envelope. The
+host bridge (running on the parent page) re-resolves the required
+capability from `method` and `args`, then checks the granted set
+for that plugin. The plugin cannot lie its way past a missing
+grant; the host ignores the envelope's `capability` field for
+authorization.
+
+The bridge mirrors the agent-side logic exactly so plugin authors
+debug one model, not two.
+
+## The 12 named UI slots
+
+| Slot id | Where it renders |
+|---------|------------------|
+| `fc.tab` | Tab inside the FC view (between built-in tabs). |
+| `command.tab` | Tab inside the Command view. |
+| `planner.tab` | Tab inside the Planner view. |
+| `hardware.tab` | Tab inside the Hardware view. |
+| `sidebar.left` | Collapsible panel on the left edge. |
+| `sidebar.right` | Collapsible panel on the right edge. |
+| `status.bar` | Item in the bottom status bar. |
+| `video.overlay` | Layer on top of the active video pane. |
+| `notification.rail` | Channel in the notification rail. |
+| `settings.section` | Section in the Settings page. |
+| `smart.function` | Entry in the smart-function picker. |
+| `telemetry.detail` | Pane inside per-channel telemetry detail. |
+
+Each slot has a contract: required props the host injects, the
+size and layout it lives in, the events it can hand back to its
+parent. Slot contracts live in
+[`@altnautica/plugin-sdk`'s slot types](/developers/sdk-typescript).
+
+A plugin contributes to a slot by declaring a `panels[]` entry in
+the manifest:
+
+```yaml
+gcs:
+  contributes:
+    panels:
+      - id: battery-health-tab
+        slot: fc.tab
+        title: "Battery Health"
+        icon: "battery"
+        order: 30
+```
+
+Multiple plugins can target the same slot. Order is by the
+manifest's `order` field, ties broken by install order.
+
+## Slot orchestrator
+
+The host runs a slot orchestrator per slot id. It:
+
+1. Reads the install set from Convex.
+2. For each enabled plugin, looks at its `contributes.panels` list.
+3. Mounts an iframe per plugin (one iframe per plugin, not one per
+   slot, so a plugin contributing to four slots renders the same
+   bundle four times in four mount points but speaks to one IPC
+   channel).
+4. Hands each iframe a slot-specific message on first mount with
+   the `slot.id` and `slot.props`.
+
+The plugin's bundle reads `slot.id` and renders the matching
+component. A typical entry point:
+
+```tsx
+import { definePlugin, getMountSlot } from "@altnautica/plugin-sdk";
+import BatteryTab from "./BatteryTab";
+import BatteryNotification from "./BatteryNotification";
+
+definePlugin({
+  id: "com.example.battery",
+  version: "0.1.0",
+  mount(ctx, info) {
+    const slotId = getMountSlot();
+    if (slotId === "fc.tab") return <BatteryTab ctx={ctx} />;
+    if (slotId === "notification.rail") return <BatteryNotification ctx={ctx} />;
+    throw new Error(`unhandled slot: ${slotId}`);
+  },
+});
+```
+
+## Themeing
+
+The host pushes a `theme.changed` event with a flat record of CSS
+variables on mount and on every theme toggle. Apply them in the
+plugin's root:
+
+```ts
+ctx.theme.onChange((vars) => {
+  for (const [k, v] of Object.entries(vars)) {
+    document.documentElement.style.setProperty(k, v);
+  }
+});
+```
+
+The SDK does not auto-apply because plugins choose the granularity
+(full root, scoped panel, or none).
+
+## Error envelopes
+
+Same codes as the agent side: `permission_denied`, `method_unknown`,
+`schema_invalid`, `handler_unset`, `handler_error`. The SDK throws
+`HostError` whose `code` is the machine-readable id. Branch on
+`code`, not on `message`.
+
+## Devtools
+
+When the host runs in developer mode (`?dev=1` on the URL or the
+operator opt-in under Settings), the iframe's CSP relaxes to allow
+`'unsafe-eval'` for the React refresh runtime, and the slot bar
+shows a debug overlay with the plugin id, the slot id, and a copy
+of the last 20 RPC envelopes.
+
+## See also
+
+- [Permissions](/developers/permissions)
+- [Event hooks and bus](/developers/event-hooks-and-bus)
+- [TypeScript SDK](/developers/sdk-typescript)

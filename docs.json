@@ -320,6 +320,33 @@
               "developers/distribution-local-install",
               "developers/contributing-repos"
             ]
+          },
+          {
+            "group": "Distribution and registry",
+            "pages": [
+              "developers/distribution-url-install",
+              "developers/linting",
+              "developers/distribution-registry",
+              "developers/submitting-to-the-registry",
+              "developers/signing-keys",
+              "developers/revocation-and-incidents",
+              "developers/legal-and-licensing"
+            ]
+          },
+          {
+            "group": "Advanced topics",
+            "pages": [
+              "developers/agent-plugin-deep-dive",
+              "developers/gcs-plugin-deep-dive",
+              "developers/state-and-storage",
+              "developers/event-hooks-and-bus",
+              "developers/multi-component-plugins",
+              "developers/mavlink-extensions",
+              "developers/vision-plugins",
+              "developers/mission-and-suite-plugins",
+              "developers/performance-and-budgets",
+              "developers/versioning-and-updates"
+            ]
           }
         ]
       }

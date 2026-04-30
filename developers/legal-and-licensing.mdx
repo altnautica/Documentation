@@ -1,0 +1,208 @@
+---
+title: "Legal and licensing"
+description: "License expectations, vendor binaries, trademark policy, and the registry's hosting role."
+---
+
+The plugin system is designed for an open-source default. The
+registry will host plugins that are clearly licensed, clearly
+authored, and do not borrow Altnautica's brand assets. This page
+covers the rules.
+
+## Accepted licenses out of the box
+
+The registry's auto-publish gate accepts these licenses without
+review:
+
+| License | SPDX id | Notes |
+|---------|---------|-------|
+| GNU General Public License v3.0 or later | `GPL-3.0-or-later` | Recommended for plugins that link with the agent or the GCS, both of which are GPL-3.0-or-later. |
+| Apache License 2.0 | `Apache-2.0` | Compatible with GPLv3 in the consumer direction (Apache code in a GPL plugin). Patent grant is a feature. |
+| MIT License | `MIT` | Permissive, compatible with GPLv3. |
+| BSD 3-Clause License | `BSD-3-Clause` | Permissive, compatible with GPLv3. |
+
+Declare the license in the manifest:
+
+```yaml
+plugin:
+  license: "GPL-3.0-or-later"
+```
+
+The string must be a valid SPDX identifier or a valid SPDX
+expression (`Apache-2.0 AND MIT`). Invalid expressions reject at
+submission.
+
+## Other licenses
+
+Anything outside the four above routes the submission to human
+review. Review focuses on:
+
+- Compatibility with the GPLv3 host runtime when the plugin links
+  into agent or GCS process memory.
+- Clarity of the license terms (vague or hand-rolled licenses get
+  rejected).
+- Whether the license restricts the registry's ability to
+  redistribute (the registry needs a redistribution right; most
+  closed-source EULAs do not give one).
+
+Proprietary plugins distributed via the registry are accepted only
+when the publisher provides an explicit redistribution grant for
+the registry to host the artifact. Otherwise, host the archive
+yourself and ship a URL install link instead. URL install does not
+require the registry's redistribution right.
+
+## Vendored binaries
+
+Some plugins must ship vendor SDKs (camera firmware, gimbal control
+libraries, RKNN model files with their own license). Declare every
+vendored binary in the manifest:
+
+```yaml
+assets:
+  - path: "vendor/example-sdk/libexample.so"
+    role: "vendor-binary"
+    sha256: "<computed-by-pack.sh>"
+    license: "Proprietary"
+    license_file: "vendor/example-sdk/LICENSE.txt"
+    vendor_name: "Example Vendor"
+    vendor_url: "https://example-vendor.example.com"
+  - path: "vendor/example-sdk/LICENSE.txt"
+    role: "license-text"
+    sha256: "<computed-by-pack.sh>"
+```
+
+Rules for vendored binaries:
+
+- Each vendored binary must declare its own license and ship the
+  full license text inside the archive at `vendor/<name>/LICENSE`.
+- The plugin's overall `plugin.license` is independent. A
+  GPL-3.0-or-later wrapper around an Apache-2.0 vendor SDK is fine.
+  A GPL-3.0-or-later wrapper around a proprietary SDK is fine
+  provided the proprietary terms allow distribution.
+- The manifest's `vendor-binary` flag triggers mandatory subprocess
+  isolation (no `inprocess`) and a bumped risk band on the install
+  dialog.
+- The static analyzer never inspects vendor binaries; the publisher
+  is on the hook for what they ship.
+- Operators see the vendor name on the install dialog and on the
+  plugin detail page, with a link to the vendor URL and the bundled
+  license text.
+
+If a vendor SDK forbids redistribution, the plugin cannot be hosted
+on the registry. URL install from the vendor's own server is the
+fallback; the agent treats vendor-binary archives the same way
+regardless of how they arrived.
+
+## Patent grants and DRM
+
+Plugins that bundle DRM, attempt to enforce DRM, or include software
+patents that they assert against the host or other plugins are
+rejected. The registry's redistribution right is conditioned on the
+publisher not asserting patents against the host runtime or against
+other plugins running on the same host.
+
+## SECURITY.md is recommended
+
+Add a `SECURITY.md` at the root of your plugin's source repository.
+The file should cover:
+
+1. How to report a security issue (preferred contact channel).
+2. PGP key or signal channel for sensitive reports.
+3. Your response SLA targets.
+4. The current major versions you support with security fixes.
+5. Whether you publish post-mortems.
+
+The static analyzer reads the linked source repo at submit time. A
+present `SECURITY.md` is a soft signal that nudges a borderline
+submission toward auto-publish. A missing `SECURITY.md` does not
+block submission.
+
+## Trademark policy
+
+Altnautica brand assets are reserved. Specifically:
+
+| Asset | Reserved |
+|-------|----------|
+| The name "ADOS" | Reserved as a product family name. Plugins must not call themselves "ADOS X" or "ADOS-something". |
+| The name "Altnautica" | Reserved. Do not use in plugin names, descriptions, or icons. |
+| The Altnautica logo | Reserved. Do not embed in your plugin's icon or screenshots. |
+| The Mission Control logo | Reserved. Same rule. |
+| The Drone Agent logo | Reserved. Same rule. |
+| Domain names containing `altnautica` or `ados` | Reserved. |
+
+What is allowed:
+
+- Stating compatibility: "Works with the ADOS Drone Agent",
+  "Mission Control plugin", "for ADOS Mission Control".
+- Pointing to the Altnautica docs or GitHub from your README.
+- Using the standard manifest field `compatibility.ados_version` to
+  declare the agent versions you target.
+
+Pick a plugin name that is yours. The reverse-DNS plugin id in the
+manifest (`com.your-name.something`) makes namespace ownership
+explicit.
+
+If you are an integrator or partner who wants to use the trademarks
+in marketing material, contact `legal@altnautica.com` for a
+trademark usage agreement.
+
+## The registry's role: distributor, not author
+
+The registry hosts archives published by their authors. The registry
+does not author the plugins. Specifically:
+
+- The registry redistributes signed archives the publisher uploaded.
+- The registry runs static analysis at submission time as a
+  defense-in-depth measure, not as a quality endorsement.
+- The registry hosts metadata (description, screenshots, README)
+  the publisher provided.
+- The registry does not modify the archive bytes after upload.
+
+A plugin's behavior at runtime is the publisher's responsibility.
+The host's containment (signatures, permissions, sandboxing) is the
+registry's collaboration with operators to limit blast radius.
+
+## No warranty
+
+The agent and the GCS ship under GPL-3.0-or-later, which carries no
+warranty. Plugins inherit the same default. Specifically:
+
+- Plugins distributed via the Altnautica registry come with no
+  warranty from Altnautica.
+- The plugin's own license governs what the publisher warrants. A
+  GPL-3.0-or-later plugin disclaims warranty per GPL section 15.
+- Verified-publisher status is not a warranty. It is a domain-
+  ownership proof plus a track record on the registry.
+- The static-analyzer report is a snapshot of detected patterns at
+  submission time. It is not a security audit.
+
+Operators run plugins at their own risk. The host's job is to make
+that risk visible (risk badge, permission set, signer trust,
+revocation list) and bounded (subprocess isolation, capability
+checks, resource limits).
+
+## Best-effort SLA
+
+Altnautica operates the registry on a best-effort basis. Targets:
+
+| Surface | Target |
+|---------|--------|
+| Catalog and search availability | 99.5 percent monthly. |
+| Download endpoint availability | 99.5 percent monthly. |
+| Submission processing (auto-approve path) | Under 5 minutes. |
+| Submission processing (queued for review) | 5 business days. |
+| Revocation list update propagation | Under 1 hour from publisher request to public list. |
+| Security report acknowledgement | Per [Revocation and incidents](/developers/revocation-and-incidents). |
+
+These are targets, not contractual commitments. Outages happen; we
+publish status at `status.altnautica.com` and post-mortems at
+`docs.altnautica.com/incidents/`.
+
+For deployments that need contractual SLAs, run a self-hosted
+registry. The agent and the GCS work identically against your own
+endpoint.
+
+## See also
+
+- [Submitting to the registry](/developers/submitting-to-the-registry)
+- [Vendor binaries](/developers/vendor-binaries)
+- [Revocation and incidents](/developers/revocation-and-incidents)

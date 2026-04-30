@@ -1,0 +1,186 @@
+---
+title: "State and storage"
+description: "Three layers: in-memory, per-plugin disk, shared Convex. Quotas, atomicity, cleanup on uninstall."
+---
+
+A plugin has three places to keep state. Pick the right one for
+the data; do not pile everything into one layer.
+
+## The three layers
+
+| Layer | Where | Survives | Use for |
+|-------|-------|----------|---------|
+| Ephemeral | RAM, in your plugin process | Until next restart | Counters, caches, in-flight subscriptions. |
+| Per-plugin disk | `/var/lib/ados/plugins/<id>/data/` | Restarts, upgrades. Wiped on remove. | Local config, calibration, log files, cached models. |
+| Shared Convex | Convex tables, scoped to your plugin id | Across devices, across reinstalls (key by drone id) | Cloud-visible state: dashboards, reports, fleet-wide config. |
+
+## Layer 1: ephemeral
+
+Just normal Python or TypeScript module state. The supervisor
+guarantees one process per plugin, so a Python `dict` or a
+TypeScript `Map` is your ephemeral store.
+
+```python
+class MyPlugin(Plugin):
+    def __init__(self) -> None:
+        self._last_voltage: float | None = None
+```
+
+This is the fastest layer and the least durable. Use it for
+anything you can recompute on restart.
+
+## Layer 2: per-plugin disk
+
+Every plugin gets a writable directory at install time:
+
+```
+/var/lib/ados/plugins/com.example.battery/
+  data/                         <- writable, your stuff goes here
+  config.json                   <- written by the host on operator save
+  manifest.yaml                 <- read-only, signed
+```
+
+The systemd unit's `ReadWritePaths=` is set to the `data/` subdir
+only. Writes outside it fail with `EROFS`.
+
+The agent SDK exposes the path:
+
+```python
+data_dir = ctx.data_dir   # pathlib.Path
+sample_log = data_dir / "samples.jsonl"
+```
+
+The TypeScript SDK exposes a per-plugin scoped storage helper that
+uses `IndexedDB` keyed by plugin id:
+
+```ts
+await ctx.storage.set("calibration", { offset_v: 0.05 });
+const c = await ctx.storage.get<Calibration>("calibration");
+```
+
+### Atomicity expectations
+
+- Single-file writes: write to `<name>.tmp`, fsync, rename. The
+  SDK's `ctx.storage.atomicWrite(path, bytes)` helper does this.
+- Multi-file transactions: the SDK does not provide a transaction
+  primitive. Use a single JSON file or SQLite if you need ACID.
+- Concurrent writers: there is only one plugin process, so the
+  only concurrency is your own asyncio tasks. Add a lock if you
+  fan out writes.
+
+### Quotas
+
+The default per-plugin disk quota is 100 MB. Plugins that need
+more declare it in the manifest:
+
+```yaml
+agent:
+  resources:
+    max_disk_mb: 500
+```
+
+The supervisor enforces the quota with a soft check on every
+operator-visible op (install, upgrade) and a hard check via
+`StateDirectory=` plus a periodic `du -s` poll. Breaches raise
+a `disk_quota_exceeded` lifecycle event; the plugin keeps running
+but writes start failing.
+
+### Format guidance
+
+- Configuration: JSON or YAML. Keep keys typed.
+- Time-series: append-only `.jsonl` (one JSON object per line).
+- Binary: just files; do not try to pack many records into one
+  blob. The kernel page cache works better with many small files.
+- Database: SQLite is fine for non-trivial state. The SDK does not
+  bundle it; declare `sqlite3` (Python stdlib) or `better-sqlite3`
+  (TS) in your dependencies.
+
+## Layer 3: shared Convex
+
+Plugins that need cloud-visible state declare a Convex schema in
+their manifest:
+
+```yaml
+gcs:
+  contributes:
+    convex_tables:
+      - name: battery_reports
+        scope: drone           # one row per drone, indexed by drone_id
+      - name: battery_settings
+        scope: fleet           # one row per fleet
+```
+
+The host creates per-plugin Convex tables under a namespaced
+prefix (`plg_com_example_battery_battery_reports`) and exposes
+typed handles to the plugin:
+
+```ts
+await ctx.convex.write("battery_reports", {
+  drone_id: ctx.drone.id,
+  generated_at_ms: Date.now(),
+  cells_v: [3.85, 3.84, 3.85, 3.86, 3.85, 3.84],
+});
+
+const rows = await ctx.convex.query("battery_reports", {
+  drone_id: ctx.drone.id,
+});
+```
+
+The plugin never sees raw Convex client; it goes through the
+host's bridge. The host applies row-level rules:
+
+- The plugin can only read and write rows in its own namespaced
+  tables.
+- The plugin can only filter by drone or fleet ids that the
+  current operator has access to.
+- The plugin cannot run a Convex action; only writes and queries.
+
+## Cleanup on uninstall
+
+`ados plugin remove <id>` does the following in order:
+
+1. Stop the systemd unit if running.
+2. Delete the unit file. Reload daemon.
+3. Drop every permission grant.
+4. Remove `/var/lib/ados/plugins/<id>/` (config, manifest, data).
+5. Drop every namespaced Convex table the plugin owned.
+6. Drop the install row from the operator's Convex profile.
+
+`--keep-data` skips steps 4 and 5 and moves the data dir to
+`/var/lib/ados/plugins-graveyard/<id>-<timestamp>/`. Reinstalling
+the same plugin id offers to restore from the graveyard; the
+operator picks yes or no in the install dialog.
+
+## Migration between versions
+
+Plugins are responsible for their own data migrations. The SDK
+exposes a `data_version` helper backed by a small JSON file at
+`<data_dir>/.version`:
+
+```python
+async def on_start(self, ctx: Context) -> None:
+    v = await ctx.data_version.read()
+    if v < 2:
+        await self.migrate_v1_to_v2(ctx)
+        await ctx.data_version.write(2)
+```
+
+Skipping versions during upgrades is fine; the migration code
+needs to handle the gap.
+
+## What not to put on disk
+
+- Secrets you did not generate yourself. The host already manages
+  pairing keys, MAVLink session keys, signer keys.
+- Large media. Anything over 1 GB belongs in a recording or in
+  cloud object storage, not in the plugin's data dir.
+- PII the operator has not consented to. The plugin's data dir is
+  not encrypted at rest by default. Sensitive config stays in the
+  host's encrypted config store and is delivered to your plugin
+  via the normal config channel.
+
+## See also
+
+- [Manifest reference](/developers/manifest)
+- [Permissions](/developers/permissions)
+- [Performance and budgets](/developers/performance-and-budgets)

@@ -1,0 +1,140 @@
+---
+title: "Install from a URL"
+description: "Install a signed plugin directly from an HTTPS download link."
+---
+
+URL install is the second distribution mechanism. Local file install
+remains the baseline; URL install adds a one-line install command for
+plugins hosted on a release page or an internal HTTPS server.
+
+## When to use it
+
+Local file install is right when you have the `.adosplug` on disk and
+want a deterministic, sneakernet-friendly path. URL install is right
+when:
+
+- You want to publish a copy-paste install command on a release page
+  or partner support portal.
+- You run an internal HTTPS server for fleet rollout and want every
+  SBC to pull from the same canonical URL.
+- You want short-lived caching so re-running the same command within
+  a window does not re-download the archive.
+
+## CLI
+
+```sh
+ados plugin install https://releases.example.com/com.example.foo-1.0.0.signed.adosplug
+```
+
+The agent fetches the URL, verifies the signature against the trusted
+key list, runs the same install flow as a local file, and prints the
+permission summary for grant approval.
+
+To pin a specific signer:
+
+```sh
+ados plugin install \
+  --signer-key-id example-2026-A \
+  https://releases.example.com/com.example.foo-1.0.0.signed.adosplug
+```
+
+The install fails fast if the signer id in `SIGNATURES` does not
+match.
+
+## Rules the agent enforces
+
+| Rule | Detail |
+|------|--------|
+| HTTPS only | `http://` is rejected with exit code `5`. |
+| Content type | The response must declare `application/octet-stream` or `application/zip`. HTML responses (`text/html`) are rejected. |
+| Redirect chain | Up to 5 hops. Every hop must be HTTPS. A single plain-HTTP hop in the chain aborts the install. |
+| User-Agent | The agent sends `User-Agent: ados-plugin/<agent-version>` so server logs can identify the install client. |
+| Size cap | 100 MB. Larger archives are rejected at the streaming layer before disk write. |
+| TLS verification | System trust store. Self-signed certificates need `--ca-bundle` (see below). |
+
+## Cache layout
+
+Downloaded archives land under `/var/cache/ados/plugins/` keyed by a
+hash of the URL:
+
+```
+/var/cache/ados/plugins/
+  └── <sha256-of-url>/
+      ├── archive.adosplug
+      ├── source-url.txt
+      ├── fetched-at.iso
+      └── content-length.txt
+```
+
+A re-install of the same URL within 24 hours hits the cache and skips
+the network round trip. To force a refresh:
+
+```sh
+ados plugin install --no-cache https://releases.example.com/foo.signed.adosplug
+```
+
+The cache is bounded at 1 GB total. The eviction policy is
+least-recently-used.
+
+## Self-signed and private mirrors
+
+Closed deployments often host their archives on an internal CA. Pass
+the CA bundle in:
+
+```sh
+ados plugin install \
+  --ca-bundle /etc/ados/internal-ca.pem \
+  https://releases.internal.example.com/foo.signed.adosplug
+```
+
+Or set `network.ca_bundle` in `/etc/ados/agent.conf` to apply the
+bundle to every plugin install.
+
+## Authentication
+
+If the URL requires a bearer token:
+
+```sh
+ADOS_PLUGIN_AUTH="Bearer $(cat /etc/ados/secrets/registry-token)" \
+  ados plugin install https://releases.internal.example.com/foo.signed.adosplug
+```
+
+The agent sends the contents of `ADOS_PLUGIN_AUTH` as the
+`Authorization` header. The token is never written to the cache or
+logs.
+
+## GCS button
+
+Mission Control has an "Install from URL" entry under Settings,
+Plugins, Install plugin. Paste the URL, the GCS forwards it to the
+agent over the host bridge, and the agent runs the same fetch and
+verify flow. The permission dialog appears once the manifest has
+been parsed.
+
+## Failure modes
+
+| Exit code | Meaning |
+|-----------|---------|
+| `5` | URL was not HTTPS. |
+| `6` | Redirect chain exceeded 5 hops or included a plain-HTTP hop. |
+| `7` | Content type was not an archive. |
+| `8` | TLS verification failed. |
+| `10` | Signer key unknown to the agent's trust list. |
+| `12` | Manifest invalid or asset hash mismatch. |
+| `14` | Size cap exceeded. |
+
+Each failure prints a single human-readable line plus the structured
+log entry under `journalctl -u ados-supervisor`.
+
+## What this is not
+
+URL install is not the registry. There is no search, no version
+listing, no install count, no review queue. It is exactly local file
+install with the file fetched over HTTPS first. The signature trust
+chain is the same; only the transport differs.
+
+## See also
+
+- [Local file install](/developers/distribution-local-install)
+- [Hosted registry](/developers/distribution-registry)
+- [Signing keys](/developers/signing-keys)

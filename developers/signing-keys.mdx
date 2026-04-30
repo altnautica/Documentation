@@ -1,0 +1,240 @@
+---
+title: "Signing keys"
+description: "Generate, register, rotate, and revoke Ed25519 publisher keys."
+---
+
+Every plugin the agent installs is signed by an Ed25519 key the
+agent trusts. This page covers the publisher-side lifecycle:
+generation, registration, rotation, revocation, and storage.
+
+## Why Ed25519
+
+Small keys (32 bytes), small signatures (64 bytes), constant-time
+verification, no parameter choices to misconfigure. The same
+algorithm signs OTA payloads, so the agent's verifier already exists
+and is well-tested. There is no algorithm choice to make.
+
+## Generate a key
+
+```sh
+mkdir -p keys && cd keys
+openssl genpkey -algorithm ed25519 -out publisher.pem
+openssl pkey -in publisher.pem -pubout -out publisher.pub.pem
+```
+
+Extract the raw 32-byte public key in hex (the form the agent's
+trust list and the registry expect):
+
+```sh
+openssl pkey -in publisher.pub.pem -pubin -outform DER \
+  | tail -c 32 \
+  | xxd -p -c 32 \
+  > publisher.pub.hex
+```
+
+The private key (`publisher.pem`) is what `sign.sh` reads. The
+public hex (`publisher.pub.hex`) is what you paste into the registry
+and what operators add to their local trust list for self-signed
+deployments.
+
+## Pick a key id
+
+The signer key id is a short label baked into the archive's
+`SIGNATURES` file. Operators see it on the install dialog; the
+revocation list keys off it. Format guidelines:
+
+- Use the publisher's namespace prefix.
+- Add a year or generation suffix.
+- Keep it stable across the key's lifetime.
+
+Examples:
+
+```
+acme-2026-A
+example-corp-2026-primary
+internal-fleet-2026-B
+```
+
+The id is not a secret. It is a stable identifier for trust
+management.
+
+## Register the key with the registry
+
+Once per key. The registry needs the public half so it can verify
+your submitted archives. See
+[Submitting to the registry](/developers/submitting-to-the-registry)
+for the REST and web flows.
+
+A registered key has:
+
+- `key_id`
+- `public_key_hex`
+- `valid_from`, `valid_to`
+- A SHA-256 fingerprint shown on operator install dialogs
+
+Validity windows are at most 24 months. Plan your rotation around
+that.
+
+## Trust list on the agent
+
+Two YAML files under `/etc/ados/keys/` are the agent's trust source.
+
+```
+/etc/ados/keys/
+  ├── plugin-keys.yaml          # production list, updated via OTA
+  └── plugin-keys.local.yaml    # operator-managed local trust
+```
+
+`plugin-keys.yaml` ships in the agent's signed image and updates
+through OTA. It contains the public keys for first-party Altnautica
+signing plus any vetted partner keys.
+
+`plugin-keys.local.yaml` is empty by default. Operators add their
+own keys here for self-signed plugins on closed deployments. Format:
+
+```yaml
+schema_version: 1
+keys:
+  - id: "acme-2026-A"
+    public: "9d1c2b3a4f5e6d7c8b9a0f1e2d3c4b5a6978695a4b3c2d1e0f1a2b3c4d5e6f7a"
+    valid_from: "2026-01-01T00:00:00Z"
+    valid_to: "2027-12-31T23:59:59Z"
+    notes: "ACME internal signing. HSM-backed."
+```
+
+After editing the local list:
+
+```sh
+sudo systemctl restart ados-supervisor
+```
+
+The agent rejects signatures from any key id outside the union of
+these two files.
+
+## CLI helper
+
+The agent CLI wraps the local trust list:
+
+```sh
+ados plugin keys list
+ados plugin keys add acme-2026-A ./acme.pub.hex
+ados plugin keys remove acme-2026-A
+ados plugin keys show acme-2026-A
+```
+
+`add` writes into `plugin-keys.local.yaml` with default validity
+(now plus 24 months). Override with `--valid-from` and `--valid-to`.
+
+## Rotation
+
+Keys are valid for at most 24 months. Plan rotations with overlap so
+plugins signed by the previous key keep verifying through the
+transition.
+
+1. Generate a new key pair.
+2. Register the new public key with the registry (or distribute it
+   to your fleet's `plugin-keys.local.yaml` for closed deployments).
+3. Push out the new trust list. For Altnautica's hosted registry
+   that is automatic via OTA. For self-host, distribute the updated
+   `plugin-keys.local.yaml` via your config-management channel.
+4. Start signing new releases with the new key.
+5. The old key keeps verifying older plugins through its
+   `valid_to`.
+6. After `valid_to` expires, drop the old key from the trust list.
+
+A clean overlap window is one to three months. Long enough that
+operators picking up updates lazily still verify the old version
+they have installed; short enough that compromise of the old key has
+a bounded blast radius.
+
+## Revocation
+
+If a key is compromised:
+
+1. Add the key id to the revocation list.
+2. Push the revocation list. The Altnautica registry serves it at
+   `https://registry.ados.altnautica.com/v1/revoked.json` and agents
+   poll daily. Self-host runs the same endpoint shape on your
+   internal registry.
+3. Re-sign current plugin versions with a fresh key.
+4. Notify operators. New installs of any plugin signed by the
+   revoked key fail with a clear error. Already-installed plugins
+   keep running but raise a critical warning on every start.
+
+The agent never auto-uninstalls a revoked plugin. Removal is an
+operator decision because in a fleet some plugins might be load
+bearing.
+
+For incident response detail, see
+[Revocation and incidents](/developers/revocation-and-incidents).
+
+## Hardware-backed storage (recommended)
+
+For production publisher keys, store the private key in a hardware
+security module. Options:
+
+- A dedicated HSM appliance (PKCS#11 interface).
+- A YubiKey 5 with PIV applet (limited Ed25519 support; verify your
+  firmware version).
+- A TPM 2.0 with the key sealed to the platform.
+
+The signing flow with PKCS#11:
+
+```sh
+ADOS_SIGNING_KEY_PKCS11_URI="pkcs11:token=fleet-signer;object=publisher-2026-A?module=/usr/lib/softhsm/libsofthsm2.so" \
+ADOS_SIGNING_KEY_ID=acme-2026-A \
+  ./scripts/sign.sh dist/com.example.foo-1.0.0.adosplug
+```
+
+`sign.sh` calls into the PKCS#11 module to compute the signature
+without ever exporting the private key.
+
+For developer iteration, file-on-disk is fine. Pin tight file
+permissions:
+
+```sh
+chmod 0400 keys/publisher.pem
+chown $(id -u):$(id -g) keys/publisher.pem
+```
+
+Never commit the private key to git. The reference repo
+template at `altnautica/ADOSExtensions` carries a `.gitignore` that
+covers `keys/*.pem`.
+
+## CI signing
+
+GitHub Actions stores the key in a secret and the signer reads it
+inline:
+
+```yaml
+env:
+  ADOS_SIGNING_KEY: ${{ secrets.ADOS_SIGNING_KEY }}
+  ADOS_SIGNING_KEY_INLINE: "1"
+  ADOS_SIGNING_KEY_ID: ${{ secrets.ADOS_SIGNING_KEY_ID }}
+```
+
+`ADOS_SIGNING_KEY_INLINE=1` tells `sign.sh` to treat
+`ADOS_SIGNING_KEY` as a base64 PEM body rather than a file path.
+Hold the secret in GitHub Environments with required reviewers if
+the key is high-value.
+
+## Self-signed for closed deployments
+
+Closed deployments (fleets that never pull from the public registry)
+sign and trust end to end without Altnautica involvement:
+
+1. Generate a key pair locally.
+2. Bake the public key into the agent image you ship to your fleet,
+   in `plugin-keys.local.yaml`.
+3. Sign your plugins with the matching private key.
+4. Distribute via internal HTTPS, USB, or your existing fleet
+   channel.
+
+No outbound calls, no registry, no external trust dependency. The
+trust chain is operator-end-to-end.
+
+## See also
+
+- [Submitting to the registry](/developers/submitting-to-the-registry)
+- [Revocation and incidents](/developers/revocation-and-incidents)
+- [Local file install](/developers/distribution-local-install)

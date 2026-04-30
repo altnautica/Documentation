@@ -1,0 +1,218 @@
+---
+title: "Performance and budgets"
+description: "Resource budgets, profiling, cgroup throttling, memory pressure, ados plugin profile."
+---
+
+A plugin runs on a small SBC alongside the rest of the agent.
+The supervisor budgets resources tightly. This page covers what
+the budgets are, how to spot when you blow them, and how to
+profile.
+
+## Default budgets
+
+When a plugin's manifest does not declare resources, it gets:
+
+| Resource | Default cap |
+|----------|-------------|
+| RAM | 64 MB |
+| CPU | 10% of one core |
+| PIDs | 4 |
+| Disk | 100 MB |
+| Inbound topic outbox | 256 messages per topic |
+
+Declare higher caps in the manifest:
+
+```yaml
+agent:
+  resources:
+    max_ram_mb: 256
+    max_cpu_percent: 30
+    max_pids: 8
+    max_disk_mb: 500
+```
+
+Honest declarations matter. The operator sees them in the install
+dialog with a yellow warning if any of them are above the
+defaults. Lying to skip the warning ends with the operator
+disabling your plugin when it crashes the drone.
+
+## Spotting cgroup throttling
+
+`max_cpu_percent` is enforced by the cgroup `cpu.max` controller.
+A plugin that breaches it does not crash; it gets throttled. The
+symptom is "everything got slower for no reason."
+
+Read the throttle stats:
+
+```sh
+cat /sys/fs/cgroup/ados-plugins.slice/ados-plugin@<id>.service/cpu.stat
+```
+
+The interesting field is `nr_throttled`. If it climbs every
+second, your plugin is over budget. Either optimize the code or
+declare a higher `max_cpu_percent`.
+
+`ados plugin profile <id>` (see below) surfaces this in a
+human-readable table.
+
+## Memory pressure
+
+`max_ram_mb` is enforced by `memory.max`. A breach OOM-kills the
+process. The supervisor marks it `crashed` and the circuit
+breaker counts toward the three-strikes-in-five-minutes rule.
+
+Watch for the warning band:
+
+```sh
+cat /sys/fs/cgroup/ados-plugins.slice/ados-plugin@<id>.service/memory.current
+cat /sys/fs/cgroup/ados-plugins.slice/ados-plugin@<id>.service/memory.events
+```
+
+`memory.events` shows `low`, `high`, `max`, `oom`, `oom_kill`
+counters. Any non-zero `high` or `max` means the kernel started
+applying pressure (reclaiming page cache, swapping if allowed).
+
+To stay under the cap:
+
+- Process events on a bounded queue, not an unbounded list.
+- For ML models, prefer quantized weights (int8 over fp32).
+- Stream files; do not load whole logs into RAM.
+- Use `array.array` or `numpy` over a Python list of floats.
+
+## The `ados plugin profile` subcommand
+
+`ados plugin profile <id>` runs for 60 seconds and prints a
+summary:
+
+```
+plugin           com.example.battery
+window           60s
+cpu_user_pct     7.8 (cap: 10.0)
+cpu_throttle_ms  120 (8 throttle events)
+ram_avg_mb       38 (cap: 64)
+ram_peak_mb      52
+ram_events       0 high, 0 max, 0 oom
+disk_used_mb     12 (cap: 100)
+ipc_in_msgs      4400  (73/s)
+ipc_out_msgs     280   (4.7/s)
+ipc_inflight_p99 18 ms
+back_pressure    0 events
+restarts         0
+```
+
+Use the cap columns to see how close you are to your declared
+budgets. A plugin running consistently above 80% of any cap is
+one bad input away from a crash.
+
+## Profiling Python plugins
+
+The SDK does not bundle a profiler; use `cProfile` or
+`pyinstrument`. The simplest path:
+
+```python
+import cProfile, pstats
+
+def on_start_profiled(self, ctx):
+    pr = cProfile.Profile()
+    pr.enable()
+    try:
+        return self._real_on_start(ctx)
+    finally:
+        pr.disable()
+        pstats.Stats(pr).sort_stats("cumulative").print_stats(30)
+```
+
+Or push an `async` handler through `pyinstrument`:
+
+```sh
+uv pip install pyinstrument
+python -m pyinstrument -m ados.plugin_runner com.example.battery
+```
+
+Output goes to journal under the unit name. Read it with
+`journalctl -u ados-plugin@com.example.battery.service`.
+
+## Profiling TypeScript plugins
+
+Open the GCS in developer mode (`?dev=1`), pick the plugin's
+iframe in the browser devtools (Sources tab), and use the
+Performance recorder. The iframe is a real browsing context with
+the standard devtools surface.
+
+Common GCS hot paths:
+
+- React re-renders triggered by every telemetry event. Coalesce
+  with `requestAnimationFrame` and a local ref.
+- Heavy SVG redraws. Switch to canvas if the path count goes
+  above ~200.
+- Synchronous JSON parse in the message handler. Move it to a
+  Web Worker or off the main thread.
+
+## Event-loop discipline
+
+The biggest cause of agent-plugin crashes is a blocked event
+loop. Symptoms: missed watchdog ping, supervisor `SIGKILL`, the
+`crashed` lifecycle event, and journal showing
+`Watchdog timeout (limit 30s)`.
+
+Don't:
+
+- `time.sleep(...)` in async code.
+- Heavy CPU work directly in `on_start`.
+- Synchronous I/O on a slow disk.
+
+Do:
+
+- `await asyncio.sleep(...)`.
+- `await asyncio.to_thread(heavy_work)`.
+- `aiofiles` or chunked reads for slow I/O.
+
+## Disk discipline
+
+Disk I/O is the second-most-common cause of throttling. A plugin
+writing 1 MB samples per second to its data dir on an SD card is
+already at the SBC's sustained-write ceiling for the cheap end of
+the SD card market.
+
+To stay under the cap:
+
+- Batch writes. One `fsync` per second is plenty.
+- Compress logs (`zstd` is fast and saves a lot on JSONL).
+- Rotate. The SDK helper `ctx.logging.rotating_file_handler`
+  does what it says.
+- Delete on uninstall. The host wipes your data dir, but in-life
+  cleanup is your job.
+
+## Network discipline
+
+Plugins with `network.outbound` are under no host-imposed
+bandwidth cap, but the drone's link is shared with telemetry and
+video. A plugin pulling weights from the cloud during flight is
+a UX bug. Pull during ground time and cache.
+
+## Thermal behavior
+
+On the Rock 5C Lite at 30C ambient, sustained 80% CPU on one
+core lifts the SoC about 18C. The agent throttles its own
+non-essential tasks at 75C. A plugin pushing the SoC into
+thermal throttle is observable as cgroup throttle events on
+**every** plugin, not just yours, because the kernel is reducing
+the budget pool.
+
+Watch the system telemetry topic:
+
+```python
+async with ctx.events.subscribe("telemetry.system") as stream:
+    async for sample in stream:
+        if sample.temperature_c > 70:
+            self.reduce_workload()
+```
+
+The well-behaved plugin reduces its workload before the kernel
+forces the issue.
+
+## See also
+
+- [Agent plugin deep dive](/developers/agent-plugin-deep-dive)
+- [State and storage](/developers/state-and-storage)
+- [Vision plugins](/developers/vision-plugins)

@@ -1,0 +1,223 @@
+---
+title: "Vision plugins"
+description: "Build a Vision Engine plugin: ingest frames, register a model, return detections."
+---
+
+The agent ships a Vision Engine that owns the camera pipeline.
+Plugins do not run their own decoders. They register models and
+consumers against the engine and receive frames or detections
+through the host's normalized interfaces.
+
+## Capabilities
+
+| Capability | Lets the plugin... |
+|------------|-----|
+| `vision.frame.read` | Subscribe to camera frames at the engine's normalized format. |
+| `vision.model.register` | Register an inference model with the engine. |
+| `vision.detection.publish` | Publish detections back to the engine for downstream consumers. |
+
+`vision.frame.read` is medium risk. The other two are low risk
+and are usually granted together when the operator installs a
+vision plugin.
+
+## Architecture summary
+
+```
+camera driver -> Vision Engine -> normalized frame bus
+                                   |
+                                   |--> built-in models (follow-me, obstacle avoidance)
+                                   |--> plugin models (yours)
+                                   |
+                       plugin model -> detection bus -> built-in consumers
+                                                       (gimbal, mission, suite handlers)
+```
+
+Plugins live on the right side. They are model providers, not
+camera drivers. Camera hardware is handled separately by the
+[camera driver layer](/developers/camera-driver).
+
+## Frame format
+
+The engine emits one normalized topic, `vision.frame`, that
+plugins subscribe to:
+
+```python
+async with ctx.events.subscribe("vision.frame") as stream:
+    async for frame in stream:
+        # frame.frame_id (monotonic int)
+        # frame.ts_ms (capture time)
+        # frame.width, frame.height
+        # frame.format ("rgb24" | "nv12" | "yuv420p")
+        # frame.data (bytes, length = width*height*bpp)
+        # frame.camera_id (string, the source driver's id)
+        ...
+```
+
+The engine downscales to a single working resolution per active
+model declaration (default 640x480). Plugins ask for full-res
+through the manifest only when needed; the engine warns the
+operator at install time if a plugin demands a high resolution.
+
+## Registering a model
+
+Models register at plugin start:
+
+```python
+from ados.sdk.vision import Model, ModelMetadata
+
+class MyDetector(Model):
+    metadata = ModelMetadata(
+        id="com.example.weed-detector",
+        kind="detection",
+        input_resolution=(640, 480),
+        input_format="rgb24",
+        output_classes=["weed", "crop"],
+    )
+
+    async def predict(self, frame) -> list[Detection]:
+        # run inference, return detections
+        ...
+
+class MyPlugin(Plugin):
+    async def on_start(self, ctx: Context) -> None:
+        await ctx.vision.register_model(MyDetector())
+```
+
+The engine handles fan-out. Multiple plugins can register models;
+each runs in its own coroutine and the engine schedules them
+according to the operator's active mission.
+
+`Model.kind` is one of:
+
+- `detection`: returns bounding boxes + class labels.
+- `segmentation`: returns per-pixel class masks.
+- `classification`: returns one class label per frame.
+- `tracking`: returns track ids across frames.
+
+## Returning detections
+
+Once registered, the engine calls `predict` per frame. The plugin
+returns a list of `Detection` objects:
+
+```python
+from ados.sdk.vision import Detection, BoundingBox
+
+return [
+    Detection(
+        bbox=BoundingBox(x=120, y=200, width=64, height=32),
+        class_label="weed",
+        confidence=0.87,
+        track_id=None,
+    ),
+]
+```
+
+Detections are published to the host's `vision.detection` topic,
+labelled with the model's id. Built-in consumers (mission planner
+suite handlers, gimbal targeting, recording overlay) pick them up
+via the engine; the plugin does not publish them manually.
+
+## Studio tab integration
+
+The Studio tab in Mission Control auto-discovers registered
+models. The operator picks a model from a dropdown; the engine
+activates it and renders detections on the live video pane.
+
+A plugin contributes Studio settings (confidence threshold,
+class allowlist, post-processing toggles) through a settings
+section:
+
+```yaml
+gcs:
+  contributes:
+    settings_sections:
+      - id: weed-detector-settings
+        title: "Weed detector"
+```
+
+The settings section reads and writes the plugin's config. The
+agent half re-runs `on_config_change` on save and the model
+re-reads its threshold without a restart.
+
+## Resource discipline
+
+Inference is expensive. A plugin running a 30 MB ONNX model at
+30 FPS on a Rock 5C Lite is fine; running four of them is not.
+Declare honest resource caps:
+
+```yaml
+agent:
+  resources:
+    max_ram_mb: 512
+    max_cpu_percent: 50
+```
+
+The supervisor enforces the caps. If your model breaches them,
+the host throttles the predict cadence (drops frames) before
+killing the process. Watch for back-pressure warnings in the
+event log.
+
+For NPU-based inference on supported boards, the SDK exposes
+`ctx.vision.npu` with handles for the platform's accelerator
+(TFLite delegates, RKNN, etc.). Using the NPU is the difference
+between 50% CPU and 5% CPU on most hybrid plugins.
+
+## Bundling weights
+
+Model weights are assets in the archive:
+
+```yaml
+assets:
+  - path: "agent/models/weeds.onnx"
+    role: "agent-source"
+    sha256: "..."
+```
+
+The plugin loads them from the data dir at start. Do not ship
+weights from a remote URL; the plugin's CSP and the agent's
+`network.outbound` policy block runtime fetches by default.
+
+## Multi-camera
+
+When more than one camera is attached, the engine emits frames
+from each. Filter by `frame.camera_id` if your model is camera-specific:
+
+```python
+if frame.camera_id != "thermal-0":
+    continue
+```
+
+The operator picks active cameras under the Hardware tab. The
+engine respects the selection and stops emitting frames from
+disabled cameras.
+
+## Vendor binary models
+
+Closed-source vendor binaries (e.g. proprietary thermal AGC
+processing as a `.so`) ship under `vendor/` per the
+[vendor binaries](/developers/vendor-binaries) doc. The plugin
+loads them with `ctypes` or `cffi` and wraps them in the standard
+`Model` interface so the engine sees the same shape.
+
+## Testing
+
+The SDK ships a fake camera driver that emits synthetic frames
+from a directory of PNGs. Use it in unit tests:
+
+```python
+from ados.sdk.testing import FakeVisionEngine
+
+async def test_detector():
+    engine = FakeVisionEngine.from_directory("tests/fixtures/weeds/")
+    detector = MyDetector()
+    detections = []
+    async for frame in engine.frames():
+        detections.extend(await detector.predict(frame))
+    assert any(d.class_label == "weed" for d in detections)
+```
+
+## See also
+
+- [Camera driver](/developers/camera-driver)
+- [State and storage](/developers/state-and-storage)
+- [Performance and budgets](/developers/performance-and-budgets)

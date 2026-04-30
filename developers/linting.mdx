@@ -1,0 +1,131 @@
+---
+title: "Linting"
+description: "Run static analysis on a packed plugin before submission."
+---
+
+`ados plugin lint` runs the same static-analysis rule set the registry
+applies at submission time. Run it locally before you push a tag.
+
+## Quickstart
+
+```sh
+ados plugin lint dist/com.example.thermal-1.0.0.signed.adosplug
+```
+
+Output:
+
+```
+plugin com.example.thermal 1.0.0
+archive size: 18432 bytes
+score: 100/100
+verdict: pass
+
+no findings.
+```
+
+JSON form for CI:
+
+```sh
+ados plugin lint --json dist/com.example.thermal-1.0.0.signed.adosplug \
+  | jq '.data.score, .data.passed'
+```
+
+Exit code 0 means pass. Non-zero means at least one finding at
+severity `error` or `critical`.
+
+## What it checks
+
+The linter unpacks the archive and walks every entry. Findings are
+keyed by rule id with severity and the source location.
+
+### Python rules
+
+| Rule | Severity | What it flags |
+|------|----------|--------------|
+| PY001-os-system | error | `os.system()` call |
+| PY002-os-popen | error | `os.popen()` call |
+| PY003-eval | error | `eval()` call |
+| PY004-exec | error | `exec()` call |
+| PY005-subprocess-shell | error | `subprocess.Popen(..., shell=True)` |
+| PY006-raw-socket | error | `socket.socket(...)` |
+| PY007-pickle-load | error | `pickle.loads()` on untrusted input |
+| PY008-marshal-loads | error | `marshal.loads()` |
+| PY009-ctypes-load | error | Native library load via `ctypes.CDLL` |
+| PY020-requests | warn | Network library imported without `network.outbound` |
+| FS001-open-write | info | File opened for writing (verify the path is under `ctx.data_dir`) |
+| FS002-shutil-rmtree | info | `shutil.rmtree()` (verify scope is the plugin's own directory) |
+
+### GCS bundle rules
+
+| Rule | Severity | What it flags |
+|------|----------|--------------|
+| GCS001-top-location | warn | Reads `top.location` or `parent.location` |
+| GCS002-document-cookie | warn | Reads `document.cookie` |
+| GCS003-localstorage | warn | Reads `localStorage` or `sessionStorage` |
+| GCS004-eval | warn | `eval()` call in the bundle |
+| GCS005-function-ctor | warn | `new Function(...)` |
+| GCS006-fetch-direct | warn | Direct `fetch()` call (use the host bridge) |
+| GCS007-xhr-direct | warn | Direct `XMLHttpRequest` |
+| GCS008-websocket-direct | warn | Direct `WebSocket` |
+
+### Manifest and archive rules
+
+| Rule | Severity | What it flags |
+|------|----------|--------------|
+| ARC001-archive-size | error | Archive exceeds the 100 MB cap |
+| ARC002-entry-size | error | A single entry exceeds the per-entry cap |
+| SIG001-unsigned | warn | Archive does not carry a SIGNATURE file |
+| VND001-vendor-binary | info | Manifest declares `contains_vendor_binary` |
+| PERM001-high-risk | info | Manifest declares a high-risk capability (`vehicle.command`, `vehicle.payload.actuate`, `filesystem.host`, `mavlink.command.send`) |
+
+`info` findings are advisory and do not affect the verdict. `warn`
+findings show in the report but still pass. `error` findings fail.
+
+## Score
+
+Each finding deducts points:
+
+| Severity | Penalty |
+|----------|---------|
+| info | 0 |
+| warn | 2 |
+| error | 10 |
+| critical | 25 |
+
+Floor at 0. The registry uses the same score; the auto-publish gate
+expects 90 or above plus zero `error` findings.
+
+## Network imports versus permissions
+
+If your plugin imports `requests`, `httpx`, or `aiohttp`, the linter
+warns unless the manifest declares `network.outbound`. The host
+enforces this at runtime regardless. Declare the permission and the
+warning disappears.
+
+## False positives
+
+The linter is conservative. If a finding is wrong for your case (the
+SDK wraps a syscall the rule did not learn yet, your `eval` is in a
+data file the linter mistakes for code), open an issue with the
+archive and the finding so the rule can be tightened.
+
+## Running before every release
+
+Recommended pre-tag check:
+
+```sh
+./scripts/pack.sh my-plugin
+ADOS_SIGNING_KEY=keys/altnautica-2026-A.pem ./scripts/sign.sh \
+  extensions/my-plugin/dist/com.example.my-plugin-1.0.0.adosplug
+ados plugin lint \
+  extensions/my-plugin/dist/com.example.my-plugin-1.0.0.signed.adosplug
+```
+
+Wire this into your release workflow as a CI step before the GitHub
+Release upload. A failing lint should block the release.
+
+## See also
+
+- [Submitting to the registry](/developers/submitting-to-the-registry)
+- [Distribution and local install](/developers/distribution-local-install)
+- [Permissions](/developers/permissions)

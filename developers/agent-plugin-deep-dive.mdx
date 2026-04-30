@@ -1,0 +1,222 @@
+---
+title: "Agent plugin deep dive"
+description: "Subprocess model, IPC envelopes, capability tokens, cgroup limits, supervisor restart policy."
+---
+
+This page is for plugin authors writing non-trivial agent halves.
+It walks the runtime path top to bottom: how the supervisor spawns
+your code, how IPC frames travel, how capabilities gate every
+privileged call, and how the supervisor decides when your plugin
+has misbehaved.
+
+## Subprocess model
+
+Every third-party agent plugin runs as its own process under
+`ados-supervisor`. There is no in-process plugin tier for third
+parties; isolation is mandatory.
+
+```
+ados-supervisor
+  ├── ados-plugin@com.example.battery.service   (subprocess #1)
+  ├── ados-plugin@com.example.thermal.service   (subprocess #2)
+  └── ados-plugin@com.example.gimbal.service    (subprocess #3)
+```
+
+Each subprocess inherits a tiny fixed environment:
+
+| Variable | Purpose |
+|----------|---------|
+| `ADOS_PLUGIN_ID` | Plugin id from the manifest. |
+| `ADOS_PLUGIN_VERSION` | Plugin version. |
+| `ADOS_PLUGIN_DATA_DIR` | `/var/lib/ados/plugins/<id>/data/`. Writable. |
+| `ADOS_PLUGIN_CONFIG_PATH` | Validated config JSON on disk. |
+| `ADOS_PLUGIN_SOCKET` | Unix domain socket path for IPC. |
+| `ADOS_PLUGIN_GRANTED_CAPS` | Comma-separated granted capability ids. |
+
+No other env vars are passed through. The process starts in its
+own cwd at `ADOS_PLUGIN_DATA_DIR`, with stdout and stderr piped to
+the journal under the unit name.
+
+## IPC envelope
+
+The supervisor opens the Unix socket before spawning the plugin
+and listens on it. The plugin's SDK (`ados-sdk` for Python,
+`@altnautica/plugin-sdk` for TypeScript on the GCS half) connects
+on startup and speaks msgpack frames:
+
+```
++------------------+--------------------+
+| u32 length (BE)  | msgpack envelope   |
++------------------+--------------------+
+```
+
+Envelope shape (matches the GCS bridge byte for byte):
+
+```python
+{
+    "id": "01HSGM...",         # ULID, plugin-generated
+    "type": "request",          # request | response | event
+    "method": "mavlink.command.send",
+    "capability": "mavlink.write",
+    "args": {...},
+    "version": 1,
+    "error": None,              # only on response
+}
+```
+
+The supervisor never trusts the `capability` field on the wire.
+It re-resolves the required capability from the method name on
+every request, then checks the granted set. Forging the field
+fails with `permission_denied`.
+
+## Lifecycle hooks
+
+The SDK dispatches three async hooks against your `Plugin`
+subclass:
+
+```python
+class MyPlugin(Plugin):
+    async def on_start(self, ctx: Context) -> None: ...
+    async def on_config_change(self, ctx: Context, new_config: dict) -> None: ...
+    async def on_stop(self, ctx: Context) -> None: ...
+```
+
+`on_start` runs once after the IPC handshake. `on_config_change`
+runs every time the operator saves new config under the plugin's
+settings section. `on_stop` runs when the supervisor sends
+`SIGTERM`; you have 10 seconds to drain in-flight work before
+`SIGKILL` follows.
+
+## Capability tokens
+
+Granted capabilities arrive in `ADOS_PLUGIN_GRANTED_CAPS` and are
+re-fetched from the host on the first IPC handshake (the env var
+is the cold-start hint, the IPC value is authoritative). The SDK
+keeps the set in `ctx.capabilities` and rejects undeclared calls
+client-side before they hit the wire.
+
+```python
+if "mavlink.write" not in ctx.capabilities:
+    raise CapabilityError("mavlink.write")
+await ctx.mavlink.send_command(...)
+```
+
+Operators can revoke a capability at any time by editing the grant
+in the GCS. The host pushes a `capabilities.changed` event; the
+SDK swaps the set atomically. In-flight requests for the now-revoked
+capability return `permission_denied`.
+
+## cgroup limits
+
+On Linux, every plugin runs inside a systemd scope under the
+`ados-plugins.slice`. The supervisor populates the scope with
+limits drawn from the manifest's `agent.resources` block:
+
+```ini
+# /etc/systemd/system/ados-plugin@com.example.battery.service.d/limits.conf
+[Service]
+Slice=ados-plugins.slice
+MemoryMax=64M
+MemorySwapMax=0
+CPUQuota=10%
+TasksMax=4
+```
+
+The kernel enforces the caps. If the plugin breaches `MemoryMax`
+the kernel OOM-kills the process and the supervisor records a
+`crashed` lifecycle event. CPU breaches throttle rather than kill.
+Tasks breaches refuse new threads / processes.
+
+Read your live numbers with:
+
+```sh
+systemctl status ados-plugin@<id>.service
+cat /sys/fs/cgroup/ados-plugins.slice/ados-plugin@<id>.service/memory.current
+```
+
+## Supervisor restart policy
+
+The supervisor runs each plugin under `Restart=on-failure` with a
+back-off ladder:
+
+| Restart # | Delay before retry |
+|-----------|-------------------|
+| 1 | 1s |
+| 2 | 5s |
+| 3 | 15s |
+| 4+ | circuit breaker trips |
+
+Three failed restarts inside a five-minute window mark the plugin
+`crashed` and the supervisor stops trying. The operator gets a
+notification in the GCS event stream and decides whether to
+disable, remove, or investigate.
+
+A clean exit (return 0 from `on_start`) is treated as "the plugin
+is done" and is not restarted. If your plugin is meant to run
+indefinitely, do not return from `on_start` until `on_stop` is
+called.
+
+## Service unit generation
+
+Service units are not authored by hand. The agent host generates
+them from the manifest at install time and writes them to
+`/etc/systemd/system/ados-plugin@<id>.service`. A typical unit:
+
+```ini
+[Unit]
+Description=ADOS plugin com.example.battery
+After=ados-agent.service
+PartOf=ados-plugins.slice
+
+[Service]
+Type=notify
+ExecStart=/opt/ados/bin/ados-plugin-runner com.example.battery
+Restart=on-failure
+RestartSec=1
+WatchdogSec=30
+NotifyAccess=main
+
+# hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ReadWritePaths=/var/lib/ados/plugins/com.example.battery/data
+```
+
+`ados-plugin-runner` is the SDK's process entrypoint. It loads the
+plugin's manifest, checks the signature again, opens the IPC
+socket, and dispatches into your `Plugin` subclass.
+
+## Watchdog
+
+`Type=notify` plus `WatchdogSec=30` means the SDK must ping
+systemd every fifteen seconds (half the watchdog interval). The
+SDK does this for you on a background task. If your event loop
+stalls, the watchdog times out, the kernel signals `SIGKILL`,
+and the supervisor records the crash.
+
+If your plugin does long synchronous work in `on_start`, run it
+on a worker thread (`asyncio.to_thread`) so the SDK keeps pinging.
+
+## Hot reload
+
+Plugins are not hot-reloaded across version bumps. Updating from
+v1.0 to v1.1 stops the old subprocess, deletes the unit file,
+generates a new one, and starts fresh. State on disk under
+`ADOS_PLUGIN_DATA_DIR` survives.
+
+## Debugging tips
+
+- `journalctl -u ados-plugin@<id>.service -f` for live logs.
+- `systemctl cat ados-plugin@<id>.service` to see the generated unit.
+- `ados plugin logs <id>` is a thin wrapper over `journalctl`.
+- `ados plugin info <id>` prints granted caps, resource limits,
+  and last lifecycle events.
+
+## See also
+
+- [Manifest reference](/developers/manifest)
+- [Permissions](/developers/permissions)
+- [Performance and budgets](/developers/performance-and-budgets)

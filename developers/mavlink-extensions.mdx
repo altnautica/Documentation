@@ -1,0 +1,213 @@
+---
+title: "MAVLink extensions"
+description: "Custom dialects, command.send, message.subscribe, vendor-dialect drivers."
+---
+
+The agent already speaks the standard MAVLink dialects. A plugin
+extends MAVLink in three ways: register a custom dialect XML,
+send commands the host has no built-in helper for, and subscribe
+to messages the host does not normalize.
+
+## Capabilities
+
+| Capability | Lets the plugin... |
+|------------|-----|
+| `mavlink.read` | Subscribe to parsed MAVLink messages. |
+| `mavlink.write` | Send arbitrary MAVLink to the FC. |
+| `mavlink.dialect.register` | Register a custom dialect XML at startup. |
+| `vehicle.command` | Send canonical commands (ARM, RTL, MODE_SET) without raw MAVLink. |
+
+`mavlink.write` is a critical permission. Operators see a red
+warning badge in the install dialog. Use `vehicle.command` instead
+when the action is one of the canonical set; it is medium risk and
+the host validates the args.
+
+## Subscribing to messages
+
+```python
+async with ctx.mavlink.subscribe("BATTERY_STATUS") as stream:
+    async for msg in stream:
+        print(msg.voltages, msg.current_battery)
+```
+
+The host parses the MAVLink frame and gives you a typed object
+with named fields. The SDK validates the field names against the
+known dialects at import time; typos fail loudly.
+
+To subscribe to several message types, open multiple subscribe
+contexts:
+
+```python
+async with ctx.mavlink.subscribe("BATTERY_STATUS") as bat_stream, \
+           ctx.mavlink.subscribe("ESC_STATUS") as esc_stream:
+    ...
+```
+
+Subscriptions are coalesced by the host: ten plugins subscribed to
+`BATTERY_STATUS` cause one underlying stream from the FC.
+
+## Sending commands
+
+`vehicle.command` covers the canonical set:
+
+```python
+await ctx.vehicle.command(
+    name="MODE_SET",
+    args={"mode": "RTL"},
+)
+```
+
+For commands outside the canonical set, use `mavlink.command.send`.
+The plugin must declare `mavlink.write`:
+
+```python
+await ctx.mavlink.command.send(
+    target_system=1,
+    target_component=1,
+    command="MAV_CMD_DO_DIGICAM_CONTROL",
+    confirmation=0,
+    params=[0, 0, 0, 0, 1, 0, 0],
+)
+```
+
+The host fills in `system_id` and `component_id` from the
+plugin's identity automatically; you do not spoof a different
+sender.
+
+## Sending arbitrary messages
+
+For non-command messages (param sets, custom protocol messages,
+vendor-defined message ids), use `mavlink.message.send`:
+
+```python
+await ctx.mavlink.message.send(
+    name="PARAM_SET",
+    fields={
+        "target_system": 1,
+        "target_component": 1,
+        "param_id": "BATT_AMP_PERVLT",
+        "param_value": 38.0,
+        "param_type": "MAV_PARAM_TYPE_REAL32",
+    },
+)
+```
+
+The SDK encodes the message using the dialect XML the plugin
+registered (or the bundled standard dialects). Unknown fields
+fail at encode time, before the frame is built.
+
+## Registering a custom dialect
+
+A vendor-specific dialect ships as XML. Add the file to your
+archive and declare it in the manifest:
+
+```yaml
+agent:
+  permissions:
+    - mavlink.dialect.register
+    - mavlink.read
+    - mavlink.write
+  contributes:
+    mavlink_dialects:
+      - path: "agent/mavlink/vendor.xml"
+        prefix: "VENDOR_"
+```
+
+The `prefix` is enforced. Every message id and command id in the
+dialect XML must start with the prefix. The host rejects dialects
+that collide with reserved standard prefixes (`COMMON_`,
+`ARDUPILOTMEGA_`, etc.).
+
+Once registered, the plugin uses the dialect names directly:
+
+```python
+async with ctx.mavlink.subscribe("VENDOR_THERMAL_FRAME_HEADER") as stream:
+    async for msg in stream:
+        ...
+```
+
+Other plugins on the same agent see the dialect names and can
+subscribe too, gated by their own `mavlink.read` capability.
+
+## Vendor dialect drivers
+
+A common pattern is a plugin that wraps a vendor MAVLink dialect
+and exposes a clean Python API to other plugins via the
+`plg.<id>.*` event bus:
+
+```python
+class VendorThermalPlugin(Plugin):
+    async def on_start(self, ctx: Context) -> None:
+        async with ctx.mavlink.subscribe("VENDOR_THERMAL_FRAME_HEADER") as headers, \
+                   ctx.mavlink.subscribe("VENDOR_THERMAL_PIXEL_BLOCK") as blocks:
+            async for frame in self._reassemble(headers, blocks):
+                await ctx.events.publish(
+                    "thermal.frame",
+                    {
+                        "frame_id": frame.id,
+                        "width": frame.width,
+                        "height": frame.height,
+                        "data_b64": base64.b64encode(frame.data).decode(),
+                    },
+                )
+```
+
+Now another plugin can subscribe to
+`plg.com.example.vendor-thermal.thermal.frame` without ever
+seeing the raw MAVLink. This is the recommended pattern for
+making vendor hardware reusable.
+
+## Reading the parameter table
+
+The host already mirrors the FC's parameter table. Reading params
+through the plugin SDK does not require `mavlink.read`:
+
+```python
+amp_pervlt = await ctx.params.get("BATT_AMP_PERVLT")
+await ctx.params.set("BATT_AMP_PERVLT", 38.0)
+```
+
+`ctx.params.set` requires the `param.write` capability and is
+medium risk. The host writes through to the FC and waits for the
+ACK before resolving.
+
+## Sequencing and timing
+
+The host serializes outbound MAVLink writes per FC link. Two
+plugins both calling `mavlink.command.send` at the same time end
+up queued on the same single-producer queue; neither blocks the
+other for more than a few milliseconds.
+
+Inbound messages are parsed once and fanned out to subscribers.
+There is no per-plugin parser running.
+
+## Sample worked driver
+
+A minimal vendor-rangefinder driver:
+
+```python
+from ados.sdk import Plugin, Context
+
+class VendorRangefinder(Plugin):
+    async def on_start(self, ctx: Context) -> None:
+        async with ctx.mavlink.subscribe("VENDOR_RANGEFINDER_DISTANCE") as stream:
+            async for msg in stream:
+                # msg.distance_cm, msg.signal_quality
+                await ctx.events.publish(
+                    "rangefinder.reading",
+                    {
+                        "distance_m": msg.distance_cm / 100.0,
+                        "signal_quality": msg.signal_quality,
+                    },
+                )
+```
+
+A consumer plugin subscribes to
+`plg.com.example.vendor-rangefinder.rangefinder.reading` and
+plots the result.
+
+## See also
+
+- [Permissions](/developers/permissions)
+- [Event hooks and bus](/developers/event-hooks-and-bus)
+- [Agent plugin deep dive](/developers/agent-plugin-deep-dive)

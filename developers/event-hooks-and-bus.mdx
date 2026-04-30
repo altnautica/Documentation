@@ -1,0 +1,179 @@
+---
+title: "Event hooks and bus"
+description: "Full event taxonomy, ACL via capability tokens, delivery guarantees, back-pressure handling."
+---
+
+The event bus is how the host pushes data to plugins and how
+plugins push data to each other. This page is the topic-by-topic
+reference. For envelope shape and RPC mechanics, see
+[event hooks](/developers/event-hooks).
+
+## Topic taxonomy
+
+Every event has a dotted topic name. The first segment is the
+namespace; the rest is the path inside it.
+
+| Namespace | Owner | Purpose |
+|-----------|-------|---------|
+| `telemetry.*` | Host | Normalized vehicle telemetry. |
+| `mavlink.*` | Host | Raw MAVLink streams. |
+| `vehicle.*` | Host | Canonical vehicle events (mode change, arm, disarm). |
+| `mission.*` | Host | Mission lifecycle. |
+| `fc.*` | Host | Flight controller link state. |
+| `video.*` | Host | Video pipeline state and frames. |
+| `recording.*` | Host | Recording lifecycle. |
+| `peripheral.*` | Host | Peripheral hotplug. |
+| `lifecycle.*` | Host | Plugin lifecycle ticks and state changes. |
+| `theme.*`, `config.*`, `i18n.*` | Host | UI and config push. |
+| `plg.<plugin-id>.*` | Plugin | Plugin-published topics. |
+
+A plugin cannot publish into the host namespaces. Attempts return
+`permission_denied`. A plugin's own publish topics are namespaced
+under `plg.<id>` automatically; the SDK prefixes them at publish
+time.
+
+## Telemetry topics
+
+Subscribe with `telemetry.subscribe`, gated by
+`telemetry.subscribe.<topic>`:
+
+| Topic | Payload |
+|-------|---------|
+| `telemetry.battery` | `{ pack_id, voltage_v, current_a, remaining_percent, cells_v[] }` |
+| `telemetry.gps` | `{ lat, lon, alt_m, hdop, fix_type, sats }` |
+| `telemetry.attitude` | `{ roll_deg, pitch_deg, yaw_deg, roll_rate_dps, pitch_rate_dps, yaw_rate_dps }` |
+| `telemetry.position` | `{ lat, lon, alt_msl_m, alt_agl_m, ground_speed_mps, climb_mps }` |
+| `telemetry.heading` | `{ heading_deg, source }` |
+| `telemetry.wind` | `{ direction_deg, speed_mps }` |
+| `telemetry.rc` | `{ rssi, link_quality, channels[] }` |
+| `telemetry.system` | `{ cpu_percent, mem_percent, temperature_c }` |
+
+Subscribe once per plugin per topic. The host coalesces. Sample
+rate is the FC's native rate, capped at 20 Hz on telemetry topics.
+
+## Vehicle topics
+
+| Topic | Payload | Capability |
+|-------|---------|-----------|
+| `vehicle.mode_changed` | `{ from, to, source }` | `event.subscribe` |
+| `vehicle.armed` | `{ armed: true, by: "rc"|"gcs"|"plugin" }` | `event.subscribe` |
+| `vehicle.disarmed` | `{ armed: false, reason }` | `event.subscribe` |
+| `vehicle.failsafe` | `{ kind, severity, message }` | `event.subscribe` |
+| `vehicle.statustext` | `{ severity, text }` | `event.subscribe` |
+
+Vehicle events are at-least-once. The host coalesces duplicates
+within a 50 ms window.
+
+## Mission topics
+
+| Topic | Payload |
+|-------|---------|
+| `mission.uploaded` | `{ mission_id, item_count, hash }` |
+| `mission.started` | `{ mission_id }` |
+| `mission.waypoint_reached` | `{ mission_id, seq }` |
+| `mission.completed` | `{ mission_id }` |
+| `mission.aborted` | `{ mission_id, reason }` |
+
+## Peripheral topics
+
+| Topic | Payload |
+|-------|---------|
+| `peripheral.attached` | `{ kind, vid, pid, serial, port }` |
+| `peripheral.detached` | `{ kind, port }` |
+
+Drivers subscribe to `peripheral.attached` to react to hotplug
+without polling.
+
+## Lifecycle topics
+
+| Topic | Payload |
+|-------|---------|
+| `lifecycle.tick` | `{ uptime_ms }` (1 Hz) |
+| `lifecycle.config_changed` | full new config object |
+| `lifecycle.capabilities_changed` | `{ added[], removed[] }` |
+
+## ACL via capability tokens
+
+Subscribing requires `event.subscribe`. Subscribing to a topic in
+the `telemetry.*` namespace also requires the matching
+`telemetry.subscribe.<topic>` capability. The host re-resolves the
+required capability from the topic name, not from the plugin's
+say-so.
+
+Publishing into `plg.<id>.*` requires `event.publish`. The host
+prefixes your published topic with `plg.<id>.` automatically.
+
+```python
+# manifest declares: event.publish, event.subscribe, telemetry.subscribe.battery
+async with ctx.events.subscribe("telemetry.battery") as stream:
+    async for sample in stream:
+        ...
+
+# publishing
+await ctx.events.publish("battery.low", {"pack_id": 1, "v": 14.4})
+# host fans out as: plg.com.example.battery.battery.low
+```
+
+## Delivery guarantees
+
+Two grades:
+
+| Grade | Topics | Guarantee |
+|-------|--------|-----------|
+| At-most-once | `telemetry.*`, `mavlink.*`, `video.*` | Drops on slow consumer. No retry. |
+| At-least-once | `vehicle.*`, `mission.*`, `peripheral.*`, `lifecycle.*`, `plg.*` | Buffered up to 256 messages per plugin per topic, dropped after that with a `back_pressure` warning. |
+
+Telemetry and raw streams are at-most-once because back-pressuring
+them would block the FC pipeline. If your plugin needs a complete
+record of telemetry, subscribe to `recording.*` events and read
+the recording from disk, do not try to log the live stream.
+
+## Back-pressure handling
+
+Each plugin has a per-topic outbox of 256 messages. When the
+outbox fills:
+
+1. The host drops the oldest pending message.
+2. The host emits one `back_pressure` warning per topic per
+   minute, included as an event into the plugin's normal stream.
+3. The host increments a counter visible under `ados plugin info <id>`.
+
+To avoid back-pressure, do not block in the event handler.
+Process events on a background task and let the handler return
+quickly:
+
+```python
+async def on_start(self, ctx: Context) -> None:
+    queue: asyncio.Queue[Sample] = asyncio.Queue(maxsize=64)
+    asyncio.create_task(self._worker(queue))
+    async with ctx.events.subscribe("telemetry.battery") as stream:
+        async for sample in stream:
+            try:
+                queue.put_nowait(sample)
+            except asyncio.QueueFull:
+                pass  # drop locally; do not block the host
+```
+
+## Plugin-to-plugin
+
+Plugins publish into their own `plg.<id>.*` namespace. Other
+plugins subscribe to that namespace if they declare the matching
+permission and the operator approves the explicit grant.
+
+```yaml
+# Subscriber's manifest
+agent:
+  permissions:
+    - event.subscribe
+    - event.subscribe.plg.com.example.battery.*
+```
+
+The wildcard form is a separate capability; the operator sees
+"plugin com.example.battery's events" in the grid and approves it
+explicitly.
+
+## See also
+
+- [Permissions](/developers/permissions)
+- [Multi-component plugins](/developers/multi-component-plugins)
+- [State and storage](/developers/state-and-storage)

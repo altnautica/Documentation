@@ -1,0 +1,197 @@
+---
+title: "Versioning and updates"
+description: "Semver discipline, agent_min_version, agent_max_version, additive vs breaking permission changes."
+---
+
+A plugin lives across many host versions and many of its own
+versions. Semver gives operators a way to predict what an upgrade
+will and won't change.
+
+## Semver for plugins
+
+Use `MAJOR.MINOR.PATCH`:
+
+| Bump | When |
+|------|------|
+| PATCH | Bug fixes. No new features, no behavior changes operators would notice. |
+| MINOR | Additive features. New optional permissions are fine. New required permissions are not. New slots, new mission patterns, new suite operations. |
+| MAJOR | Breaking changes. Removed features, renamed config fields, new required permissions, changed default behavior. |
+
+The rule of thumb: an operator running an old config on a new
+MINOR version should see a working plugin. A new MAJOR version
+warrants reading the changelog.
+
+## Compatibility expressions
+
+The manifest declares which host versions it supports:
+
+```yaml
+compatibility:
+  ados_version: ">=0.9.0 <1.0.0"
+  gcs_version: ">=0.5.0 <1.0.0"
+  python_version: ">=3.11"
+```
+
+The host parses these as semver ranges:
+
+| Operator | Meaning |
+|---------|---------|
+| `=1.2.3` | Exact match. |
+| `>=1.2.3` | At least 1.2.3. |
+| `<2.0.0` | Strictly below 2.0.0. |
+| `~1.2.3` | At least 1.2.3 and below 1.3.0. |
+| `^1.2.3` | At least 1.2.3 and below 2.0.0. |
+
+Combine with whitespace (logical AND): `">=0.9.0 <1.0.0"`.
+
+The host runs the check at install time and at every enable. A
+host upgrade that pushes the running version out of range
+disables the plugin and notifies the operator.
+
+## What goes in `agent_version` vs `gcs_version`
+
+`agent_version` matches the running ADOS Drone Agent version
+(`ados version` on the SBC). `gcs_version` matches the running
+Mission Control build. They move independently, so a plugin can
+support a wide agent range and a narrow GCS range or vice versa.
+
+If the plugin is GCS-only, omit `agent_version`. If agent-only,
+omit `gcs_version`. The host only enforces what is declared.
+
+## Update flow
+
+1. Operator drops a newer `.adosplug` into the install dialog
+   for an already-installed plugin.
+2. Host runs the parse step. If the new version's compatibility
+   block fails, the install is rejected with `compatibility_failed`.
+3. Host diffs the manifest's permissions against the existing
+   grants:
+   - **Removed permissions**: silently dropped.
+   - **Added optional permissions**: shown in the dialog with an
+     "off by default" toggle.
+   - **Added required permissions**: shown in the dialog with a
+     red highlight; operator must approve.
+   - **Removed required permissions**: silently dropped.
+4. Operator clicks Install. Host stops the running plugin,
+   unpacks the new archive, generates a fresh systemd unit, and
+   starts it.
+5. The plugin's `on_config_change` runs once with the existing
+   config. The plugin migrates its own data dir if needed.
+
+The whole flow is one click for additive updates. Removing or
+renaming required permissions is one click and a confirmation.
+
+## Additive vs breaking permission changes
+
+Additive (MINOR safe):
+
+- Adding an optional permission.
+- Adding a wildcard permission that subsumes existing ones, as
+  long as the existing ones still work without operator action.
+- Adding a slot contribution.
+- Adding a config field with a default value.
+
+Breaking (MAJOR required):
+
+- Adding a required permission.
+- Removing a slot the operator depends on.
+- Renaming a config field without a migration shim.
+- Changing the wire format of a `plg.<id>.*` event topic.
+- Changing the default behavior in a way the operator would
+  notice.
+
+## Migration shims for config
+
+Config schemas evolve. Carry a `version` field and migrate on
+first run after upgrade:
+
+```python
+async def on_config_change(self, ctx, new_config):
+    if new_config.get("version", 1) < 2:
+        new_config["new_field"] = derive_from_old(new_config["old_field"])
+        new_config.pop("old_field", None)
+        new_config["version"] = 2
+        await ctx.config.write(new_config)
+```
+
+The host re-runs `on_config_change` with the migrated config so
+the rest of the plugin stays oblivious.
+
+## Migration shims for data on disk
+
+Data version goes in a separate marker file the SDK manages:
+
+```python
+async def on_start(self, ctx):
+    v = await ctx.data_version.read()
+    if v < 2:
+        await self.migrate_v1_to_v2(ctx)
+        await ctx.data_version.write(2)
+```
+
+Always handle skipped versions:
+
+```python
+if v < 3:
+    if v < 2:
+        await self.migrate_v1_to_v2(ctx)
+    await self.migrate_v2_to_v3(ctx)
+    await ctx.data_version.write(3)
+```
+
+## Downgrades
+
+The host refuses to install an older version on top of a newer
+one. The error code is `downgrade_blocked`. Operators who really
+need to downgrade run `ados plugin remove <id> --keep-data` then
+install the older version; the data dir is preserved through the
+graveyard.
+
+Plugin authors should not assume their data format can be read
+by older versions. Forward migration is the contract; backward
+is best-effort.
+
+## Pinning the host
+
+A plugin that must pin to one host version uses an exact range:
+
+```yaml
+compatibility:
+  ados_version: "=0.9.5"
+```
+
+This is rare and usually a sign the plugin is poking at private
+host internals. Pin only when you have to; you will rebuild on
+every host patch release.
+
+## Pre-release versions
+
+Pre-releases use semver pre-release identifiers:
+
+```yaml
+plugin:
+  version: 1.0.0-rc.1
+```
+
+The host treats any pre-release as "older than the equivalent
+release," so `1.0.0-rc.1` will be replaced by `1.0.0`. Don't
+ship `-rc` builds to operators unless they asked for them; the
+local-install path is a foot-gun if they didn't.
+
+## Communicating breaking changes
+
+A MAJOR version is contract-breaking. Plugin authors:
+
+- Update the README with a Migration section.
+- Optionally ship a one-shot migration plugin that imports old
+  state into the new format.
+- Bump `ados_version` if the change required a host feature.
+
+The host does not auto-detect "user data lost" on upgrade. The
+plugin author is responsible for the migration.
+
+## See also
+
+- [Manifest reference](/developers/manifest)
+- [Permissions](/developers/permissions)
+- [Lifecycle](/developers/lifecycle)

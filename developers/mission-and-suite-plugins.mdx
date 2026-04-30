@@ -1,0 +1,247 @@
+---
+title: "Mission and suite plugins"
+description: "Extend mission planning, suites, and smart functions. Add a pattern generator, a suite operation, a smart function entry."
+---
+
+Mission planning, the suite framework, and the smart-function
+picker are extension points the GCS exposes to plugins. This page
+covers how to plug into each.
+
+## Capabilities
+
+| Capability | Lets the plugin... |
+|------------|-----|
+| `mission.read` | Read the active mission and its items. |
+| `mission.write` | Append, replace, or modify mission items. |
+| `mission.pattern.register` | Register a custom pattern generator. |
+| `suite.operation.register` | Register a new operation in an existing suite. |
+| `ui.slot.smart-function` | Contribute an entry to the smart-function picker. |
+
+`mission.write` is high risk; the operator sees an orange badge.
+`mission.pattern.register` and `suite.operation.register` are
+medium risk because they affect what gets uploaded to the FC.
+
+## Pattern generators
+
+Mission Control ships built-in patterns (grid survey, spiral
+search, waypoint chain). A plugin adds new ones.
+
+```ts
+import { definePlugin, type PatternGenerator } from "@altnautica/plugin-sdk";
+
+const concentricRings: PatternGenerator = {
+  id: "com.example.concentric-rings",
+  name: "Concentric rings",
+  description: "Inspection orbit at increasing radii.",
+  fields: [
+    { id: "center", kind: "latlng", label: "Center" },
+    { id: "minRadius", kind: "number", label: "Min radius (m)", default: 5 },
+    { id: "maxRadius", kind: "number", label: "Max radius (m)", default: 30 },
+    { id: "step", kind: "number", label: "Step (m)", default: 5 },
+    { id: "altitude", kind: "number", label: "Altitude (m AGL)", default: 20 },
+  ],
+  generate(input) {
+    const items = [];
+    for (let r = input.minRadius; r <= input.maxRadius; r += input.step) {
+      for (let theta = 0; theta < 360; theta += 30) {
+        items.push({
+          kind: "waypoint",
+          lat: offsetLat(input.center.lat, r, theta),
+          lng: offsetLng(input.center.lng, r, theta),
+          alt_agl_m: input.altitude,
+        });
+      }
+    }
+    return items;
+  },
+};
+
+definePlugin({
+  id: "com.example.inspection",
+  version: "0.1.0",
+  mount(ctx) {
+    ctx.mission.registerPattern(concentricRings);
+    return null;
+  },
+});
+```
+
+The host renders the form from `fields[]`, calls `generate(input)`
+on submit, and offers the result as a preview the operator can
+edit before upload.
+
+`fields[]` field kinds:
+
+| Kind | Renders as |
+|------|-----------|
+| `text` | Text input |
+| `number` | Number input |
+| `boolean` | Toggle |
+| `select` | Dropdown with `options[]` |
+| `latlng` | Map-pinned point picker |
+| `polygon` | Map polygon drawing tool |
+| `polyline` | Map polyline drawing tool |
+| `altitude` | Altitude picker (AGL / MSL toggle) |
+
+The host validates the form and rejects out-of-range numbers
+before calling `generate`.
+
+## Suite operations
+
+Suites (Survey, Inspection, Agriculture, etc.) are mission
+templates with a built-in catalog of operations. Plugins
+register new operations into a suite.
+
+```python
+from ados.sdk.suite import SuiteOperation, OperationParams
+
+class SoilSamplingOp(SuiteOperation):
+    id = "com.example.soil-sampling"
+    suite = "agriculture"
+    name = "Soil sampling drop"
+    description = "Drops a soil sample marker at each waypoint."
+
+    params: OperationParams = {
+        "drop_at_each": {"kind": "boolean", "default": True},
+        "marker_color": {"kind": "select", "options": ["red", "blue", "green"]},
+    }
+
+    async def execute(self, ctx, mission_item, config) -> None:
+        # called on the agent during mission execution
+        await ctx.events.publish(
+            "soil.sample.dropped",
+            {"seq": mission_item.seq, "color": config.marker_color},
+        )
+```
+
+The operation appears in the operator's suite editor under
+Agriculture; the operator drags it into a mission and configures
+it per waypoint or once for the whole flight.
+
+The agent side runs `execute` when the mission item is reached.
+The plugin can publish events, talk to peripherals, or send
+canonical commands as long as it has the right capabilities.
+
+## Smart functions
+
+The smart-function picker is a global pop-over the operator opens
+with `Cmd+K`. Plugins contribute entries:
+
+```yaml
+gcs:
+  contributes:
+    smart_functions:
+      - id: emergency-rtl
+        title: "Emergency RTL"
+        keywords: ["rtl", "return", "abort"]
+        confirm: true
+```
+
+```ts
+ctx.smartFunctions.on("emergency-rtl", async () => {
+  await ctx.vehicle.command({ name: "MODE_SET", args: { mode: "RTL" } });
+});
+```
+
+`confirm: true` makes the host show a confirmation dialog before
+firing the handler. Use it for anything that touches the vehicle
+or modifies a mission.
+
+Smart functions are gated by `ui.slot.smart-function`. The handler
+itself still needs the right action capability (`vehicle.command`,
+`mission.write`, etc.).
+
+## Reading and writing missions
+
+```ts
+// read
+const mission = await ctx.mission.read("active");
+console.log(mission.items.length);
+
+// modify
+const next = {
+  ...mission,
+  items: [
+    ...mission.items,
+    { kind: "waypoint", lat: 12.97, lng: 77.59, alt_agl_m: 30 },
+  ],
+};
+await ctx.mission.write("active", next);
+```
+
+The host validates the mission against the FC's accepted item
+types and rejects writes with `schema_invalid` if anything is
+malformed. The validation rules are firmware-specific (ArduPilot
+accepts different MAV_CMDs than Betaflight) and the host applies
+the right rule set automatically.
+
+## Geofence and rally points
+
+Plugins extend missions; they do not extend geofence directly.
+Use the canonical `mission.write` with the geofence-specific
+mission items:
+
+```ts
+await ctx.mission.write("geofence", {
+  items: [
+    { kind: "fence_polygon_inclusion", points: [...] },
+    { kind: "fence_circle_exclusion", center: {...}, radius_m: 50 },
+  ],
+});
+```
+
+The host enforces a fixed schema for fence items and rejects
+unknown kinds.
+
+## Pattern preview
+
+Patterns and operations show a live preview on the map. The host
+calls `generate` (or `preview` if your operation defines one)
+every time the form changes. Patterns must therefore be cheap;
+spending more than 100 ms per generate is a UX bug.
+
+For expensive generation, ship a `preview` that returns a coarse
+shape and a `generate` that does the full work:
+
+```ts
+{
+  preview(input) { return cheapPolygon(input); },
+  generate(input) { return expensiveWaypointList(input); },
+}
+```
+
+## Persisting custom mission types
+
+If your suite operation needs to round-trip through the GCS's
+mission library, add a `kind` discriminator to your items and
+register a serializer:
+
+```ts
+ctx.mission.registerItemKind("com.example.soil-sampling", {
+  serialize(item) { return { ...item, version: 1 }; },
+  deserialize(blob) { return blob; },
+});
+```
+
+The host stores serialized items in the mission row in Convex and
+restores them on load. The agent half ignores unknown kinds when
+uploading to the FC unless `execute` is registered for them.
+
+## Testing
+
+The host ships a mock mission store the SDK exposes for tests:
+
+```ts
+import { createMockMission } from "@altnautica/plugin-sdk/testing";
+
+const mission = createMockMission();
+await mission.write("active", { items: [...] });
+const items = await mission.read("active");
+expect(items.length).toBe(3);
+```
+
+## See also
+
+- [Permissions](/developers/permissions)
+- [Vision plugins](/developers/vision-plugins)
+- [Multi-component plugins](/developers/multi-component-plugins)

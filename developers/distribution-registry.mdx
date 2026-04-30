@@ -1,0 +1,191 @@
+---
+title: "The hosted registry"
+description: "Browse, search, and install plugins from registry.ados.altnautica.com."
+---
+
+The hosted registry adds discovery on top of local file install and
+URL install. It is a catalog plus a CDN plus a revocation feed. The
+trust chain (signed `.adosplug`, Ed25519, trusted key list) does not
+change.
+
+## What the registry provides
+
+| Surface | What it serves |
+|---------|----------------|
+| Catalog | Plugin id, versions, author, license, description, screenshots. |
+| Compatibility | Agent version range, GCS version range, board allowlist, profile (drone, ground-station). |
+| Search | Free text plus filters: category, board, license, signed-only, verified-only. |
+| Versions | Every published version with a download URL, signer key id, and changelog. |
+| Revocation | A daily-polled JSON feed of revoked keys and revoked plugin/version pairs. |
+| Author profile | Verification badge for publishers who proved domain ownership. |
+
+The default registry endpoint is `registry.ados.altnautica.com`.
+Closed deployments can point at their own host; see the self-host
+section below.
+
+## CLI
+
+### Search
+
+```sh
+ados plugin search thermal
+ados plugin search --category drivers
+ados plugin search --board rk3582-rock-5c-lite
+ados plugin search --license GPL-3.0-or-later
+```
+
+Results show plugin id, latest version, author, risk band.
+
+### Install by id
+
+```sh
+ados plugin install com.example.thermal-camera
+ados plugin install com.example.thermal-camera@1.2.0
+```
+
+Installing without a version pin picks the highest semver matching
+the agent's compatibility range.
+
+### Show details
+
+```sh
+ados plugin info com.example.thermal-camera
+ados plugin info com.example.thermal-camera --version 1.2.0
+```
+
+### Update
+
+```sh
+ados plugin update com.example.thermal-camera
+ados plugin update --all
+```
+
+`update` re-runs the permission prompt only if the new version
+declares additional permissions. Otherwise it applies in place and
+restarts the plugin.
+
+### List installed against the registry
+
+```sh
+ados plugin outdated
+```
+
+Prints every installed plugin that has a newer version available.
+
+## Mission Control Browse tab
+
+Mission Control gets a Browse tab under Settings, Plugins. Cards
+show icon, name, author with verification badge, install count,
+short description. Filters mirror the CLI: category, board
+compatibility (auto-suggested from the connected drone), license,
+signed-only (on by default), verified-only.
+
+The detail page shows the README, screenshots, version history, the
+permission set, the static-analyzer report, and the Install button.
+Clicking Install runs the same permission dialog as local file
+install.
+
+## REST surface
+
+```
+GET  /v1/plugins
+GET  /v1/plugins/:id
+GET  /v1/plugins/:id/:version
+GET  /v1/plugins/:id/:version/download
+GET  /v1/revoked.json
+POST /v1/plugins/submit
+GET  /v1/me/submissions
+```
+
+Filters on the list endpoint:
+
+```
+?category=drivers
+?board=rk3582-rock-5c-lite
+?license=GPL-3.0-or-later
+?signed_only=true
+?verified_only=true
+?search=thermal
+```
+
+The download endpoint redirects to the CDN URL. Clients that prefer
+to fetch directly can use the redirected URL with their own HTTP
+client; the archive is always the same signed bytes.
+
+`revoked.json` shape:
+
+```json
+{
+  "schema_version": 1,
+  "fetched_at": "2026-04-30T12:00:00Z",
+  "revoked_keys": [
+    { "signer_key_id": "example-2025-X", "reason": "key_compromised" }
+  ],
+  "revoked_plugins": [
+    { "plugin_id": "com.example.foo", "version": "1.0.3", "reason": "malware_confirmed" }
+  ]
+}
+```
+
+The agent polls this endpoint every 24 hours when networking is
+available and caches the result under `/var/cache/ados/revocations/`.
+
+## Pointing at a self-hosted registry
+
+Edit `/etc/ados/agent.conf`:
+
+```yaml
+registry:
+  url: "https://registry.internal.example.com"
+  poll_interval_hours: 24
+  ca_bundle: "/etc/ados/internal-ca.pem"   # optional
+```
+
+Then restart the supervisor:
+
+```sh
+sudo systemctl restart ados-supervisor
+```
+
+You can configure two registries (Altnautica's plus your own) for
+federation. The Browse tab shows results from both, badged with the
+source.
+
+```yaml
+registry:
+  endpoints:
+    - url: "https://registry.internal.example.com"
+      label: "Internal"
+    - url: "https://registry.ados.altnautica.com"
+      label: "Altnautica"
+```
+
+## Offline operation
+
+The agent never blocks on the registry. If the network is down:
+
+- Local file install keeps working.
+- Already-installed plugins keep running.
+- The cached revocation list is consulted (older entries still
+  enforce until they age out at 30 days).
+- The Browse tab shows the last-cached catalog with a stale banner.
+
+Operators on disconnected networks can run an internal mirror that
+periodically syncs the catalog and archives over an isolated
+transfer channel. See the spec at
+`product/specs/ados-plugin-system/14-distribution-and-registry.md`
+in the internal monorepo for the mirror sync layout (internal only).
+
+## What the registry does not do
+
+- Run the plugin code.
+- Grant permissions on the operator's behalf.
+- Override the trust list. A signer the agent does not trust still
+  fails install even if the registry served the archive.
+- Push installs. Every install is operator-initiated.
+
+## See also
+
+- [Submitting to the registry](/developers/submitting-to-the-registry)
+- [Signing keys](/developers/signing-keys)
+- [Revocation and incidents](/developers/revocation-and-incidents)
