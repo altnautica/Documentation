@@ -32,10 +32,10 @@ class MyPayloadDriver(PayloadActuatorDriver):
     def capabilities(self, session) -> PayloadCapabilities:
         ...
 
-    async def execute(self, session, command: PayloadCommand) -> None:
+    async def actuate(self, session, command: PayloadCommand) -> None:
         ...
 
-    async def get_state(self, session) -> PayloadState:
+    def get_state(self, session) -> PayloadState:
         ...
 ```
 
@@ -43,16 +43,18 @@ class MyPayloadDriver(PayloadActuatorDriver):
 
 ```python
 PayloadCapabilities(
-    actions=["arm", "trigger", "stop", "set_flow_rate"],
-    has_telemetry=True,
-    max_payload_kg=2.5,
-    update_hz=10.0,
+    actions=("arm", "trigger", "stop", "set_flow_rate"),
+    has_position_feedback=False,
+    has_flow_feedback=True,
+    metadata={"max_payload_kg": 2.5, "update_hz": 10.0},
 )
 ```
 
-`actions` is the list of `action_id` strings the driver accepts in
+`actions` is the tuple of `action_id` strings the driver accepts in
 `PayloadCommand`. The GCS panel discovers these and renders one
-button per action.
+button per action. `metadata` is the open-ended bag for
+driver-specific knobs (max payload mass, refill volume, vendor
+firmware version).
 
 ## Commands
 
@@ -70,14 +72,18 @@ driver validates. Unknown keys should raise `ValueError`.
 
 ```python
 PayloadState(
-    armed=True,
-    busy=False,
+    timestamp_ns=ns,
     last_action_id="trigger",
-    last_action_at_ns=ns,
-    error=None,
-    telemetry={"flow_lpm": 0.0, "tank_pct": 65.0},
+    busy=False,
+    metadata={"flow_lpm": 0.0, "tank_pct": 65.0, "armed": True},
 )
 ```
+
+`busy=True` while an action is in flight; the host serialises
+`actuate` calls per session to keep the contract simple. Drivers
+that report sustained errors should propagate them via
+`metadata["error"]` and raise `DriverError` on the next `actuate`
+call so the GCS sees the failure on the user-action path.
 
 ## Manifest permissions
 
@@ -91,7 +97,7 @@ agent:
 
 `vehicle.payload.actuate` is a high-risk capability. The host
 prompts per-action consent the first time a session calls
-`execute(...)` unless the operator has pre-approved auto-confirm
+`actuate(...)` unless the operator has pre-approved auto-confirm
 in the plugin's permission detail page.
 
 ## See also

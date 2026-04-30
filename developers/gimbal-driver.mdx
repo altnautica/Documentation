@@ -46,7 +46,7 @@ class MyGimbalDriver(GimbalDriver):
     ) -> None:
         ...
 
-    async def get_state(self, session) -> GimbalState:
+    def get_state(self, session) -> GimbalState:
         ...
 
     async def state_iterator(self, session):
@@ -80,19 +80,23 @@ gimbal is position-controlled only.
 
 ```python
 GimbalState(
+    timestamp_ns=ns,
     pitch_deg=-22.5,
     yaw_deg=10.0,
     roll_deg=0.0,
     pitch_rate_dps=0.0,
     yaw_rate_dps=0.0,
+    roll_rate_dps=0.0,
     mode="follow",
-    error=None,
+    metadata=None,
 )
 ```
 
 Drivers that cannot report rates fill `*_rate_dps` with `0.0`.
-`error` is `None` on the happy path; populate it with a short
-human-readable string when the gimbal reports a fault.
+Driver-specific status (fault codes, mount temperature, vendor
+firmware version) goes under `metadata`; the GCS panel renders
+known keys with friendly labels and shows the rest as a generic
+detail list.
 
 ## Manifest permissions
 
