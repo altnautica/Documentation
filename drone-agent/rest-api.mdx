@@ -10,6 +10,12 @@ The agent runs a FastAPI server on port 8080. It provides HTTP endpoints for sta
 
 The API is the backbone that the CLI, TUI, Mission Control, and your own scripts all talk to.
 
+The REST surface stays the same whether the agent is running as the main
+runtime or as the standalone API service. Internally, route modules read agent
+state through the API runtime facade, so callers do not need to know which
+process owns flight controller state, video state, WFB-ng state, scripts, or
+parameter cache data.
+
 ## Base URL
 
 ```
@@ -37,7 +43,7 @@ The API is organized into route modules, each handling a domain:
 |--------|--------|---------|
 | `status` | `/api/status` | Agent status, board, FC, health |
 | `config` | `/api/config` | Read/write configuration |
-| `commands` | `/api/commands` | Send MAVLink commands to FC |
+| `commands` | `/api/command`, `/api/commands` | Send MAVLink commands and list supported commands |
 | `video` | `/api/video` | Video pipeline, snapshot, recording |
 | `wfb` | `/api/wfb` | WFB-ng link stats |
 | `scripts` | `/api/scripts` | Script management, run, stop |
@@ -49,9 +55,9 @@ The API is organized into route modules, each handling a domain:
 | `system` | `/api/system` | Reboot, shutdown, diagnostics |
 | `fleet` | `/api/fleet` | Fleet/swarm coordination |
 | `peripherals` | `/api/peripherals` | USB devices, sensors |
-| `params` | `/api/params` | FC parameter read/write |
+| `params` | `/api/params` | FC parameter reads from the local cache |
 | `features` | `/api/features` | Feature flags by tier |
-| `ground_station` | `/api/ground-station` | Ground station specific endpoints |
+| `ground_station` | `/api/v1/ground-station` | Ground station specific endpoints |
 
 ## Common endpoints
 
@@ -204,15 +210,15 @@ curl http://localhost:8080/api/services \
 
 ```bash
 # Ground station status (only in ground-station profile)
-curl http://localhost:8080/api/ground-station/status \
+curl http://localhost:8080/api/v1/ground-station/status \
   -H "X-ADOS-Key: $KEY"
 
 # Network info
-curl http://localhost:8080/api/ground-station/network \
+curl http://localhost:8080/api/v1/ground-station/network \
   -H "X-ADOS-Key: $KEY"
 
 # PIC heartbeat
-curl -X POST http://localhost:8080/api/ground-station/pic/heartbeat \
+curl -X POST http://localhost:8080/api/v1/ground-station/pic/heartbeat \
   -H "X-ADOS-Key: $KEY" \
   -H "Content-Type: application/json" \
   -d '{"client_id": "gcs-session-1"}'

@@ -153,10 +153,13 @@ ados api --dev
 ```
 src/ados/
 ├── __init__.py          # Version (single source of truth)
-├── cli.py               # Click CLI (25 commands)
+├── cli.py               # Click CLI
 ├── tui/                 # Textual TUI dashboard
 ├── api/                 # FastAPI REST API
+│   ├── runtime.py       # API facade and runtime boundary
+│   └── routes/          # Domain route modules
 ├── services/
+│   ├── api/             # Standalone API service entrypoint
 │   ├── mavlink/         # MAVLink proxy and FC communication
 │   ├── video/           # Video pipeline (ffmpeg, mediamtx)
 │   ├── cloud/           # MQTT cloud relay
@@ -178,6 +181,11 @@ src/ados/
 **HAL board profiles.** Each supported SBC has a YAML profile (`src/ados/hal/boards/*.yaml`) that describes its hardware: serial ports, camera paths, GPIO pins, capabilities. The agent reads the profile at boot and configures itself accordingly.
 
 **IPC via Unix sockets.** Agent services communicate through Unix domain sockets at `/run/ados/`. The MAVLink service writes parsed telemetry to `/run/ados/mavlink.sock`. Other services read from it.
+
+**API runtime facade.** API route modules should use the accessors in
+`ados.api.runtime` for telemetry, FC, video, WFB-ng, script, and parameter
+state. If a new route needs more runtime data, add a facade method instead of
+reading private process fields from a route handler.
 
 ## Pull Request Guidelines
 

@@ -151,8 +151,8 @@ On first boot (or when `agent.profile: auto` is set), the `profile_detect` modul
 | Known FC carrier board profile | 0 | +2 |
 
 **Decision rules:**
-- Ground score >= 4 AND air score <= 2: **ground-station** profile
-- Air score >= 4 AND ground score <= 2: **air** profile
+- Ground score `>= 4` AND air score `<= 2`: **ground-station** profile
+- Air score `>= 4` AND ground score `<= 2`: **air** profile
 - Ambiguous: **unconfigured**, show pick-profile UI
 
 The result is written to `/etc/ados/profile.conf` with the full fingerprint snapshot. Explicit `agent.profile:` in config.yaml always overrides detection.
@@ -198,13 +198,24 @@ The result is written to `/etc/ados/profile.conf` with the full fingerprint snap
 
 The `ados-api` service runs a FastAPI server on port 8080. It provides:
 
-- `/api/v1/status` and `/api/v1/status/full` for agent state
-- `/api/v1/video/*` for video pipeline status and MediaMTX integration
+- `/api/status` and `/api/status/full` for agent state
+- `/api/video/*` for video pipeline status and MediaMTX integration
 - `/api/v1/ground-station/*` for ground-station-specific endpoints (WiFi, pairing, OLED, buttons, uplinks)
-- `/api/v1/commands/*` for drone commands (arm, disarm, mode change)
-- `/api/v1/config/*` for reading and writing agent configuration
+- `/api/command` for drone commands (arm, disarm, mode change)
+- `/api/config` for reading and writing agent configuration
 
 Authentication uses the `X-ADOS-Key` header with a key stored in `/etc/ados/config.yaml`. The key is generated at install time.
+
+### Runtime boundary
+
+The REST server exposes a stable HTTP surface, but it does not own flight
+controller, video, WFB-ng, script, or parameter state directly. Route modules
+read those domains through the API runtime facade.
+
+In main agent mode, the facade wraps the active process runtime. In standalone
+API service mode, it reads live telemetry from state IPC and uses public runtime
+handles for optional subsystems. This boundary is internal to the agent. It does
+not change request paths, response bodies, or OpenAPI schemas.
 
 ## HAL board profiles
 

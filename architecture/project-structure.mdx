@@ -164,11 +164,12 @@ ADOSDroneAgent/
 │       │       └── kiosk_service.py
 │       │
 │       ├── api/
+│       │   ├── runtime.py          # API facade and runtime boundary
 │       │   └── routes/
-│       │       ├── status.py       # /api/v1/status, /api/v1/status/full
-│       │       ├── video.py        # /api/v1/video/*
-│       │       ├── commands.py     # /api/v1/commands/*
-│       │       ├── config.py       # /api/v1/config/*
+│       │       ├── status.py       # /api/status, /api/status/full
+│       │       ├── video.py        # /api/video/*
+│       │       ├── commands.py     # /api/command, /api/commands
+│       │       ├── config.py       # /api/config
 │       │       └── ground_station.py  # /api/v1/ground-station/*
 │       │
 │       ├── hal/
@@ -225,6 +226,8 @@ ADOSDroneAgent/
 | `src/ados/core/supervisor.py` | Starts, stops, and monitors child systemd services |
 | `src/ados/core/circuit_breaker.py` | 5-in-60s breaker pattern for service restarts |
 | `src/ados/services/mavlink/proxy.py` | Reads FC serial, writes to `/run/ados/mavlink.sock` |
+| `src/ados/api/runtime.py` | API-facing facade over main and standalone runtimes |
+| `src/ados/services/api/__main__.py` | Standalone FastAPI service entrypoint |
 | `src/ados/services/video/pipeline.py` | Camera detection, ffmpeg launch, watchdog |
 | `src/ados/services/video/mediamtx.py` | MediaMTX config generation (STUN, ICE, ports) |
 | `src/ados/bootstrap/profile_detect.py` | Score-based hardware fingerprint for air vs ground |
