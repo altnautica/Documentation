@@ -52,8 +52,8 @@ flowchart LR
 | SBC | Raspberry Pi 4B (2GB+ RAM) | $45 |
 | WiFi adapter | RTL8812EU USB dongle | $15-20 |
 | Antennas | 2x 5.8GHz SMA (dipole or patch) | $10-15 |
-| USB-C cable | For power or laptop tether | $5 |
-| Power supply | 5V 3A USB-C | $10 |
+| USB-C data cable | Laptop tether | $5 |
+| USB-C power source | Wall adapter or PD power bank | $10+ |
 
 ### Full Standalone Setup (field use)
 
@@ -185,7 +185,7 @@ Plug a USB-C cable from the Ground Agent SBC to your laptop. The SBC exposes a C
 Open `http://192.168.7.1:4000` in your browser.
 
 <Tip>
-USB tether is the most reliable connection method. It does not depend on WiFi signal quality, it provides power to the SBC (if your laptop's USB port supplies enough current), and latency is consistently low.
+USB tether is the most reliable data path. It does not depend on WiFi signal quality, and latency is consistently low. Use separate wall power or a USB-C power bank when video, WiFi AP, HDMI, or extra radios are active.
 </Tip>
 
 ### Option 3: HDMI Kiosk (No Laptop)
@@ -194,7 +194,7 @@ Connect an HDMI cable to the SBC and a portable monitor. The Ground Agent runs C
 
 Pair a USB or Bluetooth gamepad for manual flight control. The HUD shows the video feed, attitude, altitude, battery, and GPS overlaid on the video.
 
-This is the "backpack ground station" setup. SBC in a case, battery pack, portable monitor, and gamepad. No laptop required.
+This is the "backpack ground station" setup. SBC in a case, USB-C power bank, portable monitor, and gamepad. No laptop required.
 
 <Frame caption="Ground Agent OLED display showing link status, signal strength, and connected client count">
   <img src="/images/placeholder-ground-agent-oled.png" alt="1.3 inch OLED display on the ground station showing WFB-ng signal strength and connected clients" />

@@ -79,7 +79,9 @@ journalctl -u ados-wfb-rx -n 30  # WFB-ng receiver logs
 | Power-only cable | Try a known data cable | Replace with a cable explicitly rated for USB data |
 | USB gadget service not running | `systemctl status ados-usb-gadget` | Check that `dtoverlay=dwc2` is in `/boot/firmware/config.txt` and reboot |
 | Old Windows 10 build | Device Manager shows yellow exclamation | Install the RNDIS driver from the setup webapp help page |
-| Laptop providing insufficient power | Pi brownouts under load | Use a separate 5V/3A PSU for the Pi |
+| Laptop providing insufficient power | Ground Agent brownouts under load | Use a separate wall adapter or USB-C power bank |
+
+If USB tether works while idle but drops when video starts, test with separate power before changing network settings. See [Power and Runtime](/ground-agent/power-and-runtime).
 
 ## OLED is blank
 

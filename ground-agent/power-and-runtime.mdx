@@ -1,0 +1,86 @@
+---
+title: "Power and Runtime"
+description: "How to power the ADOS Ground Agent from wall adapters, USB-C power banks, and field power sources."
+icon: "battery-full"
+---
+
+# Power and Runtime
+
+The ADOS Ground Agent is designed to stay compact. It does not need an internal battery to work in the field. Power it from USB-C using a wall adapter, a USB-C PD power bank, a vehicle adapter, or another regulated field power source.
+
+This keeps the ground node small and lets you choose the runtime you need for each job.
+
+## Recommended power sources
+
+| Source | Use it for | Notes |
+|---|---|---|
+| USB-C wall adapter | Bench work, lab testing, fixed setup | Use a supply that can sustain the board's required output under load. |
+| USB-C PD power bank | Field operation | Best portable option. Pick a bank with sustained output, not only a high peak rating. |
+| Vehicle or field battery adapter | Long sessions | Use only regulated USB-C output. Avoid bare battery leads into the board. |
+| Laptop USB-C power | Short setup only | Some laptops limit current. Use separate power when video, WiFi AP, HDMI, or extra radios are active. |
+
+<Warning>
+Do not judge power banks only by the mAh label. Most banks print mAh at internal cell voltage, not at USB output. Runtime should be estimated in watt-hours.
+</Warning>
+
+## Expected draw
+
+Use these bands for planning:
+
+| Ground Agent mode | Expected draw | Plan for |
+|---|---:|---|
+| Direct/headless node | ~7.5 W | One radio, no HDMI kiosk, normal local clients |
+| Kiosk or dual-radio node | ~9-11 W | HDMI, browser kiosk, extra radio, or heavier uplink use |
+| Supply ceiling | 15 W | Power-supply sizing and brownout margin, not normal runtime |
+
+The ceiling matters because weak supplies can reset USB radios during spikes. It is not the number to use for average runtime unless you want a worst-case estimate.
+
+## Runtime estimates
+
+These estimates assume 75-85% usable energy after USB conversion losses.
+
+| Power bank label | Usable energy | ~7.5 W direct/headless | ~10 W kiosk/dual-radio | 15 W ceiling |
+|---|---:|---:|---:|---:|
+| 10,000 mAh | ~28-31 Wh | ~3.7-4.1 h | ~2.8-3.1 h | ~1.9-2.1 h |
+| 20,000 mAh | ~56-63 Wh | ~7.5-8.4 h | ~5.6-6.3 h | ~3.7-4.2 h |
+| 30,000 mAh | ~83-94 Wh | ~11.1-12.5 h | ~8.3-9.4 h | ~5.5-6.3 h |
+| 99 Wh PD bank | ~74-84 Wh | ~9.9-11.2 h | ~7.4-8.4 h | ~5.0-5.6 h |
+
+Old banks, thin cables, hot weather, and extra devices powered from the same bank reduce runtime.
+
+## USB tether power
+
+USB tether is a data path first. A laptop may also power the Ground Agent, but that is not the recommended field setup.
+
+For reliable USB tether:
+
+- Power the Ground Agent from a wall adapter or USB-C power bank.
+- Use a separate USB-C cable that is explicitly data-capable.
+- Treat laptop back-power as a short setup convenience only.
+- If video freezes or the USB network drops under load, test again with a known-good power source before changing radio settings.
+
+## Brownout symptoms
+
+Power problems often look like radio or network problems:
+
+| Symptom | Likely cause | First fix |
+|---|---|---|
+| USB tether appears and disappears | Host power limit or bad cable | Use separate power and a known data cable |
+| Video freezes when more clients join | Supply sag under WiFi load | Use a stronger USB-C source |
+| Radio adapter disappears from diagnostics | Brownout on the USB bus | Change power source and cable |
+| HDMI kiosk works, then drops video | Load spike from display and browser | Use a higher-output USB-C source |
+| Works on wall power but not on a power bank | Bank cannot sustain output | Use a PD bank with sustained output rating |
+
+## Field checklist
+
+- Use a USB-C source that can sustain the required output.
+- Carry one known-good data cable and one known-good power cable.
+- Keep the power bank out of direct sun when possible.
+- Start long sessions with the bank fully charged.
+- For USB tether, separate power from data whenever the hardware allows it.
+
+## What is next
+
+- [USB Tether](/ground-agent/usb-tether) for wired laptop setup
+- [Supported Hardware](/ground-agent/supported-hardware) for board and accessory requirements
+- [Troubleshooting](/ground-agent/troubleshooting) for power-related symptoms

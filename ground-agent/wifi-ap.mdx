@@ -6,7 +6,7 @@ icon: "wifi"
 
 # WiFi AP Mode
 
-The ground station creates a WiFi hotspot on boot. Join it from your laptop or phone, open a browser, and you have video and telemetry. No software to install, no drivers, no internet required.
+The ground station creates a WiFi hotspot on boot. Join it from your laptop or phone, open a browser, and you have video and telemetry. No software to install, no radio drivers, no internet required.
 
 ## How it works
 
@@ -17,7 +17,7 @@ sequenceDiagram
     participant GS as Ground Agent
     participant Laptop as Laptop / Phone
 
-    Drone->>GS: WFB-ng 5 GHz video + MAVLink
+    Drone->>GS: Long-range video + telemetry
     GS->>GS: Decode and serve via MediaMTX
     Note over GS: WiFi AP on 2.4 GHz<br/>SSID: ADOS-GS-XXXX
     Laptop->>GS: Join WiFi AP
@@ -29,7 +29,7 @@ sequenceDiagram
     GS-->>Laptop: Real-time telemetry
 ```
 
-The onboard WiFi radio (not the RTL8812EU) hosts the access point on 2.4 GHz. The RTL8812EU stays dedicated to WFB-ng reception on 5 GHz. These two radios do not interfere with each other.
+The onboard WiFi radio hosts the access point on 2.4 GHz. The dedicated video-link radio stays on the drone-facing receive job. These two radios do not interfere with each other.
 
 ## Connecting from a laptop
 
@@ -75,8 +75,8 @@ Once connected to the AP, your browser can reach:
 |----------|-----|---------|
 | Mission Control | `http://192.168.4.1:4000` | Full GCS (if installed on the node) |
 | Setup webapp | `http://setup.ados.local/` | First-time setup and config |
-| WebRTC WHEP | `http://192.168.4.1:8889/ados/whep` | Direct video stream |
-| MAVLink WebSocket | `ws://192.168.4.1:8088/mavlink` | Raw MAVLink telemetry |
+| WebRTC WHEP | `http://192.168.4.1:8889/ados/whep` or the WHEP URL reported by the Agent | Direct video stream |
+| MAVLink WebSocket | `ws://192.168.4.1:8765/` | Raw MAVLink telemetry |
 | Agent REST API | `http://192.168.4.1:8080/api/v1/` | Agent management |
 
 ## Multiple clients
@@ -124,8 +124,15 @@ Two workarounds:
 For field use, the local build on the ground station is the recommended approach. No internet, no HTTPS issues, lowest latency.
 </Tip>
 
+## Power
+
+WiFi AP mode is usually powered from a wall adapter on the bench or a USB-C power bank in the field. Avoid relying on laptop back-power when multiple WiFi clients are streaming video.
+
+[Power and Runtime](/ground-agent/power-and-runtime) has field runtime estimates.
+
 ## What is next
 
 - [USB Tether](/ground-agent/usb-tether) for a wired alternative
+- [Power and Runtime](/ground-agent/power-and-runtime) for field power sizing
 - [HDMI Kiosk](/ground-agent/hdmi-kiosk) to fly with no laptop at all
 - [Setup and Pairing](/ground-agent/setup-and-pairing) for the first-time walkthrough

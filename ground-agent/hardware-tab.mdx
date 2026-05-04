@@ -6,7 +6,7 @@ icon: "gear"
 
 # Hardware Tab in Mission Control
 
-The Hardware tab is a top-level tab in ADOS Mission Control that gives you full control over the ground station from your browser. It covers everything the OLED menu and setup webapp can do, plus advanced features like drag-and-drop uplink priority, button remapping, and recording management.
+The Hardware tab is a top-level tab in ADOS Mission Control. It gives you a browser control surface for the connected Ground Agent: status, network, physical UI, controllers, peripherals, distributed receive, and mesh.
 
 <Frame caption="The Hardware tab Overview sub-view showing ground station status, connected clients, and quick actions">
   <img src="/images/placeholder-hardware-tab.png" alt="Mission Control Hardware tab showing ground station overview with link health and connected clients" />
@@ -14,156 +14,120 @@ The Hardware tab is a top-level tab in ADOS Mission Control that gives you full 
 
 ## Where to find it
 
-The Hardware tab sits in the top navigation bar of Mission Control, after **Command** and before **Plan**. It appears when a ground station is detected on the network (via mDNS or manual IP entry).
+The Hardware tab sits in the top navigation bar of Mission Control, after **Command** and before **Plan**. It appears when Mission Control is connected to an Agent running in the ground-station profile.
 
-## Sub-views
+## Current sub-views
 
-The Hardware tab is organized into five sub-views, each covering a different aspect of the ground station.
+### Overview
 
-### 1. Overview
+The landing page for the Hardware tab. It shows:
 
-The landing page for the Hardware tab. Shows at a glance:
+- Ground station profile, board, uptime, and paired-drone state
+- Link health, including RSSI, bitrate, channel, and FEC counters when available
+- Uplink summary and current role
+- Pairing action for the drone link
+- PIC widget showing who currently has pilot-in-command authority
 
-- **Ground station card:** device ID, firmware version, profile, board type, uptime
-- **Link health:** WFB-ng RSSI, bitrate, FEC recovered and lost packets, channel
-- **Connected clients:** list of all devices connected (HDMI kiosk, laptops, phones) with IP, connection type, and PIC badge
-- **Recording state:** whether video recording is active, file name, duration
-- **Quick actions:** buttons for "Take PIC", "Start Recording", "Reboot Ground Station"
-
-If multiple ground stations are connected (multi-GS fleet), each gets its own card.
-
-### 2. Network
+### Network
 
 Full network configuration:
 
-- **WiFi AP row:** toggle on/off, edit SSID, reveal passphrase, select band
-- **WiFi client row:** scan for networks, join, forget saved networks
-- **Ethernet row:** status, DHCP lease info, manual IP entry
-- **4G modem row:** enable/disable, APN configuration, signal strength bars, data used this month, cap setting, throttle status indicator
-- **Uplink priority:** drag-and-drop reorder list with a visible indicator showing which uplink is currently active
-- **Share uplink toggle:** advanced option to NAT AP clients through the uplink
+- WiFi AP enable, SSID, passphrase, and band settings
+- WiFi client scan, join, and leave
+- Ethernet status and configuration
+- Cellular modem status and APN settings
+- Uplink priority order
+- Share-uplink toggle for local clients
 
-### 3. WFB-ng Radio
+### Physical UI
 
-Radio link configuration and monitoring:
+OLED and device UI settings:
 
-- **Channel picker:** select from channels 1-165 across 2.4 GHz and 5 GHz bands
-- **FEC presets:** low-latency, balanced, long-range (each adjusts FEC ratio and bitrate)
-- **Antenna diversity display:** for Pro tier boards with two RTL8812EU adapters, shows per-antenna RSSI and which antenna is currently selected
-- **Recording toggle:** start and stop video recording on the ground station SD card
-- **Pair with drone:** initiate pairing workflow with key entry and confirmation on both sides
+- OLED brightness
+- Auto-dim behavior
+- Screen timing and screen settings where supported
+- Factory reset with typed confirmation
 
-### 4. Physical UI
+Button remapping and screen reorder controls are present as configuration surfaces, but remain limited until the matching Agent endpoints are fully supported.
 
-OLED and button configuration:
+### Controllers
 
-- **OLED brightness slider:** 0-100%, with auto-dim toggle
-- **Screen cycle time:** how long each status screen displays (default 5 seconds)
-- **Screen enable/reorder:** choose which of the 5 status screens to show and in what order
-- **Button remap matrix:** a 4x2 grid (4 buttons, 2 layers: short press and long press) where you can assign any action to any button/layer combination
-- **Factory reset:** button that opens a typed-phrase confirmation dialog
+Gamepad and pilot-control management:
 
-### 5. Storage and Logs
+- Connected gamepad list
+- Primary gamepad selection
+- PIC claim, release, confirm, and heartbeat state
+- Bluetooth scan, pair, and forget actions where available
 
-Recorded files and diagnostics:
+### Peripherals
 
-- **SD usage bar:** visual indicator of how much storage is used
-- **Recorded files list:** filename, duration, file size, and a download button for each recording
-- **Log download:** select a time range and download agent logs as a zip file
-- **Auto-clean policy:** toggle "delete recordings older than 30 days" to free SD card space automatically
+Connected accessory management:
 
-### 6. Distributed RX (mesh-capable nodes only)
+- Enumerated USB, Bluetooth, and Agent-discovered devices
+- Per-device health and status
+- Device configuration and supported action buttons
 
-Appears in the sub-view tab strip when the connected ground station has `mesh_capable: true` in its profile config. The page is role-aware:
+### Distributed RX
 
-- **On a receiver:** renders a list of paired relays as `RelayCard` rows (device id, fragment count, last-seen age, Revoke button gated by typed-phrase confirm). Shows a `PairingStatusCard` with the Accept window state, pending join requests, and an Approve button per pending request. Shows a `CombinedStreamStats` card with FEC-repaired fragments, post-dedup fragment count, and output bitrate.
-- **On a relay:** renders a `ReceiverCard` showing the configured receiver mDNS host, the current `bat0` address, fragments seen vs forwarded, and reachability state.
-- **On a direct-mode node:** renders an empty state explaining that distributed receive is off in this mode.
+Shown on mesh-capable nodes. The page is role-aware:
 
-The page polls `/api/v1/ground-station/{role,wfb/relay/status,wfb/receiver/relays,wfb/receiver/combined,pair/pending}` at 2 second cadence while the tab is visible and pauses on `document.hidden`.
+- **Direct:** shows that distributed receive is off and offers role change.
+- **Relay:** shows receiver reachability, relay status, and fragment forwarding stats.
+- **Receiver:** shows paired relays, pending join requests, pairing-window state, revoke actions, and combined-stream stats.
 
-### 7. Mesh (mesh-capable nodes only)
+This page polls the role and distributed-receive endpoints while visible. It can change role, open and close the receiver pairing window, approve pending relays, and revoke relays.
 
-Also gated on `mesh_capable: true` and only useful on `relay` or `receiver` roles. Renders four cards:
+### Mesh
 
-- **`MeshHealthCard`:** mesh id, peer count, partition indicator, currently selected gateway.
-- **`MeshNeighborsTable`:** semantic table of every batman-adv neighbor with the link interface, TQ, and last-seen age. Sorted by TQ.
-- **`MeshGatewaysTable`:** every advertised cloud gateway with bandwidth class, TQ, and a Pin button that pins the receiver's gateway selection. The currently selected gateway is highlighted.
-- **`MeshLogAggregator`:** placeholder action for pulling mesh logs. The agent endpoint that bundles logs is not yet shipped, so the button is disabled with a "coming soon" tooltip.
+Shown on mesh-capable nodes. The page shows:
 
-The page polls `/api/v1/ground-station/mesh/{health,neighbors,routes,gateways}` at 3 second cadence and pauses on `document.hidden`. Live deltas come in via the `/api/v1/ground-station/ws/mesh` WebSocket stream which the GCS subscribes to centrally.
+- Mesh health, mesh id, peer count, partition indicator, and selected gateway
+- Neighbor table with link quality and last-seen age
+- Gateway table with advertised gateways and pin action
+- Mesh event toasts for partitions, gateway failover, receiver unreachable, relay revoked, and relay disconnected
+- Disabled log-aggregation action until the Agent log bundle endpoint ships
 
-## Top-bar role badge
+The page polls mesh health, neighbors, routes, and gateways while visible. Live mesh deltas arrive through the mesh WebSocket stream.
 
-The Mission Control TopBar now carries a `RoleBadge` pill that is **always visible** when the connected agent is in the `ground_station` profile. The pill shows `Direct`, `Rly`, `Rx<id>` (receiver, with the first three characters of the mesh id), or `Unset` (mesh-capable but no role chosen). It hides entirely on `drone` or `auto` profiles.
+## Planned sub-views
 
-Hover the pill for a tooltip with the mesh id and current peer count when on a mesh.
+Two sub-views are planned but are not separate pages in the current Mission Control route tree:
 
-## Mesh event toasts
+| Sub-view | Planned coverage |
+|---|---|
+| Radio | Channel, bitrate, FEC, diversity, and recording controls |
+| Storage and Logs | SD usage, recording downloads, log bundles, and cleanup policy |
 
-A small bridge component listens to the `/ws/mesh` event stream centrally and surfaces transient events as toast notifications:
-
-| Event | Toast | Severity |
-|---|---|---|
-| `mesh_partitioned` | "Mesh partitioned" | error |
-| `gateway_failover` | "Gateway failover to {mac}" | info |
-| `receiver_unreachable` (relay-side) | "Receiver unreachable: {id}" | warning |
-| `relay_revoked` (receiver-side) | "Relay revoked: {id}" | info |
-| `relay_disconnected` (receiver-side) | "Relay disconnected: {id}" | warning |
-
-Toasts dedup within 1.5 seconds so a flapping link does not spam the operator.
+Today, drone pairing and link health live in Overview, while mesh log aggregation is shown as a disabled action in Mesh.
 
 ## Data flow
 
-The Hardware tab communicates with the ground station through two channels:
+The Hardware tab communicates with the Ground Agent through:
 
-1. **REST API** at `http://<ground-node>:8080/api/v1/ground-station/*` for reads and writes (config changes, pair commands, reboot)
-2. **WebSocket** at `ws://<ground-node>:8080/api/v1/ground-station/events` for live updates (RSSI changes, uplink flaps, client connects and disconnects)
+| Channel | Path |
+|---|---|
+| REST API | `http://<ground-node>:8080/api/v1/ground-station/*` |
+| Uplink events | `ws://<ground-node>:8080/api/v1/ground-station/ws/uplink` |
+| Mesh events | `ws://<ground-node>:8080/api/v1/ground-station/ws/mesh` |
+| PIC events | `ws://<ground-node>:8080/api/v1/ground-station/pic/events` |
 
-For ground stations on the local network (WiFi AP, USB tether, Ethernet), the browser connects directly. For cloud-relayed ground stations, the data routes through the Convex proxy.
+For ground stations on the local network, the browser connects directly over WiFi AP, USB tether, or Ethernet. Hosted Mission Control cannot open local `http://` or `ws://` endpoints from an HTTPS page, so local Ground Agent control should use a local Mission Control build or the Ground Agent-hosted build.
 
-## State management
+## State behavior
 
-A Zustand store (`groundStationStore`) holds the state for all connected ground stations. Key behaviors:
-
-- One entry per ground station, keyed by device ID
-- Status polling at 2 Hz by default
-- If a ground station goes offline, the last-known state is displayed with a "stale" indicator and greyed-out UI
-- Reconnection is automatic when the ground station comes back
-
-## Live updates
-
-The WebSocket connection delivers real-time events:
-
-| Event | Content |
-|-------|---------|
-| `link_update` | RSSI, bitrate, FEC stats (every 500 ms) |
-| `client_connected` | New device IP, connection type |
-| `client_disconnected` | Device left |
-| `pic_changed` | New pilot-in-command client |
-| `uplink_failover` | Old uplink, new uplink, reason |
-| `recording_started` | Filename, timestamp |
-| `recording_stopped` | Filename, duration, size |
-| `data_cap_threshold` | Percentage reached (80%, 95%, 100%) |
-
-## Future sub-views
-
-The Hardware tab is designed to grow. These sub-views will appear in future releases as their respective products ship:
-
-| Sub-view | Covers | Status |
-|----------|--------|--------|
-| Game Controllers | Gamepad dead zones, expo curves, rebinds, profile storage | Planned |
-| Android RC | OEM controller config, expansion accessories | Planned |
-| Peripherals | USB and Bluetooth device list, peripheral health | Planned |
-
-All future peripherals land in the same tab. One place for everything you plug in or hold.
+- Overview status polls at a short cadence while the page is visible.
+- Distributed RX polls every few seconds while visible.
+- Mesh polls every few seconds while visible.
+- Polling pauses when the browser tab is hidden.
+- Last-known state is retained when a node goes offline, then refreshed when it reconnects.
 
 ## Using Hardware tab offline
 
-The Hardware tab works fully offline as long as you can reach the ground station over the local network. No Convex connection is needed. Cloud features (remote access, fleet view) are additive.
+The Hardware tab works offline as long as your browser can reach the Ground Agent over the local network. Cloud features are additive. Local video, telemetry, role management, and network setup do not require internet.
 
 ## What is next
 
 - [Physical UI](/ground-agent/physical-ui) for OLED and button details
 - [Uplink Matrix](/ground-agent/uplink-matrix) for network configuration
+- [Power and Runtime](/ground-agent/power-and-runtime) for field power sizing
 - [Troubleshooting](/ground-agent/troubleshooting) for common issues

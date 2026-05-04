@@ -85,12 +85,13 @@ A future update will add QR code scanning. The drone's OLED shows a QR code, and
 
 To pair with a different drone:
 
-1. Open the setup webapp or OLED menu
-2. Go to "Pair with drone"
-3. Enter the new drone's pairing key
-4. The old pairing is replaced
+1. Open the setup webapp, OLED menu, or Mission Control Hardware tab
+2. Unpair the current drone
+3. Start "Pair with drone"
+4. Enter the new drone's pairing key
+5. Confirm that the new pairing is shown on the Link screen
 
-You can also start a new pairing from the Mission Control Hardware tab by clicking the "Pair" button in the WFB-ng Radio sub-view.
+The current agent rejects a second pairing while a drone is already paired. Mission Control handles this by asking you to unpair first, then retrying the new pair request.
 
 ## Captive portal behavior
 
@@ -121,9 +122,11 @@ This path is slower than the webapp but works with nothing except the ground sta
 
 Once you have a browser connected (WiFi or USB tether), Mission Control's Hardware tab provides the full setup interface:
 
-- **WFB-ng Radio** sub-view: pair with drone, change channel, set FEC profile
+- **Overview:** pair with drone, inspect link status, inspect current PIC
 - **Network** sub-view: WiFi AP config, WiFi client, Ethernet, 4G modem, uplink priority
-- **Physical UI** sub-view: OLED brightness, button remapping, screen settings
+- **Physical UI** sub-view: OLED brightness, display settings, factory reset
+- **Controllers and Peripherals** sub-views: gamepads, Bluetooth devices, and connected accessories
+- **Distributed RX and Mesh** sub-views: role, relay, receiver, and mesh state on mesh-capable nodes
 
 The Hardware tab is the most feature-rich setup interface. The setup webapp and OLED cover the basics.
 

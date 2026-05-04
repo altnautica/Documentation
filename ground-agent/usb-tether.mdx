@@ -8,6 +8,8 @@ icon: "usb"
 
 Plug a USB-C data cable from the ground station to your Mac, Windows, or Android device. The SBC appears as a USB Ethernet adapter. No drivers to install on modern operating systems. Video latency drops to 40-70 ms because you skip the WiFi hop entirely.
 
+The Ground Agent still does the radio receive work. Your Mac or Windows laptop talks to the Ground Agent over USB Ethernet and receives standard IP streams.
+
 ## How it works
 
 The Pi 4B USB-C port supports USB 2.0 OTG device mode. The agent configures a `libcomposite` USB gadget at boot that presents two Ethernet functions:
@@ -57,8 +59,8 @@ All the same endpoints as WiFi, but at `192.168.7.1` instead of `192.168.4.1`:
 |----------|-----|
 | Mission Control | `http://192.168.7.1:4000` |
 | Setup webapp | `http://ground-station.local/` |
-| WebRTC WHEP | `http://192.168.7.1:8889/ados/whep` |
-| MAVLink WebSocket | `ws://192.168.7.1:8088/mavlink` |
+| WebRTC WHEP | `http://192.168.7.1:8889/ados/whep` or the WHEP URL reported by the Agent |
+| MAVLink WebSocket | `ws://192.168.7.1:8765/` |
 | Agent REST API | `http://192.168.7.1:8080/api/v1/` |
 
 ## Why USB tether
@@ -88,9 +90,11 @@ More than enough for multiple video streams and telemetry. USB 3.0 is not needed
 Many cheap USB-C cables are power-only and do not carry data. If your laptop does not detect a new network interface after plugging in, try a different cable. Look for cables explicitly labeled "data" or "USB 2.0/3.0 data capable."
 </Warning>
 
-The Pi 4B USB-C port is both data and power. A laptop that provides USB-C power may back-power the Pi, but some laptops only provide 500 mA. The Pi under WiFi AP and RTL8812EU load needs about 2 A. Brownouts cause instability.
+The Pi 4B USB-C port is both data and power. A laptop that provides USB-C power may back-power the Pi, but some laptops only provide 500 mA. The Pi under WiFi AP and radio load needs more than that. Brownouts cause instability.
 
-**Recommended setup:** Power the Pi from its own 5V/3A power supply. Use a separate data-capable USB-C cable for the tether. This separates power from data and avoids brownout issues.
+**Recommended setup:** Power the Ground Agent from its own wall adapter or USB-C power bank. Use a separate data-capable USB-C cable for the tether. This separates power from data and avoids brownout issues.
+
+For runtime sizing, see [Power and Runtime](/ground-agent/power-and-runtime).
 
 ## Combining USB tether with WiFi AP
 
@@ -110,10 +114,11 @@ Same as WiFi: if your browser loaded Mission Control from `https://command.altna
 | No new network interface | USB gadget service not running | SSH in and check `systemctl status ados-usb-gadget` |
 | No new network interface | `dwc2` not loaded | Check that `dtoverlay=dwc2` is in `/boot/firmware/config.txt` |
 | Windows yellow exclamation | RNDIS driver not installed | Install the INF from the setup webapp help page |
-| Intermittent disconnects | Brownout from laptop power | Use a separate 5V/3A PSU for the Pi |
+| Intermittent disconnects | Brownout from laptop power | Use a separate wall adapter or USB-C power bank |
 
 ## What is next
 
 - [WiFi AP](/ground-agent/wifi-ap) for the wireless alternative
+- [Power and Runtime](/ground-agent/power-and-runtime) to size the external power source
 - [HDMI Kiosk](/ground-agent/hdmi-kiosk) for standalone flight without a laptop
 - [Uplink Matrix](/ground-agent/uplink-matrix) for all five connectivity options

@@ -14,6 +14,7 @@ The Ground Agent uses the same install script as the Drone Agent. One command, o
 - An RTL8812EU USB WiFi adapter plugged in
 - Internet access during installation (WiFi or Ethernet)
 - An SD card with at least 16 GB (32 GB recommended)
+- A USB-C wall adapter or USB-C power bank that can sustain the board under radio load
 
 <Warning>
 The install script requires internet to download packages and the DKMS driver for the RTL8812EU. After installation completes, the ground station works fully offline.
@@ -129,7 +130,7 @@ The upgrade preserves your config, pairing keys, and profile. Services restart a
 For testing pre-release features:
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/altnautica/ADOSDroneAgent/main/scripts/install.sh | sudo bash -s -- --branch ground-station-phase-2
+curl -sSL https://raw.githubusercontent.com/altnautica/ADOSDroneAgent/main/scripts/install.sh | sudo bash -s -- --branch ground-station-test
 ```
 
 ## Mesh support
@@ -175,3 +176,4 @@ agent:
 - [Setup and Pairing](/ground-agent/setup-and-pairing) for the first-time walkthrough
 - [WiFi AP](/ground-agent/wifi-ap) to connect your laptop
 - [USB Tether](/ground-agent/usb-tether) for a wired connection
+- [Power and Runtime](/ground-agent/power-and-runtime) to size field power

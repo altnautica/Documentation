@@ -10,10 +10,11 @@ The Ground Agent runs on any Linux ARM single-board computer that can host a USB
 
 ## Required components
 
-Every ground station needs these two things:
+Every ground station needs these three things:
 
 1. **A Linux SBC** with at least 1 GB RAM, USB 2.0, and a 64-bit ARM processor
 2. **An RTL8812EU USB WiFi adapter** for WFB-ng receive on 5 GHz
+3. **A USB-C power source** that can sustain the required output under radio load
 
 Everything else (OLED, buttons, HDMI, 4G modem) is optional but recommended.
 
@@ -28,7 +29,7 @@ This is the fastest way to get a ground station running. Every part is commodity
 | LB-LINK BL-M8812EU2 (RTL8812EU) | WFB-ng radio receiver |
 | 2x 5 dBi SMA dual-band antenna | Signal reception |
 | USB-C data cable (1 m) | Tether to laptop |
-| 5V / 3A USB-C power supply | Bench power |
+| 5V / 3A USB-C power supply or USB-C PD power bank | Bench or field power |
 
 ### Physical UI (recommended)
 
@@ -123,6 +124,20 @@ Any USB HID gamepad works for standalone HDMI flight. The Web Gamepad API in Chr
 
 Bluetooth gamepads pair through the setup webapp or the OLED menu.
 
+## Power source
+
+The Ground Agent does not require an internal battery. Power it from a wall adapter on the bench or a USB-C PD power bank in the field.
+
+| Operating mode | Planning draw | Power source guidance |
+|---|---:|---|
+| Direct/headless node | ~7.5 W | 5 V / 2 A minimum, stronger source preferred on Pi-class boards |
+| HDMI kiosk, dual-radio, or uplink-heavy node | ~9-11 W | 5 V / 3 A or equivalent USB-C PD source |
+| Supply ceiling | 15 W | Use for margin and brownout prevention |
+
+Laptop USB-C back-power is not a reliable field power source. It may work during setup, but use separate power when video, WiFi AP, HDMI, or a second radio is active.
+
+[Power and Runtime](/ground-agent/power-and-runtime) has runtime estimates for common power bank sizes.
+
 ## Mesh role hardware
 
 If you plan to deploy this node as a `relay` or `receiver` in a multi-node mesh, you need one extra item beyond the bench build:
@@ -140,5 +155,6 @@ The first RTL8812EU stays on the drone-facing radio job. The second adapter hand
 ## What is next
 
 - [Installation](/ground-agent/installation) to set up your ground station
+- [Power and Runtime](/ground-agent/power-and-runtime) to size field power
 - [Physical UI](/ground-agent/physical-ui) for OLED and button details
 - [HDMI Kiosk](/ground-agent/hdmi-kiosk) for standalone flight setup
