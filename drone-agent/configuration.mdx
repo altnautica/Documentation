@@ -256,18 +256,9 @@ When `auto`, the agent probes for available inference backends in order: RKNN (R
 
 ## Reading and writing config
 
-### From the CLI
-
-```bash
-# Read full config
-ados config
-
-# Read a specific key
-ados config mavlink.baud_rate
-
-# Write a value
-ados set video.camera.fps 25
-```
+Use the setup webapp for common MAVLink, video, network, and remote-access
+settings. Advanced users can edit `/etc/ados/config.yaml` directly or use the
+REST API.
 
 ### From the REST API
 

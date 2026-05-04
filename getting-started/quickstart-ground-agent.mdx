@@ -281,8 +281,7 @@ journalctl -u ados-wfb -n 30 --no-pager
 # Verify the adapter is in monitor mode
 iwconfig wlan1  # or whatever the RTL8812EU is assigned
 
-# Make sure the channel matches the drone's TX channel
-ados config show | grep channel
+# Make sure the channel matches the drone's TX channel in the setup webapp
 ```
 
 **USB tether not working:**
@@ -290,9 +289,7 @@ ados config show | grep channel
 # Check if the USB gadget is set up
 ls /sys/kernel/config/usb_gadget/ados-ncm 2>/dev/null
 
-# The USB gadget is environment-gated by default
-# Enable it in config if needed
-ados config set usb_gadget.enabled true
+# Enable USB tether from the setup webapp Network page if needed
 sudo systemctl restart ados-usb-gadget-setup
 ```
 

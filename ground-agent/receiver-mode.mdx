@@ -37,11 +37,7 @@ Unlike relay, **receiver does not require prior pairing.** A fresh receiver can 
 
 **OLED:** Mesh menu -> Set role -> select `receiver` with B1/B2 -> confirm with B3.
 
-**CLI:**
-
-```bash
-ados gs role set receiver
-```
+**Setup webapp:** Ground Station -> Role -> Receiver.
 
 **REST:**
 
@@ -55,16 +51,9 @@ The transition masks the direct-mode `ados-wfb-rx.service`, masks `ados-wfb-rela
 
 ## Verify
 
-```bash
-ados gs role show
-# current: receiver, configured: receiver, mesh_capable: true
-
-ados gs mesh health
-# up: true, peer_count: 0 (no relays paired yet)
-
-curl http://localhost:8080/api/v1/ground-station/wfb/receiver/relays
-# {"relays": []}
-```
+Open the setup webapp Ground Station page or Mission Control Hardware tab. The
+role should show `receiver`, mesh should be up, and the relay list should be
+empty until a relay joins.
 
 The mesh is up. There are no peers yet because no relay has joined.
 
@@ -74,11 +63,7 @@ To accept a relay, the receiver must open a 60 second Accept window:
 
 **OLED:** Mesh menu -> Accept relay. The screen shows a countdown and an empty pending-relay list.
 
-**CLI:**
-
-```bash
-ados gs mesh accept --window 60
-```
+**Setup webapp:** Ground Station -> Pair relay -> Accept for 60 seconds.
 
 **REST:**
 
@@ -88,17 +73,13 @@ curl -X POST http://localhost:8080/api/v1/ground-station/pair/accept \
   -d '{"duration_s": 60}'
 ```
 
-The receiver binds a UDP listener on `bat0:5801`. When a relay sends a join request over the mesh, it appears in the pending list (visible on the OLED, in `ados gs mesh pending`, and in the GCS Hardware tab's PairingStatusCard).
+The receiver binds a UDP listener on `bat0:5801`. When a relay sends a join request over the mesh, it appears in the pending list on the OLED, setup webapp, and GCS Hardware tab.
 
 To approve a pending relay:
 
 **OLED:** highlight the relay with B2/B3, press B1 to approve.
 
-**CLI:**
-
-```bash
-ados gs mesh approve <device_id>
-```
+**Setup webapp or GCS:** approve the pending relay by device id.
 
 **REST:**
 
@@ -154,12 +135,10 @@ Set `mode: auto` to release the pin.
 
 - **OLED:** the status header shows `Rx<id>` as the role badge. Mesh -> Neighbors lists every paired relay with TQ. The Accept window screen shows pending relays during pairing.
 - **GCS Mission Control:** Hardware tab -> Distributed RX renders a RelayCard for each paired relay with fragment counts, plus a CombinedStreamStats card showing FEC-repaired fragments and output kbps. Mesh tab shows MeshHealthCard, MeshNeighborsTable, MeshGatewaysTable.
-- **CLI:**
-  - `ados gs mesh health`
-  - `ados gs mesh neighbors`
-  - `ados gs mesh gateways`
-  - `curl /api/v1/ground-station/wfb/receiver/relays`
-  - `curl /api/v1/ground-station/wfb/receiver/combined`
+- **Setup webapp:** Ground Station and System pages show role, mesh health,
+  neighbors, gateways, relays, and combined stream stats.
+- **REST API:** `/api/v1/ground-station/wfb/receiver/relays` and
+  `/api/v1/ground-station/wfb/receiver/combined`.
 
 ## Decommissioning a relay
 
@@ -167,11 +146,7 @@ To revoke a relay so it can no longer rejoin without re-pairing:
 
 **GCS:** Hardware tab -> Distributed RX -> RelayCard -> Revoke. Type the relay's device id to confirm.
 
-**CLI:**
-
-```bash
-ados gs mesh revoke <device_id>
-```
+**Setup webapp:** Ground Station -> Relays -> Revoke.
 
 The device id goes into `/etc/ados/mesh/revocations.json` (mode 0600). On any future pair attempt from this device, the receiver drops the join request silently and the GCS surfaces a `relay_revoked` toast.
 

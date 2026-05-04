@@ -28,7 +28,6 @@ For mesh-specific failures (relays not pairing, batman-adv not coming up, partit
 ```bash
 # Quick diagnostic commands
 ados status              # Check all services
-ados gs radio status     # Check WFB-ng link
 journalctl -u ados-wfb-rx -n 30  # WFB-ng receiver logs
 ```
 
@@ -139,7 +138,7 @@ On some Android devices, you may need to disable "Smart network switch" or "Wi-F
 |---------------|-----|
 | WiFi AP congestion (many clients) | Reduce to 1-2 video viewers, or switch to USB tether |
 | 2.4 GHz interference | Move to a less crowded channel, or use 5 GHz AP on supported boards |
-| Ground station CPU overloaded | Check `ados gs system` for CPU usage. Lower video resolution to 720p |
+| Ground station CPU overloaded | Check `ados status` and the setup webapp System page. Lower video resolution to 720p |
 | Browser hardware decode not enabled | In Chrome, check `chrome://gpu` for "Video Decode: Hardware accelerated" |
 | WFB-ng packet loss | Check the OLED Link screen for FEC lost packets. Reposition antennas |
 
@@ -152,14 +151,13 @@ On some Android devices, you may need to disable "Smart network switch" or "Wi-F
 | No display device detected | Check that `/dev/dri/card0` exists. Make sure HDMI is plugged in before boot |
 | Cage compositor not installed | Run `sudo apt install cage chromium` and reboot |
 | Mission Control not installed locally | The kiosk needs a local MC build. Run `install.sh --upgrade` to install it |
-| Resolution mismatch | SSH in and check `ados gs display status`. Try setting resolution to 720p |
+| Resolution mismatch | SSH in, open the setup webapp, and try setting resolution to 720p |
 
 ## Factory reset
 
 If nothing else works, you can reset the ground station to factory defaults:
 
 - **OLED:** Hold B4 for 10 seconds, confirm by holding B4 again for 3 seconds
-- **CLI:** `sudo ados factory-reset`
 - **Setup webapp:** Advanced > Factory Reset
 
 This erases pairing keys, network config, and all custom settings. The ground station reboots to the first-boot state. You will need to pair with your drone again.
@@ -167,6 +165,6 @@ This erases pairing keys, network config, and all custom settings. The ground st
 ## Getting help
 
 - **Agent logs:** `journalctl -u ados-supervisor -n 100` shows the supervisor log. Replace `ados-supervisor` with any service name.
-- **Full diagnostic dump:** `ados diag` generates a tarball with all logs, config, and system info. Attach it when reporting bugs.
+- **Status JSON:** `ados status --json` captures setup, services, network, MAVLink, video, and remote access state. Attach it when reporting bugs.
 - **Discord:** [discord.gg/uxbvuD4d5q](https://discord.gg/uxbvuD4d5q) for community support
 - **GitHub Issues:** [github.com/altnautica/ADOSDroneAgent/issues](https://github.com/altnautica/ADOSDroneAgent/issues) for bug reports

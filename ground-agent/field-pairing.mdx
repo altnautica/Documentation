@@ -120,7 +120,7 @@ This is field-only field pairing. The threat model is "an operator with physical
 - **Mutual authentication via ECDH.** The receiver's encrypted reply only opens with the relay's ephemeral private key. A passive listener with the same SSID + PSK cannot read the bundle.
 - **Authenticated encryption.** ChaCha20-Poly1305 detects any tampering with the ciphertext.
 - **Bundle expiry.** Invite bundles include `expires_at_ms` 120 seconds in the future. A captured bundle replayed later is rejected by the relay.
-- **Revocation.** A receiver operator can revoke a relay's device id from the GCS or via `ados gs mesh revoke <device_id>`. Revoked device ids are persisted in `/etc/ados/mesh/revocations.json` (mode 0600). On any future pair attempt, the receiver drops the join request before it reaches the approval queue and emits a `revoked` pairing event.
+- **Revocation.** A receiver operator can revoke a relay's device id from the GCS or setup webapp. Revoked device ids are persisted in `/etc/ados/mesh/revocations.json` (mode 0600). On any future pair attempt, the receiver drops the join request before it reaches the approval queue and emits a `revoked` pairing event.
 
 ## Factory reset
 

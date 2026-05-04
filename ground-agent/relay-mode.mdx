@@ -64,11 +64,7 @@ Once pairing has completed, transition the node's role to `relay`. Three paths:
 
 **OLED:** Mesh menu -> Set role -> select `relay` with B1/B2 -> confirm with B3.
 
-**CLI on the box:**
-
-```bash
-ados gs role set relay
-```
+**Setup webapp:** Ground Station -> Role -> Relay.
 
 **REST API:**
 
@@ -88,19 +84,13 @@ The REST handler returns `409 E_NOT_PAIRED` if you try to transition to relay be
 
 After the transition, confirm the node is running as a relay:
 
-```bash
-ados gs role show
-```
-
-Expected output: `current: relay`, `configured: relay`, `mesh_capable: true`.
+Open the setup webapp Ground Station page. Expected role state:
+`current: relay`, `configured: relay`, `mesh_capable: true`.
 
 Confirm the relay's forwarder is talking to the receiver:
 
-```bash
-ados gs mesh neighbors
-```
-
-You should see the receiver's MAC address with a non-zero TQ (Transmit Quality, batman-adv's link metric).
+The Mesh section should show the receiver with a non-zero TQ (Transmit Quality,
+batman-adv's link metric).
 
 Check the relay's forwarding stats:
 
@@ -126,16 +116,17 @@ The original direct-mode `ados-wfb-rx.service` is now masked. The supervisor ref
 
 - **OLED:** the status header shows `Rly` as the role badge. The Mesh -> Joined Status screen shows the receiver's mDNS name and current fragment count.
 - **GCS Mission Control:** Hardware tab -> Distributed RX shows a `ReceiverCard` with the relay's view of the receiver: mDNS name, `bat0` IP, fragment counters, last-seen age.
-- **CLI:** `ados gs mesh neighbors` and `curl /api/v1/ground-station/wfb/relay/status`.
+- **Setup webapp:** Ground Station -> Mesh and Relay status.
+- **REST API:** `/api/v1/ground-station/wfb/relay/status`.
 
 ## Going back to direct
 
 If you want to take a relay out of the mesh:
 
 - **OLED:** Mesh menu -> Leave mesh -> confirm with B3.
-- **CLI:** `ados gs role set direct`.
+- **Setup webapp:** Ground Station -> Role -> Direct.
 
-The transition stops the relay services, masks them, removes the role sentinel, and brings the direct-mode `wfb_rx` back up. The mesh identity files in `/etc/ados/mesh/` stay on disk so a later `ados gs role set relay` can resume without re-pairing. To wipe identity entirely, run a factory reset.
+The transition stops the relay services, masks them, removes the role sentinel, and brings the direct-mode `wfb_rx` back up. The mesh identity files in `/etc/ados/mesh/` stay on disk so a later switch back to relay can resume without re-pairing. To wipe identity entirely, run a factory reset.
 
 ## Where to next
 

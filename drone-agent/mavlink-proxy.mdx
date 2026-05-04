@@ -143,13 +143,10 @@ The JSON telemetry on `/run/ados/state.sock` looks like this (published at 10 Hz
 
 ## Checking MAVLink status
 
-From the CLI:
+From the terminal:
 
 ```bash
-$ ados mavlink
-Connected: True
-Port:      /dev/ttyS0
-Baud:      921600
+ados status
 ```
 
 From the REST API:
@@ -159,4 +156,4 @@ curl http://localhost:8080/api/status \
   -H "X-ADOS-Key: your_key"
 ```
 
-From the TUI, press `m` for the MAVLink screen.
+For setup, open the local setup webapp and use the MAVLink page.

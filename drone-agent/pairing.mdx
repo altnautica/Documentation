@@ -46,32 +46,12 @@ This skips the beacon polling step. The install script writes the API key direct
 
 ## Pair an existing agent
 
-### From the CLI
+Run `ados`, open the setup URL shown in the terminal, and use the setup webapp
+pairing page. If the agent is running a hotspot, connect to it and open
+`http://192.168.4.1`.
 
-Check the current pairing code:
-
-```bash
-$ ados pair
-Paired:     False
-Device ID:  a1b2c3d4
-Name:       my-drone
-Board:      Radxa ROCK 5C Lite (RK3582)
-mDNS:       my-drone.local
-
-  +--------+
-  | AB12CD |
-  +--------+
-
-Enter this code in ADOS Mission Control to pair.
-```
-
-### From the TUI
-
-Launch `ados tui`, go to the Dashboard screen. The pairing code is displayed prominently when the agent is unpaired.
-
-### From the setup webapp
-
-If the agent is running in ground station profile with a WiFi hotspot, connect to the hotspot and open `http://192.168.4.1` in a browser. The setup webapp shows the pairing code and provides a "Pair" button.
+Mission Control can also open the setup webapp from Hardware surfaces when the
+agent advertises a setup URL.
 
 ## Pairing state file
 
@@ -95,14 +75,7 @@ The `api_key` authenticates the agent to the cloud backend and the local REST AP
 
 Unpairing disconnects the agent from your cloud account. The drone disappears from Mission Control and stops sending telemetry.
 
-From the CLI:
-
-```bash
-$ ados unpair
-This will unpair the agent. Continue? [y/N]: y
-Agent unpaired successfully.
-New pairing code: XY34ZW
-```
+Use Mission Control or the setup webapp to unpair a device.
 
 From the REST API:
 
@@ -120,7 +93,7 @@ After unpairing:
 
 ## API key authentication
 
-Once paired, the REST API requires the `X-ADOS-Key` header on most endpoints. A few endpoints are exempt (like `/api/pairing/info`) so the CLI and TUI can check pairing status without a key.
+Once paired, the REST API requires the `X-ADOS-Key` header on most endpoints. A few endpoints are exempt (like `/api/pairing/info`) so local setup and status surfaces can check pairing state without a key.
 
 The CLI reads the key from `/etc/ados/pairing.json` automatically. If you are calling the API from your own code, include the header:
 

@@ -27,11 +27,8 @@ ota:
   channel: "stable"
 ```
 
-Or from the CLI:
-
-```bash
-ados set ota.channel beta
-```
+You can change the update channel from the setup webapp Advanced page or the
+agent config file.
 
 ## Checking for updates
 
@@ -49,9 +46,7 @@ The check is non-blocking. If an update is found, it is noted but not installed 
 ### Manual check
 
 ```bash
-$ ados check
-Update available: v0.5.4
-Changelog: Fixed video pipeline restart on camera hot-plug...
+ados update --check-only
 ```
 
 Or via the REST API:
@@ -84,10 +79,10 @@ If no update is available:
 
 ### One-step upgrade
 
-The `ados upgrade` command checks, downloads, installs, and restarts in one step:
+The `ados update` command checks, downloads, installs, and restarts in one step:
 
 ```bash
-$ ados upgrade
+$ ados update
 Checking for updates...
 Update available: v0.5.4
 Install v0.5.4? [y/N]: y
@@ -100,7 +95,7 @@ Done.
 Skip the confirmation prompt with `-y`:
 
 ```bash
-ados upgrade -y
+ados update --yes
 ```
 
 ### Via install script
@@ -111,7 +106,7 @@ You can also upgrade by re-running the install script:
 curl -sSL https://raw.githubusercontent.com/altnautica/ADOSDroneAgent/main/scripts/install.sh | sudo bash -s -- --upgrade
 ```
 
-This is equivalent to `ados upgrade` but also updates the install script itself, systemd service files, and any DKMS drivers.
+This updates the install script itself, systemd service files, and any DKMS drivers.
 
 ### Auto-upgrade
 

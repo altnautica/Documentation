@@ -46,7 +46,7 @@ for example, is GCS-only.
 
 | Field | Notes |
 |-------|-------|
-| `ados_version` | semver range. The agent half compares against `ados version`. |
+| `ados_version` | semver range. The agent half compares against setup status or `/api/version`. |
 | `gcs_version` | semver range. The GCS half compares against the running build. |
 | `python_version` | optional. Required only if `agent:` is set. |
 | `min_tier` | integer. Vehicle integration tier. `0` means any drone. |

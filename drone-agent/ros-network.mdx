@@ -124,15 +124,7 @@ location /ros/ {
 
 From the GCS ROS tab Settings sub-view, select your network tier and enter the connection details. The Foxglove panel and topic subscriptions will reconnect automatically.
 
-From the CLI:
-
-```bash
-# Check current tier
-ados ros status
-
-# The tier is part of your agent config
-ados config show | grep ros
-```
+The selected tier is stored in the agent config and surfaced in Mission Control.
 
 ## Security notes
 

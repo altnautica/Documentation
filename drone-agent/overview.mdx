@@ -10,8 +10,8 @@ The ADOS Drone Agent is the software that runs on the companion computer inside 
 
 It is written in Python 3.11+, licensed under GPLv3, and designed to run on ARM single-board computers from Raspberry Pi to Rockchip to NVIDIA Jetson.
 
-<Frame caption="The TUI dashboard running over SSH on a Radxa ROCK 5C Lite">
-  <img src="/images/placeholder-tui-dashboard.png" alt="ADOS Drone Agent TUI dashboard showing telemetry, FC status, and service health" />
+<Frame caption="The local setup webapp showing agent setup and access URLs">
+  <img src="/images/placeholder-setup-webapp.png" alt="ADOS setup webapp showing setup status and access URLs" />
 </Frame>
 
 ## What it does
@@ -95,14 +95,15 @@ The profile is detected automatically at boot based on hardware fingerprinting. 
 
 You can interact with the agent in four ways:
 
-1. **CLI** (`ados` command): check status, view logs, manage pairing, trigger updates. Works over SSH.
-2. **TUI** (`ados tui`): a full terminal dashboard built with Textual. Nine screens covering status, telemetry, MAVLink, video, link quality, scripting, updates, config, and logs.
-3. **REST API** (port 8080): FastAPI server with endpoints for every agent capability. Authenticated with `X-ADOS-Key` header.
-4. **ADOS Mission Control** (GCS): the companion web app that gives you a full ground control station with maps, video, mission planning, and fleet management.
+1. **Setup webapp** (port 8080): first-run identity, MAVLink, video, network, remote access, ground-station setup, logs, and advanced recovery.
+2. **CLI** (`ados` command): terminal status page, scriptable status, update, and uninstall. Works over SSH.
+3. **REST API** (port 8080): FastAPI server with setup, telemetry, video, MAVLink, and command endpoints. Authenticated endpoints use `X-ADOS-Key`.
+4. **ADOS Mission Control** (GCS): the companion web app for maps, video, mission planning, hardware management, and fleet operations.
 
 ## What's next
 
 - [Supported Hardware](/drone-agent/supported-hardware) to see which boards work
 - [Installation](/drone-agent/installation) to get the agent running
-- [CLI Reference](/drone-agent/cli-reference) for all available commands
-- [TUI Dashboard](/drone-agent/tui-dashboard) for the terminal interface
+- [Setup Webapp](/drone-agent/setup-webapp) to finish local onboarding
+- [CLI Reference](/drone-agent/cli-reference) for the everyday terminal commands
+- [Terminal Status Page](/drone-agent/tui-dashboard) for SSH status and setup URLs

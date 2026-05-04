@@ -1,127 +1,97 @@
 ---
 title: "Setup Webapp"
-description: "Captive portal for WiFi configuration, pairing, and network setup."
+description: "Use the local webapp to set up MAVLink, video, network, and remote access."
 icon: "browser"
 ---
 
 # Setup Webapp
 
-When the agent runs a WiFi hotspot (either in ground station mode or with `network.hotspot.enabled: true`), it serves a setup webapp on the hotspot's gateway address. Connect to the hotspot, open a browser, and the captive portal guides you through configuration.
+ADOS Drone Agent self-hosts a local setup webapp on port `8080`. Use it for
+first-run onboarding and later hardware changes.
 
-<Frame caption="The setup webapp showing WiFi network selection and pairing">
-  <img src="/images/placeholder-setup-webapp.png" alt="ADOS setup webapp with WiFi scan results and pairing code" />
-</Frame>
+The webapp is local-first. MAVLink and video can work over hotspot, LAN, USB
+tether, or direct Mission Control before you add any cloud or tunnel link.
 
-## How to access it
+## Open the webapp
 
-<Steps>
-  <Step title="Connect to the hotspot">
-    On your phone or laptop, connect to the WiFi network named `ADOS-{device-id}` (e.g., `ADOS-a1b2c3d4`). The default password is `ados1234` unless you changed it in config.
-  </Step>
+Run this on the node:
 
-  <Step title="Captive portal opens automatically">
-    Most devices (Android, iOS, macOS, Windows) detect the captive portal and open a browser window automatically. If it does not open, navigate to `http://192.168.4.1` manually.
-  </Step>
-
-  <Step title="Configure and pair">
-    The webapp walks you through WiFi setup, pairing, and network configuration.
-  </Step>
-</Steps>
-
-## Captive portal detection
-
-The agent runs a DNS responder (`ados-setup-captive` service) that intercepts the standard captive portal probe URLs:
-
-| OS | Probe URL |
-|----|-----------|
-| Android | `connectivitycheck.gstatic.com/generate_204` |
-| iOS/macOS | `captive.apple.com/hotspot-detect.html` |
-| Windows | `www.msftconnecttest.com/connecttest.txt` |
-
-All probe requests return a 204 response, which tells the OS "there is a captive portal here, open the browser." Android 11+ is particularly aggressive about verifying "real internet" and will mark the network as having no internet if these probes are not handled correctly. The DNS responder resolves all probe hostnames to the local gateway IP.
-
-## Webapp features
-
-The setup webapp is built with vanilla HTML, CSS, and JavaScript. No framework, no build step. Total size is roughly 50 KB gzipped. It runs entirely on the agent's built-in web server.
-
-### WiFi setup
-
-Scan for nearby WiFi networks and join one. This is how you give the drone (or ground station) internet access for cloud features.
-
-- Scans available networks using `nmcli` or `wpa_cli`
-- Shows signal strength and security type
-- Stores credentials so the network is joined automatically on next boot
-- Supports WPA2 and WPA3 networks
-
-### Pairing
-
-Displays the 6-character pairing code prominently. If you are setting up a ground station, you can pair it to a specific drone from this screen.
-
-### Network status
-
-Shows current network interfaces and their state:
-
-- WiFi hotspot (always on in ground station mode)
-- WiFi client connection
-- Ethernet
-- Cellular modem
-- USB tether
-
-### Device info
-
-Basic information about the agent: device ID, board name, agent version, IP addresses.
-
-## Ground station specific pages
-
-When running in ground-station profile, the webapp includes additional pages under the `static-ground/` directory:
-
-- **WFB-ng status**: Link quality, RSSI, channel, FEC stats
-- **Uplink configuration**: Internet sharing toggle, data cap settings
-- **OLED/button config**: Screen order, button mapping
-- **Drone pairing**: Pair with a specific air unit for coordinated operation
-
-## Hotspot configuration
-
-The hotspot settings are in config:
-
-```yaml
-network:
-  hotspot:
-    enabled: true
-    ssid: "ADOS-{device_id}"
-    password: "ados1234"
-    channel: 6
+```bash
+ados
 ```
 
-The `{device_id}` placeholder in the SSID is replaced with the first 8 characters of the device ID, making each hotspot name unique.
+Open the setup URL shown in the terminal. Common URLs are:
 
-<Warning>
-Change the default password (`ados1234`) before deploying in the field. Anyone who connects to the hotspot can access the setup webapp, the REST API, and the video feed.
-</Warning>
+| Link | URL |
+|---|---|
+| mDNS | `http://ados.local:8080` |
+| Hotspot | `http://192.168.4.1` |
+| USB tether | `http://10.55.0.1:8080` |
+| LAN | `http://<node-ip>:8080` |
 
-## Technical details
+You can also run:
 
-The webapp is served by the agent's FastAPI server. Static files live at:
-
-- `src/ados/webapp/static/` for the base setup pages
-- `src/ados/webapp/static-ground/` for ground-station-specific pages
-
-The captive DNS responder runs as a separate service (`ados-setup-captive`) to handle DNS queries before the main web server is ready. It binds to port 53 on the hotspot interface.
-
-The DHCP server (`ados-dnsmasq-gs`) assigns IP addresses in the `192.168.4.0/24` range with the agent at `192.168.4.1`.
-
-## Disabling the hotspot
-
-If you do not need the WiFi hotspot (for example, you are using Ethernet only), disable it in config:
-
-```yaml
-network:
-  hotspot:
-    enabled: false
+```bash
+ados status
 ```
 
-This also disables the setup webapp, captive portal, and DHCP server.
+## Setup checklist
 
-<Tip>
-Even with the hotspot disabled, the REST API remains accessible on all network interfaces (port 8080). You can still configure the agent via SSH and the CLI, or over Ethernet from Mission Control.
-</Tip>
+The first screen shows a task list:
+
+1. Identify device.
+2. MAVLink.
+3. Video.
+4. Network.
+5. Remote access.
+6. Mission Control.
+7. Finish.
+
+Required steps show as complete or needing action. Remote access is optional
+unless your deployment requires it.
+
+## Pages
+
+| Page | Use it for |
+|---|---|
+| Status | Setup progress, access URLs, services, and telemetry. |
+| MAVLink | Flight-controller connection, baud, heartbeat state, and WebSocket URL. |
+| Video | Camera or receiver state, WHEP URL, recording state, and link stats. |
+| Network | Hotspot, LAN, USB tether, mDNS, Ethernet, WiFi client, and modem state. |
+| Remote Access | Cloudflare Tunnel token entry, tunnel health, and public URLs. |
+| Ground Station | Pairing, WFB-ng receiver, uplink, display, controller, and role handoff. |
+| System/Logs | Services, recent logs, package version, and support summary. |
+| Advanced | Factory reset, config import/export, and recovery actions. |
+
+## Cloudflare remote access
+
+Remote access is optional. If you use Cloudflare Tunnel, paste either the raw
+tunnel token or the install command Cloudflare gives you.
+
+The agent extracts the token, stores it in the configured secret path, enables
+Cloudflare remote access, and reports tunnel health. The token is not shown again
+after submission.
+
+## API
+
+The setup webapp reads:
+
+```text
+GET /api/v1/setup/status
+```
+
+It returns the same setup status used by `ados status --json`, Mission Control,
+Android handoff, and support tooling.
+
+Cloudflare setup posts to:
+
+```text
+POST /api/v1/setup/remote-access/cloudflare
+```
+
+## Mission Control handoff
+
+After local setup, open ADOS Mission Control from the setup page or from the URL
+shown by `ados`. Mission Control can also show the setup status and reopen the
+local setup webapp from the Hardware tab.
+

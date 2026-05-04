@@ -6,19 +6,22 @@ icon: "wrench"
 
 # Troubleshooting
 
-This page covers the most common issues you might hit and how to diagnose them. Start with `ados diag` for a full system dump, then work through the relevant section below.
+This page covers the most common issues you might hit and how to diagnose them. Start with `ados` or `ados status --json`, then work through the relevant section below.
 
-## First step: run diagnostics
+## First step: check setup status
 
 ```bash
-ados diag
+ados
+ados status --json
 ```
 
-This prints board detection, OS info, network interfaces, service states, FC connection, disk usage, RAM, CPU, temperature, and installed dependencies. Read it top to bottom. Most problems show up here.
+The terminal status page shows the local setup URL, service states, MAVLink,
+video, network, remote access, and the next action. The JSON output is useful
+for support tickets and scripts.
 
 ## Flight controller not detected
 
-**Symptoms:** `ados status` shows `FC: False`. No telemetry in Mission Control. MAVLink screen in TUI shows "disconnected."
+**Symptoms:** `ados status` shows MAVLink is not connected. No telemetry appears in Mission Control.
 
 <AccordionGroup>
   <Accordion title="Check the serial connection">
@@ -38,11 +41,8 @@ This prints board detection, OS info, network interfaces, service states, FC con
     - PX4: 115200 or 921600
     - Betaflight: 115200
 
-    Set it in config:
-    ```bash
-    ados set mavlink.baud_rate 115200
-    sudo systemctl restart ados-mavlink
-    ```
+    Set it from the setup webapp MAVLink page or Mission Control Hardware tab,
+    then restart the MAVLink service if prompted.
   </Accordion>
 
   <Accordion title="Check for serial port conflicts">
@@ -67,7 +67,7 @@ This prints board detection, OS info, network interfaces, service states, FC con
 
 ## Video frozen or not starting
 
-**Symptoms:** Video feed is black in Mission Control. `ados video` shows `State: idle` or `State: error`. MediaMTX shows stopped.
+**Symptoms:** Video feed is black in Mission Control. `ados status` shows video stopped or error. MediaMTX shows stopped.
 
 <AccordionGroup>
   <Accordion title="Check if a camera is detected">
@@ -138,9 +138,9 @@ This prints board detection, OS info, network interfaces, service states, FC con
 
   <Accordion title="Check pairing">
     ```bash
-    ados pair
+    ados
     ```
-    If the agent is not paired, it will not connect to the cloud. Follow the [Pairing](/drone-agent/pairing) guide.
+    If the agent is not paired, open the setup URL and follow the [Pairing](/drone-agent/pairing) guide.
   </Accordion>
 
   <Accordion title="Check MQTT connection">
@@ -166,19 +166,16 @@ This prints board detection, OS info, network interfaces, service states, FC con
 
   <Accordion title="Check server mode">
     ```bash
-    ados config server.mode
+    ados status --json
     ```
-    If it says `disabled`, the cloud relay is turned off. Set it to `cloud`:
-    ```bash
-    ados set server.mode cloud
-    sudo systemctl restart ados-cloud
-    ```
+    If remote access is disabled, open the setup webapp Remote Access page and
+    enable the cloud or tunnel path you want to use.
   </Accordion>
 </AccordionGroup>
 
 ## WFB-ng not working
 
-**Symptoms:** No video link, `ados link` shows `State: inactive`, ground station sees no signal.
+**Symptoms:** No video link, setup status shows video inactive, ground station sees no signal.
 
 <AccordionGroup>
   <Accordion title="Check the WiFi adapter">
@@ -201,9 +198,8 @@ This prints board detection, OS info, network interfaces, service states, FC con
   <Accordion title="Check channel match">
     The air unit and ground station must use the same WFB-ng channel:
     ```bash
-    ados config video.wfb.channel
-    ```
-    Make sure both sides are on the same channel (default: 149).
+    Use the setup webapp Video or Ground Station page to confirm both sides are
+    on the same channel.
   </Accordion>
 
   <Accordion title="Check key match">
@@ -273,7 +269,7 @@ This prints board detection, OS info, network interfaces, service states, FC con
 
 If the troubleshooting steps above do not solve your problem:
 
-1. Run `ados diag` and save the output
+1. Run `ados status --json` and save the output
 2. Collect relevant service logs: `sudo journalctl -u ados-* --since "1h ago" > /tmp/ados-logs.txt`
 3. Open an issue on [GitHub](https://github.com/altnautica/ADOSDroneAgent/issues) with the diagnostics output and logs
 4. Join the [Discord community](https://discord.gg/uxbvuD4d5q) for real-time help

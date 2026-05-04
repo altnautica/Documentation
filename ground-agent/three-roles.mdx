@@ -86,7 +86,7 @@ The receiver is also the **mDNS publisher** on the mesh. It advertises `_ados-re
 You can change a node's role at any time:
 
 - **From the OLED:** open the Mesh menu, pick "Set role", cycle the choice with B1 / B2, confirm with B3.
-- **From the CLI on the node:** `ados gs role set receiver` (or `relay`, or `direct`).
+- **From the setup webapp on the node:** open Ground Station > Role and choose receiver, relay, or direct.
 - **From the REST API:** `PUT /api/v1/ground-station/role` with `{"role": "receiver"}`.
 
 The role transition stops the previous role's services, masks them in systemd, unmasks the new role's services, restarts in dependency order, and clears stale runtime state files. The OLED and the GCS RoleBadge update on the next status poll.

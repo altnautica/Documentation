@@ -1,6 +1,6 @@
 ---
 title: "Mesh Troubleshooting"
-description: "Symptoms and fixes for the most common mesh and pairing failures. journalctl queries, ados gs commands, and recovery paths."
+description: "Symptoms and fixes for the most common mesh and pairing failures. journalctl queries, setup webapp checks, and recovery paths."
 icon: "wrench"
 ---
 
@@ -10,7 +10,7 @@ This page collects the failure modes we have observed during mesh and pairing de
 
 ## Mesh services do not start after role transition
 
-**Symptom:** `ados gs role show` reports the configured role correctly, but `ados gs mesh health` returns 404 or shows `up: false`. `systemctl status ados-batman` shows `inactive (dead)`.
+**Symptom:** the setup webapp or Hardware tab reports the configured role correctly, but mesh health is down. `systemctl status ados-batman` shows `inactive (dead)`.
 
 **Likely cause:** the second USB WiFi dongle is not detected, or `mesh_capable` is `false` in `/etc/ados/profile.conf`.
 
@@ -46,8 +46,8 @@ If the second dongle is plugged in but not enumerating, check `dmesg` for driver
 **Recovery:**
 
 1. Bring the receiver up first if it is not already.
-2. On the receiver: open the Accept window (`ados gs mesh accept --window 60`).
-3. On this node (still in direct mode): use the OLED `Mesh -> Join mesh` flow OR call `POST /api/v1/ground-station/pair/join` from the local CLI.
+2. On the receiver: open the Accept window from OLED or the setup webapp.
+3. On this node (still in direct mode): use the OLED `Mesh -> Join mesh` flow or the setup webapp join action.
 4. After the pair completes, retry the role transition.
 
 ## PUT /role returns 409 E_MESH_NOT_CAPABLE
@@ -90,9 +90,9 @@ A `pairing_bind_failed` log entry means port 5801 is in use. Investigate with `l
 
 ## Relay says "received invite" but stays in direct mode
 
-**Symptom:** the relay's OLED briefly shows the Joined Status screen but then reverts to direct mode, or `ados gs role show` still says `direct`.
+**Symptom:** the relay's OLED briefly shows the Joined Status screen but then reverts to direct mode, or setup status still says `direct`.
 
-**Cause:** decrypting the invite and writing files to disk does not automatically transition the role. The relay operator must explicitly switch the role to `relay` via the OLED Mesh menu, the CLI (`ados gs role set relay`), or the REST API.
+**Cause:** decrypting the invite and writing files to disk does not automatically transition the role. The relay operator must explicitly switch the role to `relay` via the OLED Mesh menu, setup webapp, GCS, or REST API.
 
 **Recovery:** transition the role. The pair files are already on disk so the next role transition succeeds.
 
@@ -131,9 +131,9 @@ To release the pin: `mode: auto`.
 **Recovery:** force a clean transition:
 
 ```bash
-ados gs role set direct
+Use the setup webapp to switch to direct.
 sleep 2
-ados gs role set <previous role>
+Switch back to the previous role.
 ```
 
 The transition out of mesh role wipes the state files; the transition back in starts fresh.

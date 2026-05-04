@@ -34,7 +34,7 @@ The install script requires root access. It installs to `/opt/ados/`, creates co
   </Step>
 
   <Step title="Create the virtual environment">
-    Sets up a Python venv at `/opt/ados/venv/` and installs the `ados-drone-agent` package from PyPI along with all dependencies (pymavlink, FastAPI, uvicorn, paho-mqtt, structlog, Textual, and more).
+    Sets up a Python venv at `/opt/ados/venv/` and installs the `ados-drone-agent` package from PyPI along with all dependencies (pymavlink, FastAPI, uvicorn, paho-mqtt, structlog, Rich, and more).
   </Step>
 
   <Step title="Generate device identity">
@@ -80,10 +80,10 @@ To upgrade to the latest version without losing your config:
 curl -sSL https://raw.githubusercontent.com/altnautica/ADOSDroneAgent/main/scripts/install.sh | sudo bash -s -- --upgrade
 ```
 
-Or use the built-in OTA command:
+Or use the built-in update command:
 
 ```bash
-ados upgrade
+ados update
 ```
 
 Both methods preserve `/etc/ados/config.yaml` and your pairing state.
@@ -104,8 +104,8 @@ source .venv/bin/activate
 # Install in development mode
 pip install -e ".[dev]"
 
-# Run the agent
-ados start
+# Check the CLI surface
+ados --help
 ```
 
 <Warning>
@@ -114,7 +114,7 @@ For deployment on actual hardware, always use the install script instead of `pip
 
 ## Install on macOS (for development)
 
-You can run the agent on macOS for development and testing. It will not have systemd, WFB-ng, or hardware GPIO, but the REST API, demo mode, CLI, and TUI all work.
+You can install the package on macOS for development and packaging checks. It will not have systemd, WFB-ng, or hardware GPIO, so hardware behavior must be verified on Linux hardware.
 
 ```bash
 pip install ados-drone-agent
@@ -125,14 +125,6 @@ Or with pipx for an isolated install:
 ```bash
 pipx install ados-drone-agent
 ```
-
-Then start in demo mode:
-
-```bash
-ados demo
-```
-
-Demo mode generates simulated telemetry so you can test the GCS connection, REST API, and TUI without a flight controller.
 
 ## Uninstall
 
@@ -187,17 +179,16 @@ The CLI auto-detects whether you installed with pip, pipx, or uv and uses the ma
 After install, check that everything is running:
 
 ```bash
-# Check the agent version
-ados version
-
-# Check service status
+# Check service and setup status
 ados status
 
-# Full diagnostics dump
-ados diag
+# Open the terminal status page and setup URL list
+ados
 ```
 
-The `ados diag` command prints board detection results, system resources, service states, FC connection status, network interfaces, and installed dependency versions. This is the first thing to run if something looks wrong.
+`ados` shows the local setup webapp URL, service state, MAVLink state, video
+state, network URLs, and remote access state. Open the setup URL in a browser to
+finish onboarding.
 
 ## Requirements
 

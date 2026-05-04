@@ -50,9 +50,9 @@ disables the plugin and notifies the operator.
 
 ## What goes in `agent_version` vs `gcs_version`
 
-`agent_version` matches the running ADOS Drone Agent version
-(`ados version` on the SBC). `gcs_version` matches the running
-Mission Control build. They move independently, so a plugin can
+`agent_version` matches the running ADOS Drone Agent version reported by setup
+status or `/api/version`. `gcs_version` matches the running Mission Control
+build. They move independently, so a plugin can
 support a wide agent range and a narrow GCS range or vice versa.
 
 If the plugin is GCS-only, omit `agent_version`. If agent-only,

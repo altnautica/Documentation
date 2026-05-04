@@ -1,363 +1,145 @@
 ---
 title: "CLI Reference"
-description: "Complete reference for all ados CLI commands."
+description: "Everyday ados commands for status, update, and uninstall."
 icon: "terminal"
 ---
 
 # CLI Reference
 
-The `ados` command is the primary way to interact with the agent from the terminal. It is built with Click and communicates with the running agent via its REST API on port 8080.
+The public `ados` CLI is intentionally small. It helps you find the local setup
+webapp, check agent status, update the agent, and uninstall it.
 
-## Global behavior
+Configuration, pairing, MAVLink, video, ground-station setup, logs, and remote
+access are handled in the local setup webapp or ADOS Mission Control.
 
-When you run `ados` without a subcommand, it displays a rich help screen with all available commands grouped by category. The CLI reads the API key from `/etc/ados/pairing.json` automatically and sends it as an `X-ADOS-Key` header on every request to the local API.
+## Commands
 
-If the agent is not running, most commands will print an error and suggest starting it with `ados start` or `ados demo`.
+| Command | Use it for |
+|---|---|
+| `ados` | Open the full-screen terminal status page when using a TTY. Prints plain status when run from a script or pipe. |
+| `ados status` | Print setup, MAVLink, video, network, remote access, and service status. |
+| `ados status --json` | Print the full setup status payload for scripts and support tools. |
+| `ados update` | Check for and install an available agent update. |
+| `ados update --check-only` | Check for updates without installing. |
+| `ados update --yes` | Install without an interactive confirmation. |
+| `ados update --json` | Print update check details as JSON. |
+| `ados uninstall` | Remove ADOS Drone Agent from the system. |
+| `ados uninstall --purge` | Remove config in addition to package files and runtime data. |
+| `ados uninstall --yes` | Skip the uninstall confirmation prompt. |
 
-## Info commands
+## `ados`
 
-### `ados version`
-
-Print the installed agent version.
-
-```bash
-$ ados version
-ados-drone-agent v0.5.3
-```
-
-### `ados status`
-
-Show the agent's current state, including board detection, FC connection, and uptime.
-
-```bash
-$ ados status
-Version:    0.5.3
-Uptime:     3847s
-Board:      Radxa ROCK 5C Lite (RK3582)
-Tier:       4
-FC:         True
-FC Port:    /dev/ttyS0
-```
-
-Use `--json` for machine-readable output:
+Run `ados` after install or over SSH:
 
 ```bash
-$ ados status --json
-{
-  "version": "0.5.3",
-  "uptime_seconds": 3847,
-  "board": {"name": "Radxa ROCK 5C Lite (RK3582)", "tier": 4},
-  "fc_connected": true,
-  "fc_port": "/dev/ttyS0"
-}
+ados
 ```
 
-### `ados health`
+In an interactive terminal it opens a read-only status page with:
 
-Show system resource usage: CPU, memory, disk, and temperature.
+- Setup URL.
+- Hotspot, LAN, USB tether, and mDNS URLs when available.
+- Mission Control and tunnel URLs when configured.
+- MAVLink and video state.
+- Network and remote access state.
+- Services and telemetry.
+
+Press `q` or Ctrl-C to exit.
+
+If the command is not attached to a TTY, it prints the same summary as
+`ados status`.
+
+## `ados status`
+
+Use `ados status` for a short support-friendly summary:
 
 ```bash
-$ ados health
-CPU:    12.3%
-Memory: 34.2%
-Disk:   41.8%
-Temp:   52.3C
+ados status
 ```
 
-### `ados help`
+Example output:
 
-Display the rich CLI cheatsheet with all commands, grouped and color-coded.
+```text
+ADOS Drone Agent 0.10.0
+Device:  ADOS Agent (ados-1234)
+Profile: drone
+Setup:   67%
 
-### `ados diag`
+Open setup: http://ados.local:8080
+MAVLink: False
+Video:   running http://ados.local:8889/main/whep
+Remote:  disabled
 
-Run a full system diagnostics dump. Prints board info, OS details, network interfaces, systemd service states, FC connection, disk usage, RAM, CPU, temperature, agent config, and installed dependency versions.
+Next: Connect or configure the flight controller
+```
+
+For scripts:
 
 ```bash
-$ ados diag
-========================================
-  Board
-========================================
-  Name:          Radxa ROCK 5C Lite (RK3582)
-  Model:         Radxa ROCK 5C
-  Tier:          4
-  RAM (total):   16384 MB
-  CPU cores:     6
-  Architecture:  aarch64
-
-========================================
-  System
-========================================
-  OS:            Linux 6.1.84-6-rk2410
-  Distro:        Debian GNU/Linux 12 (bookworm)
-  ...
+ados status --json
 ```
 
-This is the best command to run first when debugging any issue. It covers every subsystem in one output.
+The JSON output is the same setup status used by the setup webapp and Mission
+Control.
 
-## Config commands
+## `ados update`
 
-### `ados config`
-
-Print the full configuration as JSON.
+Check and install updates:
 
 ```bash
-$ ados config
-{
-  "agent": {"device_id": "a1b2c3d4", "name": "my-drone", "tier": "auto", "profile": "auto"},
-  "mavlink": {"serial_port": "", "baud_rate": 57600, ...},
-  ...
-}
+ados update
 ```
 
-### `ados config <key>`
-
-Get a specific value using dot-path notation.
+Check without installing:
 
 ```bash
-$ ados config mavlink.baud_rate
-57600
-
-$ ados config video.camera.codec
-h264
+ados update --check-only
 ```
 
-### `ados set <key> <value>`
-
-Set a config value at runtime.
+Run non-interactively:
 
 ```bash
-$ ados set mavlink.baud_rate 115200
-Set mavlink.baud_rate = 115200
+ados update --yes
 ```
 
-## Flight commands
-
-### `ados mavlink`
-
-Show the MAVLink/flight controller connection status.
+Print machine-readable output:
 
 ```bash
-$ ados mavlink
-Connected: True
-Port:      /dev/ttyS0
-Baud:      57600
+ados update --json
 ```
 
-### `ados video`
+## `ados uninstall`
 
-Show the video pipeline status, including detected cameras, MediaMTX state, and recording status.
+Remove the installed agent:
 
 ```bash
-$ ados video
-State:     streaming
-Cameras:   1
-  - USB Camera (usb)
-Recording: False
-MediaMTX:  running
+ados uninstall
 ```
 
-### `ados snap`
-
-Capture a JPEG snapshot from the video pipeline and save it to disk.
+Remove config as well:
 
 ```bash
-$ ados snap
-Snapshot saved: /var/ados/recordings/snap-2026-04-16T14-30-00.jpg
+ados uninstall --purge
 ```
 
-### `ados link`
-
-Show WFB-ng video link statistics: signal strength, SNR, packet counts, FEC recovery, and bitrate.
+Run without prompts:
 
 ```bash
-$ ados link
-State:    active
-RSSI:     -42 dBm
-SNR:      28.5 dB
-Channel:  149
-Packets:  184523 rx, 12 lost
-FEC:      8 recovered, 0 failed
-Bitrate:  4200 kbps
+ados uninstall --purge --yes
 ```
 
-## Scripting commands
+## Where the old commands went
 
-### `ados scripts`
+The setup webapp is the operator UI for:
 
-List running scripts and their state.
+- MAVLink setup.
+- Video setup.
+- Network and hotspot setup.
+- Cloudflare remote access.
+- Ground station pairing and role setup.
+- Logs and support status.
+- Advanced recovery.
 
-```bash
-$ ados scripts
-  [running] abc123: follow_me.py
-  [paused]  def456: survey_grid.py
-```
+Mission Control remains the main GCS for flight operations, hardware management,
+video, fleet state, and plugin workflows.
 
-### `ados run <path>`
-
-Start a Python script on the agent.
-
-```bash
-$ ados run /var/ados/scripts/my_mission.py
-Started: abc123
-```
-
-### `ados send <command>`
-
-Send a text command to the scripting engine (Tello-style commands like `takeoff`, `land`, `forward 100`).
-
-```bash
-$ ados send "takeoff"
-ok
-
-$ ados send "forward 200"
-ok
-```
-
-## OTA commands
-
-### `ados update`
-
-Show OTA update status: current version, channel, last check time, and any pending update.
-
-```bash
-$ ados update
-Version:    0.5.3
-State:      idle
-Channel:    stable
-Repo:       altnautica/ADOSDroneAgent
-Last check: 2026-04-16T10:00:00
-```
-
-### `ados check`
-
-Check for available updates from GitHub releases.
-
-```bash
-$ ados check
-Update available: v0.5.4
-Changelog: Fixed video pipeline restart on camera hot-plug...
-```
-
-### `ados upgrade`
-
-One-step check, download, install, and restart. Prompts for confirmation unless `-y` is passed.
-
-```bash
-$ ados upgrade
-Checking for updates...
-Update available: v0.5.4
-Install v0.5.4? [y/N]: y
-Downloading and installing...
-Installed v0.5.4
-Restarting service...
-Done.
-```
-
-### `ados rollback [version]`
-
-Roll back to a previous version. Without a version argument, rolls back to the version that was running before the last upgrade.
-
-```bash
-$ ados rollback
-Rollback complete. Reverted to v0.5.2.
-
-$ ados rollback 0.5.0
-Rollback complete. Reverted to v0.5.0.
-```
-
-## Pairing commands
-
-### `ados pair`
-
-Show pairing status. If unpaired, displays the pairing code to enter in ADOS Mission Control.
-
-```bash
-$ ados pair
-Paired:     False
-Device ID:  a1b2c3d4
-Name:       my-drone
-Board:      Radxa ROCK 5C Lite (RK3582)
-mDNS:       my-drone.local
-
-  +--------+
-  | AB12CD |
-  +--------+
-
-Enter this code in ADOS Mission Control to pair.
-```
-
-### `ados unpair`
-
-Unpair the agent and generate a new pairing code. Requires confirmation.
-
-```bash
-$ ados unpair
-This will unpair the agent. Continue? [y/N]: y
-Agent unpaired successfully.
-New pairing code: XY34ZW
-```
-
-## Tool commands
-
-### `ados tui`
-
-Launch the TUI dashboard (requires Textual). See [TUI Dashboard](/drone-agent/tui-dashboard) for details.
-
-### `ados start`
-
-Start the agent in the foreground. Used by systemd service files. For interactive use, prefer `ados demo`.
-
-### `ados demo`
-
-Start in demo mode with simulated telemetry. Useful for testing the GCS, REST API, and TUI without hardware.
-
-```bash
-$ ados demo --port 8080
-```
-
-### `ados uninstall`
-
-Remove the agent from the system. On Linux, stops services, removes `/opt/ados/` and `/var/ados/`, keeps config by default. On macOS, detects pip/pipx/uv and runs the matching uninstall.
-
-```bash
-# Keep config
-$ ados uninstall
-
-# Remove everything
-$ ados uninstall --purge
-
-# Skip confirmation
-$ ados uninstall -y
-```
-
-### `ados logs`
-
-Show agent logs. Wraps `journalctl` on Linux, reads log files on macOS.
-
-```bash
-# Last 50 lines
-$ ados logs
-
-# Last 200 lines
-$ ados logs -n 200
-
-# Follow live
-$ ados logs -f
-
-# Since a specific time
-$ ados logs --since "1h ago"
-```
-
-## Ground station commands
-
-### `ados gs`
-
-A subcommand group for ground-station-specific operations. Only relevant when the agent is running in ground station profile.
-
-```bash
-$ ados gs status
-$ ados gs pair
-$ ados gs network
-```
-
-See [Setup Webapp](/drone-agent/setup-webapp) for more on ground station configuration.

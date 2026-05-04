@@ -19,7 +19,7 @@ ADOS has two main repositories. Both are on GitHub, both are GPLv3.
     Browser-based GCS. TypeScript, Next.js 16, React 19.
   </Card>
   <Card title="ADOS Drone Agent" icon="microchip" href="https://github.com/altnautica/ADOSDroneAgent">
-    Companion computer software. Python 3.11+, FastAPI, Textual.
+    Companion computer software. Python 3.11+, FastAPI, Rich, local setup webapp.
   </Card>
 </CardGroup>
 
@@ -141,11 +141,8 @@ pip install -e ".[dev]"
 # Run the CLI
 ados --help
 
-# Run the TUI
-ados tui
-
-# Run the API server (development mode)
-ados api --dev
+# Start the local API/setup server through the repository's development flow
+ados --help
 ```
 
 ### Project Structure
@@ -154,7 +151,8 @@ ados api --dev
 src/ados/
 ├── __init__.py          # Version (single source of truth)
 ├── cli.py               # Click CLI
-├── tui/                 # Textual TUI dashboard
+├── setup/               # Universal setup facade
+├── webapp/              # Local setup webapp assets
 ├── api/                 # FastAPI REST API
 │   ├── runtime.py       # API facade and runtime boundary
 │   └── routes/          # Domain route modules

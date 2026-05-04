@@ -84,12 +84,12 @@ To test with a real ArduPilot simulator:
     ados status
     ```
   </Step>
-  <Step title="Run the TUI">
+  <Step title="Run the terminal status page">
     ```bash
-    ados tui
+    ados
     ```
 
-    The Textual-based terminal dashboard works in any terminal emulator.
+    The read-only terminal page shows setup URLs and agent status over SSH.
   </Step>
 </Steps>
 
@@ -281,10 +281,10 @@ export const useMyNewStore = create<MyNewState>()(
     On the target board, run:
 
     ```bash
-    ados diag board
+    ados status --json
     ```
 
-    This prints the detected board, matched profile, and any fallback to defaults.
+    This prints setup, service, board, and runtime status for inspection.
   </Step>
 </Steps>
 

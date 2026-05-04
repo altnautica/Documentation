@@ -118,7 +118,7 @@ ADOSMissionControl/
 
 **Repository:** [github.com/altnautica/ADOSDroneAgent](https://github.com/altnautica/ADOSDroneAgent)
 
-**Stack:** Python 3.11+, FastAPI, pymavlink, structlog, Textual, systemd
+**Stack:** Python 3.11+, FastAPI, pymavlink, structlog, Rich, systemd
 
 ```
 ADOSDroneAgent/
@@ -182,11 +182,10 @@ ADOSDroneAgent/
 │       ├── cli/
 │       │   ├── main.py             # Click CLI entry point
 │       │   ├── status.py           # ados status
-│       │   ├── gs.py               # ados gs (ground station subcommands)
 │       │   └── ...
 │       │
-│       ├── tui/
-│       │   ├── app.py              # Textual TUI application
+│       ├── setup/                  # Universal setup facade and models
+│       ├── webapp/                 # Local setup webapp assets
 │       │   └── screens/            # 9 TUI screens
 │       │
 │       └── bootstrap/
@@ -222,7 +221,7 @@ ADOSDroneAgent/
 
 | File | What it does |
 |------|-------------|
-| `src/ados/__init__.py` | Version string (single source of truth for pip and `ados version`) |
+| `src/ados/__init__.py` | Version string used by package metadata, API status, and setup status |
 | `src/ados/core/supervisor.py` | Starts, stops, and monitors child systemd services |
 | `src/ados/core/circuit_breaker.py` | 5-in-60s breaker pattern for service restarts |
 | `src/ados/services/mavlink/proxy.py` | Reads FC serial, writes to `/run/ados/mavlink.sock` |
