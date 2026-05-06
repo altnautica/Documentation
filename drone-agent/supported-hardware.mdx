@@ -8,6 +8,10 @@ icon: "circuit-board"
 
 The ADOS Drone Agent ships with 17 board profiles. Each profile is a YAML file that tells the agent what SoC it is running on, which buses are available, what video encoders exist, and which features to enable.
 
+<Note>
+**Ready to install?** Use the [Flash Tool in Mission Control](/mission-control/flash-tool). Pick your board from the catalog, then either flash via browser (Luckfox) or copy the install one-liner (Pi, Radxa, and others).
+</Note>
+
 ## Board profiles
 
 The agent reads `/proc/device-tree/model` at boot and matches it against the patterns in each profile. If no match is found, it falls back to `generic-arm64`.

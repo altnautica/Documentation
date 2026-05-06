@@ -56,7 +56,7 @@ rate is the FC's native rate, capped at 20 Hz on telemetry topics.
 | Topic | Payload | Capability |
 |-------|---------|-----------|
 | `vehicle.mode_changed` | `{ from, to, source }` | `event.subscribe` |
-| `vehicle.armed` | `{ armed: true, by: "rc"|"gcs"|"plugin" }` | `event.subscribe` |
+| `vehicle.armed` | `{ armed: true, by: "rc" \| "gcs" \| "plugin" }` | `event.subscribe` |
 | `vehicle.disarmed` | `{ armed: false, reason }` | `event.subscribe` |
 | `vehicle.failsafe` | `{ kind, severity, message }` | `event.subscribe` |
 | `vehicle.statustext` | `{ severity, text }` | `event.subscribe` |
