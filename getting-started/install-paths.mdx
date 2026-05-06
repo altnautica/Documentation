@@ -1,0 +1,114 @@
+---
+title: "Install paths"
+description: "Pick the right install flow for your hardware. Mission Control's Flash Tool drives every supported path."
+icon: "route"
+---
+
+Mission Control's Flash Tool installs the ADOS agent on every supported companion computer. Pick your starting state below to find the right path.
+
+## Pick your starting point
+
+<CardGroup cols={3}>
+  <Card title="I have a Luckfox Pico Zero" icon="bolt" href="#luckfox-pico-zero">
+    Browser flash. No terminal.
+  </Card>
+  <Card title="I have a board running stock OS" icon="terminal" href="#stock-os-board">
+    Copy a command. Paste over SSH.
+  </Card>
+  <Card title="I have a fresh SD card with no OS" icon="sd-card" href="#fresh-sd-card">
+    Get the vendor OS running first.
+  </Card>
+</CardGroup>
+
+## Luckfox Pico Zero
+
+The Luckfox Pico Zero ships without a usable stock OS for the agent, so the Flash Tool writes a complete ADOS image directly from your browser. No terminal, no SSH, no separate flashing tool.
+
+<Steps>
+  <Step title="Open Mission Control">
+    Open Mission Control in a Chromium-family browser (Chrome, Edge, Brave, or Opera). Browser flash uses WebUSB, which Safari and Firefox do not support.
+  </Step>
+  <Step title="Open the Flash Tool">
+    Go to **Settings -> Flash Tool**. Pick **ADOS Drone Agent** as the firmware stack, then pick **Luckfox Pico Zero** as the target board.
+  </Step>
+  <Step title="Put the board in bootrom mode">
+    Unplug the board. Hold the **BOOT** button. Plug the USB-C cable in while still holding **BOOT**. Release the button after the board enumerates.
+  </Step>
+  <Step title="Pick the device">
+    Click **Flash via browser**. The browser device picker lists the Luckfox in bootrom mode. Select it and click **Connect**.
+  </Step>
+  <Step title="Wait for the flash to complete">
+    The Flash Tool writes the ADOS image and shows a progress bar. The board reboots when flashing finishes.
+  </Step>
+  <Step title="Pair from your phone or laptop">
+    The board exposes a Wi-Fi network named `ados-setup-<id>`. Join it from any device, finish the captive portal wizard, and the board appears in Mission Control's Fleet view as a pending pair.
+  </Step>
+</Steps>
+
+For the full Luckfox Pico Zero walkthrough, see [Bringing up a Luckfox Pico Zero](/drone-agent/install-luckfox).
+
+## Stock OS board
+
+If your board is a Raspberry Pi, Radxa, Jetson, or any other supported SBC running its standard vendor OS, the Flash Tool surfaces a `curl` install command. Paste it on the board over SSH and the install script does the rest.
+
+<Steps>
+  <Step title="Boot your board with stock OS">
+    Boot the board with its standard vendor OS. SSH must be enabled and you must be able to reach the board over the network.
+  </Step>
+  <Step title="Open the Flash Tool">
+    In Mission Control, go to **Settings -> Flash Tool**. Pick **ADOS Drone Agent** (for the air-side) or **ADOS Ground Agent** (for the ground-side) as the firmware stack, then pick your board.
+  </Step>
+  <Step title="Copy the install command">
+    The Flash Tool shows a single `curl ... | sudo bash` line. Click **Copy**.
+  </Step>
+  <Step title="Paste it on the board over SSH">
+    SSH into the board. Paste the command. The install script detects the board, installs dependencies, configures the agent, and starts everything automatically.
+  </Step>
+  <Step title="Pair from Mission Control">
+    The board exposes a setup webapp at `http://<board-ip>:8080`. Finish onboarding there. The board then shows up in Mission Control's Fleet view.
+  </Step>
+</Steps>
+
+This flow works in any browser that runs Mission Control. Browser flash is not required for stock-OS boards because the install command runs over SSH on the board itself.
+
+For the canonical curl walkthrough, see [Drone Agent installation](/drone-agent/installation) or [Ground Agent installation](/ground-agent/installation).
+
+## Fresh SD card
+
+Bringing up a brand-new Raspberry Pi or Radxa board from a blank SD card is out of scope for the Flash Tool today. The vendor flashing tools handle the initial OS write.
+
+Get the board running its standard vendor OS first, then come back here. The board falls into the [Stock OS board](#stock-os-board) flow once it boots and you can SSH in.
+
+<Note>
+Browser-based OS flashing is supported today only for boards where the agent owns the entire image. The Luckfox Pico Zero is the first such target. More boards will follow as their bringup matures.
+</Note>
+
+## Browser support
+
+| Browser | Browser flash | Install command |
+|---------|---------------|-----------------|
+| Chrome (89+) | Yes | Yes |
+| Edge (89+) | Yes | Yes |
+| Brave | Yes | Yes |
+| Opera | Yes | Yes |
+| Safari | No | Yes |
+| Firefox | No | Yes |
+
+Browser flash needs WebUSB, which is a Chromium-family feature. The install command flow runs entirely on the board, so any browser that can copy text works.
+
+## What's next
+
+<CardGroup cols={2}>
+  <Card title="Flash Tool walkthrough" icon="wand-magic-sparkles" href="/mission-control/flash-tool">
+    Full tour of the Flash Tool inside Mission Control.
+  </Card>
+  <Card title="Bringing up a Luckfox" icon="microchip" href="/drone-agent/install-luckfox">
+    Step-by-step Luckfox Pico Zero bringup.
+  </Card>
+  <Card title="Lite agent overview" icon="feather" href="/drone-agent/lite-agent">
+    The Rust agent that powers low-RAM boards.
+  </Card>
+  <Card title="Drone Agent installation" icon="download" href="/drone-agent/installation">
+    The canonical curl install path.
+  </Card>
+</CardGroup>

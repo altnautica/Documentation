@@ -1,0 +1,157 @@
+---
+title: "Bringing up a Luckfox Pico Zero"
+description: "End-to-end walkthrough: browser flash, captive portal, and pairing."
+icon: "microchip"
+---
+
+The Luckfox Pico Zero runs the lite agent in 256 MB of RAM. Its bringup is simpler than every other board: Mission Control's Flash Tool writes a complete OS image directly to the board over WebUSB, the captive portal handles first boot, and the drone shows up in your Fleet view. No SSH, no SD card flasher, no terminal.
+
+## Hardware checklist
+
+Before you start:
+
+- A Luckfox Pico Zero board.
+- A USB-C cable that carries data (charge-only cables do not enumerate).
+- A 2.4 GHz Wi-Fi network you can join from the board (the on-board Wi-Fi chip is 2.4 GHz only).
+- A phone or laptop to drive the captive portal.
+- A Chromium-family browser (Chrome, Edge, Brave, or Opera) running Mission Control.
+
+The board does not need an SD card. The lite agent installs to on-board flash.
+
+## Step 1: Bootrom mode
+
+The Luckfox flashes only when its mask-ROM bootloader is active. Put the board in bootrom mode before connecting:
+
+<Steps>
+  <Step title="Unplug the board">
+    Disconnect the USB-C cable from the board.
+  </Step>
+  <Step title="Hold BOOT">
+    Press and hold the **BOOT** button on the board.
+  </Step>
+  <Step title="Plug in USB-C">
+    With **BOOT** still held, plug the USB-C cable in. The host computer enumerates the board.
+  </Step>
+  <Step title="Release BOOT">
+    Release the button after the board enumerates. The board is now in bootrom mode and ready to flash.
+  </Step>
+</Steps>
+
+<Note>
+If you forget to hold **BOOT**, the board boots normally instead of entering bootrom mode. Unplug, repeat the procedure.
+</Note>
+
+## Step 2: Flash with Mission Control
+
+<Steps>
+  <Step title="Open Mission Control">
+    Open Mission Control in Chrome, Edge, Brave, or Opera. WebUSB is required and only Chromium-family browsers support it.
+  </Step>
+  <Step title="Open the Flash Tool">
+    Go to **Settings -> Flash Tool**.
+  </Step>
+  <Step title="Pick the firmware stack">
+    Select **ADOS Drone Agent** as the firmware stack.
+  </Step>
+  <Step title="Pick the board">
+    Select **Luckfox Pico Zero** as the target board. The Flash Tool switches to the browser-flash flow.
+  </Step>
+  <Step title="Start the flash">
+    Click **Flash via browser**. The browser shows its native device picker. Select the Luckfox entry and click **Connect**.
+  </Step>
+  <Step title="Wait for the progress bar">
+    The Flash Tool writes the image and shows percent complete. Do not unplug the cable. Expect about a minute for the full write.
+  </Step>
+  <Step title="Reboot">
+    The board reboots automatically when the flash finishes. The Flash Tool advances to the pairing step.
+  </Step>
+</Steps>
+
+<Warning>
+Do not unplug the USB-C cable while the progress bar is moving. If the flash is interrupted, repeat the bootrom-mode procedure and click **Retry** in the Flash Tool. The mask-ROM bootloader is in read-only memory and cannot be bricked by a partial flash.
+</Warning>
+
+## Step 3: Captive portal first boot
+
+After the board reboots, it exposes a Wi-Fi access point named `ados-setup-<id>` where `<id>` is the last few characters of the device ID.
+
+<Steps>
+  <Step title="Join the setup network">
+    On your phone or laptop, scan for Wi-Fi networks and join `ados-setup-<id>`. The network is open by default for first-time setup.
+  </Step>
+  <Step title="Open the captive portal">
+    Most phones open the captive portal automatically. If yours does not, open `http://192.168.4.1` in a browser.
+  </Step>
+  <Step title="Enter your Wi-Fi credentials">
+    The setup wizard asks for your home Wi-Fi SSID, password, and a friendly name for the drone. Pick a name like `pico-zero-01` so it is easy to spot in Fleet view.
+  </Step>
+  <Step title="Submit and reboot">
+    Tap **Save**. The board disconnects the setup AP, joins your home Wi-Fi, and reboots.
+  </Step>
+</Steps>
+
+## Step 4: Pair in Mission Control
+
+Once the board is on your home Wi-Fi, it announces itself to Mission Control through the cloud relay.
+
+<Steps>
+  <Step title="Open Fleet view">
+    In Mission Control, switch to the Fleet view.
+  </Step>
+  <Step title="Find the pending pair">
+    The Luckfox shows up in the **Pending pairs** section with the friendly name you set in the captive portal.
+  </Step>
+  <Step title="Approve the pair">
+    Click **Pair**. The board moves into your fleet and starts streaming heartbeat telemetry.
+  </Step>
+</Steps>
+
+## Verifying the install
+
+Open the drone in Mission Control. You should see:
+
+- Heartbeat at ~1 Hz, with board metadata showing `RV1106G3`.
+- Agent runtime mode listed as **lite**.
+- CPU and memory metrics from the board.
+
+The lite agent runs around 3 MB of resident memory at idle, so the board has plenty of headroom for the control plane.
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="The board does not show up in the browser device picker">
+    The board is not in bootrom mode. Unplug the cable, hold **BOOT**, plug back in, then release **BOOT**. If it still does not appear, try a different USB-C cable (charge-only cables do not enumerate). Plug the board straight into a host port instead of going through a hub.
+  </Accordion>
+  <Accordion title="The flash stops partway">
+    Do not unplug. Click **Retry** in the Flash Tool. If retry fails, repeat the bootrom-mode procedure. A partial flash cannot brick the board because the mask-ROM bootloader lives in read-only silicon.
+  </Accordion>
+  <Accordion title="The setup AP does not appear after reboot">
+    The board may still be booting. Wait 30 seconds after the LED indicates boot complete. If the AP still does not appear, repeat the flash. A clean second flash overwrites any half-written state.
+  </Accordion>
+  <Accordion title="The captive portal opens then closes immediately">
+    Some phones cache an old captive portal. Forget the `ados-setup-<id>` network and rejoin. On Android, toggle Wi-Fi off and on. On iOS, open `http://192.168.4.1` directly in Safari.
+  </Accordion>
+  <Accordion title="The board joins my Wi-Fi but never appears in Fleet">
+    Confirm the board is online (most home routers list connected clients). Check that your account in Mission Control has cloud relay enabled. If the board is on a corporate or hotel network, the cloud relay endpoints (HTTPS heartbeat plus MQTT over TLS) may be blocked. Move the board to a network that allows outbound HTTPS and MQTT.
+  </Accordion>
+  <Accordion title="The Wi-Fi association fails">
+    The Luckfox Wi-Fi chip is 2.4 GHz only. It cannot join 5 GHz networks. If your home Wi-Fi is 5 GHz only, enable the 2.4 GHz band on your router or use a guest network that broadcasts 2.4 GHz.
+  </Accordion>
+</AccordionGroup>
+
+## What's next
+
+<CardGroup cols={2}>
+  <Card title="Lite agent overview" icon="feather" href="/drone-agent/lite-agent">
+    What the lite agent supports and what it skips.
+  </Card>
+  <Card title="Flash Tool walkthrough" icon="wand-magic-sparkles" href="/mission-control/flash-tool">
+    Full tour of every Flash Tool flow.
+  </Card>
+  <Card title="Install paths" icon="route" href="/getting-started/install-paths">
+    Decision tree for every supported board.
+  </Card>
+  <Card title="Pairing" icon="link" href="/drone-agent/pairing">
+    Pairing details once the agent is running.
+  </Card>
+</CardGroup>

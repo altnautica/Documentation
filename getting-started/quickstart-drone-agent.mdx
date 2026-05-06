@@ -29,11 +29,7 @@ setup webapp, confirm MAVLink telemetry, and connect Mission Control.
 
 ## Install
 
-SSH into your SBC and run:
-
-```bash
-curl -sSL https://raw.githubusercontent.com/altnautica/ADOSDroneAgent/main/scripts/install.sh | sudo bash
-```
+The recommended path is to open Mission Control's [Flash Tool](/mission-control/flash-tool) and pick your board. The Flash Tool either flashes a complete OS image (for boards like the Luckfox Pico Zero) or hands you a one-line install command to paste over SSH (for stock-OS boards like the Pi 4B and Radxa CM4). See [Install paths](/getting-started/install-paths) for the full decision tree.
 
 The install usually takes 3-8 minutes. It installs dependencies, creates the
 `ados` user and directories, detects the board, writes config, sets up systemd,

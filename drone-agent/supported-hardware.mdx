@@ -12,25 +12,27 @@ The ADOS Drone Agent ships with 17 board profiles. Each profile is a YAML file t
 
 The agent reads `/proc/device-tree/model` at boot and matches it against the patterns in each profile. If no match is found, it falls back to `generic-arm64`.
 
-| Board | SoC | Architecture | Default Tier | Video Encode | NPU |
-|-------|-----|-------------|-------------|-------------|-----|
-| Raspberry Pi CM4 | BCM2711 | aarch64 | 3 | H.264 | No |
-| Raspberry Pi CM5 | BCM2712 | aarch64 | 4 | H.264 | No |
-| Raspberry Pi 4B | BCM2711 | aarch64 | 3 | H.264 | No |
-| Raspberry Pi 5 | BCM2712 | aarch64 | 4 | H.264 | No |
-| Radxa ROCK 5C Lite | RK3582 | aarch64 | 4 | H.264, H.265 | 6 TOPS |
-| Radxa CM3 (RK3566) | RK3566 | aarch64 | 3 | H.264 | 0.8 TOPS |
-| Radxa CM4 (RK3588S2) | RK3588S2 | aarch64 | 4 | H.264, H.265 | 6 TOPS |
-| Rockchip RK3576 | RK3576 | aarch64 | 4 | H.264, H.265 | 6 TOPS |
-| Orange Pi 5 | RK3588S | aarch64 | 4 | H.264, H.265 | 6 TOPS |
-| NVIDIA Jetson Nano | Tegra X1 | aarch64 | 3 | H.264, H.265 | 0.5 TFLOPS |
-| NVIDIA Jetson Orin Nano | Tegra Orin | aarch64 | 4 | H.264, H.265 | 40 TOPS |
-| Rockchip RV1126B | RV1126B | armv7l | 2 | H.264, H.265 | 2 TOPS |
-| Luckfox Pico Pro/Max RV1106 | RV1106 | armv7l | 1 | H.264 | 0.5 TOPS |
-| Luckfox Pico Zero RV1106G3 | RV1106G3 | armv7l | 1 | H.264 | 0.5 TOPS |
-| Luckfox Pico RV1103 | RV1103 | armv7l | 1 | H.264 | No |
-| Luckfox Lyra RK3506G2 | RK3506G2 | armv7l | 1 | None | No |
-| Generic ARM64 | Unknown | aarch64 | 2 | None | No |
+| Board | SoC | Architecture | Default Tier | Video Encode | NPU | Install path |
+|-------|-----|-------------|-------------|-------------|-----|--------------|
+| Raspberry Pi CM4 | BCM2711 | aarch64 | 3 | H.264 | No | Install command |
+| Raspberry Pi CM5 | BCM2712 | aarch64 | 4 | H.264 | No | Install command |
+| Raspberry Pi 4B | BCM2711 | aarch64 | 3 | H.264 | No | Install command |
+| Raspberry Pi 5 | BCM2712 | aarch64 | 4 | H.264 | No | Install command |
+| Radxa ROCK 5C Lite | RK3582 | aarch64 | 4 | H.264, H.265 | 6 TOPS | Install command |
+| Radxa CM3 (RK3566) | RK3566 | aarch64 | 3 | H.264 | 0.8 TOPS | Install command |
+| Radxa CM4 (RK3588S2) | RK3588S2 | aarch64 | 4 | H.264, H.265 | 6 TOPS | Install command |
+| Rockchip RK3576 | RK3576 | aarch64 | 4 | H.264, H.265 | 6 TOPS | Install command |
+| Orange Pi 5 | RK3588S | aarch64 | 4 | H.264, H.265 | 6 TOPS | Install command |
+| NVIDIA Jetson Nano | Tegra X1 | aarch64 | 3 | H.264, H.265 | 0.5 TFLOPS | Install command |
+| NVIDIA Jetson Orin Nano | Tegra Orin | aarch64 | 4 | H.264, H.265 | 40 TOPS | Install command |
+| Rockchip RV1126B | RV1126B | armv7l | 2 | H.264, H.265 | 2 TOPS | Install command |
+| Luckfox Pico Pro/Max RV1106 | RV1106 | armv7l | 1 | H.264 | 0.5 TOPS | Install command |
+| Luckfox Pico Zero RV1106G3 | RV1106G3 | armv7l | 1 | H.264 | 0.5 TOPS | Browser flash |
+| Luckfox Pico RV1103 | RV1103 | armv7l | 1 | H.264 | No | Install command |
+| Luckfox Lyra RK3506G2 | RK3506G2 | armv7l | 1 | None | No | Install command |
+| Generic ARM64 | Unknown | aarch64 | 2 | None | No | Install command |
+
+The **Install path** column shows the recommended Flash Tool flow per board. Browser-flash boards run a complete ADOS OS image written from Mission Control over WebUSB. Install-command boards run the agent on top of their stock vendor OS via the `curl` install script. See [Install paths](/getting-started/install-paths) for the full decision tree.
 
 ## Tier system
 

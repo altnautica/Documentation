@@ -66,7 +66,8 @@
             "pages": [
               "getting-started/quickstart-mission-control",
               "getting-started/quickstart-drone-agent",
-              "getting-started/quickstart-ground-agent"
+              "getting-started/quickstart-ground-agent",
+              "getting-started/install-paths"
             ]
           },
           {
@@ -125,6 +126,7 @@
               "mission-control/mavlink-signing",
               "mission-control/parameters",
               "mission-control/firmware-flashing",
+              "mission-control/flash-tool",
               "mission-control/calibration"
             ]
           },
@@ -148,7 +150,9 @@
             "pages": [
               "drone-agent/overview",
               "drone-agent/supported-hardware",
-              "drone-agent/installation"
+              "drone-agent/installation",
+              "drone-agent/install-luckfox",
+              "drone-agent/lite-agent"
             ]
           },
           {

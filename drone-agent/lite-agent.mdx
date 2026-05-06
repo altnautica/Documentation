@@ -1,0 +1,73 @@
+---
+title: "Lite agent"
+description: "Rust agent for low-RAM SBCs in the 256 to 512 MB class."
+icon: "feather"
+---
+
+The lite agent is an alternate ADOS Drone Agent build, written in Rust, targeted at low-RAM single-board computers. It speaks the same MAVLink, cloud relay, and pairing protocols as the full Python agent so the same Mission Control fleet view works against either runtime.
+
+## What is the lite agent
+
+The lite agent is a single Rust binary that ships pre-built for ARM Linux targets. It runs in less than 10 MB of resident memory at idle and boots in a few hundred milliseconds. It is designed for boards that cannot host the full Python runtime comfortably.
+
+It is not a replacement for the Python agent. It is a parallel implementation focused on the control plane: MAVLink routing, cloud relay, and (where supported) the video pipeline. Boards with enough RAM to run the Python agent should keep using it.
+
+## When to use lite vs full
+
+| Class | RAM | Recommended runtime | Examples |
+|-------|-----|---------------------|----------|
+| Low-RAM | 256 to 512 MB | Lite agent | Luckfox Pico Zero, Raspberry Pi Zero 2 W |
+| Standard | 1 GB and up | Full agent | Raspberry Pi 4B, Radxa CM4, Radxa ROCK 5C, Jetson Nano |
+| High-end | 4 GB and up | Full agent | Raspberry Pi 5, ROCK 5C Lite, Jetson Orin Nano |
+
+The Flash Tool picks the right runtime automatically based on the board you select. You rarely need to choose manually.
+
+## What lite supports today
+
+The lite agent covers the control-plane and (on some boards) the video pipeline:
+
+- **MAVLink router.** Same UART-to-network MAVLink proxy as the full agent. WebSocket and TCP clients connect on port 8080. The cloud relay also subscribes through this router.
+- **Cloud relay.** HTTPS heartbeat to Mission Control plus MQTT over TLS for command and telemetry. Same topic schema as the full agent so Fleet view, Command page, and the GCS plugins all work without changes.
+- **Universal setup webapp.** The same captive portal flow as the full agent. Identity, MAVLink, network, and Mission Control onboarding from any browser.
+- **Pairing.** The same pending-pair handshake. Boards flashed with the lite agent appear in Fleet view exactly like full-agent boards.
+- **Optional video pipeline.** On boards with hardware H.264 encode and a vendor video API, lite spawns the video pipeline as a small subprocess and pushes RTSP to Mission Control. This is board-specific.
+- **WFB-ng air-side.** When an RTL8812EU adapter is plugged in and the board's kernel supports it, lite orchestrates `wfb_tx` for long-range video.
+
+A lite-agent drone behaves the same as a full-agent drone in Mission Control. The Fleet view shows a small `Lite` pill so you know which runtime is shipping the heartbeat.
+
+## What lite skips
+
+The lite agent intentionally does not ship some features. These stay on the full Python agent:
+
+- **Plugin host.** The plugin system runs on the full agent only. Boards that need plugins should run the full agent.
+- **ROS 2 integration.** The opt-in ROS 2 environment runs in Docker on the full agent. Lite boards do not have the RAM headroom for a ROS workspace.
+- **NPU integration.** On-board ML inference (vision engine, follow-me, obstacle avoidance) requires the full agent's vision stack.
+- **Scripting tier.** The Python script executor and text-command engine live in the full agent.
+- **Peripheral manager.** The hot-plug manager that wires up cameras, gimbals, GPS receivers, and similar peripherals lives in the full agent. Lite supports a fixed peripheral set defined per-board.
+
+A board that needs any of the above should run the full agent. If the board cannot host the full agent at all, those features are out of scope for that hardware.
+
+## Where it ships
+
+The lite agent ships as pre-built binaries from the agent repo's GitHub Releases. The Flash Tool downloads the right binary for your board automatically when you flash. You do not build from source unless you want to.
+
+For browser-flash boards (today: Luckfox Pico Zero), the lite binary is baked into a complete OS image. For stock-OS boards, the install command downloads the lite binary if your board's RAM is in the lite-agent class.
+
+For the install decision tree, see [Install paths](/getting-started/install-paths).
+
+## What's next
+
+<CardGroup cols={2}>
+  <Card title="Bringing up a Luckfox" icon="microchip" href="/drone-agent/install-luckfox">
+    Full walkthrough for the first lite-class board.
+  </Card>
+  <Card title="Install paths" icon="route" href="/getting-started/install-paths">
+    Pick the right install flow for your hardware.
+  </Card>
+  <Card title="Flash Tool walkthrough" icon="wand-magic-sparkles" href="/mission-control/flash-tool">
+    How Mission Control drives every install flow.
+  </Card>
+  <Card title="Drone Agent overview" icon="info" href="/drone-agent/overview">
+    The full Python agent for standard and high-end boards.
+  </Card>
+</CardGroup>
