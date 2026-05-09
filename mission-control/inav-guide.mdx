@@ -1,6 +1,7 @@
 ---
 title: iNav Guide
 description: Connecting, configuring, and flying iNav-powered drones in Mission Control.
+lastUpdated: "2026-05-09"
 ---
 
 iNav extends Betaflight with autonomous navigation, waypoint missions, safehomes, geozones, and a visual programming framework. Mission Control supports iNav 7.0 and later as a first-class firmware, with the same protocol-level polish it offers for ArduPilot, PX4, and Betaflight.
@@ -124,9 +125,9 @@ Airplane and tricopter platforms pick up FW Approach profiles. Each of 4 approac
 
 - **JavaScript Programming transpiler.** iNav Configurator's Programming tab also exposes a JavaScript-to-bytecode transpiler for imperative scripting. Mission Control does not ship that transpiler in v1. The Logic Conditions panel covers the same underlying primitives via direct rule editing. Users with an existing JavaScript-based workflow can keep iNav Configurator open for that one tab while doing everything else in Mission Control.
 - **Telemetry bridging (LTM, MAVLink emulation over iNav).** Mission Control connects directly over USB WebSerial or TCP (SITL bridge) and speaks MSP natively. Telemetry-over-RC-link (SmartPort, CRSF, LTM on a serial pin feeding a radio receiver) is a different transport from what Mission Control ingests. Pilots who fly out of laptop range use their RC radio's on-screen telemetry or an FPV OSD overlay for in-flight data. Once they land and plug in, Mission Control covers the full configuration, blackbox, and mission-review surface.
-- **DJI and HD VTX DisplayPort OSD preview.** iNav supports `MSP_DISPLAYPORT` for DJI O3 / Avata / Goggles 2 and Walksnail Avatar. Mission Control configures OSD elements via the OSD panel, but does not render the DisplayPort frames as a live canvas preview. The goggle or HD VTX chip renders them on the drone at runtime. A canvas preview widget is on the roadmap.
+- **DJI and HD VTX DisplayPort OSD preview.** iNav supports `MSP_DISPLAYPORT` for DJI O3 / Avata / Goggles 2 and Walksnail Avatar. Mission Control configures OSD elements via the OSD panel, but does not render the DisplayPort frames as a live canvas preview. The goggle or HD VTX chip renders them on the drone at runtime.
 - **MSP over-the-air firmware update.** `MSP2_INAV_FWUPDT_*` flashing is not implemented. Use the existing WebUSB DFU flasher in the Firmware panel for iNav binaries. iNav flashes the same way as Betaflight.
-- **Mobile and phone viewports.** Mission Control is a desktop and laptop GCS. iNav panels follow the existing responsive posture: tablet landscape works, phone viewports are not specifically designed for. Native Android coverage lives in a separate track (the ADOS Mission Control Android app, on its own roadmap).
+- **Mobile and phone viewports.** Mission Control is a desktop and laptop GCS. iNav panels follow the existing responsive posture: tablet landscape works, phone viewports are not specifically designed for. Native Android coverage lives in a separate track.
 - **Real iNav hardware verification.** The iNav path is exercised against the bundled demo protocol. A real iNav 7.x flight controller round-trip is the final gate before this page's status flips from "preview" to "verified on hardware."
 - **Older iNav versions.** Mission Control targets iNav 7.0 and later. Older versions degrade gracefully: unsupported panels hide themselves based on `MSP2_COMMON_PG_LIST` feature detection.
 

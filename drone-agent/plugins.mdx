@@ -1,0 +1,134 @@
+---
+title: "Plugins"
+description: "How the agent runs signed Python plugins, the ados plugin CLI, the permission model, and the three built-ins."
+icon: "puzzle-piece"
+lastUpdated: "2026-05-09"
+---
+
+# Plugins
+
+The agent ships with a plugin host that runs signed Python modules in their own subprocesses with capability-gated access to agent state. This page is for operators and OEMs who install and manage plugins on a fleet. If you want to write a plugin, head to [Your first plugin](/developers/your-first-plugin) and the [Agent plugin deep dive](/developers/agent-plugin-deep-dive).
+
+<Note>
+Plugins are an opt-in surface. A fresh install runs without any plugins. The host service is dormant until at least one plugin is installed.
+</Note>
+
+## What plugins do
+
+A plugin extends the agent with new behavior without forking the codebase. Common shapes:
+
+- React to a topic on the agent event bus (vehicle armed, geofence breach, mode change) and emit a structured log, send a webhook, or trigger a peripheral.
+- Subscribe to MAVLink and republish a derived state under a plugin namespace.
+- Attach to a hardware peripheral the core agent does not handle (an exotic camera, a custom gimbal, a payload servo) and expose it as a first-class capability.
+- Add a small REST surface that Mission Control or other clients can call.
+
+Each plugin runs as a separate subprocess under a systemd slice. CPU and memory limits, restart policy, and the circuit breaker are managed by the supervisor.
+
+## The `ados plugin` CLI
+
+| Command | What it does |
+|---|---|
+| `ados plugin list` | Show every installed plugin with state, version, and risk level. |
+| `ados plugin install <archive>` | Install a signed `.adosplug` archive from a local file or URL. |
+| `ados plugin enable <id>` | Start a previously installed plugin and add it to the supervisor's restart set. |
+| `ados plugin disable <id>` | Stop the plugin and remove it from the restart set. The plugin stays installed. |
+| `ados plugin remove <id>` | Stop and uninstall the plugin. State on disk is purged. |
+| `ados plugin info <id>` | Print the manifest, declared permissions, signer, and last-known status. |
+| `ados plugin perms <id>` | Show the permission grants on a plugin. Add `--revoke <perm>` to drop one (interactive confirm by default). |
+| `ados plugin logs <id>` | Tail the plugin's structured logs (journald-formatted). |
+| `ados plugin lint <archive>` | Static-analyze an archive: signature, manifest schema, banned imports, permission shape. |
+| `ados plugin test <plugin_dir>` | Run the plugin's pytest suite against the test harness. Useful for OEMs verifying a build before signing. |
+
+`install`, `enable`, `disable`, `remove`, and `perms --revoke` prompt for confirmation by default. Pass `--yes` to skip prompts in scripts.
+
+## Installing a signed plugin
+
+Plugins ship as `.adosplug` archives signed with an Ed25519 key.
+
+```bash
+# from a local file
+ados plugin install ./geofence-1.4.2.adosplug
+
+# from a URL the agent can reach
+ados plugin install https://example.com/plugins/geofence-1.4.2.adosplug
+```
+
+The CLI verifies the signature against the agent's trusted-key list, parses `manifest.yaml`, and shows two prompts:
+
+1. **Summary**: plugin id, version, signer key id, risk badge, and a one-line description from the manifest.
+2. **Permissions**: every capability the plugin requests, grouped by domain. The operator can approve all, deny, or fine-grain (skip per-permission for advanced cases).
+
+Only after both prompts pass does the agent unpack and stage the plugin.
+
+The same flow runs from Mission Control's plugin install dialog. Both surfaces share the trust list at `/etc/ados/plugin-keys/`.
+
+## Permissions
+
+Every plugin declares the capabilities it needs in `manifest.yaml`:
+
+```yaml
+agent:
+  permissions:
+    - vehicle.state.read
+    - mavlink.command.send
+    - peripheral.camera.frame.read
+```
+
+The agent's IPC dispatcher gates each capability at request time. A plugin that calls `mavlink.command.send` without the matching grant gets `capability_denied` back from the dispatcher and never reaches the handler.
+
+There are 29 named capabilities in the catalog at module-load time. They cover vehicle state reads, MAVLink command sends, mission read and write, recording control, plugin-to-plugin messaging, and the GCS UI slot taxonomy on the Mission Control side. The full table lives next to the SDK in the [agent plugin deep dive](/developers/agent-plugin-deep-dive#capability-catalog).
+
+Risk badges roll up the requested capabilities into one of four levels (informational, low, medium, high) so operators can decide at a glance whether a plugin matches their threat tolerance.
+
+## Built-in plugins
+
+Three plugins ship with the agent as worked examples and as useful surfaces in their own right. They are signed by the Altnautica first-party key and enabled by default.
+
+### geofence
+
+Subscribes to the public host topic `vehicle.geofence_breach` and republishes a structured alert under `plugin.io.altnautica.geofence.alert`. Low risk, minimal permissions. The shape of the alert is documented in the example manifest. Use it as a template for any plugin that turns a vehicle event into a downstream notification.
+
+### telemetry-logger
+
+Subscribes to nine lifecycle topics (vehicle armed, disarmed, mode change, battery, geofence breach, mission start, complete, abort, plus agent ready and shutdown) and emits structured events to journald. Event-only, no MAVLink writes. Useful by itself for compliance-grade logging, and a good reference for building log shippers.
+
+### mavlink-inspector
+
+Subscribes to vehicle state, folds it into an in-memory snapshot, and republishes the rolled-up view under a plugin namespace. Demonstrates how to aggregate state without writing to the FC. Mission Control consumes the snapshot to render diagnostics panels.
+
+## Resource isolation
+
+Each plugin runs as a subprocess of `ados-supervisor` under a systemd slice with cgroup-enforced CPU and memory limits taken from the manifest's `resource_limits` block (or the agent's defaults if the manifest does not set them).
+
+A plugin that crashes is restarted by the supervisor up to a circuit-breaker threshold. Once the threshold trips, the supervisor disables the plugin until an operator re-enables it. The trip count and last-trip reason are visible in `ados plugin info <id>`.
+
+The supervisor also rejects plugins that try to dlopen a vendor library at runtime and fail. The agent's runtime never loads plugin code into its own process; a misbehaving plugin can crash itself but cannot take the rest of the agent down.
+
+## Where to install
+
+Install the plugin once on each agent that needs it. There is no fleet-wide push from the agent side. To roll out a plugin to a fleet, use Mission Control's fleet view to install across selected drones, or run `ados plugin install` over SSH from your deployment tooling.
+
+For OEMs shipping a pre-installed plugin set, the install path is the same `.adosplug` archive copied into `/var/lib/ados/plugins/preinstalled/` during image build. The agent picks it up on first boot.
+
+## Hosted registry
+
+Browsing plugins by id and pulling them automatically from a catalog is documented under [The hosted registry](/developers/distribution-registry). Local file install and URL install are the two channels the agent supports today.
+
+## Authoring a plugin
+
+If you want to write a plugin, the SDK and templates live in the developers tab:
+
+<CardGroup cols={2}>
+  <Card title="Your first plugin" icon="rocket" href="/developers/your-first-plugin">
+    Quickstart: scaffolding, manifest, capabilities, signing, and install.
+  </Card>
+  <Card title="Agent plugin deep dive" icon="microscope" href="/developers/agent-plugin-deep-dive">
+    Subprocess lifecycle, IPC dispatcher, the capability catalog, the test harness.
+  </Card>
+  <Card title="Signing keys" icon="key" href="/developers/signing-keys">
+    Ed25519 key generation, trust lists, and rotation.
+  </Card>
+  <Card title="Hosted registry" icon="globe" href="/developers/distribution-registry">
+    Catalog, search, and the revocation feed.
+  </Card>
+</CardGroup>

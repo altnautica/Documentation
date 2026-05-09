@@ -1,0 +1,214 @@
+---
+title: "Display"
+description: "A 480 by 320 touch panel on the ground station. Native dashboard, five-screen status carousel, mesh-pairing overlays. Auto-provisioning across Cubie A7Z, Rock 5C Lite, and Pi 4B."
+icon: "tv"
+lastUpdated: "2026-05-09"
+---
+
+# Display
+
+The ground station ships with an optional SPI-attached touch LCD. The OLED is the always-on glance. The LCD is what you reach for when you need to do something. Color, fonts that read at arm's length, and gestures that mean what they mean on every other touchscreen.
+
+<Frame caption="Native 480 by 320 dashboard rendered on the SPI LCD. Four tiles: radio link, drone, mesh, uplink and cloud.">
+  <img src="/images/ground-agent/display/dashboard/dashboard.png" alt="ADOS ground station dashboard rendered on the SPI LCD" />
+</Frame>
+
+<Note>
+Looking for the OLED and four buttons? See [Physical UI](/ground-agent/physical-ui). The two surfaces coexist on the same node.
+</Note>
+
+## Auto-provisioning
+
+The installer takes care of the panel end to end. No `dtoverlay=` editing. No kernel rebuild.
+
+<Steps>
+  <Step title="Detect">
+    The board fingerprint resolves a HAL profile. The profile lists one or more supported displays. The installer picks the first match, or honors a flag if the operator wants a different one.
+  </Step>
+  <Step title="Provision">
+    The overlay source compiles to a device-tree binary. Modules load on every boot through a drop-in. Resolution, rotation, and touch state land in `/etc/ados/display.conf` for the renderer to read at startup.
+  </Step>
+  <Step title="Bind">
+    First boot brings up the panel. The renderer probes the framebuffer, the touch bridge attaches to the input device, and the GCS Hardware tab populates with live state.
+  </Step>
+</Steps>
+
+See [Installation](/ground-agent/installation) for the install command and [Hardware Tab](/ground-agent/hardware-tab) for the Mission Control mirror.
+
+## Native dashboard
+
+The dashboard is purpose-built for the LCD. Bigger fonts, four stat tiles, each one a tap target.
+
+<Frame caption="Tap a tile to drill into that subsystem. The four tiles always render together so the at-a-glance scan never misses anything to a carousel rotation.">
+  <img src="/images/ground-agent/display/dashboard/dashboard.png" alt="Dashboard with radio link, drone, mesh, uplink and cloud tiles" />
+</Frame>
+
+The carousel is upscaled from the 128x64 OLED canvas for backwards compatibility. The dashboard runs natively at 480x320.
+
+## Status carousel
+
+The same five screens that cycle on the OLED are upscaled onto the LCD. Glance behavior stays identical across hardware. Tap to freeze on the active screen.
+
+<CardGroup cols={2}>
+  <Card title="Link">
+    <Frame>
+      <img src="/images/ground-agent/display/carousel/link.png" alt="Link status screen" />
+    </Frame>
+    RSSI, bitrate, FEC repaired and lost, channel, TX power.
+  </Card>
+  <Card title="Drone">
+    <Frame>
+      <img src="/images/ground-agent/display/carousel/drone.png" alt="Drone status screen" />
+    </Frame>
+    Paired device id, flight mode, battery, GPS sat count.
+  </Card>
+  <Card title="GCS">
+    <Frame>
+      <img src="/images/ground-agent/display/carousel/gcs.png" alt="GCS clients screen" />
+    </Frame>
+    Connected client list with PIC badge.
+  </Card>
+  <Card title="Net">
+    <Frame>
+      <img src="/images/ground-agent/display/carousel/net.png" alt="Network status screen" />
+    </Frame>
+    AP SSID and IP, USB tether IP, current uplink and reachability.
+  </Card>
+  <Card title="System">
+    <Frame>
+      <img src="/images/ground-agent/display/carousel/system.png" alt="System health screen" />
+    </Frame>
+    CPU, RAM, temperature, uptime, agent version.
+  </Card>
+</CardGroup>
+
+## Field tap-to-pair flow
+
+Two devices, no laptop, under two minutes. Each step has its own screen. No silent transitions. No modal-blocking dead ends.
+
+<Steps>
+  <Step title="First boot, role unset">
+    <Frame>
+      <img src="/images/ground-agent/display/mesh/unset-boot.png" alt="Role unset banner" />
+    </Frame>
+    A mesh-capable node with no role picked yet shows a banner pointing at the menu instead of cycling status screens.
+  </Step>
+  <Step title="Pick a role">
+    <Frame>
+      <img src="/images/ground-agent/display/mesh/role-picker.png" alt="Role picker" />
+    </Frame>
+    Cycle direct, relay, or receiver. Tap apply to commit.
+  </Step>
+  <Step title="Open the receiver window">
+    <Frame>
+      <img src="/images/ground-agent/display/mesh/accept-window.png" alt="Receiver accept window" />
+    </Frame>
+    On the receiver, open a 60-second accept window. The countdown is on the panel.
+  </Step>
+  <Step title="Scan from the relay">
+    <Frame>
+      <img src="/images/ground-agent/display/mesh/join-scan.png" alt="Relay scanning for receiver" />
+    </Frame>
+    On the relay, scan for the receiver. mDNS discovery on `bat0` brings up host and signal.
+  </Step>
+  <Step title="Confirm joined">
+    <Frame>
+      <img src="/images/ground-agent/display/mesh/joined-status.png" alt="Mesh joined status" />
+    </Frame>
+    Mesh up. Confirmed on both ends.
+  </Step>
+</Steps>
+
+The full ground-side reference for this flow lives at [Field pairing](/ground-agent/field-pairing).
+
+## Overlay screens
+
+Recovery, confirmation, list views. A node without a second WiFi adapter shows a hint screen so the operator knows the feature exists and how to unlock it.
+
+<CardGroup cols={2}>
+  <Card title="Neighbors">
+    <Frame>
+      <img src="/images/ground-agent/display/mesh/neighbors.png" alt="Mesh neighbors list" />
+    </Frame>
+    Mesh peers with link quality. Scrollable.
+  </Card>
+  <Card title="Hub unreachable">
+    <Frame>
+      <img src="/images/ground-agent/display/mesh/hub-unreachable.png" alt="Hub unreachable grace period" />
+    </Frame>
+    Receiver lost, grace period running. Wait or fall back to direct.
+  </Card>
+  <Card title="Leave confirm">
+    <Frame>
+      <img src="/images/ground-agent/display/mesh/leave-confirm.png" alt="Leave mesh confirm screen" />
+    </Frame>
+    Two-tap confirmation before leaving the mesh.
+  </Card>
+  <Card title="Error states">
+    <Frame>
+      <img src="/images/ground-agent/display/mesh/error-states.png" alt="Unified error overlay" />
+    </Frame>
+    Single overlay that switches on the agent error code.
+  </Card>
+</CardGroup>
+
+A `mesh-unavailable` hint screen replaces the silent empty submenu when the node has only one WiFi adapter, with a one-line nudge to plug a second adapter and reboot.
+
+## Touch gestures
+
+Gesture classification is shared across every screen. Same thresholds, same behavior. Hit zones are page-local so a tile tap maps to the right detail page regardless of theme.
+
+| Gesture | Threshold | What it does |
+|---|---|---|
+| Tap | < 400 ms, < 12 px | Drill into a tile or select an item. |
+| Long-press | >= 400 ms, < 12 px | Open a context menu, start calibration. |
+| Swipe | < 250 ms, >= 24 px | Navigate between pages. |
+| Drag | >= 250 ms, >= 12 px | Scroll a list or pan content. |
+
+## Supported boards
+
+New boards add a `displays` block to their HAL profile YAML and the installer picks them up. No code change in the renderer.
+
+| Board | SoC | Panel | Driver | Touch | Resolution |
+|---|---|---|---|---|---|
+| Radxa Cubie A7Z | Allwinner A733 | Waveshare 3.5" RPi LCD (A) | ILI9486 | ADS7846 | 480 x 320 |
+| Radxa ROCK 5C Lite | RK3582 | Waveshare 3.5" RPi LCD (A) | ILI9486 | ADS7846 | 480 x 320 |
+| Raspberry Pi 4B | BCM2711 | Waveshare 3.5" RPi LCD (A) | ILI9486 | ADS7846 | 480 x 320 |
+
+Display profiles live in each board's HAL YAML. Adding a new pair is a YAML change plus an overlay file.
+
+## Mission Control mirror
+
+The Hardware tab in Mission Control mirrors the on-device display state. Type, controller, resolution, rotation, last-touch age, current page, calibration state. Calibrate from the desk before the operator walks out the door.
+
+<CardGroup cols={2}>
+  <Card title="Live mirror">
+    The local-display card appears the moment the panel binds. If the panel goes dark, the card flips to degraded state without taking down the rest of the Hardware tab.
+  </Card>
+  <Card title="Calibrate from the desk">
+    The five-point calibration wizard runs from Mission Control as well as from a long-press on the panel itself. Calibration data persists across reboots.
+  </Card>
+</CardGroup>
+
+See [Hardware Tab](/ground-agent/hardware-tab) for the full Mission Control surface.
+
+## Graceful degradation
+
+If the LCD is absent, the agent does not complain. The OLED still cycles, the setup webapp still serves status, and the GCS Hardware tab still surfaces every config knob. Nothing in the agent's runtime requires the panel to exist.
+
+## What's next
+
+<CardGroup cols={2}>
+  <Card title="Physical UI" icon="sliders" href="/ground-agent/physical-ui">
+    The OLED + four-button surface that ships on every node.
+  </Card>
+  <Card title="Installation" icon="download" href="/ground-agent/installation">
+    The one-line install handles the LCD overlay automatically.
+  </Card>
+  <Card title="Setup and pairing" icon="handshake" href="/ground-agent/setup-and-pairing">
+    First-time pairing and onboarding from the device webapp or the GCS.
+  </Card>
+  <Card title="Field pairing" icon="link" href="/ground-agent/field-pairing">
+    The full mesh tap-to-pair walkthrough, with the same screens shown on the panel.
+  </Card>
+</CardGroup>

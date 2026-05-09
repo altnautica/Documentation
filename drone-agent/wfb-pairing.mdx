@@ -1,0 +1,131 @@
+---
+title: "WFB Pairing"
+description: "Local-first auto-bind on first boot. wfb_keygen keys, role-aware handling, and the auto-pair supervisor. Cloud relay is the secondary path."
+icon: "link"
+lastUpdated: "2026-05-09"
+---
+
+# WFB Pairing
+
+WFB-ng pairing in ADOS is local-first by design. A drone and a ground station that boot near each other for the first time pair automatically over the local radio, no internet required. The cloud relay is a secondary path that takes over when local pairing isn't possible.
+
+This page covers the pairing protocol. For the radio link itself (channel, FEC, antennas), see [WFB-ng](/drone-agent/wfb-ng).
+
+## Why local-first
+
+A radio link is a local thing. The pair key only needs to be known by the two endpoints that share air time. Routing pairing through a cloud round-trip adds latency, points of failure, and an internet dependency the radio link itself does not have.
+
+The agent generates and exchanges the WFB pair key on the local radio whenever it can. The cloud relay learns about the pair after the fact and uses it for the higher-level fleet-management features (status, command queues, video relay), not for the link itself.
+
+## First-boot auto-bind
+
+A fresh drone agent and a fresh ground agent that come online on overlapping channels go through this sequence without any operator action:
+
+<Steps>
+  <Step title="Key generation">
+    The first node to come up runs `wfb_keygen` and produces a 64-byte libsodium key. The key is written to the local pair store (`/etc/ados/wfb/pair.key`, mode `0600`).
+  </Step>
+  <Step title="Local advertisement">
+    The node advertises a pair offer over the configured WFB channel. The advertisement carries the key and a role tag (drone or ground station).
+  </Step>
+  <Step title="Adoption">
+    An unpaired peer that sees the advertisement and matches the complementary role adopts the key. It writes the same `pair.key` locally and confirms back over the radio.
+  </Step>
+  <Step title="Bind complete">
+    Both nodes flip from `unpaired` to `paired` in their state. WFB-ng RX and TX start with the shared key. Video and MAVLink flow.
+  </Step>
+</Steps>
+
+The whole sequence runs in seconds on hardware that's already up. From the operator's perspective, the OLED or LCD goes from "waiting for pair" to "linked" without anyone touching a setup webapp.
+
+## The auto-pair supervisor
+
+Auto-bind is driven by the `auto_pair` supervisor inside the `ados-cloud` service. The supervisor lives in `ados-cloud` rather than `ados-wfb` on purpose: the radio service must not be the thing that restarts the radio, otherwise a pairing-driven service restart would tear down the very channel it's trying to bind. The cloud service has no such constraint; it sits above the radio and orchestrates without owning the link.
+
+The supervisor watches:
+
+- Pair-store state (`paired` / `unpaired`).
+- Radio carrier state from the WFB service.
+- Pair-offer messages on the air.
+
+It writes:
+
+- The shared key into the pair store on adoption or generation.
+- A pair-confirmation event that lights up the OLED, the LCD, and the cloud heartbeat.
+
+## Role-aware key handling
+
+Drone profile and ground-station profile each handle the key set with role-specific semantics:
+
+- **Drone profile**: at most one current pair key. A new pairing replaces the current key only after explicit operator confirmation (or a clean unpaired state on first boot).
+- **Ground-station profile**: can hold multiple pair keys (one per paired drone) so a single ground station can swap between drones without re-pairing each time. The active key is selected by the GCS or by the OLED menu.
+
+The role is known at boot from the agent profile (`profile: drone` or `profile: ground-station`).
+
+## Manual pairing
+
+Auto-bind covers the common path. Manual pairing is the right move when:
+
+- A drone needs to be re-keyed after a security event.
+- A ground station needs to switch which paired drone it's listening to.
+- A multi-aircraft setup wants explicit pair-key control.
+- The operator is staging multiple drones and ground stations near each other and needs to be sure the right pair forms.
+
+Manual flows live in two places:
+
+- **OLED menu** on the ground station: `Pair with drone`. Opens an explicit pair window with a code on the panel.
+- **Setup webapp and Mission Control**: explicit pair, unpair, and re-key buttons under Radio. The same `/api/wfb/pair/*` REST routes back both surfaces.
+
+Pair codes generated for the manual flow are short (six characters), readable on a small panel, and time-boxed (default 60 seconds).
+
+## Cloud-relay fallback
+
+If the two nodes can't see each other on the radio (different sites, different channels, or one is offline), the cloud relay covers the gap.
+
+In that mode the operator pre-pairs through Mission Control and the cloud relay (HTTPS heartbeat plus MQTT pairing topics). Each side fetches the pair key from the relay on next boot, writes it locally, and starts the radio. From that point the link runs over the radio whenever the two are within range.
+
+The cloud relay path is documented in detail under [Cloud relay](/drone-agent/cloud-relay). The pairing topics are part of the relay protocol; the local pair-store layout is identical regardless of how the key arrived.
+
+## REST surface
+
+| Route | Verb | Purpose |
+|---|---|---|
+| `/api/wfb/pair` | GET | Current pair state (paired, unpaired, key fingerprint). |
+| `/api/wfb/pair/auto-pair` | PUT | Enable or disable the auto-pair supervisor. |
+| `/api/wfb/pair/local-bind` | POST | Force a local-bind sequence on demand. |
+| `/api/wfb/pair/unpair` | POST | Drop the current pair and clear the local pair store. |
+| `/api/wfb/pair/failover-status` | GET | Whether the cloud-relay fallback path is active. |
+
+All routes carry the `X-ADOS-Key` header. The pair-state route is read-only and safe to poll from the GCS.
+
+## Diagnostics
+
+```bash
+# What state is the pair store in?
+ados radio pair status
+
+# When did the supervisor last attempt to bind?
+journalctl -u ados-cloud -g auto_pair -n 50 --no-pager
+
+# Did the radio see the pair offer?
+journalctl -u ados-wfb -g pair_offer -n 50 --no-pager
+```
+
+A quick smoke test for the fresh-pair path: factory-reset both nodes, power them on within ten seconds, watch the panel transition from "waiting for pair" to "linked" without touching a webapp.
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="WFB-ng" icon="signal" href="/drone-agent/wfb-ng">
+    The radio link itself: channel, FEC, antennas, monitor mode, hardware.
+  </Card>
+  <Card title="Cloud relay" icon="cloud" href="/drone-agent/cloud-relay">
+    The secondary path. Used when local pairing isn't possible, plus higher-level fleet features.
+  </Card>
+  <Card title="REST API" icon="code" href="/drone-agent/rest-api">
+    Full route surface including authentication.
+  </Card>
+  <Card title="Field pairing" icon="link" href="/ground-agent/field-pairing">
+    The mesh-side pairing flow. Distinct from the WFB pair, but shares the panel's screen language.
+  </Card>
+</CardGroup>

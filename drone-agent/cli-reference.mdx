@@ -1,7 +1,8 @@
 ---
 title: "CLI Reference"
-description: "Everyday ados commands for status, update, and uninstall."
+description: "Everyday ados commands for status, update, uninstall, and the plugin subgroup."
 icon: "terminal"
+lastUpdated: "2026-05-09"
 ---
 
 # CLI Reference
@@ -60,7 +61,7 @@ ados status
 Example output:
 
 ```text
-ADOS Drone Agent 0.10.0
+ADOS Drone Agent 0.19.11
 Device:  ADOS Agent (ados-1234)
 Profile: drone
 Setup:   67%
@@ -127,6 +128,27 @@ Run without prompts:
 ```bash
 ados uninstall --purge --yes
 ```
+
+## `ados plugin`
+
+The `ados plugin` subgroup manages the agent plugin host: install, enable, disable, remove, inspect, and tail logs for installed plugins. Each plugin runs as a subprocess under the agent supervisor with its own cgroup limits and a capability-gated IPC channel.
+
+| Command | What it does |
+|---|---|
+| `ados plugin list` | Show every installed plugin with state, version, and risk level. |
+| `ados plugin install <archive>` | Install a signed `.adosplug` archive from a local file or URL. |
+| `ados plugin enable <id>` | Start a previously installed plugin and add it to the supervisor's restart set. |
+| `ados plugin disable <id>` | Stop the plugin and remove it from the restart set. The plugin stays installed. |
+| `ados plugin remove <id>` | Stop and uninstall the plugin. State on disk is purged. |
+| `ados plugin info <id>` | Print the manifest, declared permissions, signer, and last-known status. |
+| `ados plugin perms <id>` | Show permission grants. Add `--revoke <perm>` to drop one. |
+| `ados plugin logs <id>` | Tail the plugin's structured logs. |
+| `ados plugin lint <archive>` | Static-analyze an archive: signature, manifest schema, banned imports, permission shape. |
+| `ados plugin test <plugin_dir>` | Run the plugin's pytest suite against the test harness. |
+
+`install`, `enable`, `disable`, `remove`, and `perms --revoke` prompt for confirmation by default. Pass `--yes` to skip prompts in scripts.
+
+The full operator and OEM guide is at [Plugins](/drone-agent/plugins). Plugin authoring lives under the [Developers](/developers/your-first-plugin) tab.
 
 ## Where the old commands went
 

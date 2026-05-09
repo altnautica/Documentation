@@ -2,6 +2,7 @@
 title: "Overview"
 description: "What the ADOS Drone Agent is and what it does on your companion computer."
 icon: "microchip"
+lastUpdated: "2026-05-09"
 ---
 
 # ADOS Drone Agent
@@ -32,10 +33,10 @@ The agent handles five core jobs:
 
 | Metric | Value |
 |--------|-------|
-| Current version | 0.5.3 |
+| Current version | 0.19.11 |
 | Language | Python 3.11+ |
 | License | GPLv3 |
-| Supported boards | 17 board profiles |
+| Supported boards | 20 board profiles |
 | Systemd services | 28 units (air + ground) |
 | REST API port | 8080 |
 | IPC sockets | `/run/ados/mavlink.sock`, `/run/ados/state.sock` |
@@ -67,7 +68,7 @@ Services communicate through two Unix domain sockets:
 
 ## Hardware auto-detection
 
-On first boot, the agent reads `/proc/device-tree/model` and matches it against 17 board profiles stored as YAML files. Each profile defines the SoC, available buses (UART, I2C, SPI, USB), video encoding capabilities, GPIO pins, and a default tier.
+On first boot, the agent reads `/proc/device-tree/model` and matches it against 20 board profiles stored as YAML files. Each profile defines the SoC, available buses (UART, I2C, SPI, USB), video encoding capabilities, GPIO pins, and a default tier.
 
 The tier determines which features are enabled:
 

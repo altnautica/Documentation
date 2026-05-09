@@ -2,6 +2,7 @@
 title: "MAVLink Signing"
 description: "Enable, rotate, and manage MAVLink v2 signing keys for a paired drone from the GCS."
 icon: "shield-check"
+lastUpdated: "2026-05-09"
 ---
 
 # MAVLink Signing
@@ -31,14 +32,14 @@ After enrollment, the flight controller still accepts both signed and unsigned c
 </Steps>
 
 <Warning>
-Require mode is powerful and can lock you out. If you lose every browser that holds the key, the flight controller will reject every command until someone with SSH access to the companion computer runs `ados signing clear-fc`. Rotate a copy into a second browser (or wait for the upcoming cloud sync feature) before turning require mode on for a drone you cannot physically reach.
+Require mode is powerful and can lock you out. If you lose every browser that holds the key, the flight controller will reject every command until someone with SSH access to the companion computer runs `ados signing clear-fc`. Rotate a copy into a second browser before turning require mode on for a drone you cannot physically reach.
 </Warning>
 
 ## Rotating a key
 
 Open the Signing panel, click `Rotate key`, confirm. The browser generates a fresh 32-byte key, enrolls it with the flight controller, and drops the previous one. The flight controller now trusts the new key exclusively.
 
-Other browsers that held the old key stop working for that drone until you re-enroll them. A future cloud-sync feature will propagate rotations automatically across signed-in browsers on your account.
+Other browsers that held the old key stop working for that drone until you re-enroll them. Each browser handles its own keys; there is no automatic cross-browser sync today.
 
 ## Key storage in this browser
 

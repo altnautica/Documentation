@@ -2,6 +2,7 @@
 title: "MAVLink Signing"
 description: "HMAC-SHA256 authentication of every command sent to the flight controller, with the key held in the GCS browser."
 icon: "lock"
+lastUpdated: "2026-05-09"
 ---
 
 # MAVLink Signing
@@ -55,7 +56,7 @@ Require mode can lock you out of your own drone. If every browser that holds the
 
 Click `Rotate key` in the Signing panel to generate a new 32-byte key, enroll it with the flight controller, and evict the old one. Any other browser still holding the previous key loses its ability to sign until you re-enroll it.
 
-An upcoming opt-in cloud-sync feature will propagate rotated keys automatically across signed-in browsers. Until that lands, rotation is a per-browser action.
+Rotation is a per-browser action today. Each browser that needs to keep working with the rotated key has to re-enroll separately, or import the new key from a browser that already has it.
 
 ## Firmware support
 

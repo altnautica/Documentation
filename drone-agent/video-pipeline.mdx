@@ -2,6 +2,7 @@
 title: "Video Pipeline"
 description: "Camera detection, encoding, RTSP streaming, WFB-ng transmission, and cloud relay."
 icon: "video"
+lastUpdated: "2026-05-09"
 ---
 
 # Video Pipeline
@@ -125,6 +126,19 @@ webrtcHandshakeTimeout: 15s
 ```
 
 The single-port ICE mux on `:8189` simplifies firewall configuration. Both UDP and TCP ICE candidates use the same port.
+
+## Transport modes
+
+The same encoded stream out of MediaMTX can ride four transport modes. The agent exposes them as an interactive switcher so the GCS can pick the right one for the current operating environment without restarting the pipeline.
+
+| Mode | Path | Best for |
+|---|---|---|
+| RTSP local | Direct RTSP from the agent's port 8554 | Bench, lab, anything on the same LAN as the drone. |
+| WFB-ng long-range | Encoded H.264 piped to `wfb_tx` over the RTL8812EU air interface | Field flight, multi-kilometer range, line-of-sight. |
+| WebRTC remote | WHEP from MediaMTX over WebRTC, one-port ICE on `:8189` | Browser-based viewing on the local network with sub-200ms latency. |
+| Cloud relay | RTSP push to the cloud relay, WebRTC out to authenticated browsers | Off-LAN viewing without exposing the drone's IP, plus fleet aggregation. |
+
+Mode selection follows a simple heuristic: if the GCS and the drone share a LAN, RTSP local or WebRTC. If the drone is in flight on the radio link, WFB-ng. If the operator is off-network, cloud relay. The GCS can override the heuristic with a manual pick.
 
 ## Recording
 

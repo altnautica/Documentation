@@ -172,6 +172,7 @@
               "drone-agent/video-pipeline",
               "drone-agent/cloud-relay",
               "drone-agent/wfb-ng",
+              "drone-agent/wfb-pairing",
               "drone-agent/rest-api"
             ]
           },
@@ -180,7 +181,8 @@
             "pages": [
               "drone-agent/python-sdk",
               "drone-agent/text-commands",
-              "drone-agent/application-suites"
+              "drone-agent/application-suites",
+              "drone-agent/plugins"
             ]
           },
           {
@@ -243,6 +245,7 @@
             "group": "Operations",
             "pages": [
               "ground-agent/physical-ui",
+              "ground-agent/display",
               "ground-agent/setup-and-pairing",
               "ground-agent/uplink-matrix",
               "ground-agent/hardware-tab",

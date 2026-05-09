@@ -1,12 +1,13 @@
 ---
 title: "Supported Hardware"
-description: "All 17 supported board profiles, tier system, and recommended hardware."
+description: "All 20 supported board profiles, tier system, and recommended hardware."
 icon: "circuit-board"
+lastUpdated: "2026-05-09"
 ---
 
 # Supported Hardware
 
-The ADOS Drone Agent ships with 17 board profiles. Each profile is a YAML file that tells the agent what SoC it is running on, which buses are available, what video encoders exist, and which features to enable.
+The ADOS Drone Agent ships with 20 board profiles. Each profile is a YAML file that tells the agent what SoC it is running on, which buses are available, what video encoders exist, and which features to enable.
 
 <Note>
 **Ready to install?** Use the [Flash Tool in Mission Control](/mission-control/flash-tool). Pick your board from the catalog, then either flash via browser (Luckfox) or copy the install one-liner (Pi, Radxa, and others).
@@ -22,7 +23,9 @@ The agent reads `/proc/device-tree/model` at boot and matches it against the pat
 | Raspberry Pi CM5 | BCM2712 | aarch64 | 4 | H.264 | No | Install command |
 | Raspberry Pi 4B | BCM2711 | aarch64 | 3 | H.264 | No | Install command |
 | Raspberry Pi 5 | BCM2712 | aarch64 | 4 | H.264 | No | Install command |
+| Raspberry Pi Zero 2 W | BCM2710A1 | aarch64 | 1 | H.264 | No | Install command |
 | Radxa ROCK 5C Lite | RK3582 | aarch64 | 4 | H.264, H.265 | 6 TOPS | Install command |
+| Radxa Cubie A7Z | Allwinner A733 | aarch64 | 3 | H.264 | No | Install command |
 | Radxa CM3 (RK3566) | RK3566 | aarch64 | 3 | H.264 | 0.8 TOPS | Install command |
 | Radxa CM4 (RK3588S2) | RK3588S2 | aarch64 | 4 | H.264, H.265 | 6 TOPS | Install command |
 | Rockchip RK3576 | RK3576 | aarch64 | 4 | H.264, H.265 | 6 TOPS | Install command |
@@ -34,6 +37,7 @@ The agent reads `/proc/device-tree/model` at boot and matches it against the pat
 | Luckfox Pico Zero RV1106G3 | RV1106G3 | armv7l | 1 | H.264 | 0.5 TOPS | Browser flash |
 | Luckfox Pico RV1103 | RV1103 | armv7l | 1 | H.264 | No | Install command |
 | Luckfox Lyra RK3506G2 | RK3506G2 | armv7l | 1 | None | No | Install command |
+| Rockchip RK3506 (Reference) | RK3506 | armv7l | 1 | None | No | Install command |
 | Generic ARM64 | Unknown | aarch64 | 2 | None | No | Install command |
 
 The **Install path** column shows the recommended Flash Tool flow per board. Browser-flash boards run a complete ADOS OS image written from Mission Control over WebUSB. Install-command boards run the agent on top of their stock vendor OS via the `curl` install script. See [Install paths](/getting-started/install-paths) for the full decision tree.
