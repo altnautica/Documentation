@@ -204,6 +204,16 @@
               "drone-agent/setup-webapp",
               "drone-agent/troubleshooting"
             ]
+          },
+          {
+            "group": "Vision Navigation",
+            "pages": [
+              "drone-agent/vision-nav-overview",
+              "drone-agent/vision-nav-hardware",
+              "drone-agent/vision-nav-install",
+              "drone-agent/vision-nav-optical-flow",
+              "drone-agent/vision-nav-vio"
+            ]
           }
         ]
       },

@@ -1,0 +1,134 @@
+---
+title: "Configure Optical Flow"
+description: "Picking the camera and rangefinder, setting ArduPilot and PX4 EKF parameters, switching the active EKF source set, and the pre-arm checks for GPS-denied flight."
+icon: "compass"
+lastUpdated: "2026-05-16"
+---
+
+# Configure Optical Flow
+
+This page walks through the per-drone configuration after the Vision Navigation plugin is installed and enabled. The order matters: pick the hardware first, then set the FC parameters, then switch the active EKF source set, then verify pre-arm.
+
+## Pick the camera and rangefinder
+
+Open the drone detail panel, click **Plugins**, click the plugin row to open its configuration drawer.
+
+### Camera
+
+The Camera section lets you pick the source:
+
+| Mode | Field | Notes |
+|------|-------|-------|
+| USB UVC | `device_path` | A path like `/dev/video0`. The dropdown lists every UVC device the agent enumerated at boot. |
+| CSI | `csi_index` | An index (0 or 1) corresponding to the CSI port. Auto-detection picks the first attached CSI camera. |
+| Auto | (none) | The plugin picks CSI first, then UVC, in that order. |
+
+The drawer shows a tiny live preview once the camera is selected. Frame rate and resolution under the preview should show 30 fps at 320x240 or higher. If the preview is black, check the camera connection and the permission grant on `hardware.usb.uvc` or `hardware.camera.csi`.
+
+### Rangefinder
+
+The Rangefinder section lets you pick a driver:
+
+| Driver | Topology | Bus / source |
+|--------|----------|--------------|
+| `tf-luna` | Companion-owned | UART. Pick the UART number from the dropdown. |
+| `lidar-lite-v3` | Companion-owned | I2C. Address defaults to `0x62`. |
+| `vl53l1x` | Companion-owned | I2C. Address defaults to `0x29`. |
+| `mavlink-relay` | FC-relayed | The FC reads the rangefinder and forwards `DISTANCE_SENSOR`. Pick the orientation the FC reports as "down". |
+
+The drawer shows the current rangefinder reading once the driver connects. A healthy reading is non-zero, updates at the sensor's native rate, and matches your visual estimate of ground distance. If the reading is stuck at zero or saturates at the sensor's maximum, double-check wiring and the bus address.
+
+## ArduPilot parameters
+
+ArduPilot's optical flow fusion lives inside EKF3. You set these parameters from Mission Control's Parameters panel or from the plugin's pre-flight helper button. The helper writes all of them in one batch, verifies each one read back correctly, and asks the FC to commit to EEPROM.
+
+| Parameter | Set to | Why |
+|-----------|--------|-----|
+| `FLOW_TYPE` | `5` | Selects the MAVLink-based flow driver (the message the plugin emits). |
+| `FLOW_ORIENT_YAW` | `0` to `35999` | Camera yaw mount offset in centi-degrees. `0` for forward-facing chassis. |
+| `FLOW_FXSCALER` | `0` | X-axis flow scale calibration. Leave at 0 unless calibrating. |
+| `FLOW_FYSCALER` | `0` | Y-axis flow scale calibration. |
+| `EK3_SRC1_VELXY` | `5` | Sets the primary horizontal-velocity source to optical flow. |
+| `EK3_SRC1_POSXY` | `0` | No primary horizontal-position source. Position is derived from velocity. |
+| `EK3_SRC1_POSZ` | `1` | Barometer for primary vertical position. Optical flow only gives horizontal. |
+| `EK3_SRC1_YAW` | `1` | Compass for primary yaw. Flow doesn't measure yaw. |
+| `EK3_FLOW_DELAY` | `10` | Sensor-to-FC latency in milliseconds. 10 ms is a good starting point for companion-owned flow; raise to 20 to 30 for FC-relayed rangefinders. |
+| `EK3_FLOW_QUAL_MIN` | `50` | Minimum tracker quality (0 to 255) for the EKF to fuse a flow sample. Lower to 30 in feature-poor environments. |
+| `EK3_RNG_USE_HGT` | `70` | Below this percentage of `RNGFND1_MAX_CM`, the EKF uses rangefinder for height. |
+| `RNGFND1_TYPE` | per sensor | `8` for LightWare, `20` for Benewake TF-Luna, etc. Or `10` for MAVLink-relayed. Match your wiring. |
+| `RNGFND1_ORIENT` | `25` | `MAV_SENSOR_ROTATION_PITCH_270`, pointing down. |
+| `ARMING_CHECK` | leave default | Pre-arm checks stay on. The plugin satisfies them rather than disabling. |
+
+The plugin emits `OPTICAL_FLOW_RAD` on **MAVLink component ID 198**. ArduPilot accepts the message from any component when `FLOW_TYPE=5`; you don't need to whitelist the component on the FC side.
+
+## PX4 parameters
+
+PX4's EKF2 handles flow fusion differently from ArduPilot. The plugin's helper still batches the writes; you can also set them by hand from the Parameters panel.
+
+| Parameter | Set to | Why |
+|-----------|--------|-----|
+| `EKF2_OF_CTRL` | `1` | Enable optical flow fusion. |
+| `EKF2_OF_DELAY` | `5` to `30` | Latency in milliseconds from sensor sample to EKF. Tune to match your transport. |
+| `EKF2_OF_GATE` | `3` | Innovation gate (standard deviations). Wider gate is more permissive. |
+| `EKF2_OF_POS_X` | mount offset, meters | Camera position relative to vehicle IMU, X axis (forward positive). |
+| `EKF2_OF_POS_Y` | mount offset, meters | Y axis (right positive). |
+| `EKF2_OF_POS_Z` | mount offset, meters | Z axis (down positive). |
+| `EKF2_OF_QMIN` | `1` | Minimum flow quality (0 to 255) for fusion. |
+| `EKF2_RNG_AID` | `1` | Use rangefinder when available. |
+| `EKF2_HGT_REF` | `2` | Set primary height source to rangefinder. `0` for barometer if the rangefinder is short-range only. |
+| `SENS_FLOW_MINHGT` | sensor min, meters | Minimum altitude at which to trust flow. Matches the rangefinder's lower bound. |
+| `SENS_FLOW_MAXHGT` | sensor max, meters | Matches the rangefinder's upper bound. |
+| `SENS_FLOW_MAXR` | `2.5` | Maximum trusted angular flow rate in rad/s. |
+
+PX4 needs a reboot after writing `EKF2_OF_CTRL`. The plugin's helper button triggers a soft reboot of the FC and waits for it to come back before reporting success.
+
+## Switch the active EKF source set
+
+ArduPilot supports three EKF source sets (`SRC1`, `SRC2`, `SRC3`) and lets you swap between them at runtime. A common setup is `SRC1` for GPS, `SRC2` for optical flow, and `SRC3` for an external pose source. The Navigation tab exposes a source-set switcher.
+
+| Firmware | Command | Notes |
+|----------|---------|-------|
+| ArduPilot | `MAV_CMD_SET_EKF_SOURCE_SET` (command ID 42007) | param1 = source set number (1, 2, or 3). Mission Control sends it via the per-drone Navigation tab. |
+| PX4 | Write `EKF2_*` params + reboot | PX4 doesn't have a runtime source-set switch. You change params and the EKF re-initializes on reboot. |
+
+The switch is logged to the per-drone Navigation tab telemetry ring and surfaced as a notification in the GCS toast channel so you don't lose track of which estimator the FC is currently fusing.
+
+## Pre-arm checks for GPS-denied flight
+
+Vision-only flight skips a few pre-arm checks that exist for GPS-based flight (GPS HDOP, GPS lock, glitch detection) and adds a few that don't.
+
+### Set the GPS global origin
+
+ArduPilot needs a reference point for its local position frame. With GPS, the EKF auto-seeds the origin from the first valid GPS fix. Without GPS, you have to send one.
+
+The plugin handles this automatically when it sees the EKF reporting "waiting for home." It dispatches `SET_GPS_GLOBAL_ORIGIN` with the drone's last-known location (from your fleet database) or a sensible default (the most recent paired-from location). The Navigation tab's arm-readiness card shows the origin was set successfully.
+
+PX4 needs the same thing, though it uses a slightly different flow. The plugin's helper handles both firmwares.
+
+### AHRS waiting for home
+
+ArduPilot reports `AHRS waiting for home` on the GCS while it's waiting for the origin. Once `SET_GPS_GLOBAL_ORIGIN` succeeds and the EKF has fused a few seconds of flow plus rangefinder, the message clears.
+
+### EKF3 position healthy
+
+The drone won't accept `LOITER` or auto-mission arming until EKF3 reports a healthy position. The Navigation tab's arm-readiness card aggregates four checks:
+
+- Camera healthy (frames arriving at 30 Hz, quality above the configured threshold)
+- Rangefinder healthy (reading inside valid range, updating at sensor rate)
+- EKF position healthy (innovation within gate, source set 2 active)
+- FC armable (no other pre-arm failures)
+
+All four green means you can arm and take off. Any red shows the corresponding check inline so you know what to fix.
+
+## Tuning tips
+
+- **Flow quality threshold.** Default is 50 on ArduPilot, 1 on PX4. Lower the ArduPilot value (down to 30) for feature-poor surfaces (smooth concrete, snow, water). Don't lower it below 20 unless you're testing in a safe environment; below 20 the tracker emits noise instead of motion.
+- **Latency tuning.** If the vehicle oscillates in `LOITER`, the EKF is fusing flow with the wrong latency assumption. Increase `EK3_FLOW_DELAY` by 5 ms steps until the oscillation damps. The plugin's Navigation tab shows the round-trip flow latency it measured; use that as the starting point rather than guessing.
+- **Yaw stability.** Optical flow doesn't measure yaw. Compass calibration matters more than usual. Run the compass cal twice if the vehicle drifts a meter or two in `LOITER` over a minute.
+- **Initial altitude.** Auto-takeoff on optical flow should target 1.5 m to 3 m for the first hop. Below 1 m the rangefinder is close to its lower bound; above 3 m the optical flow tracker has fewer trackable features at typical FOVs.
+
+## Next steps
+
+- [Visual Inertial Odometry roadmap](/drone-agent/vision-nav-vio) for what comes after optical flow.
+- The plugin emits structured logs through the agent's normal log pipe. Tail them with `ados plugin logs com.altnautica.vision-nav` for debugging.
+- [Plugins overview](/drone-agent/plugins) for the underlying plugin host model.

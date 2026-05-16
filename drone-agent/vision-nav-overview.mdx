@@ -1,0 +1,81 @@
+---
+title: "Vision Navigation Overview"
+description: "Autonomous drone navigation using onboard camera and rangefinder. Supports optical flow today and visual inertial odometry on the roadmap."
+icon: "compass"
+lastUpdated: "2026-05-16"
+---
+
+# Vision Navigation
+
+Vision Navigation lets a drone fly position-controlled missions without GPS. The companion computer reads a downward-facing camera, derives motion, and feeds that motion into the flight controller's state estimator as a velocity source. The result is stable hover, smooth waypoint flight, and gentle landings indoors, under canopy, in canyons, or anywhere the sky view is poor.
+
+<Note>
+Vision Navigation ships as a first-party plugin in the ADOS extensions catalog. You install it on a single drone from Mission Control's per-drone Plugins tab. Installation is described in [Install on a drone](/drone-agent/vision-nav-install).
+</Note>
+
+## What it does today
+
+The first release covers **optical flow**, the simpler of the two GPS-denied techniques.
+
+- A downward camera streams frames to the agent at 30 frames per second.
+- The agent runs a pyramidal Lucas-Kanade tracker against the previous frame and produces a per-frame angular flow vector.
+- A rangefinder reports ground distance. Flow combined with range becomes a real-world velocity.
+- The agent emits `OPTICAL_FLOW_RAD` MAVLink messages on component ID 198 at 10 Hz.
+- ArduPilot's EKF3 or PX4's EKF2 fuses those messages as a velocity source. The vehicle reports a healthy local position and can fly position-controlled modes (`LOITER`, `POSHOLD`, auto missions).
+
+## What's on the roadmap
+
+**Visual Inertial Odometry (VIO)** lands in a future release. VIO fuses the camera with the FC's IMU and produces a full 6-degree-of-freedom pose. It's more capable than optical flow (works at altitude, handles featureless ground less well, gives true heading-relative position) but needs more compute. The VIO build will use a stereo or monocular front-facing camera plus an NPU-capable companion. See [Visual Inertial Odometry](/drone-agent/vision-nav-vio) for what's known so far.
+
+## Supported firmware
+
+| Firmware | Optical Flow | VIO (roadmap) |
+|----------|--------------|---------------|
+| ArduPilot 4.5+ (Copter, Plane, Rover) | Yes | Planned |
+| PX4 1.14+ | Yes | Planned |
+| Betaflight | No (no position estimator) | No |
+| iNav | No (limited position estimator) | No |
+
+The plugin auto-detects which firmware the FC is running and tunes its MAVLink output accordingly. ArduPilot expects optical flow in body-frame radians; PX4 expects the same message with a slightly different timestamp convention. Both are handled internally.
+
+## Supported boards
+
+Optical flow runs on any board with enough CPU headroom for a 320x240 grayscale tracker at 30 Hz plus a USB or CSI camera. In practice:
+
+| Board | Optical Flow | VIO (roadmap) |
+|-------|--------------|---------------|
+| Radxa ROCK 5C Lite (RK3582) | Yes | Yes |
+| Radxa CM4 (RK3588S2) | Yes | Yes |
+| Rockchip RK3576 | Yes | Yes |
+| Raspberry Pi 5 (BCM2712) | Yes | Yes |
+| Raspberry Pi CM5 (BCM2712) | Yes | Yes |
+| Raspberry Pi CM4 (BCM2711) | Yes | Limited (no NPU) |
+| Raspberry Pi 4B (BCM2711) | Yes | Limited (no NPU) |
+| Raspberry Pi Zero 2 W (BCM2710A1) | Yes (tier-1 only) | No |
+
+The plugin reads the active HAL board profile and refuses to enable on boards that don't meet the minimum. See [Hardware](/drone-agent/vision-nav-hardware) for camera and rangefinder picks.
+
+## How it sits in the stack
+
+```
+flight controller (UART)
+        |
+    ados-mavlink  <-- (FC heartbeat, IMU, ATTITUDE, DISTANCE_SENSOR relay)
+        |
+   ados-supervisor
+        |
+   ados-plugin-host
+        |
+   ados-vision-nav (this plugin)
+   /             \
+USB/CSI camera   UART or I2C rangefinder
+```
+
+The plugin lives inside the agent's plugin sandbox, talks to the FC through the MAVLink router, and registers itself as MAVLink component 198 on the vehicle bus. Mission Control sees the live optical flow rate and quality through a per-drone Navigation tab on the drone detail panel.
+
+## Next steps
+
+- [Hardware: cameras and rangefinders](/drone-agent/vision-nav-hardware)
+- [Install on a drone](/drone-agent/vision-nav-install)
+- [Configure optical flow](/drone-agent/vision-nav-optical-flow)
+- [Visual Inertial Odometry roadmap](/drone-agent/vision-nav-vio)

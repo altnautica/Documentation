@@ -1,0 +1,119 @@
+---
+title: "Install on a drone"
+description: "Installing the Vision Navigation plugin on a single drone via Mission Control's per-drone Plugins tab. Six-stage install progress, permissions, local-first transport."
+icon: "download"
+lastUpdated: "2026-05-16"
+---
+
+# Install on a drone
+
+Vision Navigation is a first-party plugin. You install it on one drone at a time from Mission Control's per-drone Plugins tab. Each install carries its own permission grants and its own per-drone configuration; the plugin runs only on the agent of the drone you picked.
+
+<Note>
+The per-drone install model means a fleet running ten drones can have the plugin on three of them without affecting the other seven. Each drone's Mission Control tab list reflects its own installs.
+</Note>
+
+## Before you start
+
+- A drone is paired with Mission Control (cloud-paired or LAN-paired).
+- The drone's agent is on version 0.13 or newer. The agent's `Help → About` screen reports the version.
+- A downward camera is mounted, and a rangefinder is wired or relayed through the FC. See [Hardware](/drone-agent/vision-nav-hardware).
+- The signed `.adosplug` archive is downloaded from the ADOS Extensions catalog, or you have its URL ready.
+
+## Open the drone's Plugins tab
+
+In Mission Control:
+
+1. From the Dashboard, click the drone you want to extend. The drone detail panel opens on the right.
+2. The detail panel header carries a tab row. The Plugins tab is at the right end of the row; if it isn't visible yet, your agent is older than 0.13 and needs an upgrade first.
+3. Click **Plugins**. The per-drone plugin list opens. A fresh drone shows "No plugins installed on this drone."
+4. Click **Install plugin on this drone** at the top right of the panel.
+
+The install dialog opens. The dialog runs the same six-stage flow whether the agent is reachable on the local network or only through the cloud relay.
+
+## Stage 0: pick the archive
+
+The first step asks for the archive. Three ways to provide it:
+
+- **File picker.** Drag the downloaded `.adosplug` into the dialog or click "Browse" to pick it from disk. The dialog parses the manifest client-side; nothing leaves your browser yet.
+- **URL.** Paste a URL to a published archive. The browser fetches the manifest first to render Stages 1 and 2 before any agent traffic.
+- **Registry pick (future).** A registry-backed picker is on the roadmap. Today, file or URL is the only path.
+
+The dialog refuses archives whose `compatibility.ados_version` doesn't match your drone's agent version, whose signature can't be verified against a trusted key, or whose declared boards don't include your drone's HAL board.
+
+## Stage 1: summary
+
+The dialog shows what's about to install:
+
+- Plugin id, version, and a one-line description.
+- The signer's key id and a friendly signer name (Altnautica for first-party plugins).
+- The risk badge derived from the highest-risk capability the plugin requests. Vision Navigation is **HIGH** because it injects pose estimates into the FC's state estimator.
+- A short list of vendor binaries shipped inside the archive, if any. Vision Navigation 0.1.x ships pure Python and reports "No vendor binaries." A future release will ship an OpenVINS binary for VIO and will surface that here.
+
+Read the summary, then click **Continue to permissions**.
+
+## Stage 2: permissions
+
+Every capability the plugin requests is shown grouped by domain. Vision Navigation 0.1.x requests:
+
+| Domain | Capability | Why |
+|--------|-----------|-----|
+| Hardware | `hardware.usb.uvc`, `hardware.camera.csi` | Read frames from the downward camera. |
+| Hardware | `hardware.uart`, `hardware.i2c` | Talk to the rangefinder when the companion owns it. |
+| Sensors | `sensor.camera.register`, `sensor.depth.register` | Register the camera and rangefinder as first-class peripherals. |
+| Events | `event.publish`, `event.subscribe` | Emit health and flow events on the agent bus. |
+| MAVLink | `mavlink.read`, `mavlink.write` | Receive FC telemetry; emit `OPTICAL_FLOW_RAD`. |
+| MAVLink | `mavlink.component.vio` | Register MAVLink component 198 (optical flow). |
+| Estimator | `estimator.pose.inject` | Submit velocity estimates to the FC's state estimator. **CRITICAL.** |
+| Telemetry | `telemetry.extend` | Add `vision.flowQuality`, `vision.rangefinderHealth` to the heartbeat. |
+
+CRITICAL-risk capabilities get a 5-second cool-off button before approval lands; the install button stays disabled while the cool-off counts down. This is deliberate. `estimator.pose.inject` lets the plugin tell the flight controller where the drone is; granting it carelessly is the kind of mistake you only make once.
+
+Approve the full set, then click **Install**.
+
+## Stages 3 to 5: progress
+
+The dialog now shows a six-stage stepper. On the local-first path (your browser can reach the agent over LAN or HTTP):
+
+1. **Queued.** The install job is recorded in your fleet database.
+2. **Commanded.** The install command is dispatched to the agent.
+3. **Downloading.** The agent fetches the `.adosplug` from a signed temporary URL.
+4. **Verifying.** The agent checks the signature and the manifest against its trust list.
+5. **Installing.** The agent unpacks the archive, runs the supervisor's install pipeline, and registers the plugin.
+6. **Completed.** The plugin shows up in the per-drone list as `Installed, Disabled`.
+
+A typical local-network install completes in 10 to 15 seconds. The dialog stays open through the run and can be reopened from the install jobs list if you close it early.
+
+If Mission Control is on HTTPS and the agent isn't reachable directly (the common case for the hosted web GCS, behind NAT, or on a different network), the flow is identical from the operator's point of view. The archive uploads to Convex storage, the agent receives the install command through the same cloud relay it already polls for other commands, and stages 3 through 5 stream their progress back through the heartbeat. **You don't pick the transport.** The dialog picks it.
+
+## Enable the plugin
+
+A successful install leaves the plugin in the **Disabled** state. This is so you can configure it before it starts touching the FC.
+
+1. The per-drone Plugins tab now lists `ADOS Vision Navigation 0.1.x`.
+2. Click the plugin row. The configuration drawer opens on the right.
+3. Set the camera device, the rangefinder driver, and the rest of the per-drone config. See [Configure optical flow](/drone-agent/vision-nav-optical-flow).
+4. Click **Enable**. The drawer asks for confirmation and starts the plugin's subprocess on the agent. Within a few seconds, a new **Vision Nav** tab appears in the drone's detail panel.
+
+## What you have now
+
+- The plugin's subprocess is running under the agent's supervisor with its declared resource limits (256 MB RAM, 60 percent of one CPU core, 16 PIDs).
+- The plugin is publishing `OPTICAL_FLOW_RAD` to the FC at 10 Hz once a healthy camera frame and a healthy rangefinder reading are available.
+- The Navigation tab on this drone's detail panel shows flow rate, flow quality, rangefinder reading, EKF source set, and an arm-readiness card.
+- The fleet view at **Settings → Plugins** shows the install grouped under the plugin id with a "Apply to all drones" button that's disabled in this release.
+
+## Uninstall
+
+The Plugins tab has an **Uninstall** action per plugin. It stops the subprocess, removes the install record from your fleet database, and clears the plugin's per-drone state on the agent. The drone returns to its baseline navigation behavior (GPS-only flight on ArduPilot or PX4).
+
+## Troubleshooting
+
+- **The install dialog refuses the archive.** Check that the agent version is at least 0.13 and the archive's `compatibility.supported_boards` includes the drone's HAL board.
+- **Install stalls at "Downloading".** The agent can't reach the signed URL. Check the agent's outbound DNS and that the cloud-relay heartbeat is otherwise healthy.
+- **Install stalls at "Verifying".** The signature didn't match a trusted key. Either the archive is corrupt or it was signed with a key your agent doesn't trust. First-party Altnautica plugins are signed with the production key shipped in every fresh install.
+- **The plugin enables but the Navigation tab stays empty.** The plugin is running but isn't seeing camera frames. Open the configuration drawer, verify the camera device path, and check the agent's plugin logs under `ados plugin logs com.altnautica.vision-nav`.
+
+## Next steps
+
+- [Configure optical flow](/drone-agent/vision-nav-optical-flow) for the FC parameters and EKF source set.
+- [Visual Inertial Odometry roadmap](/drone-agent/vision-nav-vio).
