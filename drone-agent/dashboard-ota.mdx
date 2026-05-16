@@ -1,0 +1,85 @@
+---
+title: "Updates"
+description: "Check, install, restart, and roll back the agent's OTA channel."
+icon: "arrow-up-from-line"
+---
+
+# Updates
+
+The Updates page is the dashboard counterpart of the `ados update` CLI.
+It surfaces the current version, the latest available version, the
+release channel, and the actions to install or roll back.
+
+<Frame caption="Updates page in the `idle` state.">
+  ![Updates page](/images/dashboard/drone/ota-full.png)
+</Frame>
+
+## Fields
+
+| Field | Meaning |
+|---|---|
+| Current version | The version this agent is running right now. |
+| Channel | `stable`, `beta`, or a custom channel. |
+| Last check | Timestamp of the last release check. |
+| Pending update | The version the agent will install on the next `Install`. |
+| Download | Download state (`idle`, `downloading`, `verifying`). |
+| State | Overall OTA state (`idle`, `checking`, `installing`, `failed`). |
+
+## Common operations
+
+<Steps>
+  <Step title="Check for an update">
+    Click **Check**. The agent fetches the latest release manifest from
+    the GitHub release feed for the configured channel.
+  </Step>
+  <Step title="Install">
+    Click **Install**. The agent downloads the wheel, verifies the
+    signature, runs `pip install`, restarts the supervisor, and
+    re-handshakes with Mission Control.
+  </Step>
+  <Step title="Roll back">
+    Click **Rollback**. The agent reinstalls the previous version
+    recorded in `previous_version`. Use the version selector to roll
+    back further if needed.
+  </Step>
+  <Step title="Restart">
+    Click **Restart** to bounce the agent supervisor without changing
+    versions. The setup state is preserved.
+  </Step>
+</Steps>
+
+## Channels
+
+Switch channels in **Settings &rarr; Advanced**. `stable` is the
+default; `beta` ships earlier with broader change surface.
+
+## Profile gating
+
+Shared route &mdash; visible on both profiles.
+
+## Backend endpoints
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/ota` | Current OTA state |
+| POST | `/api/ota/check`, `/install`, `/rollback`, `/restart` | Lifecycle |
+
+## Troubleshooting
+
+<Accordion title="Install fails partway through">
+Most failures are network related. The agent leaves the previous
+version intact, so a failed install does not brick the node. Read the
+Logs page filtered to `service: ados-supervisor` for the underlying
+cause.
+</Accordion>
+
+<Accordion title="Rollback to a specific version">
+Use the version selector under **Rollback**. The agent reinstalls the
+chosen version from PyPI. Versions older than the one the node was
+flashed with may not still be on PyPI.
+</Accordion>
+
+## Related
+
+- [OTA updates](/drone-agent/ota-updates)
+- [Systemd services](/drone-agent/systemd-services)

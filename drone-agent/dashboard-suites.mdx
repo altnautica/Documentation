@@ -1,0 +1,74 @@
+---
+title: "Suites"
+description: "Activate, deactivate, and configure the mission suites installed on this node."
+icon: "package"
+---
+
+# Suites
+
+The Suites page lists the mission suites the agent ships and any that
+plugins have added. A suite bundles a domain workflow: sensors, services,
+parameters, and mission templates. Activating a suite wires its services
+into the agent supervisor and exposes its UI under the relevant feature
+tabs in Mission Control.
+
+<Frame caption="Suites page with the built-in catalog.">
+  ![Suites page](/images/dashboard/drone/suites-full.png)
+</Frame>
+
+## Built-in suites
+
+| Suite | Purpose |
+|---|---|
+| Sentry | Static perimeter monitoring with motion alerts. |
+| Survey | Photogrammetric grid + corridor patterns. |
+| Inspection | Asset orbit + structured photo capture. |
+| Agriculture | Spray patterns, NDVI overlays. |
+| Cargo | Pickup, transit, drop missions with payload tracking. |
+| SAR | Search patterns and visual marker capture. |
+
+Each row shows the suite's name, version, state (`active`,
+`inactive`, `error`), and an enable / disable toggle.
+
+## Common operations
+
+<Steps>
+  <Step title="Activate a suite">
+    Click the toggle. The agent enables the suite's services and
+    registers its sensors. Activation takes effect within a poll cycle.
+  </Step>
+  <Step title="Open suite parameters">
+    Click the suite name to open the detail panel: parameter list, the
+    sensors it depends on, and any health checks.
+  </Step>
+  <Step title="Deactivate cleanly">
+    Toggle off. The agent stops the suite's services and unregisters
+    its sensors. State on disk is preserved.
+  </Step>
+</Steps>
+
+## Profile gating
+
+Shared route &mdash; visible on both profiles.
+
+## Backend endpoints
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/suites` | Suite list with state |
+| POST | `/api/suites/{id}/activate`, `/deactivate` | Lifecycle |
+| POST | `/api/suites/{id}/install`, `/uninstall` | For plugin-supplied suites |
+
+## Troubleshooting
+
+<Accordion title="Suite reports `error` after activate">
+A required sensor or service is missing. Open the suite detail panel
+to read the health check output. Common causes: a camera the suite
+expects is not detected, or a parameter the suite needs is locked by
+the FC's pre-arm checks.
+</Accordion>
+
+## Related
+
+- [Application suites concept](/drone-agent/application-suites)
+- [Suite development](/developers/mission-and-suite-plugins)

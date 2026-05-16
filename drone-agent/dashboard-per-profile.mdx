@@ -1,0 +1,58 @@
+---
+title: "Per-Profile Visibility"
+description: "Which dashboard pages appear on which profile and ground role."
+icon: "table"
+---
+
+# Per-Profile Visibility
+
+The dashboard ships one code path for both profiles. The sidebar shows
+profile-specific entries when the agent reports a finalized profile, and
+the route gate keeps off-profile URLs from rendering content for the
+wrong device.
+
+While the agent is still in the `auto` profile state (between first boot
+and the wizard's Finish step), the gate passes through so the operator
+can browse every screen during onboarding.
+
+## Sidebar matrix
+
+| Sidebar entry | Drone profile | Ground (direct) | Ground (relay) | Ground (receiver) |
+|---|---|---|---|---|
+| Home | yes | yes | yes | yes |
+| Pairing | yes | yes | yes | yes |
+| Plugins | yes | yes | yes | yes |
+| Peripherals | yes | yes | yes | yes |
+| Suites | yes | yes | yes | yes |
+| Updates | yes | yes | yes | yes |
+| Logs | yes | yes | yes | yes |
+| Diagnostics | yes | yes | yes | yes |
+| Settings | yes | yes | yes | yes |
+| Telemetry | yes | &mdash; | &mdash; | &mdash; |
+| Video | yes | &mdash; | &mdash; | &mdash; |
+| ROS | yes | &mdash; | &mdash; | &mdash; |
+| Receive | &mdash; | yes | yes | yes |
+| Display & Joystick | &mdash; | yes | yes | yes |
+| Mesh | &mdash; | &mdash; | yes | yes |
+| Sources | &mdash; | &mdash; | &mdash; | yes |
+
+## Route gate behavior
+
+| State | Behavior |
+|---|---|
+| Setup not finalized (`profile = auto`) | All routes pass through. The sidebar omits profile-specific entries until a profile is committed. |
+| Profile finalized, on-profile route | Page renders as documented. |
+| Profile finalized, off-profile route | The Not-available-on-this-profile panel renders with a link back to Home. |
+| Profile finalized, on-profile but wrong ground role | Same not-available panel. Example: visiting `/sources` on a `direct` ground station. |
+
+## How to change profile
+
+Open **Settings &rarr; Profile** or re-run the setup wizard. The wizard
+honors the agent's hardware fingerprint and recommends a profile based on
+detected peripherals (Wi-Fi adapter, FC, GPS).
+
+## Related
+
+- [Browser Dashboard tour](/drone-agent/dashboard-overview)
+- [Setup webapp](/drone-agent/setup-webapp)
+- [HAL and profile detection](/drone-agent/hal-and-tiers)

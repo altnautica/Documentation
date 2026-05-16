@@ -1,0 +1,59 @@
+---
+title: "Peripherals"
+description: "Every USB, I2C, SPI, and serial peripheral the agent enumerates, with live status."
+icon: "cpu"
+---
+
+# Peripherals
+
+The Peripherals page lists every peripheral the agent has detected on
+this node: USB devices, cameras, GPS modules, OLEDs, SPI displays, and
+others. The list refreshes every eight seconds and reflects hot-plug
+events without a manual rescan.
+
+<Frame caption="Peripherals page.">
+  ![Peripherals page](/images/dashboard/drone/peripherals-full.png)
+</Frame>
+
+## Columns
+
+| Column | Meaning |
+|---|---|
+| Name | Vendor + product string from the kernel or driver. |
+| Type | Bus type (`usb`, `i2c`, `spi`, `serial`). |
+| Category | What the agent treats the device as (`camera`, `gps`, `radio`, `display`, `compute`). |
+| Bus | Bus address (`usb:001:002`). |
+| Address | Vendor:product or unit address. |
+| Status | `ok`, `warning`, `missing`, `unknown`. |
+| Last reading | Most recent sample the agent pulled (model, firmware, rate). |
+
+## Profile gating
+
+Shared route &mdash; visible on both profiles.
+
+## Backend endpoints
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/v1/peripherals` | List with status + manifest entries |
+| GET | `/api/peripherals` | Raw enumeration (lsusb-style) |
+| POST | `/api/peripherals/scan` | Trigger an explicit rescan |
+
+## Troubleshooting
+
+<Accordion title="A USB device is plugged in but not listed">
+The agent only reports devices it recognises. Check `dmesg` via the
+Logs page for a kernel event. If the device is a serial UART, the
+agent treats it as an `unknown` row until a driver claims it.
+</Accordion>
+
+<Accordion title="The list keeps flapping `ok` to `warning`">
+The kernel is renegotiating the USB link. Replace the cable or move
+the device to a powered hub. Persistent flapping shows up in
+Diagnostics as service restarts.
+</Accordion>
+
+## Related
+
+- [HAL and tiers](/drone-agent/hal-and-tiers)
+- [Supported hardware](/drone-agent/supported-hardware)

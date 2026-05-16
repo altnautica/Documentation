@@ -1,0 +1,92 @@
+---
+title: "ROS"
+description: "ROS 2 lifecycle, nodes, topics, workspace, recordings, and Foxglove tunnel."
+icon: "bot"
+---
+
+# ROS
+
+The ROS page manages the opt-in ROS 2 environment the agent ships in a
+Docker container. The page surfaces lifecycle, node and topic discovery,
+workspace builds, rosbag recordings, and the foxglove tunnel.
+
+<Frame caption="Drone ROS page during the `not_initialized` state.">
+  ![ROS page](/images/dashboard/drone/ros-full.png)
+</Frame>
+
+## States
+
+| State | Meaning |
+|---|---|
+| `not_initialized` | Container image not installed. Click **Init** to pull it. |
+| `installing` | Image is downloading and unpacking. |
+| `idle` | Image installed, container not running. |
+| `starting` | Container booting. |
+| `running` | ROS 2 alive, MAVLink bridge active. |
+| `stopping` | Graceful shutdown in progress. |
+| `error` | See the `error` field for the cause. |
+
+## Common operations
+
+<Steps>
+  <Step title="Initialize ROS 2">
+    Click **Init**. The agent pulls the image, sets up the workspace
+    skeleton, and prepares the MAVLink bridge. Network bandwidth and
+    disk space are the typical constraints (~1 GB image).
+  </Step>
+  <Step title="Launch">
+    Click **Launch**. The container starts and the agent activates the
+    foxglove tunnel. The node and topic counters under **Discovery**
+    populate within a few seconds.
+  </Step>
+  <Step title="Browse nodes / topics">
+    Use the **Nodes** and **Topics** subviews to see what's published.
+    Both lists refresh every six seconds while ROS is running.
+  </Step>
+  <Step title="Record a rosbag">
+    Open **Recording**, set the topic filter, click **Start**. The
+    recording lands in the workspace's `bags/` directory and shows up
+    under **Recordings** with size and duration.
+  </Step>
+  <Step title="Connect Foxglove">
+    The **Tunnel** subview shows the active foxglove WebSocket URL. Open
+    Foxglove Studio and connect to that URL.
+  </Step>
+</Steps>
+
+## Profile gating
+
+ROS is a drone-only page. On ground-station profile it renders the
+"Not available on this profile" panel.
+
+## Backend endpoints
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/ros/status` | Lifecycle state, profile, uptime |
+| POST | `/api/ros/init`, `/stop`, `/launch` | Lifecycle transitions |
+| GET | `/api/ros/nodes`, `/topics` | Discovery |
+| GET | `/api/ros/workspace`, POST `/workspace/build` | Workspace |
+| POST | `/api/ros/recording/start`, `/stop` | Rosbag |
+| GET | `/api/ros/recordings` | Rosbag list |
+| POST | `/api/ros/tunnel/config`, `/test` | Tunnel config |
+
+## Troubleshooting
+
+<Accordion title="Init fails on a low-storage SBC">
+The ROS image is roughly 1 GB. Check Diagnostics for the disk usage
+tile. Free space by clearing old recordings or installing on an
+external SSD.
+</Accordion>
+
+<Accordion title="Foxglove tunnel reports `unreachable`">
+The agent could not reach the configured relay. Confirm the cloud
+relay tile is green on Home, then re-run the tunnel test from the page.
+</Accordion>
+
+## Related
+
+- [ROS 2 integration overview](/drone-agent/ros-integration)
+- [ROS topics](/drone-agent/ros-topics)
+- [ROS workspace](/drone-agent/ros-workspace)
+- [Foxglove tunnel](/drone-agent/ros-foxglove)

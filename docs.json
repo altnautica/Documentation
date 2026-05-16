@@ -165,6 +165,25 @@
             ]
           },
           {
+            "group": "Browser Dashboard",
+            "pages": [
+              "drone-agent/dashboard-overview",
+              "drone-agent/dashboard-per-profile",
+              "drone-agent/dashboard-home",
+              "drone-agent/dashboard-telemetry",
+              "drone-agent/dashboard-video",
+              "drone-agent/dashboard-ros",
+              "drone-agent/dashboard-pairing",
+              "drone-agent/dashboard-peripherals",
+              "drone-agent/dashboard-plugins",
+              "drone-agent/dashboard-suites",
+              "drone-agent/dashboard-ota",
+              "drone-agent/dashboard-logs",
+              "drone-agent/dashboard-diagnostics",
+              "drone-agent/dashboard-settings"
+            ]
+          },
+          {
             "group": "Core Systems",
             "pages": [
               "drone-agent/mavlink-proxy",
@@ -238,7 +257,8 @@
               "ground-agent/overview",
               "ground-agent/supported-hardware",
               "ground-agent/power-and-runtime",
-              "ground-agent/installation"
+              "ground-agent/installation",
+              "ground-agent/setup-walkthrough"
             ]
           },
           {
@@ -248,6 +268,26 @@
               "ground-agent/usb-tether",
               "ground-agent/hdmi-kiosk",
               "ground-agent/android-client"
+            ]
+          },
+          {
+            "group": "Browser Dashboard",
+            "pages": [
+              "ground-agent/dashboard-overview",
+              "drone-agent/dashboard-per-profile",
+              "drone-agent/dashboard-home",
+              "ground-agent/dashboard-receive",
+              "ground-agent/dashboard-mesh",
+              "ground-agent/dashboard-sources",
+              "ground-agent/dashboard-io",
+              "drone-agent/dashboard-pairing",
+              "drone-agent/dashboard-peripherals",
+              "drone-agent/dashboard-plugins",
+              "drone-agent/dashboard-suites",
+              "drone-agent/dashboard-ota",
+              "drone-agent/dashboard-logs",
+              "drone-agent/dashboard-diagnostics",
+              "drone-agent/dashboard-settings"
             ]
           },
           {

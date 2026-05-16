@@ -1,0 +1,98 @@
+---
+title: "Browser Dashboard"
+description: "A guided tour of the post-setup web dashboard served at port 8080."
+icon: "layout-dashboard"
+---
+
+# Browser Dashboard
+
+After the setup wizard finishes, the same URL at port `8080` becomes the
+ADOS Drone Agent's live operations dashboard. The sidebar adapts to the
+profile the node was assigned (drone or ground station), the home page
+becomes a tile board of live telemetry, and every supporting screen
+(plugins, suites, logs, diagnostics, settings) is one click away.
+
+This page is a tour. Each route also has its own page below it in the
+sidebar.
+
+## Open the dashboard
+
+| Link | URL |
+|---|---|
+| mDNS | `http://ados.local:8080` |
+| Hotspot | `http://192.168.4.1:8080` |
+| USB tether | `http://10.55.0.1:8080` |
+| LAN | `http://<node-ip>:8080` |
+
+Any browser served the page from the agent's own listener is trusted by
+the auth middleware (same-origin physical-presence model). Browsers on a
+remote LAN can pair an explicit API key in **Settings &rarr; Cloud** when
+the trust model is escalated.
+
+## Layout
+
+<Frame caption="Drone profile home page.">
+  ![Drone profile home](/images/dashboard/drone/home-full.png)
+</Frame>
+
+Top bar, left sidebar, main pane.
+
+1. **Top bar** &mdash; device name, profile badge, board, agent version, uptime,
+   theme toggle, and a Mission Control quick-jump button on the right.
+2. **Sidebar** &mdash; profile-gated navigation. The shared rail (Home,
+   Pairing, Plugins, Peripherals, Suites, Updates, Logs, Diagnostics,
+   Settings) is always present. Drone nodes also see Telemetry, Video, and
+   ROS. Ground-station nodes see Receive, Display & Joystick, and the
+   Mesh / Sources entries when their mesh role unlocks them.
+3. **Main pane** &mdash; the active route's content.
+
+For the per-route detail of what shows up on each profile, see the
+[Per-profile visibility matrix](/drone-agent/dashboard-per-profile).
+
+## First five minutes
+
+<Steps>
+  <Step title="Confirm health">
+    Open **Home**. Every tile across the top should report a value
+    (battery, link, video bitrate, CPU). Red or empty tiles point at
+    missing hardware or services and link into the right detail screen.
+  </Step>
+  <Step title="Pair Mission Control">
+    Open **Pairing**. Copy the six-character code, paste it into Mission
+    Control's "Pair a drone" dialog, and accept the pairing here. The
+    Cloud tile on Home flips to "paired".
+  </Step>
+  <Step title="Walk every screen">
+    Click each sidebar entry once. The first visit warms the polling
+    intervals so subsequent loads feel instantaneous.
+  </Step>
+  <Step title="Open Diagnostics">
+    Confirm the systemd services list is green. A failing service is the
+    fastest signal that hardware or config is off.
+  </Step>
+</Steps>
+
+## Backend endpoints
+
+Every screen reads from one or more of these endpoints. The dashboard
+itself never requires an `X-ADOS-Key` header because same-origin browser
+requests are trusted by the agent.
+
+| Method | Path | Used by |
+|---|---|---|
+| GET | `/api/v1/setup/status` | Sidebar, top bar, profile gating |
+| GET | `/api/v1/dashboard/snapshot` | Every Home tile + ground panels |
+| GET | `/api/status`, `/api/status/full` | Top bar device card, uptime, board info |
+| GET | `/api/system` | Diagnostics CPU / memory / disk |
+| GET | `/api/services` | Diagnostics services list |
+| GET | `/api/v1/peripherals` | Peripherals page |
+
+The full REST surface is documented in the
+[REST API reference](/drone-agent/rest-api).
+
+## Related
+
+- [Per-profile visibility](/drone-agent/dashboard-per-profile)
+- [Home page](/drone-agent/dashboard-home)
+- [Setup webapp (first-run wizard)](/drone-agent/setup-webapp)
+- [REST API reference](/drone-agent/rest-api)

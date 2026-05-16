@@ -1,0 +1,19 @@
+{
+  "name": "ados-docs-scripts",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Helper scripts for the ADOS Mintlify docs (screenshot capture, link audit).",
+  "type": "module",
+  "scripts": {
+    "capture": "tsx capture-dashboard-screenshots.ts",
+    "capture:drone": "tsx capture-dashboard-screenshots.ts --target drone",
+    "capture:ground": "tsx capture-dashboard-screenshots.ts --target ground"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "dotenv": "^16.4.5",
+    "playwright": "^1.45.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.0"
+  }
+}

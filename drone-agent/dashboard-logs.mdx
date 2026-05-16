@@ -1,0 +1,67 @@
+---
+title: "Logs"
+description: "Live tail of structured agent logs with level and service filters."
+icon: "scroll-text"
+---
+
+# Logs
+
+The Logs page is a live tail of the agent's structured log stream.
+Each entry shows timestamp, level, service, event, and a JSON payload.
+
+<Frame caption="Logs page during a quiet idle window.">
+  ![Logs page](/images/dashboard/drone/logs-full.png)
+</Frame>
+
+## Controls
+
+| Control | Effect |
+|---|---|
+| Level | Filters the stream to entries at or above the selected level. |
+| Service | Filters to a single systemd unit (`ados-supervisor`, `ados-cloud`, etc). |
+| Limit | Number of rows held in the view (default 200). |
+| Pause / Follow | Pause to inspect a row without auto-scroll; resume to follow. |
+| Clear | Drop everything currently in the view. |
+
+## Levels
+
+The agent uses standard syslog levels:
+
+| Level | When emitted |
+|---|---|
+| `debug` | Detail useful during development. Off by default. |
+| `info` | Lifecycle events, normal operations. |
+| `warning` | A degraded condition the agent recovered from. |
+| `error` | Operation failed; user attention may be needed. |
+| `critical` | Service-level outage. |
+
+## Profile gating
+
+Shared route &mdash; visible on both profiles.
+
+## Backend endpoints
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/logs?limit=N&level=L&service=S` | Page through the recent log buffer |
+
+The page polls the endpoint every two seconds when **Follow** is on.
+
+## Troubleshooting
+
+<Accordion title="View is empty">
+No entries match the filter. Drop the level (`debug` shows everything)
+or clear the service filter. A truly silent stream usually means the
+journald buffer rotated out the rows the agent surfaces.
+</Accordion>
+
+<Accordion title="I need raw journald output">
+SSH into the node and run `journalctl -u ados-supervisor -f`. The
+dashboard surfaces the structured stream the agent emits, which is a
+superset for our services but does not include kernel-level events.
+</Accordion>
+
+## Related
+
+- [Systemd services](/drone-agent/systemd-services)
+- [Troubleshooting guide](/drone-agent/troubleshooting)

@@ -1,0 +1,70 @@
+---
+title: "Browser Dashboard"
+description: "The ground-station view of the agent's web dashboard at port 8080."
+icon: "layout-dashboard"
+---
+
+# Browser Dashboard
+
+The ground station shares the agent dashboard with the drone profile,
+but the home page changes to a receive-oriented layout and the sidebar
+adds Receive, Display & Joystick, and the role-gated Mesh and Sources
+entries.
+
+## Open the dashboard
+
+Same URLs as the drone profile:
+
+| Link | URL |
+|---|---|
+| mDNS | `http://ados.local:8080` |
+| Hotspot | `http://192.168.4.1:8080` |
+| USB tether | `http://10.55.0.1:8080` |
+| LAN | `http://<node-ip>:8080` |
+
+## Ground Home
+
+<Frame caption="Ground-station home page in the `direct` role.">
+  ![Ground Home](/images/dashboard/ground/home-full.png)
+</Frame>
+
+The home page renders profile-aware tiles and panels:
+
+- **WFB Receive** &mdash; adapter, channel, RSSI, packet loss, FEC,
+  active streams.
+- **Mesh** &mdash; visible only in `relay` and `receiver` roles.
+- **Sources** &mdash; visible only in the `receiver` role.
+- **Hardware**, **Network**, **Cloud Relay**, **Services** &mdash;
+  shared with the drone home.
+
+For the full panel breakdown see [Home](/drone-agent/dashboard-home).
+
+## Sidebar map
+
+The ground sidebar adds three entries to the shared rail:
+
+| Entry | Direct | Relay | Receiver |
+|---|---|---|---|
+| Receive | yes | yes | yes |
+| Display & Joystick | yes | yes | yes |
+| Mesh | &mdash; | yes | yes |
+| Sources | &mdash; | &mdash; | yes |
+
+See the [Per-profile visibility matrix](/drone-agent/dashboard-per-profile)
+for the full nav inventory.
+
+## Setup walkthrough
+
+Brand-new ground stations open the
+[setup walkthrough](/ground-agent/setup-walkthrough) on first boot. The
+walkthrough completes pairing, wires the kiosk, and finalizes the
+profile so the role-aware sidebar entries become visible.
+
+## Related
+
+- [Receive](/ground-agent/dashboard-receive)
+- [Mesh](/ground-agent/dashboard-mesh)
+- [Sources](/ground-agent/dashboard-sources)
+- [Display & Joystick](/ground-agent/dashboard-io)
+- [Three roles](/ground-agent/three-roles)
+- [Setup and pairing](/ground-agent/setup-and-pairing)

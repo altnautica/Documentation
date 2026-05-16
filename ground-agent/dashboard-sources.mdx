@@ -1,0 +1,58 @@
+---
+title: "Sources"
+description: "Per-relay FEC stats and aggregated downlink stats on a receiver node."
+icon: "layers"
+---
+
+# Sources
+
+The Sources page is the `receiver` role's view into the streams flowing
+from each relay node into this aggregator. It surfaces the bitrate and
+frame counters per source, plus the combined downlink.
+
+<Frame caption="Sources page on a receiver node with no relays contributing yet.">
+  ![Sources page](/images/dashboard/ground/sources-direct-full.png)
+</Frame>
+
+## Fields
+
+| Field | Meaning |
+|---|---|
+| Aggregated | Combined downlink bitrate across all relays. |
+| Frames combined | Total frames successfully merged from multiple relays. |
+| Frames dedup | Frames the receiver dropped as duplicates from a parallel relay. |
+| Per-source | One row per relay node with its own bitrate and FEC counters. |
+
+## Role gating
+
+The Sources page requires the `receiver` role. On other roles the
+sidebar entry is hidden and the URL renders the "Not available on this
+profile" panel.
+
+## Backend endpoints
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/v1/dashboard/snapshot` | Powers the panel (`sources` block) |
+| GET | `/api/v1/ground-station/wfb` | WFB receiver config |
+
+## Troubleshooting
+
+<Accordion title="Per-source list is empty">
+No relays are contributing. Confirm the relay nodes are up, on the
+same channel, and reachable via mesh (see the Mesh page). The
+receiver only counts relays that have completed the mesh handshake.
+</Accordion>
+
+<Accordion title="Frames dedup is rising fast">
+Two relays are duplicating the same air-side stream. This is expected
+when both relays have line-of-sight to the drone; the dedup keeps the
+downlink clean. If aggregated bitrate is also growing, the system is
+healthy.
+</Accordion>
+
+## Related
+
+- [Receiver mode](/ground-agent/receiver-mode)
+- [Mesh overview](/ground-agent/mesh-overview)
+- [Three roles](/ground-agent/three-roles)

@@ -1,0 +1,76 @@
+---
+title: "Diagnostics"
+description: "Live CPU, memory, disk, temperatures, and systemd service health."
+icon: "wrench"
+---
+
+# Diagnostics
+
+The Diagnostics page is the agent's system-health surface: hardware
+utilization, temperatures, systemd unit state, and quick actions for
+restart and reboot.
+
+<Frame caption="Diagnostics page on a Raspberry Pi 4B.">
+  ![Diagnostics page](/images/dashboard/drone/diagnostics-full.png)
+</Frame>
+
+## System panel
+
+CPU usage, core count, memory total / used / percent, disk total / used
+/ percent, and the temperature sensors the kernel exposes
+(`cpu_thermal`, SoC, board-level).
+
+The page polls `/api/system` every five seconds.
+
+## Services panel
+
+Every systemd unit in the agent's set. Each row shows unit name,
+active / inactive, sub-state (`running`, `dead`, `failed`), and PID.
+
+### Per-service actions
+
+| Action | Effect |
+|---|---|
+| Restart | `systemctl restart` on the unit. |
+| Stop | Stop without disabling. |
+| Logs | Filter the Logs page to this service. |
+
+### Reboot
+
+A reboot button at the bottom of the page calls `/api/v1/setup/reboot`.
+The reboot is graceful: the agent flushes state, stops services, and
+schedules the reboot.
+
+## Profile gating
+
+Shared route &mdash; visible on both profiles.
+
+## Backend endpoints
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/system` | CPU / memory / disk / temps |
+| GET | `/api/services` | Unit list |
+| POST | `/api/services/{name}/restart` | Restart a unit |
+| POST | `/api/v1/setup/reboot` | Reboot the node |
+
+## Troubleshooting
+
+<Accordion title="Service list reads `service inventory unavailable`">
+The agent could not reach its own dbus connection to systemd. Run
+`systemctl status ados-supervisor` over SSH. A typical cause is a
+permission misconfiguration on the unit file.
+</Accordion>
+
+<Accordion title="A service keeps restarting">
+Open the service's logs from the row action. The most common causes
+are missing hardware (the service waits forever for a device), a
+config typo (the service crashes on parse), or an upstream dependency
+the service waits on. Restart with the dependency healthy.
+</Accordion>
+
+## Related
+
+- [Systemd services](/drone-agent/systemd-services)
+- [Troubleshooting guide](/drone-agent/troubleshooting)
+- [Logs page](/drone-agent/dashboard-logs)

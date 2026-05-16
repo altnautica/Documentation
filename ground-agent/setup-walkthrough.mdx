@@ -1,0 +1,112 @@
+---
+title: "Setup Walkthrough"
+description: "Step-by-step ground-station setup wizard, from first boot to a paired link."
+icon: "list-checks"
+---
+
+# Setup Walkthrough
+
+This page walks through every step of the ground-station setup wizard
+the way a fresh operator sees it. For a more compact reference, see
+[Setup and Pairing](/ground-agent/setup-and-pairing).
+
+## Before you start
+
+You need:
+
+- A flashed SBC (Raspberry Pi 4B / 5, Radxa Rock 5C, or a supported
+  alternative) with the ADOS Drone Agent installed.
+- One RTL8812EU USB Wi-Fi adapter for the air link.
+- An optional second RTL8812EU adapter if you plan to run the node as a
+  relay or receiver.
+- The pairing key from the drone you want to receive from. The drone
+  side prints this in its setup webapp.
+
+## Step 1. Identify device
+
+The wizard opens on the agent's mDNS URL (`http://ados.local:8080`).
+The first step confirms the device name, board, and version. No action
+needed; click **Next**.
+
+## Step 2. Profile
+
+Pick **Ground station**. Then pick the role:
+
+| Role | Use when |
+|---|---|
+| Direct | Single-node receive. No mesh. |
+| Relay | Mesh forwarder. Needs a second USB adapter. |
+| Receiver | Mesh aggregator. Needs a second USB adapter and pairs with one or more relays. |
+
+The recommended role appears as a hint based on the agent's hardware
+fingerprint.
+
+## Step 3. Hardware check
+
+The page sweeps every component the picked role requires: SBC, RTL8812EU
+adapter, kiosk display (HDMI), gamepad, second USB adapter for mesh
+roles. Components that fail show a fix hint.
+
+Resolve any required `missing` items before continuing. Optional items
+can be skipped.
+
+## Step 4. Network
+
+Configure how the ground station reaches Mission Control:
+
+- Hotspot for tablet / phone clients in the field.
+- LAN client when you have an existing Wi-Fi network.
+- Ethernet for fixed installs.
+- USB tether for a wired laptop.
+- Modem for cellular fallback.
+
+The wizard exposes the uplink priority order so the agent picks the
+preferred path automatically when multiple are available.
+
+## Step 5. WFB pairing
+
+Paste the drone's pairing key, pick the radio channel, and click
+**Pair**. The agent stores the key, configures the WFB-rx service, and
+starts receiving.
+
+The page lights up with the live RSSI and bitrate once the air side is
+in range.
+
+## Step 6. Display
+
+If a kiosk display is attached, the wizard offers driver install +
+calibration. Touch screens prompt a four-corner calibration step.
+
+## Step 7. Cloud pair
+
+The agent generates a six-character pairing code for Mission Control.
+Enter the code in Mission Control's "Pair a drone" dialog. After a
+successful pair, the wizard moves on automatically.
+
+## Step 8. Finish
+
+The wizard's final step writes the chosen profile to
+`/etc/ados/profile.conf`, marks `setup_finalized = true`, and reboots
+any services that need it.
+
+After finalization the sidebar shows the role-aware entries (Mesh,
+Sources) and the ProfileGate enforces page visibility across profiles.
+
+## Re-running the wizard
+
+You can re-run the wizard from **Settings &rarr; Profile &rarr; Re-run
+setup**, or via:
+
+```bash
+curl -X POST http://ados.local:8080/api/v1/setup/reset
+```
+
+Pairing keys and Mission Control links are preserved across a reset
+unless you explicitly unpair first.
+
+## Related
+
+- [Setup and Pairing reference](/ground-agent/setup-and-pairing)
+- [Browser Dashboard tour](/ground-agent/dashboard-overview)
+- [Three roles](/ground-agent/three-roles)
+- [Field pairing](/ground-agent/field-pairing)

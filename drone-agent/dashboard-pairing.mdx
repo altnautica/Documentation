@@ -1,0 +1,76 @@
+---
+title: "Pairing"
+description: "Link this node to one or more Mission Control instances."
+icon: "link"
+---
+
+# Pairing
+
+The Pairing page exposes the agent-to-Mission-Control pair flow on both
+profiles. The page copy adapts to say "this drone" or "this ground
+station" based on the active profile.
+
+<Frame caption="Pairing page showing the current code and paired Mission Control instances.">
+  ![Pairing page](/images/dashboard/drone/pairing-full.png)
+</Frame>
+
+## Sections
+
+### Current code
+
+The six-character code currently published by the pairing beacon.
+Rotates on agent restart and on every successful pair. A `paired` badge
+shows when at least one Mission Control instance is paired; otherwise
+it shows `awaiting pair`.
+
+### Accept from Mission Control
+
+Paste a code that Mission Control shows during its own pairing UI and
+click **Pair**. Used when Mission Control initiates the pair instead of
+the agent. The form clears after success.
+
+### Paired devices
+
+A list of every Mission Control client currently paired with this node.
+Click **Unpair all** to revoke every key in one action; the next code
+rotation completes after the revoke.
+
+## Common operations
+
+<Steps>
+  <Step title="Pair a fresh Mission Control">
+    Copy the code shown under **Current code**, open Mission Control,
+    click "Pair a drone", paste the code, confirm.
+  </Step>
+  <Step title="Unpair">
+    Click **Unpair all** to revoke every key. The Cloud Relay tile on
+    Home flips back to `awaiting code` within a poll cycle.
+  </Step>
+</Steps>
+
+## Backend endpoints
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/pairing/info` | Current state + paired clients |
+| GET | `/api/pairing/code` | Fetch the active pairing code |
+| POST | `/api/pairing/accept` | Accept a code from Mission Control |
+| POST | `/api/pairing/unpair` | Revoke all paired clients |
+
+## Troubleshooting
+
+<Accordion title="No code shown">
+The node is already paired and not publishing a beacon. Unpair if you
+want a fresh code, or open Mission Control's pair-existing flow and
+type the device ID instead.
+</Accordion>
+
+<Accordion title="`accept` returns 409">
+You tried to accept a code on an already-paired node. Unpair first or
+add the new client through Mission Control's UI.
+</Accordion>
+
+## Related
+
+- [Pairing concept](/drone-agent/pairing)
+- [Cloud relay](/drone-agent/cloud-relay)

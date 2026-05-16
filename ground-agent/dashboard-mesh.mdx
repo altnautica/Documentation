@@ -1,0 +1,62 @@
+---
+title: "Mesh"
+description: "Batman-adv peers, gateway election, partition state, mesh address."
+icon: "network"
+---
+
+# Mesh
+
+The Mesh page surfaces the local-mesh state when the ground station is
+running a `relay` or `receiver` role. The mesh uses batman-adv over a
+second USB Wi-Fi dongle to extend coverage and provide redundancy.
+
+<Frame caption="Mesh page in `direct` role with no peers.">
+  ![Mesh page](/images/dashboard/ground/mesh-direct-full.png)
+</Frame>
+
+## Fields
+
+| Field | Meaning |
+|---|---|
+| Role | This node's role (`relay`, `receiver`). |
+| Partition | Mesh health: `healthy`, `degraded`, `isolated`, `split`. |
+| Gateway | The current gateway node's mesh address. |
+| Mesh address | This node's batman-adv address. |
+| Peers | List of batman-adv peers seen in the last poll cycle. |
+
+## Role gating
+
+The Mesh page requires the ground role to be `relay` or `receiver`. On
+a `direct` ground station the sidebar entry is hidden and the URL
+renders the "Not available on this profile" panel.
+
+## Backend endpoints
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/v1/dashboard/snapshot` | Powers the panel (`mesh` block) |
+| GET | `/api/v1/ground-station/mesh` | Mesh service state |
+| GET | `/api/v1/ground-station/mesh/neighbors` | Detailed peer list |
+| GET | `/api/v1/ground-station/mesh/gateways` | Gateway candidates |
+| GET | `/api/v1/ground-station/mesh/routes` | Routing table |
+
+## Troubleshooting
+
+<Accordion title="Partition reports `isolated`">
+The node sees no peers. Confirm the second USB adapter is plugged in
+(Peripherals page), the role-specific systemd unit is running
+(Diagnostics page), and the other mesh nodes are powered.
+</Accordion>
+
+<Accordion title="Gateway oscillates">
+Gateway election ran multiple times in a short window. Usually a
+sign of intermittent link quality. The Sources page (receiver role)
+shows per-relay FEC stats that often correlate.
+</Accordion>
+
+## Related
+
+- [Mesh overview](/ground-agent/mesh-overview)
+- [Batman-adv reference](/ground-agent/batman-adv)
+- [Mesh troubleshooting](/ground-agent/mesh-troubleshooting)
+- [Three roles](/ground-agent/three-roles)
