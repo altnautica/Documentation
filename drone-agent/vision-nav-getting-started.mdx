@@ -1,0 +1,115 @@
+---
+title: "Getting Started"
+description: "Pick a mode, wire the hardware, install the plugin, and arm. A short walkthrough that links the rest of the Vision Navigation documentation."
+icon: "rocket"
+lastUpdated: "2026-05-16"
+---
+
+# Getting Started with Vision Navigation
+
+If this is your first time flying GPS-denied with an ADOS drone, this
+page walks the shortest path from a fresh drone to a hovering one. You
+will pick a mode, wire the hardware, install the plugin, and arm.
+
+The full reference docs live one click away under each section. Skip
+ahead if you already know what you want.
+
+## 1. Pick a mode
+
+The plugin runs one of six estimator modes. The right mode depends on
+what hardware you have and where you plan to fly.
+
+<Steps>
+  <Step title="Have a downward camera AND a rangefinder?">
+    Use `optical_flow`. The default GPS-denied path. Low-altitude
+    hover and waypoint flight, indoors and out.
+  </Step>
+  <Step title="Have a downward camera but NO rangefinder?">
+    Use `optical_flow_degraded`. Same tracker, scale comes from a
+    baro or GPS fallback. Reduced accuracy; the GCS labels the
+    estimator as degraded.
+  </Step>
+  <Step title="Have a forward camera plus an NPU board?">
+    Use `vio_openvins` or `vio_vins_fusion`. Full 6-DOF pose. Works
+    at altitude and in scenes the downward camera cannot track.
+  </Step>
+  <Step title="Have two cameras and CPU headroom?">
+    Use `hybrid_of_plus_vio`. Both estimators feed the EKF in
+    parallel. Most robust at the cost of compute.
+  </Step>
+</Steps>
+
+See the [full Modes page](/drone-agent/vision-nav-modes) for the
+per-mode hardware matrix and pre-arm checks.
+
+## 2. Wire the hardware
+
+The bare minimum:
+
+- A companion computer running the ADOS Drone Agent (Pi 4B, Pi 5,
+  Radxa ROCK 5C Lite, or any other [supported board](/drone-agent/vision-nav-hardware)).
+- A camera mounted in the direction the chosen mode needs (downward
+  for OF, forward for VIO, both for hybrid).
+- A rangefinder when the chosen mode requires one (`optical_flow` and
+  `hybrid_of_plus_vio` need one; the other modes do not).
+- A flight controller running ArduPilot 4.5 or newer, or PX4 1.14 or
+  newer. The plugin auto-detects which.
+
+The [Hardware page](/drone-agent/vision-nav-hardware) lists tested
+camera and rangefinder combinations.
+
+## 3. Install the plugin
+
+From Mission Control, open the drone's detail panel, switch to the
+Plugins tab, and click Install. Pick the `vision-nav.adosplug`
+archive. Walk the six-stage dialog; grant the permissions; enable the
+plugin.
+
+Full walkthrough: [Install on a drone](/drone-agent/vision-nav-install).
+
+## 4. Calibrate (VIO modes only)
+
+If you picked a VIO mode you need to upload camera intrinsics + a
+camera-IMU extrinsics file. The plugin accepts Kalibr-compatible
+`camchain.yaml` files directly. If you do not have one yet, the GCS
+sensors card has a Calibrate CTA that walks the capture.
+
+OF modes can skip this step. Default intrinsics are good enough for
+the OF tracker.
+
+Full walkthrough: [Calibration](/drone-agent/vision-nav-calibration).
+
+## 5. Pre-arm and fly
+
+Open the Vision Nav tab on the drone detail panel. The pre-arm card
+shows a check row per mode-relevant input. Green means the row is
+ready; yellow means it is initializing; red means it is blocking.
+
+When every row is green:
+
+1. Confirm the flight controller's source-set parameters match the
+   selected mode. For ArduPilot this is `EK3_SRC1_VELXY`,
+   `EK3_SRC1_POSXY`, `EK3_SRC1_YAW` (the GCS source-set switcher
+   handles the runtime flip). For PX4 it is `EKF2_OF_CTRL` or
+   `EKF2_EV_CTRL` depending on mode (PX4 needs a parameter write +
+   EKF restart; runtime switching is not supported).
+2. Arm. The drone takes off into the EKF state the plugin feeds.
+
+If anything goes wrong mid-flight, the
+[Troubleshooting page](/drone-agent/vision-nav-troubleshooting) has
+decision trees for the four common failure families.
+
+## 6. What's next
+
+- [Modes](/drone-agent/vision-nav-modes) for a deeper read on the six
+  estimators and the pre-arm matrix.
+- [How it works](/drone-agent/vision-nav-how-it-works) for a
+  system-level walkthrough of the camera-to-EKF chain.
+- [Fallback methods](/drone-agent/vision-nav-fallback-methods) for
+  what happens when a sensor degrades or a mode fails.
+- [Features](/drone-agent/vision-nav-features) for the use cases each
+  mode unlocks.
+- [Mode comparison](/drone-agent/vision-nav-mode-comparison) for a
+  side-by-side decision table.
+- [FAQ](/drone-agent/vision-nav-faq) for the questions that come up
+  every time.

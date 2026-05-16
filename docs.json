@@ -209,14 +209,20 @@
             "group": "Vision Navigation",
             "pages": [
               "drone-agent/vision-nav-overview",
+              "drone-agent/vision-nav-getting-started",
+              "drone-agent/vision-nav-how-it-works",
               "drone-agent/vision-nav-hardware",
               "drone-agent/vision-nav-install",
               "drone-agent/vision-nav-modes",
+              "drone-agent/vision-nav-mode-comparison",
+              "drone-agent/vision-nav-features",
               "drone-agent/vision-nav-optical-flow",
               "drone-agent/vision-nav-calibration",
               "drone-agent/vision-nav-vio",
+              "drone-agent/vision-nav-fallback-methods",
               "drone-agent/vision-nav-troubleshooting",
-              "drone-agent/vision-nav-architecture"
+              "drone-agent/vision-nav-architecture",
+              "drone-agent/vision-nav-faq"
             ]
           }
         ]

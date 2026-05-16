@@ -1,0 +1,212 @@
+---
+title: "FAQ"
+description: "The questions that come up every time. Do I need a rangefinder, which board for VIO, what about night flight, how does it compare to GPS."
+icon: "circle-question"
+lastUpdated: "2026-05-16"
+---
+
+# Frequently Asked Questions
+
+The questions operators ask before, during, and after the first
+GPS-denied flight. Short answers; deeper pointers at the end of each.
+
+## Do I need a rangefinder?
+
+If you pick the `optical_flow` mode, yes. The rangefinder provides
+the scale that turns angular flow into metric velocity.
+
+If you pick `optical_flow_degraded`, no. The plugin pulls scale from
+the FC's barometer instead. The cost is reduced accuracy; the GCS
+labels the mode as degraded and the EKF auto-de-weights the
+emissions.
+
+If you pick `vio_openvins` or `vio_vins_fusion`, no. VIO computes
+metric pose directly from the camera and IMU. A rangefinder helps
+indirectly (you can mix in OF mode later for redundancy) but is
+not required.
+
+See [Fallback methods](/drone-agent/vision-nav-fallback-methods) for
+the rangefinder-free scale ladder.
+
+## Which board do I need for VIO?
+
+OpenVINS runs on any board with at least one Cortex-A76 core or
+equivalent. In practice that means Radxa ROCK 5C Lite (RK3582),
+Radxa CM4 (RK3588S2), or Rockchip RK3576 boards. A Raspberry Pi 5
+will run it with the NEON fallback at reduced rate.
+
+VINS-Fusion needs roughly twice the CPU OpenVINS uses. It only runs
+well on RK3582 and RK3588S2 boards.
+
+A Raspberry Pi 4B is fine for OF and OF-degraded modes but cannot
+run either VIO engine at the rates the EKF expects.
+
+See [Mode comparison](/drone-agent/vision-nav-mode-comparison) for
+the per-board mode matrix.
+
+## What about night flight?
+
+Vision navigation needs light. The Lucas-Kanade tracker (used by all
+OF modes) needs at least 20 lux to extract corner features. VIO has
+a similar threshold; below 20 lux the tracker loses features per
+frame and the estimator goes degraded.
+
+Workarounds:
+
+- Add an IR illuminator. The tracker is colour-blind; it works fine
+  with IR illumination.
+- Use a mono global-shutter camera. Mono sensors have higher quantum
+  efficiency per pixel and tolerate lower light.
+- Drop the camera frame rate. Lower rate means longer exposure per
+  frame; this trades motion-blur tolerance for light sensitivity.
+
+The plugin's fallback banner fires when flow quality drops below 50
+so the operator sees the degradation before the EKF rejects too many
+samples.
+
+## How does it compare to GPS?
+
+GPS gives the EKF an absolute position. Vision gives it a relative
+position (where the drone is now compared to where it was a moment
+ago). The two are not interchangeable.
+
+For most flights GPS is better. It works above clouds, at night, in
+featureless terrain, and over water. Vision is the GPS-denied
+fallback or the only option when GPS is unreliable.
+
+Vision shines in environments GPS cannot reach: indoor flight, under
+canopy, in canyons, between tall buildings, in tunnels, near
+infrastructure that reflects GPS multipath.
+
+The EKF source-set switcher on Mission Control's Navigation tab lets
+the operator flip between GPS and vision sources in flight. On
+ArduPilot the switch is safe at altitude.
+
+## Can I fly outdoors with vision navigation?
+
+Yes. Outdoor flight is sometimes easier than indoor flight because
+the texture is richer (grass, asphalt with paint markings, gravel,
+sand textures). The two outdoor challenges are:
+
+1. **Featureless ground:** snow, water, fresh asphalt without
+   markings. The OF tracker has nothing to lock onto. VIO modes use
+   forward-facing cameras and are less affected; OF-degraded mode
+   can fall back to the GPS scale rung if the outdoor flag is
+   enabled.
+2. **Fast yaw:** the OF tracker handles yaw up to roughly 90 °/s
+   using gyro derotation. Beyond that, features fall off the frame
+   between samples. Slow the yaw or switch to a wider FOV lens.
+
+## What happens if the camera unplugs mid-flight?
+
+The plugin watches for capture-source failure. When the camera goes
+silent for more than 2 seconds, the estimator state flips to
+`failed` and the fallback banner appears.
+
+The flight controller's EKF stops receiving samples from the source
+the plugin owns. Its own innovation gate notices and downgrades the
+local position estimate. On ArduPilot, the operator can use the EKF
+source-set switcher to flip back to GPS at altitude. On PX4, the
+EKF will eventually surface its own warning; the operator should
+land or RTL.
+
+The plugin does not auto-RTL. Mode is an operator decision and the
+plugin reports honestly so the operator makes the right call.
+
+## Do I need to recalibrate after every flight?
+
+No. Camera intrinsics are a one-time per-camera calibration. They
+stay stable for the life of the camera.
+
+Camera-IMU extrinsics are a one-time per-pair calibration. They stay
+stable as long as the camera and IMU are rigidly mounted to the
+same frame.
+
+The static time offset between the camera clock and the IMU clock is
+stable for a given camera mode (resolution + frame rate + exposure
+profile). If you change camera modes, the offset shifts and the
+calibration should be refreshed.
+
+The rolling time-sync residual the GCS shows is a per-flight
+measurement against the calibrated offset; if it stays in the green
+band, no recalibration is needed.
+
+## Why does the GCS button labelled "VIO" hide instead of grey-out?
+
+The button hides because there is no VIO engine wired on this drone.
+A greyed-out button suggests "click me later when I am ready"; a
+hidden button is honest about the fact that VIO is not an available
+option at all.
+
+The button appears when the agent's heartbeat reports
+`vioSupported: true` (a VIO engine is installed and the estimator
+has converged at least once). The strict-gate also requires the
+estimator state to be `converged` so the switch never silently fails
+mid-flight.
+
+## How accurate is it?
+
+Honest answer: it depends on the mode, the scene, and the
+calibration.
+
+For `optical_flow` with a working rangefinder in a textured indoor
+scene at 1 to 3 m altitude: 20 to 50 cm drift radius over a
+60-second hover is typical for a well-tuned setup.
+
+For `optical_flow_degraded` in the same conditions: 50 cm to 1 m
+drift radius. Roughly 2× worse than OF with a rangefinder.
+
+For `vio_openvins` in feature-rich indoor flight: 5 to 15 cm
+position accuracy after convergence, drift of roughly 0.1 to 0.5
+percent of distance travelled.
+
+For `vio_vins_fusion`: slightly tighter than OpenVINS in
+feature-rich scenes (3 to 10 cm). Roughly the same in feature-poor
+scenes.
+
+These are typical numbers from upstream OpenVINS and VINS-Fusion
+benchmarks plus the OF performance the existing public datasets
+imply. Per-installation accuracy depends on calibration quality,
+scene texture, motion profile, and exposure.
+
+The plugin does not currently publish per-installation accuracy
+numbers from real flights. Numbers will be characterised in a
+published validation matrix before any "tested at X accuracy"
+claim ships.
+
+## Can I run two of these plugins on the same drone?
+
+No. The plugin claims MAVLink components 197 and 198 exclusively.
+Two instances would clash on the component IDs and the second
+install would refuse to start.
+
+If you want redundant vision navigation, use the `hybrid_of_plus_vio`
+mode, which runs an OF estimator and a VIO estimator inside the
+same plugin process.
+
+## Where do I file a bug?
+
+The plugin lives in the public
+[`altnautica/ADOSExtensions`](https://github.com/altnautica/ADOSExtensions)
+repository. File an issue there with:
+
+- The drone's mode at the time of the failure
+- The journalctl excerpt for the plugin's systemd unit (the
+  agent's logs surface as `ados-plugin-com.altnautica.vision-nav*`)
+- The Mission Control screenshot of the Navigation tab at the
+  moment of the failure
+- The MAVLink tlog from the flight controller covering the failure
+  window
+
+The more context, the faster the fix.
+
+## Where to go next
+
+- [Getting started](/drone-agent/vision-nav-getting-started) for the
+  install + first-flight walkthrough.
+- [Modes](/drone-agent/vision-nav-modes) for the full per-mode
+  reference.
+- [Mode comparison](/drone-agent/vision-nav-mode-comparison) for the
+  side-by-side decision table.
+- [Troubleshooting](/drone-agent/vision-nav-troubleshooting) for
+  what to do when something goes wrong.

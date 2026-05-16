@@ -1,0 +1,100 @@
+---
+title: "Mode comparison"
+description: "Side-by-side decision table: pick the right Vision Navigation mode based on hardware, scene, and accuracy needs."
+icon: "table"
+lastUpdated: "2026-05-16"
+---
+
+# Mode comparison
+
+The six estimator modes at a glance. Use this page as a buying
+decision when you know the hardware you have or the scene you intend
+to fly.
+
+## Quick decision
+
+If you can only read one row of this table, it is this one:
+
+| If you have... | Use... |
+|---|---|
+| Downward camera + rangefinder | `optical_flow` |
+| Downward camera only (no rangefinder) | `optical_flow_degraded` |
+| Forward camera + NPU board | `vio_openvins` |
+| Forward camera + RK3582 / RK3588S2 board with headroom | `vio_vins_fusion` |
+| Two cameras + NPU board | `hybrid_of_plus_vio` |
+| None of the above | `off` (plugin loads, no MAVLink emission) |
+
+## Full comparison
+
+| Dimension | `off` | `optical_flow` | `optical_flow_degraded` | `vio_openvins` | `vio_vins_fusion` | `hybrid_of_plus_vio` |
+|---|---|---|---|---|---|---|
+| Camera direction | none | downward | downward | forward | forward | downward + forward |
+| Camera type | none | UVC or CSI | UVC or CSI | global shutter preferred | global shutter preferred | both |
+| Rangefinder | optional | required | optional | optional | optional | optional |
+| IMU read | gyro only | gyro only | gyro only | gyro + accel | gyro + accel | gyro + accel |
+| Output | none | OPTICAL_FLOW_RAD | OPTICAL_FLOW_RAD | VISION_POSITION_ESTIMATE | VISION_POSITION_ESTIMATE | both |
+| MAVLink component | none | 198 | 198 | 197 | 197 | 198 + 197 |
+| Emission rate | none | 10 Hz | 10 Hz | 30 Hz | 30 Hz | 10 Hz + 30 Hz |
+| ArduPilot EKF source | n/a | `EK3_SRC1_VELXY=5` | `EK3_SRC1_VELXY=5` | `EK3_SRC1_*=6` | `EK3_SRC1_*=6` | `EK3_SRC1_*` configurable |
+| PX4 EKF param | n/a | `EKF2_OF_CTRL=1` | `EKF2_OF_CTRL=1` | `EKF2_EV_CTRL` | `EKF2_EV_CTRL` | both |
+| Maximum altitude | n/a | rangefinder limit | barometric only | unbounded | unbounded | unbounded |
+| Featureless ground tolerance | n/a | low | low | n/a (forward) | n/a (forward) | medium |
+| Low-light tolerance | n/a | low (without IR illuminator) | low | medium | medium | medium |
+| Fast-yaw tolerance | n/a | medium | medium | medium-high | medium-high | medium-high |
+| Compute requirement | trivial | low (Pi 4B fine) | low (Pi 4B fine) | medium (NPU helps) | high (RK3582+) | high (NPU + cores) |
+| RAM headroom needed | <50 MB | <100 MB | <100 MB | 120 to 180 MB | 250 to 350 MB | 300 to 400 MB |
+| Calibration required | none | sensible defaults OK | sensible defaults OK | intrinsics + extrinsics + timeshift | intrinsics + extrinsics + timeshift | intrinsics + extrinsics + timeshift |
+| Drone-card pill | hidden | "OF" | "OF*" | "VIO" | "VIO" | "Hybrid" |
+| Estimator state | `off` | `converged` when healthy | `degraded` on static rung | `converged` after init | `converged` after init | worse-of-two |
+| Pre-arm gates | none | companion + flow quality + rangefinder | companion + flow quality + scale source | companion + estimator + intrinsics + extrinsics + sync + features | same as openvins | OF + VIO sets combined |
+
+## Hardware tier guide
+
+The table below is the inverse view: pick your board, see which modes
+it can run.
+
+| Board | `off` | `optical_flow` | `optical_flow_degraded` | `vio_openvins` | `vio_vins_fusion` | `hybrid` |
+|---|---|---|---|---|---|---|
+| Raspberry Pi 4B (BCM2711) | yes | yes | yes | marginal | no | no |
+| Raspberry Pi 5 (BCM2712) | yes | yes | yes | yes (NEON fallback) | marginal | marginal |
+| Raspberry Pi CM4 (BCM2711) | yes | yes | yes | marginal | no | no |
+| Raspberry Pi CM5 (BCM2712) | yes | yes | yes | yes (NEON fallback) | marginal | marginal |
+| Raspberry Pi Zero 2 W (BCM2710A1) | yes | yes (tier-1 only) | yes (tier-1 only) | no | no | no |
+| Radxa ROCK 5C Lite (RK3582) | yes | yes | yes | yes | yes | yes |
+| Radxa CM4 (RK3588S2) | yes | yes | yes | yes | yes | yes |
+| Rockchip RK3576 | yes | yes | yes | yes | yes | yes |
+
+"Marginal" means the mode runs but at reduced frame rate or with
+visible CPU pressure; the operator should expect tracking quality to
+suffer under load.
+
+## Trade-offs
+
+**OpenVINS vs VINS-Fusion.** OpenVINS is a filter-based MSCKF; it
+runs lighter and recovers faster from motion. VINS-Fusion is a
+sliding-window bundle-adjustment estimator; it is tighter in
+feature-rich scenes but heavier on CPU. The default on any board
+with enough compute is OpenVINS; VINS-Fusion is the advanced option
+when the flight profile spends a lot of time in low-feature
+environments.
+
+**Rangefinder vs rangefinder-free OF.** With a rangefinder you get
+the lowest drift and the highest quality multiplier. Without one
+you can still fly GPS-denied but the EKF de-weights your samples and
+the operator-visible quality drops by roughly 40 percent on average
+across the scale ladder. The rangefinder is cheap insurance.
+
+**Hybrid vs single estimator.** Hybrid is the most robust mode and
+the most expensive one. Two cameras, two estimators, twice the
+CPU. Worth it for missions that mix indoor low-altitude segments
+(OF strong) with corridor flight (VIO strong). Single-estimator
+modes are simpler and fine for most flights.
+
+## Where to go next
+
+- [Modes](/drone-agent/vision-nav-modes) for the full per-mode
+  reference including pre-arm matrix and fallback ladder.
+- [Hardware](/drone-agent/vision-nav-hardware) for tested camera and
+  rangefinder picks.
+- [Features](/drone-agent/vision-nav-features) for the use cases each
+  mode unlocks.

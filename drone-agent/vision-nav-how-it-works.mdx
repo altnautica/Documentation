@@ -1,0 +1,174 @@
+---
+title: "How it works"
+description: "A system-level walkthrough of the Vision Navigation pipeline. Camera and IMU samples become MAVLink messages the flight controller's EKF fuses."
+icon: "diagram-project"
+lastUpdated: "2026-05-16"
+---
+
+# How Vision Navigation works
+
+A short tour of the path a camera frame takes from the sensor to the
+flight controller's state estimate. No code; this is for operators
+and integrators who want a mental model.
+
+For the developer-facing module map and protocol details, see
+[Architecture](/drone-agent/vision-nav-architecture).
+
+## The pieces
+
+The plugin reads four kinds of input and produces one kind of output:
+
+**Inputs:**
+
+- A **camera** (downward for OF modes, forward for VIO modes).
+  Frames arrive at the agent at 30 frames per second.
+- An **IMU** (the flight controller's, read through MAVLink). Gyro
+  and accelerometer samples arrive at 100 to 200 samples per second.
+- A **rangefinder** (optional). One reading per camera frame when
+  wired. Provides the altitude that turns angular flow into metric
+  velocity.
+- An **altitude ladder** (used only by the rangefinder-free OF mode).
+  Walks the FC's barometric altitude or GPS altitude when the
+  rangefinder is absent.
+
+**Output:**
+
+- A **MAVLink message** on a specific MAVLink component, at a fixed
+  rate, that the flight controller's state estimator fuses. The
+  message type depends on the mode:
+  - `OPTICAL_FLOW_RAD` on component 198 at 10 Hz for OF modes.
+  - `VISION_POSITION_ESTIMATE` on component 197 at 30 Hz for VIO
+    modes.
+  - Both in parallel for hybrid mode.
+
+## The chain
+
+```
+camera -> agent  ->  estimator  ->  MAVLink emit  ->  flight controller EKF
+              ^                                                     |
+              |                                                     v
+            IMU pairing                                       drone position
+                                                              and velocity
+```
+
+The agent does five things on every camera frame:
+
+1. **Capture.** Grab the frame from `/dev/videoN` (USB) or the
+   libcamera path (CSI). Tag it with a monotonic timestamp.
+2. **Pair.** Look up the IMU sample closest to the camera frame's
+   timestamp. Apply the calibrated static offset between the two
+   clocks. If the residual offset has drifted past 30 ms, mark the
+   estimator as degraded.
+3. **Estimate.** Run the selected estimator on the frame + the
+   paired IMU sample. The estimator is one of six (`off`,
+   `optical_flow`, `optical_flow_degraded`, `vio_openvins`,
+   `vio_vins_fusion`, `hybrid_of_plus_vio`).
+4. **Emit.** Translate the estimator's output into the matching
+   MAVLink message and send it to the flight controller on the
+   right component.
+5. **Publish telemetry.** Update the heartbeat snapshot Mission
+   Control reads so the operator sees flow quality, sync offset,
+   feature count, and other live diagnostics.
+
+## Why two MAVLink components?
+
+The plugin owns two MAVLink component IDs:
+
+- **Component 198** is the peripheral component. ArduPilot and PX4
+  recognise it as the optical-flow companion. It carries
+  `OPTICAL_FLOW_RAD` and the rangefinder relay `DISTANCE_SENSOR`.
+- **Component 197** is
+  `MAV_COMP_ID_VISUAL_INERTIAL_ODOMETRY`. The flight controller
+  recognises it as a VIO source. It carries
+  `VISION_POSITION_ESTIMATE`.
+
+The plugin claims both. The component router picks which one to
+emit on per output, based on the active estimator's mode. When the
+hybrid mode is running, it emits on both components in the same
+tick.
+
+## How does the flight controller fuse the data?
+
+ArduPilot uses the EKF3 source-set system. Three parameters
+(`EK3_SRC1_VELXY`, `EK3_SRC1_POSXY`, `EK3_SRC1_YAW`) declare which
+sensors feed which state. The plugin does not change these
+parameters automatically; the operator either sets them once
+through Mission Control's parameter tab or uses the Vision Nav
+tab's source-set switcher to flip them at runtime.
+
+PX4 uses EKF2 with different parameter names (`EKF2_OF_CTRL`,
+`EKF2_EV_CTRL`, `EKF2_HGT_REF`). PX4 does not support runtime
+source-set switching; the plugin's source-set switcher is disabled
+in PX4 mode and the GCS tooltip explains why.
+
+When the EKF receives a sample on the configured source, it fuses
+the data subject to its own gating (innovation thresholds, time
+delay limits, sensor health flags). A well-tuned EKF rejects bad
+samples on its own; the plugin's job is to provide samples the
+EKF can rely on.
+
+## What does the plugin do that the flight controller cannot?
+
+Three things:
+
+1. **Sensor abstraction.** The flight controller does not know how
+   to talk to a USB UVC camera. The plugin handles the frame
+   capture, the OpenCV tracker (or the vendor VIO binary), and the
+   timing.
+2. **State estimation.** The flight controller's EKF is good at
+   fusing pre-computed velocity or pose. It does not run vision
+   itself. The plugin runs the vision and hands the result to the
+   EKF.
+3. **Calibration and validation.** The plugin validates camera
+   intrinsics, runs the camera-IMU time aligner, watches for
+   degraded inputs, and refuses to feed bad data to the EKF. The
+   pre-arm gate is the safety net.
+
+## How does Mission Control see it?
+
+Every heartbeat carries a `navigation` block with the live
+estimator state, the active scale source, the sync offset, the
+flow quality, the VIO feature count and drift estimate, and the
+full pre-arm report. The Mission Control Navigation tab reads
+this block and renders five surfaces:
+
+- The **mode card** with the active mode highlighted.
+- The **sensors card** showing camera + IMU + rangefinder health.
+- The **estimator card** showing the engine name, the state pill,
+  and the live metrics.
+- The **telemetry charts** showing trends over the last minute.
+- The **pre-arm status** showing one row per check.
+
+When the estimator goes degraded or fails, the **fallback banner**
+appears at the top of the tab with the most likely cause and a
+suggested next action.
+
+## What can go wrong?
+
+The honest answer: many things, and that is why the GCS surfaces
+are designed the way they are. Sensors fail, calibrations drift,
+scenes go featureless, light dies, USB cables unseat themselves
+mid-flight. The plugin's safety posture is:
+
+- **Pre-arm gate refuses to arm** when any required input is
+  unhealthy. The operator never lifts off blind.
+- **Estimator state tracks degradation** in real time. The GCS
+  banner explains the cause and suggests an action.
+- **EKF source-set switcher** is the operator's escape hatch. On
+  ArduPilot, switching back to GPS at altitude is safe and
+  recoverable.
+- **Watchdog restarts the VIO engine** when it goes silent for
+  more than two seconds, with a five-second cooldown that prevents
+  restart storms.
+
+For the full troubleshooting flow see
+[Troubleshooting](/drone-agent/vision-nav-troubleshooting).
+
+## Where to go next
+
+- [Fallback methods](/drone-agent/vision-nav-fallback-methods) for a
+  deeper read on how the plugin degrades gracefully.
+- [Features](/drone-agent/vision-nav-features) for the use cases each
+  mode enables.
+- [Architecture](/drone-agent/vision-nav-architecture) for the
+  developer-facing module map and IPC protocol.

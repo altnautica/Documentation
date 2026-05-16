@@ -1,0 +1,163 @@
+---
+title: "Features"
+description: "The flying capabilities each Vision Navigation mode unlocks: GPS-denied hover, indoor flight, canopy and tunnel, low-altitude precision, 6-DOF VIO pose, hybrid coverage."
+icon: "wand-sparkles"
+lastUpdated: "2026-05-16"
+---
+
+# Features
+
+What you can actually do with each Vision Navigation mode. One short
+scenario per feature, with the hardware requirements and the expected
+behaviour. Use this page as a buying guide before procurement.
+
+## GPS-denied hover
+
+**Mode:** `optical_flow`
+**Hardware:** downward camera + rangefinder.
+**What you get:** the drone holds position in `LOITER` (ArduPilot) or
+`POSITION` (PX4) with the GPS receiver effectively disabled. Drift
+under a 60-second hover is typically below half a metre; well-tuned
+setups stay in 20 cm.
+
+**Why it works:** the EKF takes the OF velocity sample and the
+rangefinder altitude and integrates them. Errors are bounded by the
+scene's texture quality (more features means tighter tracking) and
+the rangefinder's measurement accuracy.
+
+**Where it shines:** indoor flight, under solid canopy, in canyons,
+or anywhere a GPS receiver loses lock. The drone behaves like it
+has GPS as long as the camera sees ground.
+
+## Rangefinder-free GPS-denied hover
+
+**Mode:** `optical_flow_degraded`
+**Hardware:** downward camera. No rangefinder needed.
+**What you get:** the same hover behaviour as above but with looser
+drift bounds (typically under a metre). The GCS marks the mode as
+degraded and the estimator state shows as `degraded` whenever the
+plugin is on the lower rungs of the scale ladder.
+
+**Why it works:** the plugin pulls altitude from the FC's barometer,
+or from GPS altitude when the operator is outdoors with a 3D fix,
+or from a static 1.5 m fallback. The quality multiplier means the
+EKF auto-de-weights degraded scale sources.
+
+**Where it shines:** scenarios where mounting a rangefinder is
+impractical (very small frames, weight constraints, RF interference
+with the LIDAR-Lite I2C bus). The mode is intentionally less
+accurate; it is the GPS-denied path of last resort.
+
+## Indoor waypoint flight
+
+**Mode:** `optical_flow` or `vio_openvins`.
+**Hardware:** downward camera + rangefinder, or forward camera + NPU
+board.
+**What you get:** the drone flies a pre-planned waypoint mission
+indoors. AUTO mode (ArduPilot) or AUTO MISSION (PX4) work as they
+would outdoors with GPS. Waypoint accuracy is bounded by the EKF's
+position accuracy.
+
+**Why it works:** the EKF integrates the OF or VIO velocity into a
+local position. The flight controller's waypoint navigator
+consumes local position the same way it consumes a GPS position; it
+does not care where the position came from.
+
+**Where it shines:** warehouse autonomy, indoor inspection runs,
+indoor SAR, anywhere a pre-planned route is needed under a roof.
+
+## Altitude flight (above rangefinder range)
+
+**Mode:** `vio_openvins` or `vio_vins_fusion`.
+**Hardware:** forward camera + NPU board.
+**What you get:** the drone holds position at altitudes the
+rangefinder cannot see (above 10 m on most consumer LIDAR; above
+40 m on long-range LIDAR). The estimator does not need a ground
+return because it sees enough static structure ahead.
+
+**Why it works:** VIO computes a full 6-DOF pose from the camera and
+IMU. The pose is metric (the IMU's accelerometer provides scale),
+which is why no rangefinder is needed.
+
+**Where it shines:** structure inspection (pipelines, antennas,
+bridges), urban GPS-denied flight (between tall buildings where GPS
+is unreliable), high-altitude waypoint missions in low-GPS
+environments.
+
+## Corridor and tunnel flight
+
+**Mode:** `vio_openvins` or `vio_vins_fusion`.
+**Hardware:** forward camera + NPU board.
+**What you get:** the drone flies long, repetitive corridors (subway
+tunnels, mine shafts, industrial pipe galleries) where the downward
+camera has nothing useful to track and GPS is absent.
+
+**Why it works:** VIO tracks structure ahead. As long as the
+corridor has any texture (lighting fixtures, pipe joints, wall
+markings), the estimator stays converged.
+
+**Where it shines:** GPS-denied infrastructure inspection. Subway
+tunnels with proper lighting are well within VIO's envelope; mine
+shafts need a head-mounted light. The estimator handles both.
+
+## Hybrid coverage (downward + forward)
+
+**Mode:** `hybrid_of_plus_vio`.
+**Hardware:** downward camera + forward camera + NPU board.
+**What you get:** the EKF fuses OF samples from the downward camera
+AND VIO samples from the forward camera. If one camera goes blind
+(featureless ground, fast yaw, low light at the floor) the other
+keeps the position estimate alive.
+
+**Why it works:** the EKF takes both inputs and weights them by
+their reported quality. When OF degrades, the EKF leans on VIO;
+when VIO degrades, the EKF leans on OF. The plugin emits both
+streams on separate MAVLink components.
+
+**Where it shines:** mission profiles that mix indoor low-altitude
+hover (OF strong) with corridor flight (VIO strong). The added cost
+is a second camera and the CPU headroom for both estimators.
+
+## Heading-relative position over long flights
+
+**Mode:** `vio_openvins` or `vio_vins_fusion`.
+**Hardware:** forward camera + NPU board.
+**What you get:** the drone maintains a position estimate referenced
+to its starting orientation rather than to magnetic north. Useful
+when the compass is unreliable (steel structures, large motors
+nearby, polar regions) and the operator needs heading-relative
+waypoints.
+
+**Why it works:** VIO produces a full 6-DOF pose including yaw. When
+the EKF source set is configured for `EK3_SRC1_YAW = ExternalNav`,
+the EKF takes the VIO yaw instead of the compass.
+
+**Where it shines:** missions where compass health is unreliable.
+This includes most indoor flight, flight near power infrastructure,
+and flight inside metal structures.
+
+## Auto-landing on uneven terrain
+
+**Mode:** `optical_flow` (with rangefinder) or `vio_openvins`.
+**Hardware:** as per the chosen mode.
+**What you get:** the drone lands gently on terrain that GPS-only
+flight would slam into. The rangefinder (OF mode) or the VIO
+altitude (VIO mode) provides metre-precise altitude all the way
+through touchdown.
+
+**Why it works:** the EKF altitude is honest about the actual height
+above the surface, not the height above an arbitrary GPS reference.
+Landing controllers consume the EKF's altitude directly.
+
+**Where it shines:** rough field landings, deck landings on moving
+platforms (where GPS altitude is noisy relative to the deck),
+inspection missions that end on a structure-mounted pad.
+
+## Where to go next
+
+- [Mode comparison](/drone-agent/vision-nav-mode-comparison) for the
+  side-by-side decision table.
+- [Hardware](/drone-agent/vision-nav-hardware) for tested camera and
+  rangefinder picks.
+- [Getting started](/drone-agent/vision-nav-getting-started) for the
+  install + first-flight walkthrough.

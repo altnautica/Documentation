@@ -1,0 +1,162 @@
+---
+title: "Fallback methods"
+description: "What Vision Navigation does when a sensor degrades. The scale ladder, the time-sync drift bands, the heartbeat watchdog, and the EKF source-set switcher."
+icon: "shield-halved"
+lastUpdated: "2026-05-16"
+---
+
+# Fallback methods
+
+Vision navigation is a real-time control loop reading noisy sensors.
+Things go wrong. The plugin's design assumption is that every input
+will degrade or fail at some point and the system needs to handle it
+gracefully. This page documents the four fallback mechanisms that
+make degradation visible and recoverable.
+
+## 1. The scale ladder (rangefinder-free OF)
+
+The `optical_flow_degraded` mode flies without a rangefinder. The
+tracker still produces angular flow; the missing piece is the
+altitude that turns that flow into metric velocity.
+
+The plugin walks a four-rung ladder on every camera frame and picks
+the highest-priority healthy rung:
+
+| Rung | Source | Trigger | Quality multiplier |
+|---|---|---|---|
+| 1 | `GLOBAL_POSITION_INT.relative_alt` from the FC's baro-EKF | message ≤ 2 s old, vehicle armed, value ≥ 0.3 m | 0.7 |
+| 2 | `VFR_HUD.alt` minus the captured take-off altitude | message ≤ 2 s old | 0.6 |
+| 3 | `GPS_RAW_INT.alt` minus take-off, gated on operator outdoor flag + 3D fix + HDOP ≤ 2 | message ≤ 2 s old | 0.4 |
+| 4 | 1.5 m static fallback | always available | 0.2 |
+
+The quality multiplier multiplies the OF tracker's raw quality
+before the message is emitted. The EKF then automatically
+de-weights samples from degraded rungs because the quality field is
+the EKF's own innovation gate input.
+
+**What the operator sees:** the sensors card shows the active scale
+source under the rangefinder row. The colour matches the rung
+(green for relative_alt, yellow for raw baro or GPS, red for
+static). The estimator card shows the state as `degraded` whenever
+the static rung is active. The fallback banner appears after 5
+seconds on the static rung.
+
+**Why not stop emitting altogether?** The EKF prefers a low-quality
+sample to no sample at all when it has nothing else to fuse. The
+1.5 m static rung is the lowest possible quality emission; the EKF
+de-weights it strongly. Operators in the field who genuinely lose
+all altitude sources at once are typically at low altitude and
+benefit from a degraded velocity hint over no velocity hint.
+
+## 2. The time-sync drift bands
+
+VIO estimators are sensitive to the time relationship between camera
+frames and IMU samples. The plugin runs a time aligner that pairs
+each frame with the closest IMU sample, applies the calibrated
+static offset, and tracks the residual drift over a rolling window.
+
+| Band | Average residual | Action |
+|---|---|---|
+| Green | ≤ 10 ms | Acceptable for VIO arm |
+| Yellow | 10 to 30 ms | Degraded; warn but arm |
+| Red | > 30 ms | Refuse to arm in VIO mode |
+
+**Why these bands?** Sub-millisecond residuals are achievable with
+hardware-triggered cameras and real-time IMUs. Tens of milliseconds
+are typical on a generic USB UVC stack with software timestamps. The
+bands match what the underlying OpenVINS and VINS-Fusion estimators
+tolerate without significant accuracy loss.
+
+**What the operator sees:** the sensors card shows the live residual
+as a coloured pill on the IMU row. The pre-arm card refuses to arm
+in the red band; the gate text names the residual and suggests
+re-running the camera-IMU calibration.
+
+**Recovery:** for a static offset that has drifted, recapture the
+calibration. The residual is structurally stable for a given camera
+mode (resolution + frame rate + exposure profile); it only changes
+when the mode does. For per-flight jitter, the rolling window
+smooths it out automatically.
+
+## 3. The heartbeat watchdog (VIO engines)
+
+The VIO engines run as out-of-process vendor binaries. The plugin
+talks to them through a Unix-domain socket and a shared-memory ring;
+the binary reports back with pose messages and an `alive` heartbeat
+every second.
+
+If the binary goes silent for more than 2 seconds, the watchdog
+restarts it. The cooldown between restarts is 5 seconds so a bad
+config does not spawn an unbounded restart storm.
+
+**What the operator sees:** the estimator card flips to `failed`
+during the restart window. The fallback banner appears with the
+restart-in-progress message. After the restart, the binary goes
+through `init` → `converging` → `converged` on its own; the GCS
+shows the state climbing back.
+
+**When does the binary go silent?** Usually one of:
+
+- Out-of-memory (the OS killed it). The plugin's `max_ram_mb`
+  resource limit is generous but not unbounded.
+- A crash in the vendor binary (rare but possible; the binaries are
+  GPL-3.0 open source upstream of the plugin).
+- A pathological input (the binary's optimiser hung). The watchdog
+  always recovers; the operator may want to switch modes
+  temporarily.
+
+**Recovery:** the watchdog is automatic. If restarts keep happening,
+file a bug with the journalctl excerpt; the agent logs the cause.
+
+## 4. The EKF source-set switcher
+
+The final escape hatch. The Vision Nav tab in Mission Control has a
+button that flips the flight controller's EKF source set between
+GPS (set 1), VIO (set 2), and OF (set 3) at runtime.
+
+- **On ArduPilot:** all three source-set switches work in flight.
+  The EKF tolerates a one-time innovation spike on switch.
+- **On PX4:** the switcher is disabled because PX4 does not support
+  runtime source-set switching. The change requires a parameter
+  write and an EKF restart; the GCS shows the tooltip explaining
+  why.
+
+**When to use it:** in flight, when the active mode goes degraded
+and the operator wants the GPS source back. Switching to GPS at
+altitude is safe on ArduPilot. The drone may drift for a few
+seconds while the EKF resettles; LOITER tolerates this.
+
+**What does NOT switch:** the plugin's mode. Mode is a per-drone
+config that the operator changes deliberately, not a runtime fallback
+the plugin flips on its own. The plugin's safety posture is to
+report degradation honestly and let the operator decide.
+
+## How the four mechanisms combine
+
+A real flight that goes wrong might exercise all four:
+
+1. The camera fogs over (low light + condensation). Flow quality
+   drops below 50; the estimator marks itself `degraded`.
+2. The fallback banner fires. The operator sees the degraded state
+   on the estimator card.
+3. The operator hits the EKF source switcher button to flip back to
+   GPS. The EKF takes a one-time innovation spike, settles within
+   a few seconds.
+4. The drone returns to LOITER under GPS. The plugin keeps emitting
+   degraded OF samples (the EKF ignores them; that is fine), giving
+   the operator the option to flip back when conditions improve.
+
+Each mechanism is independent. The scale ladder runs continuously
+inside the OF estimator; the sync-offset bands run continuously
+inside the time aligner; the watchdog runs continuously inside the
+VIO shim; the source-set switcher runs only when the operator
+presses it.
+
+## Where to go next
+
+- [Modes](/drone-agent/vision-nav-modes) for the per-mode pre-arm
+  matrix.
+- [Troubleshooting](/drone-agent/vision-nav-troubleshooting) for
+  decision trees against each failure family.
+- [Calibration](/drone-agent/vision-nav-calibration) for re-running
+  the camera-IMU calibration when the sync band turns red.
