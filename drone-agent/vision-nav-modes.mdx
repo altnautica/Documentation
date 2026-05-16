@@ -24,9 +24,11 @@ publishes a new heartbeat on the next tick.
 | `off` | None | optional | optional | optional | none |
 | `optical_flow` | Lucas-Kanade | downward | gyro | required | comp 198 |
 | `optical_flow_degraded` | Lucas-Kanade | downward | gyro | optional | comp 198 |
-| `vio_openvins` | OpenVINS | forward | gyro+accel | optional | comp 197 |
-| `vio_vins_fusion` | VINS-Fusion | forward | gyro+accel | optional | comp 197 |
+| `vio_openvins` | OpenVINS | forward or downward | gyro+accel | optional | comp 197 |
+| `vio_vins_fusion` | VINS-Fusion | forward or downward | gyro+accel | optional | comp 197 |
 | `hybrid_of_plus_vio` | Both | downward + forward | gyro+accel | optional | comp 198 + 197 |
+
+VIO accepts a forward camera (indoor / corridor / inspection) or a downward camera (over-ground: agriculture, survey, SAR, pipeline patrol). The orientation is part of the per-drone config and the wizard surfaces an explicit picker.
 
 `comp 198` is the peripheral MAVLink component (`OPTICAL_FLOW_RAD`).
 `comp 197` is `MAV_COMP_ID_VISUAL_INERTIAL_ODOMETRY`
@@ -102,9 +104,10 @@ seconds.
 
 ## vio_openvins
 
-Visual-inertial odometry using OpenVINS. A forward-facing camera and
-the FC IMU feed a multi-state-constraint Kalman filter that produces
-a full six-degree-of-freedom pose at the camera frame rate.
+Visual-inertial odometry using OpenVINS. A camera (forward or
+downward) and the FC IMU feed a multi-state-constraint Kalman filter
+that produces a full six-degree-of-freedom pose at the camera frame
+rate.
 
 Output: `VISION_POSITION_ESTIMATE` on MAVLink component 197 at 30 Hz.
 ArduPilot EKF3 fuses this when `EK3_SRC1_POSXY`, `EK3_SRC1_VELXY`,
@@ -112,13 +115,18 @@ and `EK3_SRC1_YAW` are set to `ExternalNav` (6).
 
 Use this mode when:
 
-- You have a forward-facing camera (global shutter strongly preferred
-  over rolling shutter)
+- You have a forward-facing camera (indoor / corridor / inspection)
+  OR a downward-facing camera (over-ground flight: agriculture,
+  survey, SAR, pipeline patrol). The wizard surfaces an explicit
+  orientation picker; the agent suggests the orientation that fits
+  the host's active suite.
+- Global shutter is preferred over rolling shutter, but the plugin
+  tunes the feature-tracking thresholds either way.
 - You are running on a board with at least one Cortex-A76 core or
-  equivalent (Rock 5C Lite, CM4-class, RK3576)
-- You want pose plus heading and not just velocity
+  equivalent (Rock 5C Lite, CM4-class, RK3576).
+- You want pose plus heading and not just velocity.
 - You will fly higher than the rangefinder can see, or in scenes
-  where the downward camera has nothing to track
+  where the camera bound to OF has nothing to track.
 
 Camera intrinsics and camera-IMU extrinsics must be loaded before the
 estimator can be armed. See

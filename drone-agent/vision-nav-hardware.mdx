@@ -1,13 +1,17 @@
 ---
 title: "Hardware"
-description: "Picking a downward camera and rangefinder for vision navigation. Mount placement, wiring, and FC-versus-companion ownership."
+description: "Picking a camera and rangefinder for vision navigation. Mount placement, wiring, and FC-versus-companion ownership."
 icon: "camera"
 lastUpdated: "2026-05-16"
 ---
 
 # Hardware
 
-You need two things for optical flow: a downward-facing camera and a rangefinder that reports ground distance. The plugin can use a third path for the rangefinder (the FC reads it and forwards the value over MAVLink) when wiring directly to the companion is impractical.
+The camera direction depends on the mode:
+
+- **Optical flow** always needs a **downward-facing camera** plus a rangefinder that reports ground distance. The plugin can take the rangefinder from the FC (read by the FC, forwarded over MAVLink) when wiring directly to the companion is impractical.
+- **VIO** accepts either a **forward-facing** camera (indoor, corridor, inspection) or a **downward-facing** camera (over-ground: agriculture, survey, SAR, pipeline patrol). The wizard surfaces an explicit orientation picker; the agent suggests the direction that fits the active suite.
+- **Hybrid** uses **both** a downward camera (for optical flow) and a forward camera (for VIO).
 
 ## Camera
 
@@ -55,7 +59,7 @@ The plugin's manifest declares `hardware.uart` and `hardware.i2c` permissions; y
 
 ### FC-relayed
 
-If the rangefinder is already wired to the FC (a common starting point for ArduPilot or PX4 setups), the plugin can read it via the `DISTANCE_SENSOR` MAVLink message the FC streams. No re-wiring required. Set the driver to `mavlink-relay` in plugin config and pick which orientation the FC reports as "down" (usually `MAV_SENSOR_ROTATION_PITCH_270`).
+If the rangefinder is already wired to the FC (a common starting point for ArduPilot, PX4, or iNav setups), the plugin can read it via the `DISTANCE_SENSOR` MAVLink message the FC streams. No re-wiring required. Set the driver to `mavlink-relay` in plugin config and pick which orientation the FC reports as "down" (usually `MAV_SENSOR_ROTATION_PITCH_270`). For iNav, also set `rangefinder_hardware = MSP` or `nav_rangefinder_for_terrain = ON` per the iNav docs.
 
 The trade-off is latency: the rangefinder reading travels FC → MAVLink → plugin, adding 50 to 100 ms versus the direct path. Acceptable for most use cases but the direct path is better when latency matters (high-speed terrain following, low altitude).
 

@@ -82,6 +82,29 @@ PX4's EKF2 handles flow fusion differently from ArduPilot. The plugin's helper s
 
 PX4 needs a reboot after writing `EKF2_OF_CTRL`. The plugin's helper button triggers a soft reboot of the FC and waits for it to come back before reporting success.
 
+## iNav parameters
+
+iNav 7.0 and newer consumes the same `OPTICAL_FLOW_RAD` message the plugin already emits to ArduPilot and PX4. The MSP-level configuration is short.
+
+| Parameter | Set to | Why |
+|-----------|--------|-----|
+| `opflow_hardware` | `MAVLINK` | Tells iNav to read the optical-flow stream from the MAVLink rx UART instead of a local I2C/UART sensor. |
+| `opflow_scale` | leave default | The plugin sends pre-scaled angular rates; iNav does not need to rescale. |
+| `nav_use_optflow_for_poshold` | `ON` | Enables flow-based position hold (NAV POSHOLD) when GPS is unavailable. |
+| `nav_extra_arming_safety` | `ON` | Pre-arm check that flow quality is healthy before allowing arming. Recommended for indoor and over-ground flight. |
+| `rangefinder_hardware` | match the wired driver (`LIDARMT`, `VL53L1X`, `TFMINI`, etc.) or `MSP` | Optical flow needs a height reference to recover metric velocity. Either wire a rangefinder to the FC or use the plugin's relay path. |
+| `nav_rangefinder_for_terrain` | `ON` | Enables terrain-following behavior on top of flow-based position hold. |
+
+Wire the FC's UART that carries MAVLink to the ADOS Drone Agent. In iNav's Ports tab, set the UART's `MAVLINK` function bit. Reboot the FC. The plugin's heartbeat detects `MAV_AUTOPILOT_INVALID` plus the iNav-specific `STATUS_MESSAGE` strings and flips the firmware tag automatically.
+
+iNav does not support runtime source-set switching the way ArduPilot does. The plugin's GCS panel disables the source-set switcher on iNav and surfaces the iNav-specific parameter list as a read-only reference.
+
+VIO modes are not surfaced on iNav. iNav has external position-injection hooks but the EKF integration is not VIO-grade in the 7.x series; the plugin disables `vio_openvins`, `vio_vins_fusion`, and `hybrid_of_plus_vio` on iNav at install time. Operators who want VIO on a small FC should cross-flash ArduPilot Copter.
+
+## Betaflight: not supported
+
+Betaflight is a flight controller designed for racing and freestyle, not autonomous position-hold. It has no position estimator, so optical-flow injection has no consumer inside the FC. The plugin refuses to enable on a Betaflight-detected FC and surfaces an explanation in the Navigation tab. Cross-flash iNav or ArduPilot Copter on the same FC to enable GPS-denied flight; most STM32F405 / F722 / H743 boards run all three firmwares.
+
 ## Switch the active EKF source set
 
 ArduPilot supports three EKF source sets (`SRC1`, `SRC2`, `SRC3`) and lets you swap between them at runtime. A common setup is `SRC1` for GPS, `SRC2` for optical flow, and `SRC3` for an external pose source. The Navigation tab exposes a source-set switcher.

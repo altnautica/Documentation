@@ -118,6 +118,29 @@ streams on separate MAVLink components.
 hover (OF strong) with corridor flight (VIO strong). The added cost
 is a second camera and the CPU headroom for both estimators.
 
+## Over-ground flight (downward VIO)
+
+**Mode:** `vio_openvins` or `vio_vins_fusion` with the camera
+orientation set to **downward**.
+**Hardware:** downward camera + NPU board. No rangefinder required;
+VIO recovers metric scale from the IMU.
+**What you get:** full 6-DOF pose over ground without a rangefinder,
+at altitudes well past the rangefinder's range, with a textured
+surface continuously in view.
+
+**Why it works:** ground texture is dense and reliable. Looking
+straight down at a field, a road, or a pipeline gives the estimator
+rich features at every frame. The IMU resolves the scale ambiguity
+that monocular VIO would otherwise hit. Downward VIO is the natural
+fit for the over-ground suites (agriculture spray, survey grid, SAR
+search patterns, pipeline patrol) where the drone spends most of its
+flight time looking at terrain.
+
+**Where it shines:** agriculture (low-altitude spray missions over
+crop rows), survey (grid flights over fields, roofs, construction
+sites), SAR (large-area search above ground), pipeline patrol (linear
+flight along buried or above-ground pipelines).
+
 ## Heading-relative position over long flights
 
 **Mode:** `vio_openvins` or `vio_vins_fusion`.

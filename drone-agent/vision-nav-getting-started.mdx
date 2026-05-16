@@ -48,12 +48,17 @@ The bare minimum:
 
 - A companion computer running the ADOS Drone Agent (Pi 4B, Pi 5,
   Radxa ROCK 5C Lite, or any other [supported board](/drone-agent/vision-nav-hardware)).
-- A camera mounted in the direction the chosen mode needs (downward
-  for OF, forward for VIO, both for hybrid).
+- A camera mounted in the direction the chosen mode needs. Optical
+  flow is always downward. VIO accepts either forward (indoor /
+  corridor) or downward (over-ground: agriculture, survey, SAR,
+  pipeline patrol). Hybrid uses both. The wizard surfaces an
+  explicit orientation picker under VIO and hybrid.
 - A rangefinder when the chosen mode requires one (`optical_flow` and
   `hybrid_of_plus_vio` need one; the other modes do not).
-- A flight controller running ArduPilot 4.5 or newer, or PX4 1.14 or
-  newer. The plugin auto-detects which.
+- A flight controller running ArduPilot 4.5 or newer, PX4 1.14 or
+  newer, or iNav 7.0 or newer. The plugin auto-detects which.
+  Betaflight is not supported; it has no position estimator to consume
+  flow or VIO samples.
 
 The [Hardware page](/drone-agent/vision-nav-hardware) lists tested
 camera and rangefinder combinations.

@@ -20,9 +20,18 @@ The plugin runs one of six estimator modes, selectable at runtime from Mission C
 - **`off`**. Sensors discovered, no MAVLink emission. Useful for hardware diagnostics and calibration runs.
 - **`optical_flow`**. Downward camera plus a rangefinder. The default GPS-denied path for low-altitude hover.
 - **`optical_flow_degraded`**. Same tracker, but the scale comes from a baro, GPS, or static fallback ladder instead of a rangefinder. Reduced accuracy; the GCS marks it as degraded.
-- **`vio_openvins`**. Monocular visual-inertial odometry via OpenVINS. Forward camera plus FC IMU. Best fit for low-cost NPU boards.
-- **`vio_vins_fusion`**. Same role, using HKUST VINS-Fusion as the engine. Higher CPU cost than OpenVINS; preferred on RK3582 or RK3588S2 boards.
-- **`hybrid_of_plus_vio`**. Both estimators running on separate cameras. The EKF fuses both inputs.
+- **`vio_openvins`**. Monocular visual-inertial odometry via OpenVINS. A forward or downward camera plus FC IMU. Best fit for low-cost NPU boards.
+- **`vio_vins_fusion`**. Same role, using VINS-Fusion as the engine. Higher CPU cost than OpenVINS; preferred on RK3582 or RK3588S2 boards. Accepts either a forward camera (indoor / corridor) or a downward camera (over-ground).
+- **`hybrid_of_plus_vio`**. Both estimators running on separate cameras: a downward camera feeds optical flow and a forward camera feeds VIO. The EKF fuses both inputs.
+
+## VIO direction is a choice
+
+Optical flow is always downward. VIO is not. Both forward and downward cameras work with the same VIO engines; the right pick depends on the mission profile.
+
+- **Forward camera**. Indoor flight, corridor inspection, urban canyon, warehouse aisles. Forward translation through the scene gives the estimator rich depth parallax. Default for indoor inspection suites.
+- **Downward camera**. Over-ground low-altitude flight: agriculture spray, survey grid, search and rescue, pipeline patrol. Ground texture is dense and reliable, and scale ambiguity is easier to resolve when the camera is staring at a near-flat plane. Default for over-ground suites.
+
+The wizard surfaces an explicit orientation picker under any VIO mode. The agent suggests the orientation that matches the active suite; the operator confirms.
 
 See [Modes](/drone-agent/vision-nav-modes) for the full per-mode breakdown including pre-arm check matrix and fallback ladder.
 
@@ -62,14 +71,22 @@ MAVLink channel or a flight-side camera.
 
 ## Supported firmware
 
-| Firmware | Optical Flow | VIO (roadmap) |
-|----------|--------------|---------------|
-| ArduPilot 4.5+ (Copter, Plane, Rover) | Yes | Planned |
-| PX4 1.14+ | Yes | Planned |
-| Betaflight | No (no position estimator) | No |
-| iNav | No (limited position estimator) | No |
+| Firmware | Optical Flow | VIO |
+|----------|--------------|-----|
+| ArduPilot 4.5+ (Copter, Plane, Rover) | Yes | Yes |
+| PX4 1.14+ | Yes | Yes |
+| iNav 7.0+ | Yes (via MAVLink rx) | Experimental |
+| Betaflight | No | No |
 
-The plugin auto-detects which firmware the FC is running and tunes its MAVLink output accordingly. ArduPilot expects optical flow in body-frame radians; PX4 expects the same message with a slightly different timestamp convention. Both are handled internally.
+The plugin auto-detects which firmware the FC is running and tunes its MAVLink output accordingly. ArduPilot and PX4 consume `OPTICAL_FLOW_RAD` natively. iNav consumes the same message when the FC's serial port is configured as MAVLink rx and `opflow_hardware` is set to `MAVLINK`. The plugin's iNav setup notes list every parameter; see [Optical flow](/drone-agent/vision-nav-optical-flow).
+
+### Why Betaflight is not supported
+
+Betaflight is a flight controller designed for racing and freestyle, not autonomous position-hold. It does not ship a position estimator. Optical flow needs a consumer inside the FC's EKF; without one, there is nothing to fuse the flow samples into. This is an upstream firmware decision, not a limitation we can work around from the companion. Operators who need GPS-denied flight on a small board should run iNav or ArduPilot Copter on the same hardware. Most STM32F405 / F722 / H743 boards run all three firmwares.
+
+### iNav: optical flow yes, VIO experimental
+
+iNav 7.0 and newer accepts MAVLink-injected optical flow via `opflow_hardware = MAVLINK`, drives position hold via `nav_use_optflow_for_poshold = ON`, and can fuse a rangefinder for terrain-following. The plugin emits the same `OPTICAL_FLOW_RAD` message it sends to ArduPilot and PX4. VIO support on iNav is **experimental**: iNav has external position-injection hooks but the EKF integration is not as polished as ArduPilot EKF3's `VISION_POSITION_ESTIMATE` path, so the plugin disables VIO modes on iNav at install time. Operators who want VIO on a small FC should cross-flash ArduPilot Copter.
 
 ## Supported boards
 
