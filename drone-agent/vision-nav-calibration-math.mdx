@@ -1,0 +1,215 @@
+---
+title: "Calibration Math"
+description: "The math the wizard runs: pinhole intrinsics from a planar target, per-frame extrinsics via PnP, and the joint camera-IMU timeshift fit."
+icon: "function"
+lastUpdated: "2026-05-16"
+---
+
+# Calibration Math
+
+The wizard hides three separate optimisations behind one Apply
+button. This page unpacks what each of them is, why all three are
+needed, and how the inputs the operator captures map onto the
+constraints the optimiser solves.
+
+This is reference material for the technically curious. The
+[calibration page](/drone-agent/vision-nav-calibration) covers the
+operator-facing flow.
+
+---
+
+## Three things, one capture
+
+A VIO estimator needs every camera frame to map to a precise pose in
+the IMU body frame. That requires three calibrated quantities:
+
+1. **Intrinsics**: the camera matrix K and the distortion
+   coefficients. These let the estimator convert pixel coordinates
+   into rays in the camera frame.
+2. **Extrinsics**: the static SE(3) transform `T_cam_imu` from the
+   IMU body frame to the camera frame. This lets the estimator
+   rotate an IMU sample into the camera frame so the visual and
+   inertial measurements live in the same coordinate system.
+3. **Time offset**: the scalar `timeshift_cam_imu` in seconds.
+   The IMU and the camera run on independent clocks; the offset
+   between them stays constant for any given camera mode but
+   changes when the camera resolution, frame rate, or exposure
+   profile changes.
+
+The wizard captures all three in one pass: 20 to 30 still frames of
+the AprilGrid plus a roughly 30-second IMU motion segment.
+
+---
+
+## Intrinsics: `cv2.calibrateCamera`
+
+The intrinsics solve fits a pinhole camera with radial-tangential
+distortion to the captured frames.
+
+The math:
+
+- Each AprilTag has four corners with known positions on the printed
+  target's z=0 plane. The wizard arranges the 6x6 grid such that
+  tag 0 is at the origin and tag N has corners at known multiples
+  of the tag edge length.
+- The detected tag corners in each frame are 2D image points.
+- For each frame, the corner correspondences fix the camera's pose
+  relative to the target up to scale; the focal length and the
+  principal point are constrained jointly across the frames.
+
+The optimiser minimises the per-corner reprojection error:
+
+```
+min Σ_frames Σ_corners ‖observed_pixel - project(world_corner, K, d, R, t)‖²
+```
+
+where `K` is the camera matrix, `d` is the distortion vector,
+`(R, t)` is the per-frame camera-target pose, and `project()` is
+the pinhole-radial-tangential projection.
+
+OpenCV's `calibrateCamera` runs Levenberg-Marquardt against this
+objective. The result is the K matrix the estimator uses for every
+frame.
+
+**Why pose diversity matters.** Each frame contributes a set of
+2D-3D correspondences but only constrains the focal length and
+principal point through the projection's nonlinearities. Frames
+captured at the same angle and distance give nearly-degenerate
+constraints; the solver matches them with a wide range of
+focal-length-and-principal-point combinations. Pose diversity (tilt
+and rotation across the frames) breaks the degeneracy and pins the
+intrinsics to a unique solution.
+
+The wizard's pose coverage map gates Continue on at least five
+distinct buckets in a 5x5 tilt-and-rotation grid for this reason.
+
+---
+
+## Extrinsics: per-frame PnP
+
+Once the intrinsics are fixed, each captured frame produces a
+camera-target pose via Perspective-n-Point. The math:
+
+```
+min Σ_corners ‖observed_pixel - project(world_corner, K_fixed, d_fixed, R_f, t_f)‖²
+```
+
+`(R_f, t_f)` is the camera-target pose for frame `f`. With K and
+the distortion fixed, the per-frame pose recovery is well-posed for
+any frame that sees at least four non-coplanar tag corners.
+
+The wizard's per-frame poses are intermediate values; the wire output
+is the joint `T_cam_imu` that connects the IMU frame to the camera
+frame, not the per-frame camera-target poses. The v1 wizard assumes
+the operator mounted the camera with a known orientation relative to
+the IMU and sets `T_cam_imu = I` (identity). A future revision will
+add a full inertial-visual bundle adjustment that recovers `T_cam_imu`
+from the joint solve, removing the manual-mounting assumption.
+
+---
+
+## Timeshift: joint gyro-camera alignment
+
+The third optimisation aligns the camera's rotation series with the
+IMU's gyro trace.
+
+The math:
+
+- For each consecutive pair of captured frames, the recovered
+  camera-target poses give the camera's rotation between the two
+  frame timestamps.
+- Dividing by the time delta produces the camera's angular velocity
+  at that interval.
+- The IMU's gyro samples in the same shifted window give the IMU's
+  angular velocity.
+- A scalar `timeshift` parameter shifts the camera timeline relative
+  to the IMU timeline. The objective is to find the shift that
+  minimises the residual between the camera-derived and IMU-derived
+  angular velocities.
+
+```
+min Σ_frames ‖ω_cam(f) - mean(gyro samples in [t_f + Δ, t_{f+1} + Δ])‖²
+```
+
+`Δ` is the timeshift parameter. The wizard runs a golden-section
+search over the band `[-200 ms, +200 ms]` because static USB UVC
+offsets always land in that range.
+
+**Why three-axis rotation matters.** The objective is degenerate
+when the camera rotates only around one axis. Pure-yaw motion gives
+the optimiser nothing about pitch or roll alignment; the timeshift
+ends up matching the noise floor rather than the signal. The
+wizard's IMU motion gate requires peak gyro above 1.5 rad/s and
+accel range above 3 m/s² for this reason: those numbers are the
+minimum dynamic range that constrains all three rotational axes.
+
+---
+
+## Why AprilGrid beats a chessboard
+
+Camera calibration tutorials typically use a printed chessboard. The
+wizard uses an AprilGrid for three reasons that matter at flight
+distances:
+
+1. **Partial occlusion tolerance.** A chessboard pattern needs every
+   corner visible to be detected; one occluded corner invalidates
+   the whole frame. AprilTags decode independently per tag, so the
+   detector still extracts corners from the visible tags even if
+   the operator's hand partially blocks the target.
+2. **Unique tag IDs.** Each AprilTag carries a binary payload that
+   identifies which tag it is. The wizard knows exactly which 3D
+   corner each 2D detection belongs to without needing to solve a
+   correspondence problem first. Chessboards require a separate
+   row-and-column matching step that fails on partial views.
+3. **Pose recovery from a single tag.** Each AprilTag has four
+   corners, enough for a single-tag PnP. The wizard can extract
+   pose constraints from a frame that captures even one tag clearly,
+   which is useful in extreme oblique views.
+
+Kalibr documented these advantages and bundles the AprilGrid for
+the same reasons.
+
+---
+
+## What the wizard reports vs. what the math computes
+
+The verify step shows three numbers; here's what each is:
+
+- **Reprojection error (px)**. The mean per-corner residual after
+  `cv2.calibrateCamera` converges. Healthy values are below 1 px;
+  values above 1 px usually mean the print scale is off or the
+  target flexed during capture.
+- **Timeshift (s)**. The scalar `Δ` from the joint alignment fit.
+  Sign convention follows Kalibr:
+  `t_imu = t_cam + timeshift_cam_imu`. Positive means the IMU clock
+  is ahead of the camera clock.
+- **Timeshift residual (ms)**. The mean absolute residual between
+  the camera-derived and IMU-derived angular velocities after the
+  golden-section search converges. Healthy values are below 5 ms;
+  above 5 ms means the IMU motion segment did not exercise enough
+  three-axis rotation.
+
+The cloud relay schema also carries `framesUsed` and
+`framesRejected` counts so the operator can see what fraction of the
+captured set the agent actually accepted.
+
+---
+
+## Further reading
+
+- The Kalibr methodology underlies the wizard's intrinsics and
+  joint-fit approach: [kalibr camera-imu calibration](https://github.com/ethz-asl/kalibr/wiki/camera-imu-calibration).
+- The pinhole-radial-tangential model is documented in OpenCV's
+  calibration tutorial.
+- The AprilTag detector algorithm and the `t36h11` family are
+  described in the AprilTag papers from the April Robotics Lab at
+  the University of Michigan.
+
+---
+
+## Next steps
+
+- [Calibration](/drone-agent/vision-nav-calibration) for the
+  operator-facing flow.
+- [Architecture](/drone-agent/vision-nav-architecture) for the
+  module map and the agent's calibration runner.

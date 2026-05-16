@@ -69,15 +69,30 @@ Full walkthrough: [Install on a drone](/drone-agent/vision-nav-install).
 
 ## 4. Calibrate (VIO modes only)
 
-If you picked a VIO mode you need to upload camera intrinsics + a
-camera-IMU extrinsics file. The plugin accepts Kalibr-compatible
-`camchain.yaml` files directly. If you do not have one yet, the GCS
-sensors card has a Calibrate CTA that walks the capture.
+If you picked a VIO mode the plugin needs camera intrinsics, a
+camera-IMU extrinsics file, and a static time offset between the
+two clocks. The GCS sensors card has a Calibrate CTA that opens a
+seven-step guided wizard:
+
+1. Print the bundled AprilGrid PDF at the documented scale.
+2. Open the Vision Nav tab and tap Calibrate.
+3. Walk the wizard. Captures 20 to 30 frames at varied poses, a
+   roughly 30-second IMU motion segment, then submits to the agent.
+   Takes 3 to 5 minutes the first time.
+4. The verify step shows the new intrinsics next to any previously
+   loaded ones. Apply persists the result; the live estimator picks
+   it up on the next tick.
 
 OF modes can skip this step. Default intrinsics are good enough for
 the OF tracker.
 
+Operators with an existing Kalibr `camchain.yaml` can upload it
+directly without running the wizard; the
+[Calibration page](/drone-agent/vision-nav-calibration) documents
+the upload path.
+
 Full walkthrough: [Calibration](/drone-agent/vision-nav-calibration).
+Technical reference: [Calibration math](/drone-agent/vision-nav-calibration-math).
 
 ## 5. Pre-arm and fly
 

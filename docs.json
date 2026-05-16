@@ -218,6 +218,7 @@
               "drone-agent/vision-nav-features",
               "drone-agent/vision-nav-optical-flow",
               "drone-agent/vision-nav-calibration",
+              "drone-agent/vision-nav-calibration-math",
               "drone-agent/vision-nav-vio",
               "drone-agent/vision-nav-fallback-methods",
               "drone-agent/vision-nav-troubleshooting",

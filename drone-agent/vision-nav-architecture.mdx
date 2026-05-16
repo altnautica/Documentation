@@ -31,7 +31,14 @@ extensions/vision-nav/agent/src/altnautica_vision_nav/
     base.py               # BaseImuSource ABC + ImuSample
     mavlink_raw_imu.py
     mavlink_scaled_imu2.py
+    direct_i2c.py         # BMI088 at ~400 Hz over I2C
     time_aligner.py       # frame-IMU pairing + drift band
+  autodetect/             # start-up hardware probes
+    profile.py            # drone vs ground-station gate
+    camera.py             # /dev/video* enumeration + per-mode pick
+    rangefinder.py        # I2C + UART probe across known drivers
+    imu.py                # BMI088 chip-id handshake, source picker
+    mode.py               # suggested-mode decision tree
   rangefinder/            # distance source drivers
     base.py
     tfluna_uart.py
@@ -47,9 +54,11 @@ extensions/vision-nav/agent/src/altnautica_vision_nav/
     optical_flow.py       # wraps OpticalFlowLk
     optical_flow_no_range.py
     vio_engine.py         # VioEstimator + subclasses
-  calibration/            # intrinsics + extrinsics loaders
+  calibration/            # intrinsics + extrinsics loaders + runner
     intrinsics.py
     extrinsics.py
+    runner.py             # cv2.aruco + cv2.calibrateCamera +
+                          #   golden-section timeshift fit
   shim/                   # vendor-binary IPC layer
     ipc.py                # SHM ring + msgpack channel
     engine.py             # BaseVioEngine + OpenVINS/VINS-Fusion
@@ -138,6 +147,81 @@ control channel. The vendor binary returns pose messages
 asynchronously; the estimator drains them per tick and produces an
 EstimatorOutput with the `pose` six-tuple filled. The router emits
 on component 197 instead of 198.
+
+---
+
+## The calibration runner
+
+`calibration/runner.py` is the agent-side counterpart to the Mission
+Control wizard. It runs in-process inside the plugin's asyncio loop
+and is subscribed to the `vision-nav.start_calibration` event topic.
+
+The runner walks five substeps, publishing
+`vision-nav.calibration_progress` events after each:
+
+1. **Decode the bundle.** The GCS event carries 20 to 30 base64-encoded
+   PNG frames plus an IMU recording window. The runner decodes
+   frames via OpenCV and rejects any that fail decode.
+2. **Detect AprilTags.** `cv2.aruco.ArucoDetector` with the `t36h11`
+   family extracts corner positions per tag. Frames with fewer than
+   eight detected tags are rejected.
+3. **Solve intrinsics.** `cv2.calibrateCamera` fits the pinhole
+   camera matrix K and the radial-tangential distortion vector
+   against the per-frame corner correspondences.
+4. **Recover per-frame poses.** Each frame's
+   `(rvec, tvec)` from the intrinsics solve is the camera-target
+   pose at that frame's timestamp.
+5. **Fit the camera-IMU timeshift.** A golden-section search over
+   `[-200 ms, +200 ms]` minimises the residual between the
+   camera-derived angular velocity (from consecutive frame
+   rotations) and the IMU's gyro trace in the shifted window. The
+   detail is in [Calibration math](/drone-agent/vision-nav-calibration-math).
+
+The runner writes the result to `<plugin_data_dir>/camchain.yaml` in
+the Kalibr-compatible format and publishes
+`vision-nav.calibration_complete` with the result. The plugin's
+event handler applies the new `timeshift_cam_imu` to the live
+`TimeAligner` and flips `cameraIntrinsicsLoaded` to true on the
+heartbeat so the GCS pre-arm card refreshes.
+
+A new calibration plugged in via the YAML upload path skips the
+runner entirely: the event handler validates the YAML, persists it,
+and applies the new timeshift directly.
+
+---
+
+## Auto-detect on start-up
+
+The `autodetect` subpackage probes the host's hardware once at
+`on_start` and merges the result into the live config:
+
+```
+1. autodetect/profile.detect_host_profile() reads
+   /etc/ados/profile.conf (falling back to the ADOS_PROFILE env var).
+   The plugin refuses to enable when the result is a
+   ground-station variant.
+2. autodetect/camera.detect_cameras() globs /dev/video* and tags
+   each node UVC or CSI based on whether a media controller node
+   exists.
+3. autodetect/camera.pick_camera_for_mode() picks the right node
+   for the active estimator mode (CSI for VIO, first UVC for OF).
+4. autodetect/rangefinder.detect_rangefinder() walks every I2C bus
+   probing LIDAR-Lite (0x62) and VL53L1X (0x29), then falls back
+   to UART probing the TF-Luna at 115200 baud.
+5. autodetect/imu.detect_preferred_imu_source() probes every I2C
+   bus for a BMI088 chip-id handshake. When both the accel and
+   gyro dies respond, the plugin instantiates DirectI2cImu at
+   ~400 Hz; otherwise it falls back to MavlinkRawImu.
+6. autodetect/mode.derive_suggested_mode() folds the detected
+   hardware into a SuggestedMode dataclass that rides on the
+   heartbeat as `suggestedMode`.
+```
+
+If `optical_flow` is selected but no rangefinder responded, the
+plugin's `_auto_flip_mode_for_hardware` rewrites the active mode
+to `optical_flow_degraded` before opening the capture. The flip is
+logged so an operator can trace why the estimator state shows
+"degraded" on a fresh install.
 
 ---
 

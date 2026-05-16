@@ -1,50 +1,261 @@
 ---
 title: "Calibration"
-description: "Camera intrinsics, camera-IMU extrinsics, and time-sync calibration for Vision Navigation. Accepts Kalibr-compatible camchain.yaml directly."
+description: "In-app calibration wizard for camera intrinsics, camera-IMU extrinsics, and time-sync. Walks frame capture, IMU motion, solve, and verify without a terminal."
 icon: "ruler"
 lastUpdated: "2026-05-16"
 ---
 
 # Calibration
 
-The VIO modes need a calibrated camera plus a known transform between
-the camera frame and the IMU frame and a static time offset between
-the two clocks. Without good calibration the estimator either refuses
-to converge or converges to a drifting answer.
+VIO modes need a calibrated camera, a known transform between the
+camera frame and the IMU frame, and a static time offset between the
+two clocks. Without good calibration the estimator either refuses to
+converge or converges to a drifting answer.
 
-The plugin accepts a Kalibr-compatible `camchain.yaml` file. If you
-have an existing calibration from Kalibr's
-`kalibr_calibrate_imu_camera` tool you can drop the file in directly.
-If you do not, the calibration wizard in Mission Control walks you
-through capturing the data.
+The plugin ships a guided calibration wizard inside Mission Control.
+The operator prints the bundled AprilGrid, opens the Vision Nav tab,
+taps Calibrate on the sensors card, and walks a seven-step flow. The
+agent runs OpenCV's AprilTag detection, the intrinsics solve, and the
+camera-IMU joint timeshift fit, then publishes a verify-and-compare
+result page. Apply persists the calibration and the live estimator
+picks it up on the next tick.
 
-## What gets calibrated
+Operators with an existing Kalibr `camchain.yaml` can skip the wizard
+and use the YAML upload path documented at the end of this page.
 
-| Item | What it is | Where it is used |
-|---|---|---|
-| Intrinsics | Camera matrix K (fx, fy, cx, cy) and distortion coefficients | Every frame the tracker processes |
-| Extrinsics | The SE(3) transform from the IMU frame to the camera frame | Every IMU sample the estimator fuses |
-| Time offset | The scalar `timeshift_cam_imu` in seconds | The frame-IMU pairing in the time aligner |
+## When to calibrate
 
-Optical-flow modes (`optical_flow`, `optical_flow_degraded`) do not
-strictly need extrinsics. They do benefit from accurate intrinsics
-because the tracker uses the focal length to convert pixel
-displacement into angular flow. The plugin ships defaults that are
-good enough for a downward-pointing webcam at 640×480 but you should
-upload real intrinsics for any precision work.
+Run the wizard when any of the following is true:
 
-VIO modes need all three.
+- The camera or lens was swapped.
+- The IMU was swapped (rare; usually means a new FC or a new
+  carrier board with a different secondary IMU).
+- The camera mode changed (resolution, frame rate, exposure
+  profile). The principal point and the timeshift both drift with
+  mode changes.
+- The Mission Control sensors card shows a sync-offset residual above
+  10 ms during a hover. The time-aligner watches the camera-IMU
+  residual on a sliding window; a yellow or red pill means the
+  shipped calibration no longer matches the live timing.
+- The Mission Control pre-arm card refuses arm in a VIO mode with a
+  "intrinsics not loaded" or "extrinsics not loaded" check.
+
+OF modes work with sensible default intrinsics. VIO modes refuse to
+arm without intrinsics and extrinsics; the wizard is the supported
+path.
 
 ---
 
-## Supported file format
+## What the wizard captures
 
-The loader accepts `cam0` blocks from a Kalibr `camchain.yaml` file.
-Both layouts work:
+The wizard produces three things in one pass:
+
+| Item | What it is | Why it matters |
+|---|---|---|
+| Intrinsics | Camera matrix K (`fx, fy, cx, cy`) plus distortion coefficients | Every frame the tracker processes |
+| Extrinsics | The SE(3) transform from the IMU body frame to the camera frame | Every IMU sample the VIO estimator fuses |
+| Time offset | The scalar `timeshift_cam_imu` in seconds | The frame-IMU pairing the time aligner uses |
+
+The wizard captures 20 to 30 frames at varied poses plus a roughly
+30-second IMU motion segment. The agent's OpenCV pipeline solves all
+three jointly and publishes the result as a downloadable
+`camchain.yaml`.
+
+---
+
+## Print and prepare the target
+
+The wizard's first step links to a printable AprilGrid PDF. The
+target is a 6x6 grid of AprilTags in the `t36h11` family, printed at
+80 cm by 80 cm at the default scale.
+
+Practical notes:
+
+- Print on A1 or larger paper. Office laser printers usually scale to
+  fit A4, which produces a smaller target. Either print at a larger
+  shop or scale your printer's output back to the documented size.
+- Mount on foamcore or another rigid backing. A target that flexes
+  during capture corrupts the corner positions and the intrinsics
+  solve picks up the flex as lens distortion.
+- The wizard's first step asks for the measured edge length in
+  millimetres. Use a ruler to verify the print scale before
+  capturing; an 80 cm grid printed at 75 cm produces a small but
+  measurable focal-length bias.
+
+---
+
+## The seven-step flow
+
+### Step 1: Target check
+
+The wizard surfaces the AprilGrid PDF link and a single text field
+for the measured edge length. Continue enables once a positive number
+is entered.
+
+### Step 2: Live preview
+
+The wizard opens the camera and renders a live feed with a counter
+showing how many of the 36 tags are currently detected. Position the
+drone about 80 cm from the target. The Begin capture button enables
+once at least 24 of 36 tags are detected; below that threshold the
+intrinsics solve does not have enough constraints.
+
+### Step 3: Frame capture
+
+The wizard captures 20 to 30 frames at varied poses. After each
+capture:
+
+- The frame is scored on sharpness, tag count, tag-area span, and
+  exposure. Frames that fail the gate are silently rejected.
+- A pose coverage map fills a 5x5 tilt-and-rotation grid. The
+  Continue button enables once at least five distinct buckets have
+  at least one frame.
+- A thumbnail of every kept frame appears below the live feed. Each
+  thumbnail has a discard button so a borderline frame can be retaken
+  without throwing away the whole capture set.
+
+The operator moves the drone between captures to fill the coverage
+map. Top-down, oblique, rotated, and varied-distance views all
+contribute distinct constraints.
+
+### Step 4: IMU motion
+
+The operator moves the drone in slow figure-eights for roughly 30
+seconds. Live sparklines show the gyro and accel magnitudes. The
+Continue button enables once the IMU motion gate passes (peak gyro
+above 1.5 rad/s and accel range above 3 m/s squared).
+
+### Step 5: Submit
+
+The wizard bundles the captured frames plus the IMU recording window
+and publishes a `start_calibration` event to the agent. The
+ProgressBar advances as the agent's runner walks substeps.
+
+### Step 6: Wait
+
+The agent emits substep progress events. The wizard renders them as
+the bar advances:
+
+- `tag_detection` runs OpenCV's AprilTag detector on each captured
+  frame and confirms enough tags were found.
+- `intrinsics_solve` runs `cv2.calibrateCamera` to fit the focal
+  length, principal point, and distortion coefficients.
+- `extrinsics_solve` recovers the per-frame camera-target pose.
+- `timeshift_solve` runs a golden-section search over the candidate
+  timeshift band and picks the offset that best aligns the per-frame
+  camera rotation series with the recorded IMU gyro trace.
+
+A typical run takes 30 to 60 seconds end to end.
+
+### Step 7: Verify
+
+The result page shows the new intrinsics next to the previously
+loaded ones (if any). The key diagnostics:
+
+| Field | Healthy range | Meaning |
+|---|---|---|
+| Reprojection error | < 1.0 px | Average per-corner residual after the intrinsics solve |
+| Timeshift residual | < 5 ms | Average gyro-camera alignment error after the timeshift fit |
+| Timeshift | -0.5 s to +0.5 s | Static clock offset between the camera and the IMU |
+
+Apply persists the result to the plugin's data directory and applies
+the new timeshift to the live time aligner. Retry resets every
+captured frame and walks back to step 1.
+
+---
+
+## Frame-quality troubleshooting
+
+The wizard rejects frames that fail any of four gates. The reason
+chip on each rejected frame tells the operator what went wrong:
+
+| Reason | Cause | Fix |
+|---|---|---|
+| `blurry` | Camera moved during exposure, or the lens is out of focus | Slow the motion between captures. Refocus the lens. |
+| `too few tags` | Target is partially occluded or the camera is too far away | Move closer. Verify the target is fully in frame. |
+| `target too small in frame` | Operator backed off too far | Move within roughly 80 cm. The target should fill at least 40% of the frame width. |
+| `exposure out of range` | Frame is very dark or very bright | Add room lighting. Avoid backlight behind the target. |
+
+---
+
+## Pose-coverage troubleshooting
+
+The coverage map shows captured poses bucketed by tilt angle and
+in-plane rotation. The Continue button requires at least five
+distinct buckets. If the operator captures every frame from the same
+angle the map fills only one bucket and the button stays disabled.
+
+To fill the coverage map quickly:
+
+- Capture a front-on frame at roughly 80 cm.
+- Tilt the drone 30 degrees in pitch, capture.
+- Tilt 30 degrees in roll, capture.
+- Yaw the drone 45 degrees, capture.
+- Move closer (50 cm), capture.
+- Move farther (110 cm), capture.
+
+Six frames at six poses unlock five buckets and the Continue button
+enables.
+
+---
+
+## IMU-motion troubleshooting
+
+The IMU step refuses to advance until the gyro magnitude peaks above
+1.5 rad/s and the accel range spans more than 3 m/s squared. If the
+operator moves too slowly the gate stays closed.
+
+Slow figure-eights work. Aim for one full eight-pattern every five
+to ten seconds for the full 30-second window. Pure yaw motion alone
+will not advance the gate; the timeshift fit needs three-axis
+rotation to constrain the joint solve.
+
+---
+
+## Verify-step diagnostics
+
+The verify step's diagnostic table is colour-coded. Green rows are
+healthy; yellow rows are suspicious; red rows almost always mean
+the solve picked up bad data.
+
+Typical failure modes:
+
+- **Reprojection error above 1 px**. Usually means the print scale is
+  off or the target flexed during capture. Re-print at the documented
+  scale and mount on a flat rigid backing.
+- **Timeshift residual above 5 ms**. The IMU motion segment was too
+  gentle or too pure-yaw. Re-do the motion step with three-axis
+  rotation.
+- **Principal point far from the image centre**. The captured frames
+  did not span enough of the field of view. Re-do step 3 with more
+  varied positions, especially edge-of-frame views.
+- **Timeshift outside the -0.5 s to +0.5 s band**. The capture clock
+  drifted between the camera and the IMU during the recording
+  window. Reboot the agent and retry.
+
+Apply persists a calibration that has a yellow row; Retry reruns the
+flow. The pre-arm gate refuses arm if the reprojection error or the
+timeshift residual is red.
+
+---
+
+## Advanced: upload an existing `camchain.yaml`
+
+Operators with an existing Kalibr calibration can skip the wizard
+entirely. The plugin's `upload_calibration` event accepts a
+Kalibr-style `camchain.yaml` file directly. From a terminal:
+
+```bash
+curl -fsS -X POST http://drone.local:8000/api/agent/plugins/com.altnautica.vision-nav/events \
+  -H 'content-type: application/json' \
+  -d "$(jq -Rs '{type:"upload_calibration", camchain_yaml: .}' < camchain.yaml)"
+```
+
+The loader accepts both Kalibr layouts:
 
 <CodeGroup>
 
-```yaml Canonical Kalibr (cam0 wrapper)
+```yaml Canonical (cam0 wrapper)
 cam0:
   camera_model: pinhole
   intrinsics: [1385.4, 1384.1, 1014.2, 760.7]
@@ -57,10 +268,9 @@ cam0:
     - [0.00385, 0.00737, 0.99996, -0.02000]
     - [0.0,     0.0,     0.0,      1.0]
   timeshift_cam_imu: -0.0421
-  rostopic: /cam0/image_raw
 ```
 
-```yaml Bare block (no cam0 wrapper)
+```yaml Bare (no cam0 wrapper)
 camera_model: pinhole
 intrinsics: [1385.4, 1384.1, 1014.2, 760.7]
 distortion_model: radtan
@@ -76,80 +286,21 @@ timeshift_cam_imu: -0.0421
 
 </CodeGroup>
 
-Multi-camera files (`cam1`, `cam2`, ...) are accepted. Only `cam0` is
-read; the rest are ignored. The `rostopic` field is accepted for
-Kalibr compatibility and ignored at load time.
+The loader validates the same fields the wizard's verify step shows:
+`fx > 0`, `fy > 0`, principal point inside the frame, distortion
+coefficients within sanity bounds, `T_cam_imu` orthonormal with
+determinant +1, translation under 1 m, timeshift under 500 ms.
 
----
-
-## Field reference
-
-### `camera_model`
-
-The plugin supports `pinhole` only. Fisheye-class models (`omni`,
-`ds`, `eucm`) are rejected at load time with a clear error message.
-
-### `intrinsics`
-
-Four floats: `[fx, fy, cx, cy]` in pixels.
-
-The loader checks that `fx > 0`, `fy > 0`, and the principal point
-`(cx, cy)` lies inside the frame `[0, width]` × `[0, height]`. A
-principal point far from the image centre is suspicious but not
-rejected.
-
-### `distortion_model`
-
-One of:
-
-- `radtan`: Brown-Conrady. The default for almost every consumer USB
-  camera. Coefficients are `[k1, k2, p1, p2]` (radial k1/k2, tangential
-  p1/p2).
-- `equidistant`: Kannala-Brandt fisheye. Coefficients are `[k1, k2,
-  k3, k4]` (all radial).
-- `none`: operator pre-rectified the frames upstream. Empty
-  coefficient list.
-
-The radtan coefficient sanity bound is `|k1|, |k2| ≤ 2.0`. Anything
-beyond that is almost always a bad calibration and is rejected.
-
-### `T_cam_imu`
-
-The SE(3) transform from the IMU body frame to the camera frame. A
-4×4 row-major matrix. The loader checks:
-
-- Bottom row equals `[0, 0, 0, 1]` within 1e-6.
-- The top-left 3×3 is orthonormal (`R @ R.T ≈ I` within 1e-4).
-- The rotation determinant is `+1` (not `-1`; a reflection is not a
-  valid SE(3)).
-- The translation magnitude is at most 1.0 m. Drone cam-IMU lever
-  arms are centimetre-scale; anything bigger is almost always a
-  metres-vs-millimetres unit error.
-
-### `timeshift_cam_imu`
-
-The scalar time offset in seconds. Sign convention follows Kalibr:
-
-```
-t_imu = t_cam + timeshift_cam_imu
-```
-
-A positive value means the IMU clock is ahead of the camera clock.
-A negative value (common on USB UVC where the frame timestamp is set
-after USB transfer completes) means the camera clock is ahead.
-
-Sanity bound: `|timeshift_cam_imu| < 0.5 s`. Values above 0.2 s pass
-load but the GCS sensors card surfaces a yellow warning ("suspicious
-calibration").
+Multi-camera files (`cam1`, `cam2`, ...) are accepted but only `cam0`
+is read.
 
 ---
 
 ## Time-sync drift bands
 
-The plugin runs a time aligner that pairs each camera frame with the
-closest IMU sample and watches the residual offset over a sliding
-window. The GCS surfaces the average residual on the sensors card,
-colour-coded:
+The plugin's time aligner pairs each camera frame with the closest
+IMU sample and watches the residual offset over a sliding window. The
+Mission Control sensors card surfaces the average residual:
 
 | Band | Average residual | Meaning |
 |---|---|---|
@@ -157,81 +308,21 @@ colour-coded:
 | Yellow | 10 to 30 ms | Degraded; warns but arms |
 | Red | > 30 ms | Refuses to arm in VIO mode |
 
-The residual is the absolute distance between the calibrated target
-time (`frame_ts + timeshift_cam_imu`) and the nearest real IMU
-sample. Sub-millisecond residuals are achievable with a
-hardware-triggered camera and a real-time IMU. Tens of milliseconds
-are typical on a generic USB UVC stack with software timestamps.
-
-If you see residuals climbing past 30 ms during a calibration run,
-re-run `kalibr_calibrate_imu_camera` against a fresh capture and
-update the `timeshift_cam_imu` value. A static offset stays static;
-only changes to the camera mode (resolution, frame rate, exposure)
-shift it.
-
----
-
-## Capturing a new calibration
-
-Kalibr's calibration capture procedure works as published. The short
-version:
-
-1. Print a Kalibr **AprilGrid** target (6×6 tags, `t36h11` family)
-   at roughly 80 cm × 80 cm. Mount it rigid on a flat surface;
-   foamcore works well.
-2. Capture a synchronised rosbag of camera frames and IMU samples
-   while moving the rig in slow figure-eights in front of the
-   target. Aim for 60 to 90 seconds of motion across all three
-   rotational axes.
-3. Run `kalibr_calibrate_imu_camera` against the rosbag. The output
-   is a `camchain.yaml` file ready to upload.
-
-Specific commands are in the
-[Kalibr wiki camera-IMU calibration page](https://github.com/ethz-asl/kalibr/wiki/camera-imu-calibration).
-
-Calibration is a one-time operation per camera + IMU pair. If you
-swap the camera or the IMU you must re-run it. If you change camera
-modes (resolution, frame rate, exposure profile) the `timeshift`
-value drifts and should be re-measured.
-
----
-
-## Mission Control calibration card
-
-The sensors card on the Navigation tab shows the calibration state:
-
-- **Camera row** carries the device path, the resolution and frame
-  rate the agent picked, an "Calibrated / Not calibrated" pill, and
-  a Calibrate CTA. The CTA opens the upload dialog (drag in a
-  `camchain.yaml`) or starts the guided capture flow.
-- **IMU row** shows the source (`mavlink-raw-imu` or
-  `mavlink-scaled-imu2`), the smoothed sample rate in Hz, and the
-  sync offset pill (green / yellow / red per the bands above).
-
-The pre-arm card refuses arm in VIO mode while intrinsics or
-extrinsics are not loaded. The error message tells the operator which
-file is missing and where to upload it.
-
----
-
-## What if I do not have Kalibr?
-
-Optical-flow modes work fine with default intrinsics for typical
-downward-pointing webcams. Upload your camera resolution if you can;
-the loader fills sensible defaults for the rest.
-
-VIO modes refuse to arm without intrinsics and extrinsics. There is
-no shortcut; you need the calibration. The Kalibr capture is the
-shortest path. A future release of this plugin may ship an in-app
-calibration capture flow that does not require Kalibr at all, but for
-now the upstream tool is the supported route.
+Sub-millisecond residuals are achievable with a hardware-triggered
+camera and a real-time IMU. Tens of milliseconds are typical on a
+generic USB UVC stack with software timestamps. If you see residuals
+climbing past 30 ms during a hover, re-run the wizard; the static
+offset stays static, so only changes to the camera mode shift it.
 
 ---
 
 ## Next steps
 
+- [Calibration math](/drone-agent/vision-nav-calibration-math) for
+  the technical detail on intrinsics, extrinsics, and the joint
+  timeshift solve.
 - [Modes](/drone-agent/vision-nav-modes) for which modes need
-  calibration
+  calibration and the per-mode pre-arm matrix.
 - [Troubleshooting](/drone-agent/vision-nav-troubleshooting) for what
   to do when calibration is loaded but the estimator still does not
-  converge
+  converge.

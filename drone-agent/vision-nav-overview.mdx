@@ -31,8 +31,34 @@ See [Modes](/drone-agent/vision-nav-modes) for the full per-mode breakdown inclu
 The agent reads the active camera at 30 frames per second, pairs each frame with the closest IMU sample, and runs the selected estimator. Optical-flow estimators emit `OPTICAL_FLOW_RAD` on MAVLink component 198 at 10 Hz. VIO estimators emit `VISION_POSITION_ESTIMATE` on MAVLink component 197 at 30 Hz. ArduPilot's EKF3 or PX4's EKF2 fuses the matching source set when configured.
 
 <Note>
-VIO modes are in development. The Python plumbing and the GCS surfaces ship today. The vendor binaries that back the OpenVINS and VINS-Fusion engines land in a follow-up release once they're validated end-to-end on target hardware. See [Visual Inertial Odometry](/drone-agent/vision-nav-vio).
+Optical flow modes (`optical_flow`, `optical_flow_degraded`) are runtime-complete. VIO modes are in development: the Python plumbing, the GCS surfaces, the auto-detect probe, and the build pipeline for the vendor binaries ship today. The vendor-binary upstream integration lands in a follow-up release once it's validated end-to-end on target hardware. See [Visual Inertial Odometry](/drone-agent/vision-nav-vio).
 </Note>
+
+## Hardware auto-detect
+
+The plugin probes the host at start-up and adapts to whatever
+hardware it finds. On a fresh drone the operator does not need to
+touch the config:
+
+- Cameras are enumerated from `/dev/video*` with a CSI hint when a
+  media controller is present. The wizard picks the right node for
+  the selected mode (downward UVC for OF, CSI for VIO).
+- Rangefinders are probed on every I2C bus for LIDAR-Lite (0x62) and
+  VL53L1X (0x29). The TF-Luna is probed on the standard UART nodes
+  at 115200 baud.
+- IMU sources prefer a direct-I2C BMI088 at ~400 Hz when the bus
+  answers a chip-id handshake, falling back to MAVLink RAW_IMU at
+  the FC's stream rate when no direct path is present.
+- The detected hardware combination drives a `suggestedMode` field
+  on the heartbeat. Mission Control's ModeCard renders a Suggested
+  badge on the mode the agent recommends.
+- If `optical_flow` is selected but no rangefinder answers the
+  probe, the plugin auto-flips to `optical_flow_degraded` and logs
+  the flip so the operator sees what happened.
+
+The plugin refuses to enable on ground-station-profile hosts. Vision
+Navigation is drone-only; a ground station does not have an FC
+MAVLink channel or a flight-side camera.
 
 ## Supported firmware
 
