@@ -1,0 +1,315 @@
+---
+title: "Architecture"
+description: "The modular shape of Vision Navigation: camera, IMU, rangefinder, scale, and estimator as independent modules behind a common contract."
+icon: "sitemap"
+lastUpdated: "2026-05-16"
+---
+
+# Architecture
+
+Vision Navigation is built around a single design rule: the camera,
+the IMU, the rangefinder, and the estimator are four independent
+modules. Any estimator runs on any combination of camera, IMU, and
+optional rangefinder; new estimators plug in behind a stable contract
+without rewiring the plugin.
+
+This page is for developers who want to add a new estimator (a
+stereo VIO, a future ORB-SLAM3, a learned monocular depth network),
+extend the calibration loader, or audit the data flow.
+
+---
+
+## Module map (agent half)
+
+```
+extensions/vision-nav/agent/src/altnautica_vision_nav/
+  capture/                # camera frame producers
+    base_camera.py
+    v4l2_source.py
+    libcamera_source.py
+  imu/                    # IMU sample producers
+    base.py               # BaseImuSource ABC + ImuSample
+    mavlink_raw_imu.py
+    mavlink_scaled_imu2.py
+    time_aligner.py       # frame-IMU pairing + drift band
+  rangefinder/            # distance source drivers
+    base.py
+    tfluna_uart.py
+    garmin_lidarlite_i2c.py
+    vl53l1x_i2c.py
+    relay_distance_sensor.py
+  scale/                  # rangefinder-free altitude ladders
+    base.py               # BaseScaleSource + ScalePick
+    mavlink_ladder.py
+  estimators/             # the inner loop
+    base.py               # BaseEstimator + EstimatorOutput
+    null_estimator.py
+    optical_flow.py       # wraps OpticalFlowLk
+    optical_flow_no_range.py
+    vio_engine.py         # VioEstimator + subclasses
+  calibration/            # intrinsics + extrinsics loaders
+    intrinsics.py
+    extrinsics.py
+  shim/                   # vendor-binary IPC layer
+    ipc.py                # SHM ring + msgpack channel
+    engine.py             # BaseVioEngine + OpenVINS/VINS-Fusion
+    heartbeat.py          # restart-on-silence watchdog
+  mavlink/
+    encoders.py           # OPTICAL_FLOW_RAD, DISTANCE_SENSOR,
+                          #   VISION_POSITION_ESTIMATE
+    component_router.py   # picks comp 198 (OF) or 197 (VIO)
+  health.py               # heartbeat publisher
+  pre_arm_gate.py         # mode-aware arm-readiness evaluator
+  plugin.py               # lifecycle entry point
+```
+
+Each subpackage has its own base class. Concrete implementations sit
+beside the base in the same directory. Adding a new IMU source (say
+DroneCAN over a USB-CAN adapter) is a single file under `imu/` that
+subclasses `BaseImuSource`.
+
+---
+
+## The EstimatorOutput contract
+
+Every estimator returns the same record:
+
+```python
+@dataclass
+class EstimatorOutput:
+    timestamp_us: int
+    output_mode: Literal["optical_flow", "vio", "none"]
+    state: Literal[
+        "off", "init", "converging",
+        "converged", "degraded", "failed",
+    ]
+    # OF path (None for VIO and off)
+    flow_rate_x: Optional[float]
+    flow_rate_y: Optional[float]
+    flow_rate_z: Optional[float]
+    flow_quality: Optional[int]
+    flow_distance_m: Optional[float]
+    flow_scale_source: Optional[
+        Literal["rangefinder", "baro", "gps", "vision"]
+    ]
+    integration_time_us: Optional[int]
+    # VIO path (None for OF and off)
+    pose: Optional[Sequence[float]]   # (x, y, z, roll, pitch, yaw)
+    velocity: Optional[Sequence[float]]
+    covariance: Optional[Sequence[float]]
+    feature_count: Optional[int]
+    reset_counter: Optional[int]
+    # Cross-mode diagnostics
+    drift_estimate_m: Optional[float]
+    sync_offset_ms: Optional[float]
+    extras: dict
+```
+
+The component router reads `output_mode` and dispatches to either the
+OF emitter (component 198, `OPTICAL_FLOW_RAD`) or the VIO emitter
+(component 197, `VISION_POSITION_ESTIMATE`). The two halves never
+both carry data on the same record.
+
+---
+
+## Sequence: a frame becomes a MAVLink message
+
+The simplified flow for one frame in `optical_flow` mode:
+
+```
+1. capture/v4l2_source emits (ts_ns, frame) on its async iterator.
+2. plugin.py pairs (prev_frame, curr_frame, dt) and feeds the active
+   estimator.
+3. estimators/optical_flow consults imu/time_aligner.lookup(ts_ns)
+   to fetch the closest IMU sample (gyro only for OF).
+4. estimators/optical_flow.step() calls into processors/
+   optical_flow_lk.process() and produces an EstimatorOutput.
+5. mavlink/component_router.emit(sample) routes the OF half to
+   mavlink/encoders.emit_optical_flow_rad() on component 198.
+6. health.py publishes the heartbeat with the latest flow_quality,
+   flow_rate_hz, distance, and estimator state.
+7. The cloud relay forwards the heartbeat to Mission Control; the
+   navigation card refreshes.
+```
+
+In `vio_openvins` mode the path changes at step 4 to push the frame
+into the shim's SHM ring and the IMU samples to the shim's UDS
+control channel. The vendor binary returns pose messages
+asynchronously; the estimator drains them per tick and produces an
+EstimatorOutput with the `pose` six-tuple filled. The router emits
+on component 197 instead of 198.
+
+---
+
+## The scale ladder
+
+`MavlinkScaleLadder` (in `scale/mavlink_ladder.py`) walks four rungs
+on every `pick()` call:
+
+```
+                                     ┌─ healthy ─> ScalePick(0.7)
+relative_alt freshness < 2 s? ───────┤
+                                     └─ stale ──┐
+                                                ▼
+                                     ┌─ healthy ─> ScalePick(0.6)
+vfr_alt freshness < 2 s? ────────────┤
+                                     └─ stale ──┐
+                                                ▼
+gps_alt fresh + 3D fix + HDOP<=2 +   ┌─ healthy ─> ScalePick(0.4)
+outdoor_flag? ──────────────────────┤
+                                     └─ unhealthy
+                                                ▼
+                                              ScalePick(0.2)  static
+                                              fallback @ 1.5 m
+```
+
+The estimator multiplies the OF tracker's raw quality by the rung's
+quality multiplier before emitting. The EKF then automatically
+de-weights the sample. The estimator marks itself `degraded` when
+the static rung is active so the GCS surfaces the warn banner.
+
+A future scale source (vision-only depth, or a stereo-VIO derived
+scale) plugs in behind the same `BaseScaleSource` ABC. The estimator
+does not need to know which rung produced the number.
+
+---
+
+## The shim and the vendor binaries
+
+The VIO modes spawn an out-of-process vendor binary via the plugin
+SDK's `process.spawn` allowlist. The plugin host's subprocess sandbox
+checks that the basename is declared in the manifest's
+`subprocess_spawn` list and that the binary lives under
+`<install_dir>/vendor/`. The signed `.adosplug` archive bundles the
+binary; on install the supervisor extracts it under the plugin's
+cgroup slice.
+
+```
++---------------------+   SHM ring (frames)    +---------------------+
+| vision-nav (Python) | ────────────────────>  | ados_openvins_shim  |
+|                     |   UDS msgpack (IMU,    | (C++ + libov_msckf) |
+|                     |   pose, config, alive) |                     |
+|                     | <────────────────────  |                     |
++---------------------+                        +---------------------+
+        ▲                                              │
+        │ EstimatorOutput                              │ libov_msckf
+        ▼                                              ▼
+  component_router                                VioManager loop
+  -> comp 197                                     (MSCKF state)
+```
+
+The same shim shape handles both engines. `OpenVinsEngine` and
+`VinsFusionEngine` differ only in the binary basename and the
+engine-id string they advertise on the handshake. Adding a third VIO
+engine (ORB-SLAM3, for example) is a new subclass of `BaseVioEngine`
+plus a registry entry plus a vendor binary that speaks the IPC v1
+protocol.
+
+The IPC protocol is documented inline in `shim/engine.py`. The wire
+format is length-prefixed msgpack on a SOCK_SEQPACKET UDS (with a
+SOCK_STREAM fallback). The control channel handles
+hello/hello_ack/config/imu/pose/alive/log/shutdown messages; the
+SHM ring carries frames zero-copy.
+
+---
+
+## The pre-arm gate
+
+`PreArmGate.evaluate()` is a pure function over `PreArmInputs`. It
+produces a `PreArmReport` with a list of individual checks, each
+carrying a severity (`ok` / `pending` / `blocking`) and an
+operator-readable detail string.
+
+The gate is mode-aware. Adding a new mode means:
+
+1. Adding the mode key to the registry in `estimators/__init__.py`.
+2. Adding the mode literal to `config.py` (`VisionNavConfig.mode`).
+3. Adding a branch to `PreArmGate.evaluate()` that picks the right
+   check set for the new mode.
+4. Adding the mode label to the GCS `ModeCard` and the
+   `navigationModeBadge` helper.
+
+The gate does not call out to the network, does not touch the
+filesystem, and never blocks. The plugin invokes it on the same
+heartbeat tick that publishes the snapshot to the cloud relay.
+
+---
+
+## How a heartbeat is built
+
+Every tick, `HealthPublisher.snapshot()` returns:
+
+```json
+{
+  "opticalFlowSupported": true,
+  "vioSupported": false,
+  "rangefinderTopology": "companion",
+  "recommendedCameraId": "/dev/video0",
+  "flowQuality": 180,
+  "flowRateHz": 29.5,
+  "flowDistanceM": 1.25,
+  "vioState": "absent",
+  "vioResetCounter": 0,
+  "vioQuality": null,
+  "companionState": "active",
+  "mode": "optical_flow",
+  "availableEstimators": [
+    "off",
+    "optical_flow",
+    "optical_flow_degraded",
+    "vio_openvins",
+    "vio_vins_fusion"
+  ],
+  "estimatorState": "converged",
+  "flowScaleSource": "rangefinder",
+  "imuSource": "mavlink-raw-imu",
+  "imuRateHz": 100,
+  "cameraImuSyncOffsetMs": 4.2,
+  "cameraIntrinsicsLoaded": true,
+  "preArmReport": {
+    "mode": "optical_flow",
+    "armable": true,
+    "checks": [
+      {"id": "companion_active", "severity": "ok", "detail": ""},
+      {"id": "flow_quality", "severity": "ok", "detail": "Quality 180/255."},
+      {"id": "rangefinder", "severity": "ok", "detail": "Topology: companion"}
+    ]
+  }
+}
+```
+
+This rides the cloud relay's `cmd_droneStatus.navigation` field. The
+Mission Control normaliser reads the field through
+`infer-capabilities.ts:normalizeNavigation` and routes it into the
+per-drone `agent-capabilities-store`. Every UI surface
+(`NavigationTab`, `ModeCard`, `SensorsCard`, `EstimatorCard`,
+`FallbackBanner`, `EkfSourceSwitcher`, `PreArmStatus`, the drone-card
+pill, and the fleet GPS-denied count) reads from that store.
+
+---
+
+## Adding a new estimator
+
+The full recipe:
+
+1. **Implement** `BaseEstimator` in a new file under `estimators/`.
+2. **Register** the class in the `ESTIMATOR_REGISTRY` dict in
+   `estimators/__init__.py`. The registry key must equal the class's
+   `estimator_id` attribute (a contract test enforces this).
+3. **Extend** the `mode` literal in `config.py`
+   (`VisionNavConfig.mode`).
+4. **Add a branch** to `PreArmGate.evaluate()` that lists the
+   pre-arm checks the new estimator needs.
+5. **Update** the GCS:
+   - Add the mode to `ALL_MODES` in `ModeCard.tsx` with a description
+     and hardware-requirements string.
+   - Add the mode to `EstimatorMode` in `types.ts`.
+   - Add the mode badge to `navigationModeBadge` in the host GCS so
+     the drone-card pill renders correctly.
+6. **Write tests**. The existing `tests/test_estimators_scaffold.py`
+   patterns cover the contract; the new estimator's tests verify the
+   state machine + output shape.
+
+Doing this for a stereo VIO engine, a learned monocular depth
+network, or a vendor MSCKF implementation is the same recipe each
+time. The plugin pipeline does not need changes.

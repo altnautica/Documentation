@@ -1,0 +1,237 @@
+---
+title: "Calibration"
+description: "Camera intrinsics, camera-IMU extrinsics, and time-sync calibration for Vision Navigation. Accepts Kalibr-compatible camchain.yaml directly."
+icon: "ruler"
+lastUpdated: "2026-05-16"
+---
+
+# Calibration
+
+The VIO modes need a calibrated camera plus a known transform between
+the camera frame and the IMU frame and a static time offset between
+the two clocks. Without good calibration the estimator either refuses
+to converge or converges to a drifting answer.
+
+The plugin accepts a Kalibr-compatible `camchain.yaml` file. If you
+have an existing calibration from Kalibr's
+`kalibr_calibrate_imu_camera` tool you can drop the file in directly.
+If you do not, the calibration wizard in Mission Control walks you
+through capturing the data.
+
+## What gets calibrated
+
+| Item | What it is | Where it is used |
+|---|---|---|
+| Intrinsics | Camera matrix K (fx, fy, cx, cy) and distortion coefficients | Every frame the tracker processes |
+| Extrinsics | The SE(3) transform from the IMU frame to the camera frame | Every IMU sample the estimator fuses |
+| Time offset | The scalar `timeshift_cam_imu` in seconds | The frame-IMU pairing in the time aligner |
+
+Optical-flow modes (`optical_flow`, `optical_flow_degraded`) do not
+strictly need extrinsics. They do benefit from accurate intrinsics
+because the tracker uses the focal length to convert pixel
+displacement into angular flow. The plugin ships defaults that are
+good enough for a downward-pointing webcam at 640×480 but you should
+upload real intrinsics for any precision work.
+
+VIO modes need all three.
+
+---
+
+## Supported file format
+
+The loader accepts `cam0` blocks from a Kalibr `camchain.yaml` file.
+Both layouts work:
+
+<CodeGroup>
+
+```yaml Canonical Kalibr (cam0 wrapper)
+cam0:
+  camera_model: pinhole
+  intrinsics: [1385.4, 1384.1, 1014.2, 760.7]
+  distortion_model: radtan
+  distortion_coeffs: [-0.3142, 0.1051, 0.00018, -0.00021]
+  resolution: [2028, 1520]
+  T_cam_imu:
+    - [1.00000, 0.00472, -0.00389, 0.00000]
+    - [-0.00475, 0.99998, -0.00735, 0.01000]
+    - [0.00385, 0.00737, 0.99996, -0.02000]
+    - [0.0,     0.0,     0.0,      1.0]
+  timeshift_cam_imu: -0.0421
+  rostopic: /cam0/image_raw
+```
+
+```yaml Bare block (no cam0 wrapper)
+camera_model: pinhole
+intrinsics: [1385.4, 1384.1, 1014.2, 760.7]
+distortion_model: radtan
+distortion_coeffs: [-0.3142, 0.1051, 0.00018, -0.00021]
+resolution: [2028, 1520]
+T_cam_imu:
+  - [1.00000, 0.00472, -0.00389, 0.00000]
+  - [-0.00475, 0.99998, -0.00735, 0.01000]
+  - [0.00385, 0.00737, 0.99996, -0.02000]
+  - [0.0,     0.0,     0.0,      1.0]
+timeshift_cam_imu: -0.0421
+```
+
+</CodeGroup>
+
+Multi-camera files (`cam1`, `cam2`, ...) are accepted. Only `cam0` is
+read; the rest are ignored. The `rostopic` field is accepted for
+Kalibr compatibility and ignored at load time.
+
+---
+
+## Field reference
+
+### `camera_model`
+
+The plugin supports `pinhole` only. Fisheye-class models (`omni`,
+`ds`, `eucm`) are rejected at load time with a clear error message.
+
+### `intrinsics`
+
+Four floats: `[fx, fy, cx, cy]` in pixels.
+
+The loader checks that `fx > 0`, `fy > 0`, and the principal point
+`(cx, cy)` lies inside the frame `[0, width]` × `[0, height]`. A
+principal point far from the image centre is suspicious but not
+rejected.
+
+### `distortion_model`
+
+One of:
+
+- `radtan`: Brown-Conrady. The default for almost every consumer USB
+  camera. Coefficients are `[k1, k2, p1, p2]` (radial k1/k2, tangential
+  p1/p2).
+- `equidistant`: Kannala-Brandt fisheye. Coefficients are `[k1, k2,
+  k3, k4]` (all radial).
+- `none`: operator pre-rectified the frames upstream. Empty
+  coefficient list.
+
+The radtan coefficient sanity bound is `|k1|, |k2| ≤ 2.0`. Anything
+beyond that is almost always a bad calibration and is rejected.
+
+### `T_cam_imu`
+
+The SE(3) transform from the IMU body frame to the camera frame. A
+4×4 row-major matrix. The loader checks:
+
+- Bottom row equals `[0, 0, 0, 1]` within 1e-6.
+- The top-left 3×3 is orthonormal (`R @ R.T ≈ I` within 1e-4).
+- The rotation determinant is `+1` (not `-1`; a reflection is not a
+  valid SE(3)).
+- The translation magnitude is at most 1.0 m. Drone cam-IMU lever
+  arms are centimetre-scale; anything bigger is almost always a
+  metres-vs-millimetres unit error.
+
+### `timeshift_cam_imu`
+
+The scalar time offset in seconds. Sign convention follows Kalibr:
+
+```
+t_imu = t_cam + timeshift_cam_imu
+```
+
+A positive value means the IMU clock is ahead of the camera clock.
+A negative value (common on USB UVC where the frame timestamp is set
+after USB transfer completes) means the camera clock is ahead.
+
+Sanity bound: `|timeshift_cam_imu| < 0.5 s`. Values above 0.2 s pass
+load but the GCS sensors card surfaces a yellow warning ("suspicious
+calibration").
+
+---
+
+## Time-sync drift bands
+
+The plugin runs a time aligner that pairs each camera frame with the
+closest IMU sample and watches the residual offset over a sliding
+window. The GCS surfaces the average residual on the sensors card,
+colour-coded:
+
+| Band | Average residual | Meaning |
+|---|---|---|
+| Green | ≤ 10 ms | Acceptable for VIO arm |
+| Yellow | 10 to 30 ms | Degraded; warns but arms |
+| Red | > 30 ms | Refuses to arm in VIO mode |
+
+The residual is the absolute distance between the calibrated target
+time (`frame_ts + timeshift_cam_imu`) and the nearest real IMU
+sample. Sub-millisecond residuals are achievable with a
+hardware-triggered camera and a real-time IMU. Tens of milliseconds
+are typical on a generic USB UVC stack with software timestamps.
+
+If you see residuals climbing past 30 ms during a calibration run,
+re-run `kalibr_calibrate_imu_camera` against a fresh capture and
+update the `timeshift_cam_imu` value. A static offset stays static;
+only changes to the camera mode (resolution, frame rate, exposure)
+shift it.
+
+---
+
+## Capturing a new calibration
+
+Kalibr's calibration capture procedure works as published. The short
+version:
+
+1. Print a Kalibr **AprilGrid** target (6×6 tags, `t36h11` family)
+   at roughly 80 cm × 80 cm. Mount it rigid on a flat surface;
+   foamcore works well.
+2. Capture a synchronised rosbag of camera frames and IMU samples
+   while moving the rig in slow figure-eights in front of the
+   target. Aim for 60 to 90 seconds of motion across all three
+   rotational axes.
+3. Run `kalibr_calibrate_imu_camera` against the rosbag. The output
+   is a `camchain.yaml` file ready to upload.
+
+Specific commands are in the
+[Kalibr wiki camera-IMU calibration page](https://github.com/ethz-asl/kalibr/wiki/camera-imu-calibration).
+
+Calibration is a one-time operation per camera + IMU pair. If you
+swap the camera or the IMU you must re-run it. If you change camera
+modes (resolution, frame rate, exposure profile) the `timeshift`
+value drifts and should be re-measured.
+
+---
+
+## Mission Control calibration card
+
+The sensors card on the Navigation tab shows the calibration state:
+
+- **Camera row** carries the device path, the resolution and frame
+  rate the agent picked, an "Calibrated / Not calibrated" pill, and
+  a Calibrate CTA. The CTA opens the upload dialog (drag in a
+  `camchain.yaml`) or starts the guided capture flow.
+- **IMU row** shows the source (`mavlink-raw-imu` or
+  `mavlink-scaled-imu2`), the smoothed sample rate in Hz, and the
+  sync offset pill (green / yellow / red per the bands above).
+
+The pre-arm card refuses arm in VIO mode while intrinsics or
+extrinsics are not loaded. The error message tells the operator which
+file is missing and where to upload it.
+
+---
+
+## What if I do not have Kalibr?
+
+Optical-flow modes work fine with default intrinsics for typical
+downward-pointing webcams. Upload your camera resolution if you can;
+the loader fills sensible defaults for the rest.
+
+VIO modes refuse to arm without intrinsics and extrinsics. There is
+no shortcut; you need the calibration. The Kalibr capture is the
+shortest path. A future release of this plugin may ship an in-app
+calibration capture flow that does not require Kalibr at all, but for
+now the upstream tool is the supported route.
+
+---
+
+## Next steps
+
+- [Modes](/drone-agent/vision-nav-modes) for which modes need
+  calibration
+- [Troubleshooting](/drone-agent/vision-nav-troubleshooting) for what
+  to do when calibration is loaded but the estimator still does not
+  converge

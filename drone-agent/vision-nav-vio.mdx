@@ -24,35 +24,93 @@ Optical flow tells the EKF "the drone is moving north at 2.1 m/s." VIO tells the
 
 The trade-off is compute. A monocular VIO at 30 Hz on a 640x480 camera needs an NPU or a strong CPU. The plugin's VIO mode will refuse to enable on boards that don't have one.
 
+## Two engines, side by side
+
+The plugin ships two VIO modes:
+
+- **`vio_openvins`** uses OpenVINS, a filter-based (MSCKF)
+  estimator. Lower CPU cost, strong on fast motion, slightly looser
+  bound on long-flight drift.
+- **`vio_vins_fusion`** uses HKUST VINS-Fusion, a sliding-window
+  bundle-adjustment estimator. Higher CPU cost, tighter drift bound
+  in feature-rich scenes, stronger in low-feature or texture-poor
+  environments.
+
+OpenVINS is the default. VINS-Fusion is the advanced option for
+boards with the headroom.
+
 ## Hardware requirements
 
-The current plan is monocular VIO using a vendor binary built from the OpenVINS open-source pipeline. The binary takes images and IMU samples in, produces poses out.
+The plugin's VIO modes target a monocular forward-facing camera plus
+the FC IMU. Stereo and full-SLAM (loop-closure) engines are not in
+the first VIO release; the architecture leaves the seam open.
 
-| Board | VIO support (planned) |
-|-------|----------------------|
-| Radxa ROCK 5C Lite (RK3582, 6 TOPS NPU) | Yes, primary target |
-| Radxa CM4 (RK3588S2, 6 TOPS NPU) | Yes |
-| Rockchip RK3576 (6 TOPS NPU) | Yes |
-| Raspberry Pi 5 (BCM2712, no NPU) | Likely, NEON-optimized fallback |
-| Raspberry Pi CM5 | Likely, NEON fallback |
-| Raspberry Pi 4B, CM4 | Marginal, low frame rate |
-| Raspberry Pi Zero 2 W | No |
+| Board | OpenVINS | VINS-Fusion |
+|-------|----------|-------------|
+| Radxa ROCK 5C Lite (RK3582) | Yes, primary target | Yes |
+| Radxa CM4 (RK3588S2) | Yes | Yes |
+| Rockchip RK3576 | Yes | Yes |
+| Raspberry Pi 5 (BCM2712) | Likely, NEON fallback | Marginal |
+| Raspberry Pi CM5 | Likely, NEON fallback | Marginal |
+| Raspberry Pi 4B, CM4 | Marginal | No (over budget) |
+| Raspberry Pi Zero 2 W | No | No |
 
-Camera: a forward-facing global-shutter or rolling-shutter camera at 30 Hz, 640x480 or higher. The plugin will not require a stereo camera in the first VIO release. A stereo-VIO option is on the longer horizon.
+Camera: a forward-facing global-shutter camera at 30 Hz, 640x480 or
+higher. A rolling-shutter camera works but is more sensitive to fast
+motion. Global shutter is strongly preferred.
 
-IMU: the FC's IMU, sampled through the existing MAVLink `HIGHRES_IMU` or `SCALED_IMU` messages at the FC's native rate (usually 200 Hz on ArduPilot, up to 1000 Hz on PX4).
+IMU: the FC's IMU, sampled through MAVLink. The plugin prefers
+`SCALED_IMU2` (100 Hz on ArduPilot) and falls back to `RAW_IMU`
+(50 to 200 Hz depending on FC config). A higher-rate direct IMU path
+(I2C or DroneCAN) is a later option.
 
-## How it will plug in
+## How it plugs in
 
-The VIO engine will run as a vendor binary inside the plugin's process sandbox, started by the plugin and watched by the supervisor. Frames and IMU samples flow into the binary over a Unix socket; pose estimates flow out the same way. The plugin then emits `VISION_POSITION_ESTIMATE` and `ODOMETRY` MAVLink messages on component 197 (`MAV_COMP_ID_VISUAL_INERTIAL_ODOMETRY`) at 30 Hz.
+The VIO engine runs as a vendor binary inside the plugin's process
+sandbox, started by the plugin and watched by a heartbeat watchdog.
+Frames flow into the binary through a shared-memory ring (zero-copy);
+IMU samples and control messages flow through a Unix-domain socket
+encoded as length-prefixed msgpack. Pose estimates flow back over the
+same socket.
 
-ArduPilot's EKF3 fuses these messages when `VISO_TYPE` and `EK3_SRC1_POSXY` are set to the external-vision source. PX4's EKF2 fuses them when `EKF2_EV_CTRL` enables external vision.
+The plugin then emits `VISION_POSITION_ESTIMATE` on MAVLink
+component 197 (`MAV_COMP_ID_VISUAL_INERTIAL_ODOMETRY`) at 30 Hz.
+ArduPilot's EKF3 fuses these messages when `EK3_SRC1_POSXY`,
+`EK3_SRC1_VELXY`, and `EK3_SRC1_YAW` are set to `ExternalNav` (6).
+PX4's EKF2 fuses them when `EKF2_EV_CTRL` enables external vision.
+
+The IPC protocol is documented in the
+[Architecture page](/drone-agent/vision-nav-architecture). Adding a
+third engine (ORB-SLAM3, a future home-grown estimator) is a single
+subclass of the shim's engine base class plus a new vendor binary
+that speaks the same protocol.
+
+## Calibration
+
+VIO needs calibrated intrinsics and known camera-IMU extrinsics
+including the static time offset between the two clocks. The plugin
+accepts Kalibr-compatible `camchain.yaml` files directly. See
+[Calibration](/drone-agent/vision-nav-calibration) for the full
+workflow.
+
+The pre-arm gate refuses to arm a VIO mode without loaded
+calibration files. The GCS sensors card surfaces a Calibrate CTA
+when intrinsics are not yet loaded.
 
 ## GPL §6 compliance
 
-OpenVINS is GPL-3.0-licensed. Shipping a pre-compiled binary inside the plugin archive triggers the GPL source-offer obligation. The plugin's manifest will declare a `vendor_attribution` block with the upstream repository, the exact commit SHA the binary was built from, the license, and a source-offer URL. The install dialog will surface this block during Stage 1 so operators know what they're installing.
+Both OpenVINS and VINS-Fusion are GPL-3.0-licensed. Shipping a
+pre-compiled binary inside the plugin archive triggers the GPL
+source-offer obligation. The plugin's manifest declares a
+`vendor_attribution` block for each engine with the upstream
+repository, the license, the upstream version, and a notice. The
+install dialog surfaces these blocks during Stage 1 so operators
+know what they're installing.
 
-This is the structural reason the VIO release lands separately from optical flow. Optical flow ships pure Python; VIO needs the vendor-binary path and the supporting manifest schema. Both pieces are scoped; both will arrive together.
+The Python plumbing, the GCS surfaces, the pre-arm gate, the
+estimator card, and the fallback banner all ship today. The vendor
+binaries land in a follow-up release once they're validated end-to-end
+on target hardware.
 
 ## What you can do today
 

@@ -1,0 +1,232 @@
+---
+title: "Modes"
+description: "The six estimator modes Vision Navigation can run, what hardware each requires, and the fallback ladder when a sensor goes degraded."
+icon: "list"
+lastUpdated: "2026-05-16"
+---
+
+# Vision Navigation Modes
+
+The plugin ships a mode picker that lets the operator choose how the
+companion produces a GPS-denied state estimate. Six modes are
+available. The Mission Control mode card filters the list against the
+estimators the running plugin can actually instantiate, so an operator
+never sees an option the agent cannot run on the detected hardware.
+
+Mode is a per-drone config field. Changing it from the GCS rewrites
+the plugin's config on the agent, re-instantiates the estimator, and
+publishes a new heartbeat on the next tick.
+
+## The modes at a glance
+
+| Mode | Estimator | Camera | IMU | Rangefinder | MAVLink |
+|---|---|---|---|---|---|
+| `off` | None | optional | optional | optional | none |
+| `optical_flow` | Lucas-Kanade | downward | gyro | required | comp 198 |
+| `optical_flow_degraded` | Lucas-Kanade | downward | gyro | optional | comp 198 |
+| `vio_openvins` | OpenVINS | forward | gyro+accel | optional | comp 197 |
+| `vio_vins_fusion` | VINS-Fusion | forward | gyro+accel | optional | comp 197 |
+| `hybrid_of_plus_vio` | Both | downward + forward | gyro+accel | optional | comp 198 + 197 |
+
+`comp 198` is the peripheral MAVLink component (`OPTICAL_FLOW_RAD`).
+`comp 197` is `MAV_COMP_ID_VISUAL_INERTIAL_ODOMETRY`
+(`VISION_POSITION_ESTIMATE`). The ArduPilot EKF3 fuses the matching
+source set when one of `EK3_SRC1_VELXY`, `EK3_SRC1_POSXY`, or
+`EK3_SRC1_YAW` is configured for the corresponding input.
+
+---
+
+## off
+
+The plugin is loaded with all sensors discovered and the heartbeat is
+publishing, but the estimator emits nothing. Useful for:
+
+- Hardware diagnostics. Check that the camera and rangefinder are
+  detected before you fly.
+- Calibration runs. The intrinsics + extrinsics upload flow does not
+  need an active estimator.
+- Demo mode. Mission Control can show the Navigation tab populated
+  without feeding the EKF.
+
+The drone-card fleet pill is suppressed in `off`; the operator gets
+no visual nag.
+
+## optical_flow
+
+The default GPS-denied path. A downward camera plus a rangefinder.
+The Lucas-Kanade tracker produces a body-frame angular flow rate; the
+rangefinder gives it scale; the result becomes `OPTICAL_FLOW_RAD` on
+comp 198 at 10 Hz.
+
+Use this mode when:
+
+- You have a downward USB or CSI camera
+- You have a rangefinder (TF-Luna, LIDAR-Lite, VL53L1X, or one
+  relayed from the FC over `DISTANCE_SENSOR`)
+- You want the most reliable GPS-denied estimator the plugin offers
+  for low-altitude hover and waypoint flight
+
+Mission Control shows an "OF" pill on the drone card and a
+green-toned mode card. Pre-arm refuses to arm without a healthy
+rangefinder.
+
+## optical_flow_degraded
+
+Same Lucas-Kanade tracker, but the scale comes from a four-rung
+altitude ladder instead of a dedicated rangefinder. The ladder walks:
+
+1. `GLOBAL_POSITION_INT.relative_alt` from the FC's baro-fused EKF.
+   Quality multiplier 0.7.
+2. `VFR_HUD.alt` minus the captured take-off altitude. Quality 0.6.
+3. `GPS_RAW_INT.alt` minus take-off, gated on a 3D fix with HDOP ≤ 2
+   and an operator-set outdoor flag. Quality 0.4.
+4. A static 1.5 m fallback. Quality 0.2.
+
+The quality multiplier is applied to the raw flow quality before the
+EKF sees it, so the firmware automatically de-weights degraded rungs.
+The estimator state is marked `degraded` whenever the static fallback
+is active.
+
+Use this mode when:
+
+- You do not have a rangefinder on the airframe
+- The intended flight is short and at low altitude where baro is
+  trustworthy
+- You accept that horizontal velocity accuracy is lower than the
+  full-rangefinder mode
+
+Mission Control shows an "OF*" pill on the drone card (asterisk
+denotes degraded) and a warn-toned mode card. The fallback banner
+fires when the ladder drops to the static rung for more than 5
+seconds.
+
+## vio_openvins
+
+Visual-inertial odometry using OpenVINS. A forward-facing camera and
+the FC IMU feed a multi-state-constraint Kalman filter that produces
+a full six-degree-of-freedom pose at the camera frame rate.
+
+Output: `VISION_POSITION_ESTIMATE` on MAVLink component 197 at 30 Hz.
+ArduPilot EKF3 fuses this when `EK3_SRC1_POSXY`, `EK3_SRC1_VELXY`,
+and `EK3_SRC1_YAW` are set to `ExternalNav` (6).
+
+Use this mode when:
+
+- You have a forward-facing camera (global shutter strongly preferred
+  over rolling shutter)
+- You are running on a board with at least one Cortex-A76 core or
+  equivalent (Rock 5C Lite, CM4-class, RK3576)
+- You want pose plus heading and not just velocity
+- You will fly higher than the rangefinder can see, or in scenes
+  where the downward camera has nothing to track
+
+Camera intrinsics and camera-IMU extrinsics must be loaded before the
+estimator can be armed. See
+[Calibration](/drone-agent/vision-nav-calibration).
+
+## vio_vins_fusion
+
+The same role as `vio_openvins` but uses HKUST VINS-Fusion (a
+sliding-window bundle-adjustment estimator) instead of OpenVINS.
+
+VINS-Fusion is more accurate than OpenVINS in low-feature or
+texture-poor scenes because it does global optimisation over a
+sliding window of frames. The cost is CPU: it needs roughly twice
+the cycles OpenVINS uses for the same frame rate.
+
+Use this mode when:
+
+- You are running on a board with enough headroom (Rock 5C Lite or
+  better; not Raspberry Pi 4B)
+- The flight profile includes long stretches of low-feature scenes
+  (corridor flight, indoor warehouse, repetitive texture) where the
+  filter-only OpenVINS path would drift faster
+- You can spare an extra 250 to 350 MB of RAM beyond OpenVINS's
+  footprint
+
+The Mission Control UI calls both VIO modes "VIO" on the drone-card
+pill so the operator sees the same shorthand regardless of which
+engine is selected; the estimator card surfaces the specific engine
+name.
+
+## hybrid_of_plus_vio
+
+Both estimators running in parallel. A downward camera feeds the
+Lucas-Kanade tracker; a forward camera feeds the VIO engine. The EKF
+sees both inputs and fuses them.
+
+Use this mode when:
+
+- You have two cameras mounted on the airframe (downward + forward)
+- You have CPU headroom for both estimators
+- You want the redundancy of OF for low-altitude hover plus the
+  altitude-independence of VIO
+
+Mission Control shows a "Hybrid" pill. Both pre-arm check sets must
+pass before the drone is armable.
+
+---
+
+## Fallback ladder
+
+The plugin does not switch modes automatically in flight. Mode is an
+operator decision. What it does do is degrade gracefully within a
+mode:
+
+1. **Within `optical_flow`** the rangefinder is required at arm. If
+   the rangefinder fails mid-flight the estimator marks itself
+   `degraded` and the GCS surfaces the fallback banner. The operator
+   chooses to land, switch source set on ArduPilot, or take manual.
+
+2. **Within `optical_flow_degraded`** the four-rung scale ladder
+   walks itself. The estimator stays in `degraded` whenever the
+   static rung is active. The operator sees the active scale source
+   in the sensors card and can flip the outdoor flag to enable GPS
+   scaling.
+
+3. **Within the VIO modes** a sync-offset breach (greater than 30 ms
+   sustained) marks the estimator `degraded`. A binary heartbeat miss
+   for more than 2 seconds triggers an internal restart. The estimator
+   reports `failed` after three restart attempts inside the cooldown
+   window.
+
+4. **The EKF source-set switcher** is the final operator escape
+   hatch. Switching back to `EK3_SRC1` (GPS primary) at altitude is
+   safe on ArduPilot; the EKF tolerates a one-time innovation spike
+   on switch. PX4 does not support runtime source switching: the
+   change requires a parameter write and an EKF restart.
+
+---
+
+## Pre-arm check matrix
+
+Each mode has a different pre-arm check set. The plugin's pre-arm
+gate evaluates them every heartbeat tick and surfaces the result on
+Mission Control's pre-arm card.
+
+| Check | OF | OF-degraded | VIO | Hybrid |
+|---|---|---|---|---|
+| Companion process active | yes | yes | yes | yes |
+| Flow quality ≥ 50 | yes | yes | no | yes |
+| Rangefinder healthy | yes | no | no | no |
+| Any scale source healthy | no | yes | no | yes |
+| Estimator converged | no | no | yes | yes |
+| Intrinsics loaded | no | no | yes | yes |
+| Extrinsics loaded | no | no | yes | yes |
+| Sync offset ≤ 30 ms | no | no | yes | yes |
+| Feature count ≥ 20 | no | no | yes | yes |
+
+Cells marked **no** mean the check is not part of that mode's gate;
+the cell does not block arm. Cells marked **yes** are required for
+arm. The gate aggregates across cells: the drone is armable only when
+every required check is green.
+
+---
+
+## Next steps
+
+- [Calibration](/drone-agent/vision-nav-calibration) for the VIO setup
+- [Troubleshooting](/drone-agent/vision-nav-troubleshooting) for what to
+  do when a check fails or the estimator goes degraded
+- [Architecture](/drone-agent/vision-nav-architecture) for developers
+  who want to add a new estimator

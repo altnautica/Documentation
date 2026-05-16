@@ -1,0 +1,257 @@
+---
+title: "Troubleshooting"
+description: "Decision trees for the common failure modes: low optical-flow quality, EKF source-switch rejections, VIO drift, and scale errors."
+icon: "wrench"
+lastUpdated: "2026-05-16"
+---
+
+# Troubleshooting
+
+Most vision-nav surprises fall into one of four families: optical-flow
+quality drops, EKF source switch rejection, VIO drift, and scale
+source confusion. This page walks each family as a decision tree.
+Start at the top of the section that matches your symptom.
+
+---
+
+## Low optical-flow quality
+
+Symptom: the `flowQuality` field on the GCS sensors card is below 50,
+or the estimator state has dropped to `degraded`.
+
+### Step 1: light
+
+Is the scene below roughly 20 lux? Lucas-Kanade tracks corner features
+between frames; both frames need to be bright enough to extract
+corners.
+
+- Add light if you can.
+- Drop the camera frame rate (lower frame rate means longer exposure
+  per frame).
+- Switch to a mono global-shutter camera if you are using a colour
+  rolling-shutter one. Mono sensors have higher quantum efficiency
+  per pixel.
+
+### Step 2: texture
+
+Is the ground featureless (snow, water, fresh asphalt, sand)? The
+tracker needs visual texture to lock onto.
+
+- Move the drone over a more textured surface.
+- Lower the quality threshold via the plugin config (this trades
+  noise for emission rate; the EKF will reject very bad samples on
+  its own innovation gate).
+- Switch to a VIO mode if you have the hardware. VIO uses the IMU to
+  prop up the state when the camera goes blind.
+
+### Step 3: yaw rate
+
+Is the drone rotating fast around its yaw axis? The Lucas-Kanade
+tracker handles small yaw via the gyro-derotation step, but anything
+above roughly 90 °/s starts losing features per frame.
+
+- Slow the yaw command.
+- Increase the camera frame rate so each frame's rotational
+  displacement is smaller.
+- Widen the camera FOV. A wider lens keeps more pixels on the same
+  ground patch per yaw step.
+
+### Step 4: motion blur
+
+Is the drone moving fast horizontally? Long exposure plus high speed
+equals motion blur, and blurred corners do not track.
+
+- Shorten the camera exposure (reduce the AE target gain).
+- Slow the flight.
+- Use a global-shutter camera. Rolling shutters smear differently
+  depending on the direction of motion.
+
+---
+
+## EKF source-switch rejected
+
+Symptom: you press the source switch button in the GCS and the FC
+either does not accept the command or the EKF starts reporting
+unhealthy.
+
+### Step 1: which firmware?
+
+PX4 does not support runtime source-set switching. The GCS button is
+disabled in PX4 mode and the on-page note explains why. The fix is
+to set the parameters via PX4's parameter system and restart the
+EKF. ArduPilot does support runtime switching; the rest of this
+section assumes ArduPilot.
+
+### Step 2: is vision healthy at the moment of the switch?
+
+The switch is gated in the GCS on three conditions:
+
+- `companionState === "active"`
+- For OF source sets: `flowQuality ≥ 50`
+- For VIO source sets: `vioSupported && estimatorState === "converged"`
+
+If any condition is unmet the button is greyed out and the tooltip
+explains which one. Wait for the condition to clear, then retry.
+
+### Step 3: is `EK3_SRC1_VELXY` configured?
+
+The MAVLink command tells the FC to switch SOURCE SET, not to enable
+the source itself. The relevant `EK3_SRC1_*` parameters must already
+be set for the source the operator is selecting:
+
+| Source | `EK3_SRC1_VELXY` | `EK3_SRC1_POSXY` | `EK3_SRC1_YAW` |
+|---|---|---|---|
+| GPS | 3 (GPS) | 3 (GPS) | 1 (Compass) |
+| OF | 5 (OpticalFlow) | 0 (None) | 1 (Compass) |
+| VIO | 6 (ExternalNav) | 6 (ExternalNav) | 6 (ExternalNav) |
+
+If a parameter is wrong the FC silently keeps the previous source.
+Check the ArduPilot tlog for the `EK3_SRC*` values around the time of
+the switch.
+
+### Step 4: innovation spike at the moment of the switch
+
+The EKF tolerates a one-time innovation spike on source switch, but
+if the new source's state is far from the old one the spike can
+trigger an EKF reset. Symptoms:
+
+- `EK3_*` covariance climbing rapidly
+- The vehicle drifting in `LOITER` for a few seconds after the switch
+
+Mitigation: switch on the ground first to confirm the new source's
+state is sensible, then again in flight at a low altitude where a
+short drift is recoverable.
+
+---
+
+## VIO drift
+
+Symptom: position drift greater than 0.5 m over a 5-minute hover, or
+the estimator state alternating between `converged` and `degraded`.
+
+### Step 1: features
+
+How many features is the estimator tracking? The GCS estimator card
+shows the live count. VIO needs at least 20 features for the pre-arm
+gate; sustained operation needs at least 40 to 60 for reasonable
+accuracy.
+
+- Move to a more textured scene.
+- Brighten the scene.
+- Use a wider-FOV lens so more world is in the frame.
+
+### Step 2: sync offset
+
+Is the camera-IMU sync residual in the yellow or red band? The GCS
+sensors card shows the live value.
+
+- Yellow (10 to 30 ms): the estimator will arm but accuracy is
+  reduced. Tolerable for short flights.
+- Red (above 30 ms): pre-arm refuses. Re-run the camera-IMU
+  calibration and update the `timeshift_cam_imu` value in the
+  calibration file.
+
+A static offset that drifted means something about the camera mode
+changed: resolution, frame rate, exposure. Recapture under the same
+mode you fly in.
+
+### Step 3: motion profile
+
+Are you doing pure yaw or pure translation in front of a featureless
+wall? Both starve the bundle-adjustment optimiser.
+
+- Add some altitude motion to introduce parallax.
+- Fly past structure rather than rotating in place.
+- If the flight profile genuinely needs pure yaw, switch to OF or
+  hybrid for the yaw segments.
+
+### Step 4: extrinsics
+
+Is `T_cam_imu` correct? A wrong rotation makes the IMU and camera
+"disagree" about which way is forward; the estimator can converge to
+a wrong answer that drifts.
+
+- Check the translation magnitude. Drone cam-IMU lever arms are
+  centimetre-scale.
+- Verify the rotation block is orthonormal (it should be, the loader
+  validates this) and that you did not transpose the matrix when
+  exporting from Kalibr.
+
+---
+
+## Scale source confusion
+
+Symptom: the `optical_flow_degraded` mode is active and the velocity
+the EKF computes is consistently off by a factor of 2 to 4 in one
+direction.
+
+### Step 1: which rung is active?
+
+The GCS sensors card shows `flowScaleSource`. Possible values:
+
+- `rangefinder`: the plugin is reading a real rangefinder. If you
+  see this in `optical_flow_degraded` mode, the rangefinder is
+  actually wired and you can flip to `optical_flow` mode.
+- `baro`: the plugin is using `GLOBAL_POSITION_INT.relative_alt` or
+  `VFR_HUD.alt` as the scale.
+- `gps`: the GPS rung is active.
+- `none` or missing: no scale source is healthy; the plugin is on
+  the static fallback rung at quality multiplier 0.2.
+
+### Step 2: baro hysteresis
+
+Indoor baros drift. Prop wash on an uncapped baro drifts further.
+HVAC pressure changes can yank the reading by 1 to 2 m in a single
+sample.
+
+- Foam-shield the baro on the FC.
+- Capture take-off altitude indoors and trust the relative value
+  rather than the raw altitude.
+- Wait 30 seconds after entering the indoor space before arming so
+  the baro stabilises.
+
+### Step 3: GPS gate
+
+The GPS rung is gated on `outdoor flag` + 3D fix + HDOP ≤ 2. If you
+flipped the outdoor flag indoors the rung will read GPS altitude
+that has no physical meaning.
+
+- Flip the outdoor flag off when flying indoors.
+- Auto-detection by satellite count + HDOP is a polish item; for now
+  the operator owns the gate.
+
+### Step 4: static fallback
+
+If `flowScaleSource` is missing or the quality multiplier is 0.2,
+none of the rungs is healthy. The plugin is on the 1.5 m static
+fallback to avoid emitting nothing at all.
+
+- Fix the baro first. Without baro the OF-degraded mode is unsafe
+  for flight.
+- If you cannot fix baro, switch to a mode that does not need a
+  scale: VIO produces metric pose directly.
+
+---
+
+## When in doubt
+
+The EKF source switcher button labelled "GPS" is the universal
+escape. On ArduPilot it always works (subject to GPS health). Switch
+back to GPS, land, and diagnose on the ground.
+
+If the diagnosis points at a code issue rather than an operator one,
+file an issue on the
+[ADOSExtensions repo](https://github.com/altnautica/ADOSExtensions/issues)
+with the journalctl excerpt, the MAVLink tlog, and the heartbeat
+sample at the moment of the failure.
+
+---
+
+## Next steps
+
+- [Modes](/drone-agent/vision-nav-modes) for the mode picker and
+  fallback ladder
+- [Calibration](/drone-agent/vision-nav-calibration) for re-running the
+  camera-IMU calibration
+- [Architecture](/drone-agent/vision-nav-architecture) for developers
+  digging into the estimator framework

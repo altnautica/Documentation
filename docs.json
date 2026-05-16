@@ -211,8 +211,12 @@
               "drone-agent/vision-nav-overview",
               "drone-agent/vision-nav-hardware",
               "drone-agent/vision-nav-install",
+              "drone-agent/vision-nav-modes",
               "drone-agent/vision-nav-optical-flow",
-              "drone-agent/vision-nav-vio"
+              "drone-agent/vision-nav-calibration",
+              "drone-agent/vision-nav-vio",
+              "drone-agent/vision-nav-troubleshooting",
+              "drone-agent/vision-nav-architecture"
             ]
           }
         ]
