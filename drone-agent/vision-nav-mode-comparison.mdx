@@ -42,7 +42,7 @@ If you can only read one row of this table, it is this one:
 | Low-light tolerance | n/a | low (without IR illuminator) | low | medium | medium | medium |
 | Fast-yaw tolerance | n/a | medium | medium | medium-high | medium-high | medium-high |
 | Compute requirement | trivial | low (Pi 4B fine) | low (Pi 4B fine) | medium (NPU helps) | high (RK3582+) | high (NPU + cores) |
-| RAM headroom needed | <50 MB | <100 MB | <100 MB | 120 to 180 MB | 250 to 350 MB | 300 to 400 MB |
+| RAM headroom needed | &lt;50 MB | &lt;100 MB | &lt;100 MB | 120 to 180 MB | 250 to 350 MB | 300 to 400 MB |
 | Calibration required | none | sensible defaults OK | sensible defaults OK | intrinsics + extrinsics + timeshift | intrinsics + extrinsics + timeshift | intrinsics + extrinsics + timeshift |
 | Drone-card pill | hidden | "OF" | "OF*" | "VIO" | "VIO" | "Hybrid" |
 | Estimator state | `off` | `converged` when healthy | `degraded` on static rung | `converged` after init | `converged` after init | worse-of-two |
