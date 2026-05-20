@@ -131,6 +131,12 @@
             ]
           },
           {
+            "group": "Extensions",
+            "pages": [
+              "mission-control/installing-plugins"
+            ]
+          },
+          {
             "group": "Advanced",
             "pages": [
               "mission-control/simulation",
@@ -176,7 +182,6 @@
               "drone-agent/dashboard-pairing",
               "drone-agent/dashboard-peripherals",
               "drone-agent/dashboard-plugins",
-              "drone-agent/dashboard-suites",
               "drone-agent/dashboard-ota",
               "drone-agent/dashboard-logs",
               "drone-agent/dashboard-diagnostics",
@@ -196,12 +201,12 @@
             ]
           },
           {
-            "group": "Scripting",
+            "group": "Scripting and Extensions",
             "pages": [
               "drone-agent/python-sdk",
               "drone-agent/text-commands",
-              "drone-agent/application-suites",
-              "drone-agent/plugins"
+              "drone-agent/plugins",
+              "drone-agent/extensions-catalog"
             ]
           },
           {
@@ -283,7 +288,6 @@
               "drone-agent/dashboard-pairing",
               "drone-agent/dashboard-peripherals",
               "drone-agent/dashboard-plugins",
-              "drone-agent/dashboard-suites",
               "drone-agent/dashboard-ota",
               "drone-agent/dashboard-logs",
               "drone-agent/dashboard-diagnostics",

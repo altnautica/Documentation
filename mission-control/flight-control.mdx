@@ -4,10 +4,10 @@ description: "Manual flight with gamepad, keyboard, and guided mode commands."
 icon: "gamepad"
 ---
 
-The Command tab is your cockpit. It provides live telemetry, video feed, manual flight controls, and smart flight modes. This is where you fly your drone.
+The Command tab is your cockpit. It provides live telemetry, video feed, and manual flight controls. This is where you fly your drone.
 
 <Frame caption="Command tab with video feed, telemetry strip, and flight controls">
-  <img src="/images/placeholder-flight-control.png" alt="Command tab showing live flight interface" />
+  <img src="/images/dashboard/flight-control.png" alt="Command tab showing live flight interface" />
 </Frame>
 
 ## Command Tab Layout
@@ -17,9 +17,9 @@ The Command tab has several areas:
 - **Video feed** (center): Live camera stream from the drone, with OSD overlay
 - **Telemetry strip** (bottom or side): Attitude, speed, altitude, battery, GPS
 - **Actions panel** (right): Arm/disarm, mode change, guided commands
-- **Smart modes panel**: Follow-Me, Orbit, QuickShots, obstacle avoidance
 - **Fleet sidebar** (left): Drone selection when multiple are connected
 - **Mini-map** (corner): Overhead view of drone position
+- **Plugins tab**: Per-drone plugin surfaces installed from the extension registry (Follow-Me, Orbit, thermal overlay, gimbal control, etc. ship as plugins). See [Installing plugins](/mission-control/installing-plugins).
 
 ## Gamepad Control
 
@@ -85,24 +85,11 @@ Guided mode lets you command the drone to fly to specific positions. In this mod
 
 A confirmation dialog appears before sending guided commands, showing the target position and distance from the drone's current location.
 
-## Smart Modes
+## Automated Flight Behaviors
 
-The Command tab includes smart flight modes that automate common flying patterns:
+Higher-level flight behaviors (Follow-Me, Orbit, QuickShots, obstacle avoidance, precision landing) ship as plugins through the ADOS Extensions registry rather than as a built-in catalog. Browse the [Plugins tab](/mission-control/installing-plugins) on the per-drone view to install behaviors that match your hardware and mission.
 
-<CardGroup cols={2}>
-  <Card title="Follow-Me" icon="person-walking">
-    The drone follows your phone or GCS location using GPS. Configure follow distance, altitude, and bearing offset.
-  </Card>
-  <Card title="Orbit" icon="rotate">
-    The drone circles a point of interest at a set radius, altitude, and speed. Useful for inspection and videography.
-  </Card>
-  <Card title="QuickShots" icon="camera-movie">
-    Automated camera moves: dronie, rocket, circle, helix, and boomerang. One tap to launch.
-  </Card>
-  <Card title="Obstacle Avoidance" icon="shield">
-    Configure avoidance behavior when the drone has proximity sensors. Set response modes and safety distances.
-  </Card>
-</CardGroup>
+Plugins contribute their own UI tabs and controls scoped to the drone you install them on, so a behavior available on one drone in your fleet does not have to be active on the others.
 
 ## Actions Panel
 

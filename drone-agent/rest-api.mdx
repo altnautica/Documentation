@@ -48,7 +48,7 @@ The API is organized into route modules, each handling a domain:
 | `video` | `/api/video` | Video pipeline, snapshot, recording |
 | `wfb` | `/api/wfb` | WFB-ng link stats |
 | `scripts` | `/api/scripts` | Script management, run, stop |
-| `suites` | `/api/suites` | Suite activation, status |
+| `plugins` | `/api/plugins` | Plugin lifecycle, install, list, perms |
 | `pairing` | `/api/pairing` | Pair, unpair, info |
 | `ota` | `/api/ota` | Update check, install, rollback |
 | `services` | `/api/services` | Systemd service control |
@@ -57,7 +57,7 @@ The API is organized into route modules, each handling a domain:
 | `fleet` | `/api/fleet` | Fleet/swarm coordination |
 | `peripherals` | `/api/peripherals` | USB devices, sensors |
 | `params` | `/api/params` | FC parameter reads from the local cache |
-| `features` | `/api/features` | Feature flags by tier |
+| `vision_models` | `/api/vision-models` | Vision model registry for plugin consumers |
 | `ground_station` | `/api/v1/ground-station` | Ground station specific endpoints |
 
 ## Common endpoints
@@ -74,7 +74,7 @@ Response:
 
 ```json
 {
-  "version": "0.28.13",
+  "version": "0.36.41",
   "uptime_seconds": 3847,
   "board": {
     "name": "Radxa ROCK 5C Lite (RK3582)",

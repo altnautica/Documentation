@@ -33,7 +33,7 @@ The agent handles five core jobs:
 
 | Metric | Value |
 |--------|-------|
-| Current version | 0.28.13 |
+| Current version | 0.36.41 |
 | Language | Python 3.11+ |
 | License | GPLv3 |
 | Supported boards | 20 board profiles |
@@ -77,7 +77,7 @@ The tier determines which features are enabled:
 | 1 | 64-128 MB | MAVLink proxy only |
 | 2 | 256-512 MB | + REST API, basic telemetry |
 | 3 | 1-2 GB | + video pipeline, scripting, cloud |
-| 4 | 4 GB+ | Full autonomy, vision engine, suites |
+| 4 | 4 GB+ | Full autonomy, vision engine, plugin sandbox |
 
 <Tip>
 You do not need to configure the tier manually. The agent detects your board and picks the right tier automatically. You can override it in `/etc/ados/config.yaml` if needed.

@@ -62,7 +62,7 @@ Response:
 ```json
 {
   "status": "update_available",
-  "version": "0.28.13",
+  "version": "0.36.41",
   "changelog": "Fixed video pipeline restart on camera hot-plug. Improved MQTT reconnection."
 }
 ```
@@ -72,7 +72,7 @@ If no update is available:
 ```json
 {
   "status": "up_to_date",
-  "version": "0.28.12"
+  "version": "0.36.40"
 }
 ```
 
@@ -85,10 +85,10 @@ The `ados update` command checks, downloads, installs, and restarts in one step:
 ```bash
 $ ados update
 Checking for updates...
-Update available: v0.28.13
-Install v0.28.13? [y/N]: y
+Update available: v0.36.41
+Install v0.36.41? [y/N]: y
 Downloading and installing...
-Installed v0.28.13
+Installed v0.36.41
 Restarting service...
 Done.
 ```
@@ -128,14 +128,14 @@ If an update causes problems, roll back to the previous version:
 
 ```bash
 $ ados rollback
-Rollback complete. Reverted to v0.28.11.
+Rollback complete. Reverted to v0.36.39.
 ```
 
 Roll back to a specific version:
 
 ```bash
-$ ados rollback 0.28.10
-Rollback complete. Reverted to v0.28.10.
+$ ados rollback 0.36.38
+Rollback complete. Reverted to v0.36.38.
 ```
 
 The rollback command downloads the specified version from PyPI and reinstalls it. Your config is preserved.
@@ -148,7 +148,7 @@ curl -X POST http://localhost:8080/api/ota/rollback \
   -H "X-ADOS-Key: $KEY"
 
 # Rollback to specific version
-curl -X POST "http://localhost:8080/api/ota/rollback?version=0.28.10" \
+curl -X POST "http://localhost:8080/api/ota/rollback?version=0.36.38" \
   -H "X-ADOS-Key: $KEY"
 ```
 
@@ -158,7 +158,7 @@ Check the current OTA state:
 
 ```bash
 $ ados update
-Version:    0.28.12
+Version:    0.36.40
 State:      idle
 Channel:    stable
 Repo:       altnautica/ADOSDroneAgent

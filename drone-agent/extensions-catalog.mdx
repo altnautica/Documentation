@@ -1,0 +1,104 @@
+---
+title: "Extensions catalog"
+description: "First-party extensions shipped by Altnautica through the public ADOSExtensions repo."
+icon: "boxes-stacked"
+lastUpdated: "2026-05-19"
+---
+
+# Extensions catalog
+
+These are the first-party extensions Altnautica publishes through the public [`ADOSExtensions`](https://github.com/altnautica/ADOSExtensions) repo. Each one ships as a signed `.adosplug` archive (Ed25519, signer `altnautica-2026-A`) on GitHub Releases and is browsable from the Mission Control [Plugins tab](/mission-control/installing-plugins) on any drone you've connected.
+
+Every extension is licensed GPL-3.0-or-later; hardware reference designs ship CC0 1.0.
+
+## ADOS Battery Health Panel
+
+| Field | Value |
+|---|---|
+| Plugin id | `com.altnautica.battery-health-panel` |
+| Version | 1.0.0 |
+| Risk | low |
+| Type | GCS-only (iframe) |
+| Agent required | Yes (telemetry source only) |
+| Hardware | Any smart battery the FC already reports |
+
+Cell-level diagnostics, predictive time-to-min, and anomaly alerts. Contributes a **Battery Health** tab under the FC configuration view and a warning-severity notification channel for battery anomalies.
+
+**Permissions:** telemetry battery + MAVLink subscriptions, recording write, three UI slot contributions (`fc.tab`, `notification`, `settings-section`).
+
+## ADOS Thermal Camera (FLIR Lepton USB UVC)
+
+| Field | Value |
+|---|---|
+| Plugin id | `com.altnautica.thermal-flir-lepton-usb` |
+| Version | 1.0.0 |
+| Risk | medium |
+| Type | Hybrid (agent subprocess + GCS iframe) |
+| Hardware | PureThermal 2 USB UVC dongle + FLIR Lepton 3.5 |
+| Supported boards | cm4, cm5, rk3582, rk3576, rk3566, x86 |
+
+FLIR Lepton 3.5 radiometric thermal imaging via USB UVC. Adds a live thermal **video overlay** on the Command view, a **Thermal Camera** tab under FC configuration, and a MAVLink camera component (`component_id: 100`) that mission planners can target.
+
+**Permissions:** USB UVC claim, sensor camera register, MAVLink camera component, mission read/write, video.overlay + fc.tab + notification slot contributions.
+
+**Resources:** 192 MB max RAM, 35% CPU.
+
+## ADOS MAVLink Gimbal v2 Controller
+
+| Field | Value |
+|---|---|
+| Plugin id | `com.altnautica.mavlink-gimbal-v2` |
+| Version | 1.0.0 |
+| Risk | medium |
+| Type | Hybrid (agent subprocess + GCS iframe) |
+| Hardware | SimpleBGC, Storm32 NT, Gremsy (or ArduPilot SITL) over UART |
+
+MAVLink Gimbal v2 controller with optional driver paths. Manual sliders, ROI lock-on-target, follow-me. Adds a **Gimbal** tab under FC configuration, a reticle overlay on the video view, and a MAVLink gimbal component (`component_id: 154`).
+
+**Permissions:** UART claim, MAVLink read/write, gimbal component, command send, gimbal telemetry subscribe, fc.tab + video.overlay + notification slot contributions.
+
+**Resources:** 64 MB max RAM, 15% CPU.
+
+## ADOS Vision Navigation
+
+| Field | Value |
+|---|---|
+| Plugin id | `com.altnautica.vision-nav` |
+| Version | 0.2.7 |
+| Risk | high |
+| Type | Hybrid (agent subprocess + GCS iframe) |
+| Hardware | USB UVC global-shutter camera (preferred) or CSI via V4L2; optional rangefinder |
+| FC firmware | ArduPilot 4.5+, PX4 1.14+, iNav 7.0+ |
+| Supported boards | cm4, cm5, rk3582, rk3588s2, rk3576, rpi5, pi-zero-2w |
+
+GPS-denied navigation. Optical flow (downward camera) and visual-inertial odometry (forward or downward camera) feeding the flight controller a 30 Hz position estimate over MAVLink so position-hold, loiter, and missions keep working unchanged.
+
+Six modes covering optical flow with or without a rangefinder, OpenVINS VIO, VINS-Fusion VIO, Hybrid, and Off. A 250 ms internal self-check steps down to a safer mode when features drop or drift grows and surfaces the degradation through a warning notification channel.
+
+**Permissions:** USB UVC + CSI + UART + I2C hardware claims, sensor/depth register, MAVLink read/write + peripheral + VIO components, estimator pose inject, process spawn for the signed vendor binaries (OpenVINS, VINS-Fusion).
+
+**Vendor binaries:** OpenVINS (`v2.7`, GPL-3.0-only) and VINS-Fusion (HKUST Aerial Robotics, GPL-3.0-only). The plugin host's subprocess sandbox accepts only the two allowlisted basenames (`ados_openvins_shim`, `ados_vins_fusion_shim`). Both binaries live under the plugin's signed `vendor/` directory and stay dormant unless a VIO mode is active.
+
+**Resources:** 512 MB max RAM, 80% CPU.
+
+See the [Vision Navigation overview](/drone-agent/vision-nav-overview) for the full operator guide.
+
+## Installing one
+
+From Mission Control:
+
+1. Open a drone from the fleet, switch to the **Plugins** tab.
+2. Browse the registry, click the extension card.
+3. Approve the two-stage install dialog.
+
+From the agent CLI:
+
+```bash
+ados plugin install https://github.com/altnautica/ADOSExtensions/releases/download/<release>/<extension>.adosplug
+```
+
+The signature is verified against `/etc/ados/plugin-keys/` before the archive is unpacked.
+
+## Submitting an extension
+
+Community extensions land via the [hosted registry](/developers/distribution-registry) submission flow when the registry hits v1.0. Until then, first-party extensions live in the public [`ADOSExtensions`](https://github.com/altnautica/ADOSExtensions) repo and any plugin you build with the [SDK](/developers/sdk-python) installs cleanly via the local `.adosplug` path documented in [Distribution — local install](/developers/distribution-local-install).

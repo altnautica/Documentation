@@ -1,11 +1,11 @@
 ---
-title: "Mission and suite plugins"
-description: "Extend mission planning, suites, and smart functions. Add a pattern generator, a suite operation, a smart function entry."
+title: "Mission plugins"
+description: "Extend mission planning with custom pattern generators, mission read/write, geofence and rally extensions."
 ---
 
-Mission planning, the suite framework, and the smart-function
-picker are extension points the GCS exposes to plugins. This page
-covers how to plug into each.
+Mission planning is an extension point the GCS exposes to plugins. This page covers how to add pattern generators, read and write missions, and write to the geofence + rally surfaces.
+
+Higher-level flight behaviors (Follow-Me, Orbit, thermal overlay, gimbal control, etc.) are scoped per-drone and ship through the [extensions registry](/mission-control/installing-plugins). See [Multi-component plugins](/developers/multi-component-plugins) for the per-drone tab pattern those use.
 
 ## Capabilities
 
@@ -14,12 +14,9 @@ covers how to plug into each.
 | `mission.read` | Read the active mission and its items. |
 | `mission.write` | Append, replace, or modify mission items. |
 | `mission.pattern.register` | Register a custom pattern generator. |
-| `suite.operation.register` | Register a new operation in an existing suite. |
-| `ui.slot.smart-function` | Contribute an entry to the smart-function picker. |
 
 `mission.write` is high risk; the operator sees an orange badge.
-`mission.pattern.register` and `suite.operation.register` are
-medium risk because they affect what gets uploaded to the FC.
+`mission.pattern.register` is medium risk because it affects what gets uploaded to the FC.
 
 ## Pattern generators
 
@@ -86,71 +83,6 @@ edit before upload.
 The host validates the form and rejects out-of-range numbers
 before calling `generate`.
 
-## Suite operations
-
-Suites (Survey, Inspection, Agriculture, etc.) are mission
-templates with a built-in catalog of operations. Plugins
-register new operations into a suite.
-
-```python
-from ados.sdk.suite import SuiteOperation, OperationParams
-
-class SoilSamplingOp(SuiteOperation):
-    id = "com.example.soil-sampling"
-    suite = "agriculture"
-    name = "Soil sampling drop"
-    description = "Drops a soil sample marker at each waypoint."
-
-    params: OperationParams = {
-        "drop_at_each": {"kind": "boolean", "default": True},
-        "marker_color": {"kind": "select", "options": ["red", "blue", "green"]},
-    }
-
-    async def execute(self, ctx, mission_item, config) -> None:
-        # called on the agent during mission execution
-        await ctx.events.publish(
-            "soil.sample.dropped",
-            {"seq": mission_item.seq, "color": config.marker_color},
-        )
-```
-
-The operation appears in the operator's suite editor under
-Agriculture; the operator drags it into a mission and configures
-it per waypoint or once for the whole flight.
-
-The agent side runs `execute` when the mission item is reached.
-The plugin can publish events, talk to peripherals, or send
-canonical commands as long as it has the right capabilities.
-
-## Smart functions
-
-The smart-function picker is a global pop-over the operator opens
-with `Cmd+K`. Plugins contribute entries:
-
-```yaml
-gcs:
-  contributes:
-    smart_functions:
-      - id: emergency-rtl
-        title: "Emergency RTL"
-        keywords: ["rtl", "return", "abort"]
-        confirm: true
-```
-
-```ts
-ctx.smartFunctions.on("emergency-rtl", async () => {
-  await ctx.vehicle.command({ name: "MODE_SET", args: { mode: "RTL" } });
-});
-```
-
-`confirm: true` makes the host show a confirmation dialog before
-firing the handler. Use it for anything that touches the vehicle
-or modifies a mission.
-
-Smart functions are gated by `ui.slot.smart-function`. The handler
-itself still needs the right action capability (`vehicle.command`,
-`mission.write`, etc.).
-
 ## Reading and writing missions
 
 ```ts
@@ -195,8 +127,8 @@ unknown kinds.
 
 ## Pattern preview
 
-Patterns and operations show a live preview on the map. The host
-calls `generate` (or `preview` if your operation defines one)
+Patterns show a live preview on the map. The host
+calls `generate` (or `preview` if your generator defines one)
 every time the form changes. Patterns must therefore be cheap;
 spending more than 100 ms per generate is a UX bug.
 
@@ -212,7 +144,7 @@ shape and a `generate` that does the full work:
 
 ## Persisting custom mission types
 
-If your suite operation needs to round-trip through the GCS's
+If your generator needs to round-trip through the GCS's
 mission library, add a `kind` discriminator to your items and
 register a serializer:
 
@@ -225,7 +157,7 @@ ctx.mission.registerItemKind("com.example.soil-sampling", {
 
 The host stores serialized items in the mission row in Convex and
 restores them on load. The agent half ignores unknown kinds when
-uploading to the FC unless `execute` is registered for them.
+uploading to the FC unless a handler is registered for them.
 
 ## Testing
 
@@ -245,3 +177,4 @@ expect(items.length).toBe(3);
 - [Permissions](/developers/permissions)
 - [Vision plugins](/developers/vision-plugins)
 - [Multi-component plugins](/developers/multi-component-plugins)
+- [Installing plugins](/mission-control/installing-plugins)
