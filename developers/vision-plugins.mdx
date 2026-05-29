@@ -1,119 +1,239 @@
 ---
 title: "Vision plugins"
-description: "Use the agent's vision model registry from a plugin: list, download, and load inference models."
+description: "Subscribe to engine frames over the shared frame bus, register or run inference models, and publish detections."
 ---
 
-The agent ships a vision **model registry**: a service that fetches a model
-catalog, downloads the right variant for the board, and caches the weights on
-disk. A plugin uses the registry to get a model onto the device and then runs
-its own inference against the frames it captures.
+The agent ships a **vision engine**: a host service that owns the camera(s),
+captures and normalizes frames, and publishes them on a shared frame bus that
+plugins read. A vision plugin does not open the camera itself. It subscribes to
+the normalized frame stream, runs (or asks the engine to run) inference, and
+publishes detections that overlays and mission logic pick up.
 
-There is no host-owned frame bus or shared inference loop. Each plugin that
-needs computer vision opens its own camera or sensor source, runs its own
-model, and acts on the result. The registry exists so plugins do not each
-ship and manage their own large weight files.
+This is a host-owned bus, not a per-plugin capture loop. The engine arbitrates
+the camera and the accelerator across every vision consumer, so two plugins can
+watch the same camera without fighting over the device or the NPU.
 
-## What the registry provides
+The operator manages vision models and watches detections in the per-drone
+**Vision** tab under the Command area of Mission Control.
 
-| Surface | What it does |
-|---------|--------------|
-| `GET /api/vision/models` | Lists the registry catalog, the installed models, and cache usage. |
-| `POST /api/vision/models/{model_id}/download` | Downloads a model, picking the best variant for this board. |
-| `GET /api/vision/models/{model_id}/status` | Reports download progress and installed state. |
+## The frame contract
 
-The registry is decoupled from any specific autonomy feature. Any plugin that
-needs an inference model loads it through the same registry, so weights are
-fetched once and shared across the cache rather than bundled per plugin.
+The engine downscales and converts each camera's native format to a normalized
+frame, writes the pixels into a shared-memory ring (one ring per camera), and
+publishes a small **frame descriptor** on the `vision.frame` topic. The pixels
+never ride the RPC envelope. Your SDK resolves a descriptor to pixels for you
+by mapping the named ring read-only and reading the slot the descriptor points
+at.
+
+A resolved `Frame` carries the descriptor plus the pixel bytes. Descriptor
+fields:
+
+| Field | Meaning |
+|-------|---------|
+| `frame_id` | Monotonic frame counter for this camera, starting at 1. |
+| `ts_ms` | Capture time in milliseconds. |
+| `width`, `height` | Frame dimensions. |
+| `format` | `"rgb24"`, `"nv12"`, or `"yuv420p"`. |
+| `camera_id` | Source camera id, for filtering. |
+
+The `Frame` also gives you the pixel bytes: `len(pixels)` equals the
+descriptor's `byte_len`, the valid pixel data for `width` x `height` in
+`format`.
+
+Default working resolution is 640x480; the engine downscales further per the
+active model's input size. Drop policy is **latest-wins**: a slow consumer drops
+frames, it never blocks the engine. A torn or stale read (the writer recycled
+the slot mid-copy) is dropped silently and your callback does not fire for it.
+
+### Subscribing to frames
+
+In Python, `ctx.vision` is a `VisionClient`. Subscribe with a callback that
+runs once per resolved frame:
+
+```python
+class MyPlugin(Plugin):
+    async def on_start(self, ctx: Context) -> None:
+        async def on_frame(frame):
+            # frame.descriptor.width, .height, .format, .camera_id, .ts_ms
+            # frame.pixels — the resolved bytes for this frame
+            detections = self.run(frame)
+            for d in detections:
+                ...
+        await ctx.vision.subscribe_frames(on_frame)
+```
+
+`subscribe_frames` is gated on `vision.frame.read`. The callback may be sync or
+async. Keep it cheap: it runs on the delivery path, so offload heavy inference
+to a task or queue rather than blocking in the callback.
+
+The Rust SDK is the same surface: `ados_sdk::vision::VisionClient`, reached via
+`ctx.vision`, with `subscribe_frames(camera_id, callback)` and the same
+`Frame` shape. Types come from `ados_sdk` re-exports backed by
+`ados_protocol::framebus`, so a Python plugin and a Rust plugin read the same
+wire byte for byte. A Rust plugin's entry point is
+`ados_sdk::run_plugin::<MyPlugin, S>(...)`.
+
+## Running inference
+
+There are two honest paths, and a plugin can use either. Both share the same
+accelerator, which the engine arbitrates.
+
+**Engine-run.** Register a model file plus its metadata with the engine. The
+engine loads it, runs it on the shared backend, and publishes detections
+itself. Your plugin only declares the model and then consumes detections like
+any other consumer.
+
+```python
+from ados.sdk.vision import (
+    ModelMetadata, ModelKind, ModelExecution, FrameFormat,
+)
+
+await ctx.vision.register_model(ModelMetadata(
+    id="com.example.weeds",
+    kind=ModelKind.DETECTION,
+    execution=ModelExecution.ENGINE_RUN,
+    input_width=640,
+    input_height=480,
+    input_format=FrameFormat.RGB24,
+    output_classes=["weed", "crop"],
+    model_path="/path/on/agent/weeds.onnx",
+))
+```
+
+`register_model` is gated on `vision.model.register`.
+
+**Plugin-side.** Run your own model in the plugin and publish the results. You
+can also ask the engine to run a registered model against one frame on the
+shared backend with `ctx.vision.infer(model_id, frame)`, which returns the
+detections without pixels crossing the RPC envelope.
+
+```python
+async def on_frame(frame):
+    boxes = self.session.run(frame)        # your own runtime
+    await ctx.vision.publish_one(
+        "com.example.weeds", frame,
+        Detection(
+            bbox=BoundingBox(x=100, y=80, width=40, height=40),
+            class_label="weed",
+            confidence=0.91,
+        ),
+    )
+```
+
+The accelerator is shared. A heavy or runaway model starves other vision
+consumers, so register honest input sizes and keep your inference cadence below
+your CPU and NPU budget. For NPU-based inference on supported boards, load the
+board's accelerator runtime (TFLite delegates, RKNN, and so on); on most vision
+plugins that is the difference between 50% CPU and 5% CPU.
+
+## Detections
+
+A `Detection` has:
+
+- `bbox` — pixel-space box `{x, y, width, height}`, origin top-left, in the
+  frame's own resolution.
+- `class_label` — the class string.
+- `confidence` — the model's score.
+- `track_id` — optional stable id across frames, for tracking models.
+
+Detections are published as a `DetectionBatch` on the `vision.detection` topic,
+labelled by `model_id` plus the source `camera_id`, `frame_id`, and `ts_ms` so a
+consumer can align the boxes to the exact frame they came from.
+
+```python
+await ctx.vision.publish_detection(DetectionBatch(
+    model_id="com.example.weeds",
+    camera_id=frame.descriptor.camera_id,
+    frame_id=frame.descriptor.frame_id,
+    ts_ms=frame.descriptor.ts_ms,
+    detections=[...],
+))
+```
+
+`publish_detection` (and the `publish_one` convenience) are gated on
+`vision.detection.publish`. Built-in consumers, the video overlay and mission
+logic, pick the batches up. The Rust SDK exposes the same `publish_detection` /
+`publish_one` on `VisionClient`.
+
+## Capabilities
+
+Declare the ones you use under `agent.permissions` in the manifest:
+
+| Capability | Risk | What it grants |
+|------------|------|----------------|
+| `vision.frame.read` | Medium | Subscribe to normalized engine frames. The plugin never opens the camera itself. |
+| `vision.model.register` | Medium | Register an inference model (and run `infer` against shared frames). |
+| `vision.detection.publish` | Low | Publish detections that overlays and mission logic consume. |
 
 ## A worked extension: vision-nav
 
 The first-party `vision-nav` extension is the reference for vision work on the
 agent. It provides GPS-denied navigation: optical flow plus monocular visual
-inertial odometry, feeding position estimates back to the flight controller. It
-runs against ArduPilot 4.5+, PX4 1.14+, and iNav 7.0+, and selects its model
-variant through the registry described above.
+inertial odometry, feeding position estimates back to the flight controller
+through the visual-odometry pose helper on `ctx.vision`. It runs against
+ArduPilot 4.5+, PX4 1.14+, and iNav 7.0+.
 
-Look at that extension in `ADOSExtensions/extensions/vision-nav/` for a
-real `manifest.yaml`, config schema, and agent/GCS split before you build your
-own vision plugin.
+Look at that extension in `ADOSExtensions/extensions/vision-nav/` for a real
+`manifest.yaml`, config schema, and agent/GCS split before you build your own
+vision plugin.
 
-## Requesting a model
+## Multiple cameras
 
-Declare the model you need in the plugin manifest. On start, ask the registry
-to download it (no-op if already cached), then load the weights from the cache
-path:
-
-```python
-class MyPlugin(Plugin):
-    async def on_start(self, ctx: Context) -> None:
-        # ensure the model is present (downloads the board-appropriate variant)
-        model_path = await ctx.vision.ensure_model("com.example.weed-detector")
-        # load it with your own runtime (ONNX Runtime, TFLite, RKNN, ...)
-        self.session = load_onnx(model_path)
-```
-
-The download picks the variant that fits the board: a quantized build for a
-low-power SoC, a full-precision build where there is an NPU or GPU to spare.
-You do not choose the variant; the registry does, based on the hardware
-fingerprint.
-
-## Running inference
-
-A vision plugin owns its capture and its inference. Open the camera through the
-camera driver layer, pull frames, and run them through your loaded model:
+When more than one camera is attached, the engine publishes a separate ring and
+descriptor stream per camera. Filter to the one you want by passing `camera_id`:
 
 ```python
-async for frame in ctx.camera.frames():
-    # frame.width, frame.height
-    # frame.format ("rgb24" | "nv12" | "yuv420p")
-    # frame.data (bytes)
-    detections = self.run(frame)
-    for d in detections:
-        # act on the detection: steer a gimbal, log it, overlay it
-        ...
+await ctx.vision.subscribe_frames(on_frame, camera_id="uvc-0")
 ```
 
-Camera hardware is handled by the
-[camera driver layer](/developers/camera-driver). Your plugin reads frames from
-the camera it is configured to use; it does not receive frames from a shared
-host bus.
+The Rust equivalent passes `Some("uvc-0")` for the `camera_id` argument. A
+`None` filter receives every camera's frames; tag your detections with the
+frame's `camera_id` so consumers know which camera each box came from.
 
-## Acting on detections
+## Testing
 
-A detection is only useful if the plugin does something with it. Common actions:
+Exercise the frame and detection path without a real host, engine, shared
+memory, or socket using the real test harness. The fake builds a real frame
+ring through the same frame-transport contract and resolves each synthetic
+frame the way the production client does, so your frame-handling path runs end
+to end; only the host and the OS shared-memory object are faked.
 
-- Drive a gimbal to track a target through the gimbal capability.
-- Log detections to the plugin's own store for later review.
-- Render an overlay on the recording through the recording overlay surface.
+In Python, use `ados.sdk.testing.FakeVisionEngine`:
 
-There is no automatic detection bus that fans your results out to other
-consumers. The plugin that produces a detection is the plugin that acts on it,
-or it publishes through an explicit capability it has been granted.
+```python
+from ados.sdk.testing import FakeVisionEngine
+from ados.sdk.vision import FrameFormat
 
-## Resource discipline
-
-Inference is expensive. A plugin running a 30 MB ONNX model at 30 FPS on a
-Rock 5C Lite is fine; running four of them is not. Declare honest resource caps:
-
-```yaml
-agent:
-  resources:
-    max_ram_mb: 512
-    max_cpu_percent: 50
+async def test_my_plugin():
+    engine = FakeVisionEngine("uvc-0", 64, 48, FrameFormat.RGB24)
+    seen = []
+    engine.on_frame(lambda frame: seen.append(frame))
+    engine.push_solid(0x80)        # one flat-grey frame
+    await engine.deliver_all()
+    assert len(seen) == 1
 ```
 
-The supervisor enforces the caps. If your plugin breaches them, the supervisor
-throttles or restarts the process. Keep your inference cadence below your CPU
-budget and drop frames under load rather than queueing them.
+For an end-to-end run through the real `VisionClient` (the ring lives in a temp
+directory the client maps read-only, and the descriptor rides a real delivery
+event into the client's resolver), build the engine with a file-backed ring and
+`attach` your callback:
 
-For NPU-based inference on supported boards, load the board's accelerator
-runtime directly (TFLite delegates, RKNN, etc.). Using the NPU is the
-difference between 50% CPU and 5% CPU on most vision plugins.
+```python
+engine = FakeVisionEngine.with_shm_dir("uvc-0", 64, 48, FrameFormat.RGB24)
+await engine.attach(on_frame)
+await engine.deliver_all()
+```
+
+Detections your plugin publishes are captured via
+`engine.captured_detections()`.
+
+The Rust harness mirrors this: `ados_sdk::testing::FakeVisionEngine` emits
+synthetic frames into the same `FrameCallback` your plugin registers and
+captures the detection batches it publishes.
 
 ## Bundling weights
 
-You can ship small weights as assets in the archive instead of pulling them
-from the registry:
+You can ship small weights as assets in the archive:
 
 ```yaml
 assets:
@@ -122,16 +242,19 @@ assets:
     sha256: "..."
 ```
 
-The plugin loads them from the data dir at start. Do not fetch weights from a
-remote URL at runtime; the plugin's `network.outbound` policy blocks runtime
-fetches by default. Use the registry or a bundled asset.
+The plugin loads them from its data dir at start and, for engine-run models,
+passes the path as the `model_path` on the model metadata. Do not fetch weights
+from a remote URL at runtime; the plugin's `network.outbound` policy blocks
+runtime fetches by default. Bundle the weights or load a file already on the
+agent.
 
 ## Vendor binary models
 
-Closed-source vendor binaries (e.g. proprietary thermal AGC processing as a
-`.so`) ship under `vendor/` per the
+Closed-source vendor binaries (for example, proprietary thermal AGC processing
+as a `.so`) ship under `vendor/` per the
 [vendor binaries](/developers/vendor-binaries) doc. The plugin loads them with
-`ctypes` or `cffi` and calls them from its own inference path.
+`ctypes` or `cffi` and calls them from its own inference path, then publishes
+the results as a `DetectionBatch` like any other plugin-side model.
 
 ## See also
 
