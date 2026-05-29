@@ -15,7 +15,7 @@ ADOS is a three-tier system: a drone agent on the aircraft, a ground agent on a 
 flowchart TB
     subgraph Drone["Tier 1: Drone"]
         FC["Flight Controller<br/>(ArduPilot / PX4 / Betaflight)"]
-        Agent["ADOS Drone Agent<br/>(Python, systemd)"]
+        Agent["ADOS Drone Agent<br/>(Rust + Python, systemd)"]
         Camera["Camera<br/>(CSI or USB)"]
         WFB_TX["WFB-ng TX<br/>(RTL8812EU, 5 GHz)"]
         ELRS["ELRS RX<br/>(2.4 GHz control)"]

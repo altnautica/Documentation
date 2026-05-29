@@ -1,6 +1,6 @@
 ---
 title: "Visual Inertial Odometry"
-description: "Full 6-degree-of-freedom pose estimation by fusing a forward camera with the FC's IMU. On the roadmap, available in a future release."
+description: "Full 6-degree-of-freedom pose estimation by fusing a forward camera with the FC's IMU. Python plumbing and GCS surfaces ship today; vendor binaries land in a follow-up release."
 icon: "compass"
 lastUpdated: "2026-05-16"
 ---
@@ -10,7 +10,7 @@ lastUpdated: "2026-05-16"
 Visual Inertial Odometry (VIO) is the bigger sibling of optical flow. Where optical flow gives you horizontal velocity from a downward camera plus a rangefinder, VIO gives you a full 6-degree-of-freedom pose (position and orientation in three dimensions) from a forward-facing camera fused with the FC's IMU.
 
 <Note>
-VIO is in development, not in this release. The current Vision Navigation plugin ships with optical flow only. VIO will arrive in a future release once the OpenVINS-based and VINS-Fusion pipelines are validated end-to-end on target hardware. **Available in a future release.**
+VIO ships with its Python plumbing, GCS surfaces, calibration wizard, and auto-detect probe today. The vendor-binary upstream integration (the OpenVINS and VINS-Fusion binaries) arrives in a follow-up release once validated end-to-end on target hardware. In the meantime, use the optical-flow modes for low-altitude GPS-denied flight.
 </Note>
 
 ## What it adds

@@ -48,13 +48,13 @@ The dialog shows what's about to install:
 - Plugin id, version, and a one-line description.
 - The signer's key id and a friendly signer name (Altnautica for first-party plugins).
 - The risk badge derived from the highest-risk capability the plugin requests. Vision Navigation is **HIGH** because it injects pose estimates into the FC's state estimator.
-- A short list of vendor binaries shipped inside the archive, if any. Vision Navigation 0.1.x ships pure Python and reports "No vendor binaries." A future release will ship an OpenVINS binary for VIO and will surface that here.
+- A short list of vendor binaries shipped inside the archive, if any. Vision Navigation ships with optical flow fully working and the VIO Python plumbing, GCS surfaces, and auto-detect probe today, so it reports "No vendor binaries." The OpenVINS and VINS-Fusion vendor binaries for VIO arrive in a follow-up release once validated end-to-end on target hardware, and will surface here.
 
 Read the summary, then click **Continue to permissions**.
 
 ## Stage 2: permissions
 
-Every capability the plugin requests is shown grouped by domain. Vision Navigation 0.1.x requests:
+Every capability the plugin requests is shown grouped by domain. Vision Navigation requests:
 
 | Domain | Capability | Why |
 |--------|-----------|-----|
@@ -90,7 +90,7 @@ If Mission Control is on HTTPS and the agent isn't reachable directly (the commo
 
 A successful install leaves the plugin in the **Disabled** state. This is so you can configure it before it starts touching the FC.
 
-1. The per-drone Plugins tab now lists `ADOS Vision Navigation 0.1.x`.
+1. The per-drone Plugins tab now lists `ADOS Vision Navigation` with the installed version.
 2. Click the plugin row. The configuration drawer opens on the right.
 3. Set the camera device, the rangefinder driver, and the rest of the per-drone config. See [Configure optical flow](/drone-agent/vision-nav-optical-flow).
 4. Click **Enable**. The drawer asks for confirmation and starts the plugin's subprocess on the agent. Within a few seconds, a new **Vision Nav** tab appears in the drone's detail panel.

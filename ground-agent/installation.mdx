@@ -93,7 +93,7 @@ ados status
 You should see output like:
 
 ```
-ADOS Drone Agent v0.36.41
+ADOS Drone Agent v0.49.26
 Profile: ground-station
 Board: pi4b (Raspberry Pi 4B)
 
@@ -101,7 +101,7 @@ Services:
   ados-supervisor    active (running)
   ados-api           active (running)
   ados-wfb-rx        active (running)
-  ados-wifi-ap       active (running)
+  ados-hostapd       active (running)
   ados-oled          active (running)
   ados-buttons       active (running)
   ados-health        active (running)
@@ -163,7 +163,7 @@ agent:
 | Problem | Cause | Fix |
 |---------|-------|-----|
 | DKMS build fails | Missing kernel headers | Run `sudo apt install raspberrypi-kernel-headers` and re-run the install |
-| No WiFi AP after reboot | hostapd not started | Check `systemctl status ados-wifi-ap` |
+| No WiFi AP after reboot | hostapd not started | Check `systemctl status ados-hostapd` |
 | OLED blank | I2C not enabled | Run `sudo raspi-config`, enable I2C under Interface Options, reboot |
 | Profile detected as "air" | Flight controller on USB | Unplug the FC and run `sudo ados profile auto` |
 

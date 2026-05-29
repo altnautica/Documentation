@@ -21,7 +21,7 @@ ADOS ships as three open-source projects that work together.
     Browser-based GCS. Configure, fly, plan missions, flash firmware. Supports ArduPilot, PX4, Betaflight, and iNav.
   </Card>
   <Card title="Drone Agent" icon="microchip" href="/getting-started/quickstart-drone-agent">
-    Python software running on a companion computer aboard your drone. MAVLink proxy, video pipeline, cloud relay, REST API.
+    Hybrid Rust/Python software running on a companion computer aboard your drone. Native services handle video, cloud relay, and radio; Python powers the REST API, AI/ML, and hardware abstraction. MAVLink proxy, video pipeline, cloud relay, REST API.
   </Card>
   <Card title="Ground Agent" icon="tower-broadcast" href="/getting-started/quickstart-ground-agent">
     Same codebase as the Drone Agent, running in ground-station mode. Receives long-range video and relays it to your laptop or phone.

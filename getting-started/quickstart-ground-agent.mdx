@@ -136,7 +136,7 @@ ados status
 You should see:
 
 ```
-ADOS Drone Agent v0.36.41
+ADOS Drone Agent v0.49.26
 Board: raspberry-pi-4b
 Profile: ground-station
 
@@ -144,8 +144,8 @@ Services:
   ados-supervisor      active (running)
   ados-api             active (running)
   ados-health          active (running)
-  ados-wfb             active (waiting for signal)
-  ados-wifi-ap         active (running)  [SSID: ADOS-GS-abc123]
+  ados-wfb-rx          active (waiting for signal)
+  ados-hostapd         active (running)  [SSID: ADOS-GS-abc123]
 
 WFB-ng:
   Mode: RX
@@ -266,7 +266,7 @@ Multiple uplinks can be active at the same time. The agent uses priority-based f
 **No WiFi AP visible:**
 ```bash
 # Check if hostapd is running
-sudo systemctl status ados-wifi-ap
+sudo systemctl status ados-hostapd
 
 # Check the WiFi adapter
 iwconfig

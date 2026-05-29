@@ -72,9 +72,9 @@ Tiers control which agent features are enabled based on available system resourc
   </Accordion>
 
   <Accordion title="Tier 4 (4 GB+ RAM)">
-    Full autonomy. Everything from Tier 3 plus the vision engine (object detection, tracking, follow-me) and application suites. Requires an NPU or GPU for real-time inference.
+    Full feature set. Everything from Tier 3 plus the vision model registry (fetch, download, cache, and select NPU-optimized inference models) and the vision-nav extension for GPS-denied navigation. An NPU or GPU helps with on-device inference.
 
-    **Enabled services:** All Tier 3 services plus vision engine and suite runtime
+    **Enabled services:** All Tier 3 services plus `ados-plugin-host` and the vision model registry, which back the vision-nav extension
 
     **Boards:** Raspberry Pi CM5, Raspberry Pi 5, ROCK 5C Lite, Radxa CM4 (RK3588S2), RK3576, Orange Pi 5, Jetson Orin Nano
   </Accordion>

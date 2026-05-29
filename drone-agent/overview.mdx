@@ -9,7 +9,7 @@ lastUpdated: "2026-05-09"
 
 The ADOS Drone Agent is the software that runs on the companion computer inside your drone. It sits between the flight controller (ArduPilot, PX4, Betaflight, or iNav) and everything else: your ground station, your phone, the cloud, and any scripts you write.
 
-It is written in Python 3.11+, licensed under GPLv3, and designed to run on ARM single-board computers from Raspberry Pi to Rockchip to NVIDIA Jetson.
+It is a hybrid system. The core long-running services — the supervisor, MAVLink router, cloud relay, and video pipeline — are native Rust binaries, while Python handles the FastAPI REST and web layer, AI and vision, the scripting engine, hardware detection, device drivers, and shared libraries. It is licensed under GPLv3 and designed to run on ARM single-board computers from Raspberry Pi to Rockchip to NVIDIA Jetson.
 
 <Frame caption="The local setup webapp showing agent setup and access URLs">
   <img src="/images/placeholder-setup-webapp.png" alt="ADOS setup webapp showing setup status and access URLs" />
@@ -33,10 +33,10 @@ The agent handles five core jobs:
 
 | Metric | Value |
 |--------|-------|
-| Current version | 0.36.41 |
-| Language | Python 3.11+ |
+| Current version | 0.49.26 |
+| Language | Rust + Python 3.11+ |
 | License | GPLv3 |
-| Supported boards | 20 board profiles |
+| Supported boards | 17 board profiles |
 | Systemd services | 28 units (air + ground) |
 | REST API port | 8080 |
 | IPC sockets | `/run/ados/mavlink.sock`, `/run/ados/state.sock` |
@@ -68,7 +68,7 @@ Services communicate through two Unix domain sockets:
 
 ## Hardware auto-detection
 
-On first boot, the agent reads `/proc/device-tree/model` and matches it against 20 board profiles stored as YAML files. Each profile defines the SoC, available buses (UART, I2C, SPI, USB), video encoding capabilities, GPIO pins, and a default tier.
+On first boot, the agent reads `/proc/device-tree/model` and matches it against 17 board profiles stored as YAML files. Each profile defines the SoC, available buses (UART, I2C, SPI, USB), video encoding capabilities, GPIO pins, and a default tier.
 
 The tier determines which features are enabled:
 

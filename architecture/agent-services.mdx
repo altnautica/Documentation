@@ -8,9 +8,11 @@ icon: "server"
 
 The ADOS Drone Agent uses a multi-process architecture where each service runs as an independent systemd unit. A supervisor service manages the lifecycle. Services communicate through Unix domain sockets and share no memory.
 
+The agent is a hybrid system. The core long-running services (the supervisor, MAVLink router, cloud relay, and video pipeline) are native Rust binaries. Python handles the FastAPI web layer, AI and vision, the scripting engine, HAL detection, device drivers, and shared libraries. Several ground-station services (the radio data plane, uplink matrix, physical UI, and display) have native Rust implementations that are opt-in today and fall back to the packaged Python service otherwise. The supervisor never spawns these processes itself: it issues `systemctl` against a fixed catalog, so systemd remains the process manager and owns the cgroup, restart, and journald wiring.
+
 ## Why multi-process
 
-A single Python asyncio process is simpler, but it has real drawbacks for a drone:
+A single in-process design is simpler, but it has real drawbacks for a drone:
 
 - A crashed video encoder takes down the MAVLink proxy. The flight controller loses its companion link.
 - No per-service resource limits. A memory leak in one service starves the others.
@@ -26,7 +28,7 @@ flowchart TB
     Supervisor["ados-supervisor"]
     
     subgraph Core["Core Services (always running)"]
-        MAVLink["ados-mavlink<br/>FC serial proxy"]
+        MAVLink["ados-mavlink<br/>FC serial router"]
         API["ados-api<br/>FastAPI :8080"]
         Cloud["ados-cloud<br/>MQTT + Convex"]
         Health["ados-health<br/>CPU, RAM, temp"]
@@ -34,53 +36,64 @@ flowchart TB
     
     subgraph HW["Hardware-Dependent"]
         Video["ados-video<br/>Camera + encoder"]
-        WFB["ados-wfb<br/>WFB-ng TX or RX"]
-        Modem["ados-modem<br/>4G LTE"]
-    end
-    
-    subgraph Suite["Suite-Dependent"]
-        Scripting["ados-scripting<br/>Python executor"]
+        WFB["ados-wfb<br/>WFB-ng TX (drone)"]
         Sensors["ados-peripherals<br/>USB + sensor mgr"]
     end
     
     subgraph OnDemand["On-Demand"]
+        Scripting["ados-scripting<br/>script executor"]
         OTA["ados-ota<br/>GitHub release poll"]
+        Discovery["ados-discovery<br/>mDNS"]
     end
     
     subgraph GroundOnly["Ground Station Profile"]
-        WiFiAP["ados-wifi-ap<br/>hostapd"]
+        WFBRX["ados-wfb-rx<br/>WFB-ng RX"]
+        HostAP["ados-hostapd<br/>WiFi AP"]
         OLED["ados-oled<br/>I2C display"]
         Buttons["ados-buttons<br/>GPIO input"]
         Kiosk["ados-kiosk<br/>Chromium HDMI"]
         MediaMTXGS["ados-mediamtx-gs<br/>RTSP + WHEP"]
         USBGadget["ados-usb-gadget<br/>CDC-NCM setup"]
-        SetupWebapp["ados-setup-webapp<br/>Captive portal"]
-        CaptiveDNS["ados-captive-dns<br/>Probe responder"]
+        SetupCaptive["ados-setup-captive<br/>Captive portal"]
+        DnsmasqGS["ados-dnsmasq-gs<br/>Probe responder"]
+        UplinkRouter["ados-uplink-router<br/>Uplink matrix"]
+        Ethernet["ados-ethernet<br/>Wired uplink"]
+        Modem["ados-modem<br/>Cellular uplink"]
+        Input["ados-input<br/>Joystick + touch"]
+        PIC["ados-pic<br/>Panel arbiter"]
+    end
+
+    subgraph CrossProfile["Cross-Profile (any profile)"]
+        WiFiClient["ados-wifi-client<br/>WiFi station"]
     end
     
     Supervisor --> Core
     Supervisor --> HW
-    Supervisor --> Suite
     Supervisor --> OnDemand
     Supervisor --> GroundOnly
+    Supervisor --> CrossProfile
 ```
+
+Distributed-receive roles add three more ground-station units when enabled: `ados-batman` (mesh carrier), `ados-wfb-relay` (relay role), and `ados-wfb-receiver` (receiver role).
 
 The supervisor starts child services based on the active profile (air or ground-station) and the hardware detected. Services that depend on hardware not present are masked, not started.
 
 ## Systemd unit structure
 
-Each service has a unit file in `/etc/systemd/system/`:
+Each service has a unit file in `/etc/systemd/system/`. Native Rust services run a binary from `/opt/ados/bin/`; the FastAPI service and the Python-backed services run through the virtual environment in `/opt/ados/venv/`.
 
 ```ini
 [Unit]
-Description=ADOS MAVLink Proxy
+Description=ADOS MAVLink Router
 After=ados-supervisor.service
 PartOf=ados-supervisor.service
 
 [Service]
 Type=simple
 User=ados
-ExecStart=/opt/ados/venv/bin/python -m ados.services.mavlink
+# Native Rust core service. Python-backed units (for example ados-api)
+# use /opt/ados/venv/bin/python -m ados.services.<name> instead.
+ExecStart=/opt/ados/bin/ados-mavlink
 Restart=on-failure
 RestartSec=3
 MemoryMax=128M
@@ -167,27 +180,32 @@ The result is written to `/etc/ados/profile.conf` with the full fingerprint snap
     Hardware-dependent:
     - `ados-video` (if camera detected)
     - `ados-wfb` in TX mode (if RTL8812EU detected)
-    - `ados-modem` (if 4G modem detected)
-
-    Suite-dependent:
-    - `ados-scripting` (if a suite is activated)
     - `ados-peripherals` (if USB sensors detected)
 
+    On-demand:
+    - `ados-scripting` (if enabled in config)
+    - `ados-ota`, `ados-discovery`
+
     Masked (never started):
-    - All ground-station services (wifi-ap, oled, buttons, kiosk, etc.)
+    - All ground-station services (hostapd, oled, buttons, kiosk, etc.)
   </Tab>
   <Tab title="Ground station profile">
     Always started:
-    - `ados-supervisor`, `ados-api`, `ados-health`
-    - `ados-wifi-ap`, `ados-oled`, `ados-buttons`
-    - `ados-wfb` in RX mode
+    - `ados-supervisor`, `ados-api`, `ados-cloud`, `ados-health`, `ados-cloud-relay`
+    - `ados-hostapd`, `ados-oled`, `ados-buttons`
+    - `ados-wfb-rx` (in the `direct` role)
     - `ados-mediamtx-gs`
-    - `ados-setup-webapp`, `ados-captive-dns` (first boot)
+    - `ados-uplink-router` (uplink matrix), `ados-pic` (front-panel arbiter)
+    - `ados-setup-captive`, `ados-dnsmasq-gs` (first boot)
 
     Hardware-dependent:
     - `ados-kiosk` (if HDMI output detected)
+    - `ados-input` (if a joystick or touch device is present)
+    - `ados-ethernet` (if a wired link is present)
+    - `ados-wifi-client` (cross-profile; if joining a WiFi network)
     - `ados-usb-gadget` (if USB gadget enabled in config)
     - `ados-modem` (if 4G modem detected and enabled)
+    - `ados-batman`, `ados-wfb-relay`, `ados-wfb-receiver` (mesh roles only)
 
     Masked (never started):
     - `ados-mavlink` (no FC), `ados-video` (no camera), `ados-wfb` TX mode
@@ -260,7 +278,7 @@ Total memory usage for the ground-station profile on a Pi 4B with 4 GB RAM:
 | ados-api (FastAPI) | 40 MB |
 | ados-wfb-rx | 20 MB |
 | ados-mediamtx-gs | 30 MB |
-| ados-wifi-ap (hostapd) | 5 MB |
+| ados-hostapd | 5 MB |
 | ados-oled | 10 MB |
 | ados-buttons | 5 MB |
 | ados-health | 10 MB |

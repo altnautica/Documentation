@@ -156,9 +156,7 @@
             "pages": [
               "drone-agent/overview",
               "drone-agent/supported-hardware",
-              "drone-agent/installation",
-              "drone-agent/install-luckfox",
-              "drone-agent/lite-agent"
+              "drone-agent/installation"
             ]
           },
           {
