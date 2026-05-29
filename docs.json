@@ -178,7 +178,6 @@
               "drone-agent/dashboard-home",
               "drone-agent/dashboard-telemetry",
               "drone-agent/dashboard-video",
-              "drone-agent/dashboard-ros",
               "drone-agent/dashboard-pairing",
               "drone-agent/dashboard-peripherals",
               "drone-agent/dashboard-plugins",
@@ -207,16 +206,6 @@
               "drone-agent/text-commands",
               "drone-agent/plugins",
               "drone-agent/extensions-catalog"
-            ]
-          },
-          {
-            "group": "ROS 2 Integration",
-            "pages": [
-              "drone-agent/ros-integration",
-              "drone-agent/ros-topics",
-              "drone-agent/ros-workspace",
-              "drone-agent/ros-network",
-              "drone-agent/ros-foxglove"
             ]
           },
           {

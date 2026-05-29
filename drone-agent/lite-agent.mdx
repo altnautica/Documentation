@@ -40,7 +40,6 @@ A lite-agent drone behaves the same as a full-agent drone in Mission Control. Th
 The lite agent intentionally does not ship some features. These stay on the full Python agent:
 
 - **Plugin host.** The plugin system runs on the full agent only. Boards that need plugins should run the full agent.
-- **ROS 2 integration.** The opt-in ROS 2 environment runs in Docker on the full agent. Lite boards do not have the RAM headroom for a ROS workspace.
 - **NPU integration.** On-board ML inference (vision engine, follow-me, obstacle avoidance) requires the full agent's vision stack.
 - **Scripting tier.** The Python script executor and text-command engine live in the full agent.
 - **Peripheral manager.** The hot-plug manager that wires up cameras, gimbals, GPS receivers, and similar peripherals lives in the full agent. Lite supports a fixed peripheral set defined per-board.
