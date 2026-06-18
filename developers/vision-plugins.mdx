@@ -234,20 +234,17 @@ captures the detection batches it publishes.
 
 ## Bundling weights
 
-You can ship small weights as assets in the archive:
+You can ship small weights inside the archive by placing the file under the
+plugin tree (for example `agent/models/weeds.onnx`). The manifest has no
+top-level `assets` block and no per-file hash; the archive's single
+`SIGNATURE` file covers every entry's hash, so a bundled weights file is
+protected by the same signature as the rest of the archive.
 
-```yaml
-assets:
-  - path: "agent/models/weeds.onnx"
-    role: "agent-source"
-    sha256: "..."
-```
-
-The plugin loads them from its data dir at start and, for engine-run models,
-passes the path as the `model_path` on the model metadata. Do not fetch weights
-from a remote URL at runtime; the plugin's `network.outbound` policy blocks
-runtime fetches by default. Bundle the weights or load a file already on the
-agent.
+The plugin loads the file from its data dir at start and, for engine-run
+models, passes the path as the `model_path` on the model metadata. Do not
+fetch weights from a remote URL at runtime; the plugin's `network.outbound`
+policy blocks runtime fetches by default. Bundle the weights or load a file
+already on the agent.
 
 ## Vendor binary models
 

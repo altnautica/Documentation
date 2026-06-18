@@ -63,7 +63,7 @@ journalctl -u ados-wfb-rx -n 30  # WFB-ng receiver logs
     ping 192.168.4.1
     ```
 
-    If ping works but the browser does not load, try `http://192.168.4.1:8080/api/v1/status` to see if the REST API is responding.
+    If ping works but the browser does not load, try `http://192.168.4.1:8080/api/status` to see if the REST API is responding.
   </Step>
   <Step title="Check Mission Control">
     If the REST API responds but port 4000 does not, Mission Control may not be installed locally on the ground node. Use `http://192.168.4.1:8080/` (the agent API) or `http://setup.ados.local/` (the setup webapp) instead.

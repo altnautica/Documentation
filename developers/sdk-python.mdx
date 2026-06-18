@@ -131,9 +131,9 @@ The supervisor enforces the resource block from the manifest:
 ```yaml
 agent:
   resources:
-    max_ram_mb: 64
-    max_cpu_percent: 10
-    max_pids: 4
+    max_ram_mb: 96               # default 96, range 8 to 4096
+    max_cpu_percent: 25          # default 25, range 1 to 100
+    max_pids: 12                 # default 12, range 1 to 256
 ```
 
 On Linux these become cgroup v2 controllers in the plugin slice

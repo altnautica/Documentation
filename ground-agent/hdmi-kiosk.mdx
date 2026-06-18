@@ -23,13 +23,13 @@ The ground station must have Mission Control installed locally. The install scri
 
 ## How it works
 
-When the ground station detects a display output at `/dev/dri/card0`, it starts three services:
+When the ground station detects a display output at `/dev/dri/card0`, the kiosk path comes up:
 
-1. **`ados-mc-local`** serves a pre-built Mission Control at `http://localhost:4000`
+1. A local Mission Control build is served on `http://localhost:4000`. The install handles serving this build; the agent does not bundle or serve a GCS build itself, so the kiosk assumes the URL is reachable.
 2. **`ados-kiosk`** launches Chromium inside the `cage` Wayland compositor, pointing at `http://localhost:4000/hud`
 3. **Chromium** renders the HUD route in fullscreen kiosk mode, with no address bar, no tabs, no browser chrome
 
-The entire display chain runs locally on the SBC. No network traffic, no external server. Video from WFB-ng flows through MediaMTX on localhost. Telemetry comes from the local MAVLink WebSocket.
+The display chain runs locally on the SBC. No network traffic, no external server. Video from WFB-ng flows through MediaMTX (`ados-mediamtx-gs`) on localhost. Telemetry comes from the local MAVLink WebSocket.
 
 ## The HUD layout
 

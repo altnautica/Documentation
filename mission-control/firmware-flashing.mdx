@@ -1,7 +1,8 @@
 ---
 title: "Firmware Flashing"
-description: "Flash ArduPilot, PX4, Betaflight, or iNav firmware over WebSerial."
+description: "Flash ArduPilot, PX4, Betaflight, or iNav firmware from the browser."
 icon: "microchip"
+lastUpdated: "2026-06-18"
 ---
 
 Mission Control can flash firmware directly to your flight controller from the browser. No external tools needed. The firmware panel supports ArduPilot, PX4, Betaflight, and iNav with board auto-detection.
@@ -12,14 +13,15 @@ Mission Control can flash firmware directly to your flight controller from the b
 
 ## How It Works
 
-Firmware flashing uses the WebSerial API to communicate with the flight controller's bootloader. The process varies by firmware:
+Firmware flashing happens entirely in the browser, but the transport differs by firmware:
 
-- **ArduPilot and PX4:** The board enters DFU (Device Firmware Upgrade) mode, and the firmware binary is written over the serial connection.
-- **Betaflight:** The board enters DFU mode via MSP command or manual boot button, and firmware is flashed via the STM32 bootloader protocol.
-- **iNav:** Same WebUSB DFU path as Betaflight. The board enters DFU mode via MSP command or manual boot button, and the iNav binary is flashed through the STM32 bootloader.
+- **ArduPilot:** The board reboots into bootloader mode and the binary is written over WebUSB DFU (the STM32 DFU class). If a DFU device does not appear, the flasher falls back to the STM32 serial bootloader over WebSerial.
+- **PX4:** PX4 does not use DFU. The `.px4` binary is written through the PX4 serial bootloader over WebSerial (the GET_SYNC / PROG_MULTI / GET_CRC / REBOOT protocol).
+- **Betaflight:** The board enters DFU mode via MSP command or manual boot button, and firmware is flashed via the STM32 DFU bootloader (WebUSB), with a serial-bootloader fallback.
+- **iNav:** Same path as Betaflight. The board enters DFU mode via MSP command or manual boot button, and the iNav binary is flashed through the STM32 bootloader.
 
 <Note>
-WebSerial is required for firmware flashing. This means Chrome 89+, Edge 89+, or another Chromium-based browser. Firefox and Safari do not support WebSerial.
+Firmware flashing uses the WebUSB API (for DFU) and the WebSerial API (for the serial bootloader paths). Both are available in Chrome 89+, Edge 89+, or another Chromium-based browser. Firefox and Safari support neither, so flashing is not available there.
 </Note>
 
 ## Flashing ArduPilot

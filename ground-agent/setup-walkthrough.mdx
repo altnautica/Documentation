@@ -2,6 +2,7 @@
 title: "Setup Walkthrough"
 description: "Step-by-step ground-station setup wizard, from first boot to a paired link."
 icon: "list-checks"
+lastUpdated: "2026-06-18"
 ---
 
 # Setup Walkthrough
@@ -22,11 +23,13 @@ You need:
 - The pairing key from the drone you want to receive from. The drone
   side prints this in its setup webapp.
 
-## Step 1. Identify device
+## Step 1. Welcome
 
 The wizard opens on the agent's mDNS URL (`http://ados.local:8080`).
-The first step confirms the device name, board, and version. No action
-needed; click **Next**.
+The welcome step confirms the device name, board, and version, and
+shows a chip row for the local network (Wi-Fi, hotspot, USB tether, or
+LAN). If no usable local network is up, this step asks you to bring one
+up before continuing. Otherwise no action is needed; click **Next**.
 
 ## Step 2. Profile
 
@@ -41,7 +44,14 @@ Pick **Ground station**. Then pick the role:
 The recommended role appears as a hint based on the agent's hardware
 fingerprint.
 
-## Step 3. Hardware check
+## Step 3. Operating region
+
+Optional. The agent defaults to an unrestricted RF posture, so this
+step never blocks the wizard. Pin a region here if you want your local
+jurisdiction's channel and power limits enforced. When unpinned, you
+are responsible for local RF compliance.
+
+## Step 4. Hardware check
 
 The page sweeps every component the picked role requires: SBC, RTL8812EU
 adapter, kiosk display (HDMI), gamepad, second USB adapter for mesh
@@ -50,40 +60,51 @@ roles. Components that fail show a fix hint.
 Resolve any required `missing` items before continuing. Optional items
 can be skipped.
 
-## Step 4. Network
+## Step 5. Cloud posture
 
-Configure how the ground station reaches Mission Control:
+Choose how this ground station talks to the outside world. ADOS is
+local-first, so the default and primary path is **local-only**: Mission
+Control reaches the agent over the LAN by hostname or IP and stores the
+key locally, with no cloud round-trip. Pick **cloud** (or a self-hosted
+backend) only when you need remote or cross-network access. Local-only
+is a correct, fully-working state, not a misconfiguration.
 
-- Hotspot for tablet / phone clients in the field.
-- LAN client when you have an existing Wi-Fi network.
-- Ethernet for fixed installs.
-- USB tether for a wired laptop.
-- Modem for cellular fallback.
+The next step (Pair with Mission Control) appears only when you choose a
+cloud or self-hosted posture. Local-only deployments skip it.
 
-The wizard exposes the uplink priority order so the agent picks the
-preferred path automatically when multiple are available.
+## Step 6. Pair with Mission Control (cloud or self-hosted only)
 
-## Step 5. WFB pairing
+When you opted into a cloud or self-hosted posture, the agent shows a
+six-character pairing code. Enter it in Mission Control to accept the
+device, or accept a code from Mission Control. After a successful pair,
+the wizard moves on.
 
-Paste the drone's pairing key, pick the radio channel, and click
-**Pair**. The agent stores the key, configures the WFB-rx service, and
-starts receiving.
+For local-only deployments, you pair from Mission Control's Add-a-Node
+card by the ground station's hostname or IP over the LAN. No code is
+needed.
+
+## Step 7. WFB pairing
+
+This is the drone-to-ground air link, separate from Mission Control
+pairing. On the ground receiver step, paste the drone's pairing key,
+pick the radio channel, and click **Pair**. The agent stores the key,
+configures the WFB-rx service, and starts receiving.
 
 The page lights up with the live RSSI and bitrate once the air side is
 in range.
 
-## Step 6. Display
+## Step 8. Local display
 
 If a kiosk display is attached, the wizard offers driver install +
 calibration. Touch screens prompt a four-corner calibration step.
 
-## Step 7. Cloud pair
+## Step 9. Remote access
 
-The agent generates a six-character pairing code for Mission Control.
-Enter the code in Mission Control's "Pair a drone" dialog. After a
-successful pair, the wizard moves on automatically.
+Optional. Configure a cloud or tunnel link (for example a Cloudflare
+tunnel) for reaching the ground station from outside the local network.
+Skip it for an offline or LAN-only setup.
 
-## Step 8. Finish
+## Step 10. Finish
 
 The wizard's final step writes the chosen profile to
 `/etc/ados/profile.conf`, marks `setup_finalized = true`, and reboots

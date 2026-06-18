@@ -2,6 +2,7 @@
 title: "SITL Testing"
 description: "Test with ArduPilot SITL using the bundled WebSocket bridge."
 icon: "flask-vial"
+lastUpdated: "2026-06-18"
 ---
 
 SITL (Software In The Loop) lets you test Mission Control against a full ArduPilot autopilot running on your computer. No drone hardware needed. The bundled SITL tool launches ArduPilot SITL and bridges its TCP output to a WebSocket that the browser can connect to.
@@ -58,14 +59,14 @@ The SITL tool lives at `tools/sitl/` inside the Mission Control repo.
     ```bash
     cd ADOSMissionControl/tools/sitl
     npm install
-    npm start
+    npx tsx src/index.ts
     ```
-    By default, this launches ArduCopter SITL and starts a WebSocket bridge on port 5001.
+    By default, this launches ArduCopter SITL and starts a WebSocket bridge on port 5760.
   </Step>
   <Step title="Connect from Mission Control">
     Open Mission Control in your browser. Click Connect, select the WebSocket tab, and enter:
     ```
-    ws://localhost:5001
+    ws://localhost:5760
     ```
     Click Connect. You should see a simulated copter appear with full telemetry.
   </Step>
@@ -81,30 +82,37 @@ The SITL tool lives at `tools/sitl/` inside the Mission Control repo.
 
 ## Configuration Options
 
-The SITL tool accepts command-line options:
+The SITL tool accepts command-line flags:
 
-| Option | Default | Description |
+| Flag | Default | Description |
 |--------|---------|-------------|
-| `--vehicle` | `copter` | Vehicle type: copter, plane, rover, sub |
-| `--port` | `5001` | WebSocket bridge port |
-| `--ardupilot-path` | `~/.ardupilot` | Path to ArduPilot source directory |
-| `--location` | `CMAC` | Starting location (ArduPilot location name or lat,lon,alt,heading) |
+| `--drones` | `1` | Number of drone instances to launch |
+| `--ws-port` | `5760` | WebSocket bridge port for the GCS |
+| `--vehicle` | `ArduCopter` | Vehicle type: ArduCopter, ArduPlane, ArduRover, ArduSub |
+| `--lat` | (home latitude) | Home latitude in decimal degrees |
+| `--lon` | (home longitude) | Home longitude in decimal degrees |
 | `--speedup` | `1` | Simulation speed multiplier |
+| `--wind` | (none) | Wind as `speed,direction` (e.g. `5,180`) |
+| `--ardupilot` | `~/.ardupilot` | Path to the ArduPilot source directory |
+| `--no-dashboard` | off | Disable the terminal dashboard UI |
 
 **Examples:**
 
 ```bash
 # Start a plane simulation
-npm start -- --vehicle plane
+npx tsx src/index.ts --vehicle ArduPlane
 
-# Start at a custom location (San Francisco)
-npm start -- --location 37.7749,-122.4194,20,0
+# Start at a custom home location
+npx tsx src/index.ts --lat 37.7749 --lon -122.4194
 
 # Run at 2x speed
-npm start -- --speedup 2
+npx tsx src/index.ts --speedup 2
 
 # Use a different WebSocket port
-npm start -- --port 5002
+npx tsx src/index.ts --ws-port 5761
+
+# Launch three drones at once
+npx tsx src/index.ts --drones 3
 ```
 
 ## How the Bridge Works
@@ -112,24 +120,21 @@ npm start -- --port 5002
 ArduPilot SITL speaks MAVLink over TCP (default port 5760). Browsers cannot connect to raw TCP sockets. The SITL tool bridges this gap:
 
 ```
-ArduPilot SITL (TCP :5760)  →  Bridge (Node.js)  →  WebSocket :5001  →  Browser
+ArduPilot SITL (TCP :5760)  ->  Bridge (Node.js)  ->  WebSocket :5760  ->  Browser
 ```
 
 The bridge is a thin relay. It connects to SITL's TCP port, opens a WebSocket server, and forwards binary MAVLink frames in both directions. No parsing, no modification. What goes in comes out.
 
 ## Multi-Drone SITL
 
-You can run multiple SITL instances for multi-drone testing:
+For multi-drone testing, pass `--drones N`. The tool launches multiple SITL instances, each with a unique system ID, and the bridge multiplexes all of them onto a single WebSocket port:
 
 ```bash
-# Terminal 1: First copter on port 5001
-npm start -- --port 5001
-
-# Terminal 2: Second copter on port 5002
-npm start -- --port 5002 --location 12.9720,77.5950,920,90
+# Three copters on one bridge
+npx tsx src/index.ts --drones 3
 ```
 
-In Mission Control, connect to both WebSocket URLs. Both drones appear in the fleet sidebar.
+In Mission Control, connect once to `ws://localhost:5760`. The GCS demultiplexes by system ID from the HEARTBEAT messages, and all three drones appear in the fleet sidebar.
 
 ## Testing Missions
 
@@ -155,23 +160,16 @@ All configuration panels work with SITL:
 
 ## Automated Testing
 
-The SITL tool powers the project's end-to-end tests:
-
-```bash
-# Run e2e tests against SITL
-npm run test:e2e:sitl
-```
-
-Playwright tests start a SITL instance, connect the browser, and exercise the full GCS workflow: connect, read params, upload mission, arm, takeoff, fly, land.
+The SITL tool also serves as a backend for browser automation. A Playwright test can start a SITL instance, point the browser at the bridge, and exercise the full GCS workflow end to end: connect, read parameters, upload a mission, arm, take off, fly, and land. Because SITL runs the real autopilot, these runs catch protocol and timing issues that mock telemetry would hide.
 
 ## Troubleshooting
 
 <AccordionGroup>
   <Accordion title="SITL not found">
-    The tool looks for ArduPilot at `~/.ardupilot` by default. If you installed it elsewhere, use the `--ardupilot-path` option. Make sure you have built the correct vehicle type (`./waf copter`, `./waf plane`, etc.).
+    The tool looks for ArduPilot at `~/.ardupilot` by default. If you installed it elsewhere, point at it with the `--ardupilot` flag. Make sure you have built the correct vehicle type (`./waf copter`, `./waf plane`, etc.).
   </Accordion>
   <Accordion title="WebSocket connection refused">
-    Check that the SITL tool is running and the port is not in use by another process. Run `lsof -i :5001` to check.
+    Check that the SITL tool is running and the port is not in use by another process. Run `lsof -i :5760` to check.
   </Accordion>
   <Accordion title="No telemetry after connecting">
     SITL may take a few seconds to initialize. Wait for the "APM: Ready to fly" message in the SITL output. If telemetry still does not appear, check that the TCP bridge connected successfully (look for "Connected to SITL" in the tool output).

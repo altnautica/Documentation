@@ -1,6 +1,7 @@
 ---
 title: "TypeScript SDK"
 description: "@altnautica/plugin-sdk reference. The SDK every GCS plugin uses."
+lastUpdated: "2026-06-18"
 ---
 
 The TypeScript SDK is the public package every GCS plugin imports.
@@ -175,6 +176,7 @@ template uses esbuild for zero-config builds:
 esbuild src/plugin.ts --bundle --format=esm --target=es2022 --outfile=plugin.bundle.js --minify
 ```
 
-Output goes to `gcs/plugin.bundle.js`. The manifest's `gcs.bundle`
-field points at the same path. The pack script computes the
-SHA-256 and writes it into `assets[].sha256`.
+Output goes to `gcs/plugin.bundle.js`. The manifest's `gcs.entrypoint`
+field points at the same path. The bundle is not hashed in the
+manifest; its integrity is bound by the canonical payload hash that
+the signing step writes into the separate `SIGNATURE` file.

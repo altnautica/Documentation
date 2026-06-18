@@ -63,7 +63,7 @@ The install takes 5-10 minutes depending on your internet speed and SD card clas
     - RTL8812EU USB device
     - No flight controller on any serial port
 
-    If the score points to ground station, the script writes `profile: ground-station` to `/etc/ados/profile.conf` and enables the ground-station systemd units.
+    If the score points to ground station, the script writes `profile: ground_station` to `/etc/ados/profile.conf` and enables the ground-station systemd units. The `ados status` command displays this as `ground-station` for readability, but the on-disk value uses the underscore form.
   </Step>
   <Step title="Reboot">
     The SBC reboots once. On the second boot, the ground station is live. The WiFi AP starts, the OLED lights up, and the WFB-ng receiver begins listening.
@@ -151,11 +151,11 @@ sudo ados profile set ground-station
 sudo reboot
 ```
 
-Or edit `/etc/ados/config.yaml` directly:
+Or edit `/etc/ados/config.yaml` directly. The on-disk value must use the underscore form. The config validator rejects the hyphenated `ground-station`:
 
 ```yaml
 agent:
-  profile: ground-station
+  profile: ground_station
 ```
 
 ## Troubleshooting install issues
@@ -165,7 +165,7 @@ agent:
 | DKMS build fails | Missing kernel headers | Run `sudo apt install raspberrypi-kernel-headers` and re-run the install |
 | No WiFi AP after reboot | hostapd not started | Check `systemctl status ados-hostapd` |
 | OLED blank | I2C not enabled | Run `sudo raspi-config`, enable I2C under Interface Options, reboot |
-| Profile detected as "air" | Flight controller on USB | Unplug the FC and run `sudo ados profile auto` |
+| Profile detected as "air" | Flight controller on USB | Unplug the FC, run `sudo ados profile set ground-station`, then reboot (or re-run the installer to trigger a fresh profile detect) |
 
 ## What is next
 

@@ -54,10 +54,10 @@ To test with a real ArduPilot simulator:
     npm start
     ```
 
-    This starts ArduPilot SITL with full physics simulation and a TCP-to-WebSocket bridge. Mission Control connects to `ws://localhost:5001`.
+    This starts ArduPilot SITL with full physics simulation and a TCP-to-WebSocket bridge. Mission Control connects to `ws://localhost:5760`.
   </Step>
   <Step title="Connect from Mission Control">
-    In Mission Control, click Connect > WebSocket and enter `ws://localhost:5001`. You now have a real autopilot with simulated GPS, IMU, and battery.
+    In Mission Control, click Connect > WebSocket and enter `ws://localhost:5760`. You now have a real autopilot with simulated GPS, IMU, and battery.
   </Step>
 </Steps>
 
@@ -166,7 +166,7 @@ When you need to handle a new MAVLink message type:
 
 <Steps>
   <Step title="Add constants">
-    In `src/lib/protocol/mavlink-constants.ts`, add the message ID, CRC_EXTRA, and payload length:
+    In `src/lib/protocol/mavlink-crc-extra.ts`, add the message ID, CRC_EXTRA, and payload length:
 
     ```typescript
     export const MSG_MY_NEW_MSG = 999

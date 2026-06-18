@@ -71,7 +71,7 @@ ffmpeg -fflags nobuffer -flags low_delay \
   -profile:v high -level 4.1 -pix_fmt yuv420p \
   -b:v 4000k -maxrate 4500k -bufsize 2000k \
   -g 60 -keyint_min 60 \
-  -f rtsp rtsp://localhost:8554/cam
+  -f rtsp rtsp://localhost:8554/main
 ```
 
 Key encoding flags:
@@ -108,8 +108,8 @@ MediaMTX is a lightweight RTSP/WebRTC server bundled with the agent. The agent m
 
 MediaMTX serves two protocols from the same stream:
 
-- **RTSP** at `rtsp://drone-ip:8554/cam` for local network players (VLC, ffplay, GStreamer)
-- **WHEP** (WebRTC) at `http://drone-ip:8889/cam/whep` for browser-based playback with sub-200ms latency
+- **RTSP** at `rtsp://drone-ip:8554/main` for local network players (VLC, ffplay, GStreamer)
+- **WHEP** (WebRTC) at `http://drone-ip:8889/main/whep` for browser-based playback with sub-200ms latency
 
 The agent configures MediaMTX with ICE servers for WebRTC:
 

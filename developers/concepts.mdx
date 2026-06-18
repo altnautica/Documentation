@@ -12,9 +12,10 @@ you understand those four, the rest of the system follows.
 
 A `manifest.yaml` at the root of the archive declares everything the
 host needs to install the plugin: the id, the version, which halves
-(`agent`, `gcs`, or both), the permissions each half requests, the
-slots the GCS panels mount into, and the SHA-256 of every shipped
-asset.
+(`agent`, `gcs`, or both), the permissions each half requests, and
+the slots the GCS panels mount into. The manifest carries no per-asset
+hash list. Asset integrity is bound by the canonical payload hash that
+the signing step writes into the separate `SIGNATURE` file (see below).
 
 The host validates the manifest against
 `schemas/plugin-manifest.schema.json` before unpacking anything. A
@@ -26,8 +27,9 @@ See [manifest reference](/developers/manifest) for the full field list.
 
 The archive is an Ed25519-signed zip. Two steps produce it:
 
-1. **Pack.** Compute a SHA-256 over each declared asset and write the
-   hashes into `manifest.yaml`, then zip the tree into a `.adosplug`.
+1. **Pack.** Zip the plugin tree (manifest plus the agent and GCS
+   halves) into a `.adosplug`. No hashes are written into the manifest
+   at this step.
 2. **Sign.** Compute the canonical payload hash (a SHA-256 over the
    path-sorted `<path>\n<sha256-hex>` of every archive entry except
    the signature file itself), sign that 32-byte digest with an
@@ -46,9 +48,12 @@ explicitly. Unsigned archives install only when the agent is in
 Each half runs in a separate sandbox.
 
 - **Agent half**: a Python subprocess under `ados-supervisor`. cgroup
-  v2 controls cap CPU percent, memory, and PIDs. seccomp tightens the
-  syscall surface. The plugin reaches the host only through a Unix
-  domain socket; it cannot open arbitrary network sockets unless it
+  v2 controls cap CPU percent, memory, and PIDs. The generated systemd
+  unit adds privilege hardening: `NoNewPrivileges=yes`,
+  `ProtectSystem=strict`, `ProtectHome=yes`, `PrivateTmp=yes`,
+  `LockPersonality=yes`, `RestrictRealtime=yes`, and
+  `RestrictSUIDSGID=yes`. The plugin reaches the host only through a
+  Unix domain socket; it cannot open arbitrary network sockets unless it
   declared `network.outbound`.
 - **GCS half**: an `<iframe sandbox="allow-scripts">` with no
   `allow-same-origin`. Null origin means no shared cookies, no shared

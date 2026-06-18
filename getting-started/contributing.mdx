@@ -2,6 +2,7 @@
 title: "Contributing"
 description: "How to contribute code, docs, and translations to ADOS."
 icon: "code-pull-request"
+lastUpdated: "2026-06-18"
 ---
 
 ## Welcome
@@ -118,7 +119,7 @@ ADOSMissionControl/
 
 **Zustand stores.** All state lives in Zustand stores. Components subscribe to store slices via selectors. Stores are independent. The telemetry store uses ring buffers (300 samples) for time-series data.
 
-**Pattern generators.** Mission patterns (survey grid, spiral, corridor, etc.) are pure functions. They take configuration in and return waypoints out. No React, no side effects. You can add new patterns by writing a generator function and registering it in the pattern registry.
+**Pattern generators.** Mission patterns (survey grid, orbit, corridor, etc.) are pure functions. They take configuration in and return waypoints out. No React, no side effects. You can add new patterns by writing a generator function and registering it in the pattern registry.
 
 ## Setting Up the Drone Agent
 

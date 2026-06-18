@@ -72,13 +72,13 @@ network:
     enabled: false
     apn: ""
   hotspot:
-    enabled: true
+    enabled: false
     ssid: "ADOS-{device_id}"
-    password: "ados1234"
+    password: "altnautica"
     channel: 6
 
 server:
-  mode: "cloud"           # cloud | self_hosted | disabled
+  mode: "cloud"           # cloud | self_hosted | local
   cloud:
     url: "https://convex-site.altnautica.com"
     mqtt_broker: "mqtt.altnautica.com"
@@ -224,12 +224,12 @@ Use `h264` for maximum compatibility. Browser-based players (MSE, WebRTC) expect
 
 ```yaml
 server:
-  mode: "cloud"  # cloud | self_hosted | disabled
+  mode: "local"  # cloud | self_hosted | local
 ```
 
-- **cloud**: connects to the ADOS cloud backend. Default for most users.
+- **cloud**: connects to the ADOS cloud backend.
 - **self_hosted**: connects to your own MQTT broker and Convex instance.
-- **disabled**: no cloud connectivity. Useful for air-gapped or field-only operation.
+- **local**: no cloud connectivity; Mission Control reaches the agent over the LAN. Default.
 
 ### OTA channel
 

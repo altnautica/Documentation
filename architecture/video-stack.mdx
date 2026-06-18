@@ -96,7 +96,7 @@ The agent supervises `wfb_tx` and `wfb_rx` from native Rust services: the radio 
 
 ## Stage 4: Ground serving
 
-The ground-side MediaMTX instance ingests the reassembled stream from WFB-ng RX and serves it to clients over WebRTC WHEP (Web Hosted Exchange Protocol).
+The ground-side MediaMTX instance ingests the reassembled stream from WFB-ng RX and serves it to clients over WebRTC WHEP (WebRTC-HTTP Egress Protocol).
 
 WHEP is an HTTP-based WebRTC signaling protocol. The browser sends a POST to the WHEP endpoint, and MediaMTX responds with an SDP answer. No custom signaling server needed.
 

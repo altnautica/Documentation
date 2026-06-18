@@ -80,8 +80,8 @@ altitude ladder instead of a dedicated rangefinder. The ladder walks:
 1. `GLOBAL_POSITION_INT.relative_alt` from the FC's baro-fused EKF.
    Quality multiplier 0.7.
 2. `VFR_HUD.alt` minus the captured take-off altitude. Quality 0.6.
-3. `GPS_RAW_INT.alt` minus take-off, gated on a 3D fix with HDOP ≤ 2
-   and an operator-set outdoor flag. Quality 0.4.
+3. `GPS_RAW_INT.alt` minus take-off, gated on a 3D fix and
+   `eph` ≤ 200 cm and an operator-set outdoor flag. Quality 0.4.
 4. A static 1.5 m fallback. Quality 0.2.
 
 The quality multiplier is applied to the raw flow quality before the

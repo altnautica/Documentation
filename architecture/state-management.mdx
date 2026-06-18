@@ -26,7 +26,7 @@ The stores group into six broad categories (representative examples shown, not t
 | Mission planning | `planner-store`, `drawing-store`, `pattern-store`, `geofence-store`, `rally-store`, `plan-library-store`, `simulation-history-store` |
 | Configuration | `parameter-store`, `calibration-store`, `firmware-store`, `osd-store`, `failsafe-store`, `ports-store` |
 | Video and comms | `video-store`, `ground-station-store`, `cloud-status-store`, `mqtt-store` |
-| UI and settings | `settings-store`, `theme-store`, `notifications-store`, `layout-store`, `sidebar-store`, and more |
+| UI and settings | `settings-store`, `ui-store`, `panel-cache-store`, `changelog-notification-store`, and more |
 
 ## Ring buffers for telemetry
 
@@ -144,14 +144,14 @@ The `connection-store` tracks this state machine. UI components subscribe to the
 
 ## Persist and hydration
 
-Some stores persist to IndexedDB via Zustand's `persist` middleware:
+Some stores persist across reloads via Zustand's `persist` middleware, backed by IndexedDB or browser local storage depending on the store:
 
 | Store | What persists | Version |
 |-------|--------------|---------|
-| `settings-store` | Video transport mode, theme, units, language, recent connections | 31 |
-| `plan-library-store` | Saved mission plans | 3 |
-| `simulation-history-store` | Past simulation results | 2 |
-| `layout-store` | Panel sizes, sidebar state | 4 |
+| `settings-store` | Video transport mode, theme, units, language, recent connections | 35 |
+| `plan-library-store` | Saved mission plans | 1 |
+| `simulation-history-store` | Past simulation results | 1 |
+| `local-nodes-store` | LAN-paired nodes and their API keys | 4 |
 
 Each persisted store has a version number. When the schema changes, a migration function converts the old format to the new one. The version is bumped in the same commit that changes the schema.
 

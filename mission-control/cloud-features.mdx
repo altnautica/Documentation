@@ -2,6 +2,7 @@
 title: "Cloud Features"
 description: "Convex backend for fleet sync, authentication, community features, and self-hosting."
 icon: "cloud"
+lastUpdated: "2026-06-18"
 ---
 
 Mission Control includes an optional Convex backend that adds authentication, fleet synchronization, community features, and cloud relay capabilities. Cloud features are entirely optional. The GCS works fully offline for USB and local WebSocket connections.
@@ -23,7 +24,7 @@ Mission Control includes an optional Convex backend that adds authentication, fl
 
 ## Architecture
 
-The cloud backend is built on [Convex](https://convex.dev), a reactive backend platform. The GCS repo includes a complete `convex/` directory with 25 tables (7 auth + 18 custom).
+The cloud backend is built on [Convex](https://convex.dev), a reactive backend platform. The GCS repo includes a complete `convex/` directory with around 30 custom tables alongside the auth tables.
 
 **Key tables:**
 

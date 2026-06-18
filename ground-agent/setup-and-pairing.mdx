@@ -148,7 +148,7 @@ If you need to start over, factory reset clears the pairing keys, network config
 - **OLED:** Hold B4 for 10 seconds, then confirm by holding B4 again for 3 seconds
 - **Setup webapp:** Advanced page > Factory Reset
 - **Mission Control:** ground-station panel > Physical UI tab > Factory Reset (requires typed confirmation)
-- **CLI:** `sudo ados factory-reset`
+- **REST:** `POST /api/v1/ground-station/factory-reset` (requires a fingerprint confirmation token, so a stray request cannot wipe the node)
 
 After reset, the ground station reboots and returns to the first-boot state. On a mesh-capable node the reset additionally clears the mesh identity (`mesh_id`, `psk.key`, receiver hint, revocation list) and transitions the role back to `direct` so the box can be paired into a different deployment.
 

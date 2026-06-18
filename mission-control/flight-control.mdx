@@ -2,24 +2,26 @@
 title: "Flight Control"
 description: "Manual flight with gamepad, keyboard, and guided mode commands."
 icon: "gamepad"
+lastUpdated: "2026-06-18"
 ---
 
-The Command tab is your cockpit. It provides live telemetry, video feed, and manual flight controls. This is where you fly your drone.
+The per-drone Overview surface is your cockpit. Select a drone in the fleet sidebar to open its detail view; the Overview tab shows live telemetry, the video feed, and manual flight controls. This is where you fly your drone.
 
-<Frame caption="Command tab with video feed, telemetry strip, and flight controls">
-  <img src="/images/dashboard/flight-control.png" alt="Command tab showing live flight interface" />
+<Frame caption="Per-drone Overview with video feed, telemetry strip, and flight controls">
+  <img src="/images/dashboard/flight-control.png" alt="Per-drone overview showing the live flight interface" />
 </Frame>
 
-## Command Tab Layout
+## Overview Layout
 
-The Command tab has several areas:
+The Overview surface has several areas:
 
 - **Video feed** (center): Live camera stream from the drone, with OSD overlay
 - **Telemetry strip** (bottom or side): Attitude, speed, altitude, battery, GPS
 - **Actions panel** (right): Arm/disarm, mode change, guided commands
 - **Fleet sidebar** (left): Drone selection when multiple are connected
 - **Mini-map** (corner): Overhead view of drone position
-- **Plugins tab**: Per-drone plugin surfaces installed from the extension registry (Follow-Me, Orbit, thermal overlay, gimbal control, etc. ship as plugins). See [Installing plugins](/mission-control/installing-plugins).
+
+The per-drone detail view also carries a Plugins tab for plugin surfaces installed on that drone (Follow-Me, Orbit, thermal overlay, gimbal control, and similar behaviors ship as plugins). See [Installing plugins](/mission-control/installing-plugins).
 
 ## Gamepad Control
 
@@ -133,7 +135,7 @@ The telemetry strip at the bottom shows real-time flight data in a compact forma
 
 ## Mission Execution
 
-When a mission is active, the Command tab shows mission execution progress:
+When a mission is active, the Overview surface shows mission execution progress:
 
 - Current waypoint indicator
 - Distance to next waypoint

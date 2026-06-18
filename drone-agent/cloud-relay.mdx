@@ -101,12 +101,12 @@ The agent supports three server modes:
     You need to run your own Mosquitto MQTT broker, MQTT-to-Convex bridge, and Convex backend. See the `tools/mqtt-bridge/` directory in the Mission Control repo for Docker Compose files.
   </Tab>
 
-  <Tab title="Disabled">
-    No cloud connectivity. The agent works fully locally: MAVLink proxy, video, and REST API all function. Only remote access is off.
+  <Tab title="Local / cloud-off">
+    No cloud connectivity. The agent works fully locally: MAVLink proxy, video, and REST API all function. Only remote access is off. This is the default posture.
 
     ```yaml
     server:
-      mode: "disabled"
+      mode: "local"
     ```
 
     Use this for air-gapped environments, testing, or when you only need local access.

@@ -8,7 +8,7 @@ lastUpdated: "2026-06-18"
 |------|---------|
 | **Plugin** | A signed `.adosplug` archive that adds code or UI to ADOS. Has up to two halves (agent and GCS). |
 | **Extension** | An Altnautica-published plugin shipped from the public `ADOSExtensions` repo. Same on-disk format as a third-party plugin. |
-| **Manifest** | The `manifest.yaml` at the root of the archive. Declares id, version, permissions, contributes, and asset hashes. |
+| **Manifest** | The `manifest.yaml` at the root of the archive. Declares id, version, permissions, and contributes. It carries no asset-hash list; integrity comes from the separate `SIGNATURE` file's canonical payload hash. |
 | **Half** | The portion of a plugin that runs on one side of the system. `agent` half runs on the drone; `gcs` half runs in Mission Control. |
 | **Slot** | A named mount point in the Mission Control UI. There are 13 slots (e.g. `fc.tab`, `video.overlay`, `notification.channel`, `command.tab`, `drone.detail.tab`). The plugin manifest declares which slots its panels target. |
 | **Capability** | A runtime grant derived from a manifest permission. Held by the plugin for the duration of a session. Required for every privileged call. |

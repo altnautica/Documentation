@@ -105,9 +105,10 @@ From the monorepo root:
 ./scripts/pack.sh my-first-plugin
 ```
 
-`pack.sh` computes the SHA-256 of every asset, rewrites the
-placeholders in `manifest.yaml`, and zips into
+`pack.sh` builds the GCS bundle and zips the plugin tree into
 `extensions/my-first-plugin/dist/com.example.my-first-plugin-0.1.0.adosplug`.
+Signing is a separate step (`scripts/sign.sh`): it computes the
+canonical payload hash and writes the `SIGNATURE` file.
 
 ## 6. Install
 

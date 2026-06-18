@@ -2,7 +2,7 @@
 title: "MAVLink Signing"
 description: "Enable, rotate, and manage MAVLink v2 signing keys for a paired drone from the GCS."
 icon: "shield-check"
-lastUpdated: "2026-05-09"
+lastUpdated: "2026-06-18"
 ---
 
 # MAVLink Signing
@@ -32,7 +32,7 @@ After enrollment, the flight controller still accepts both signed and unsigned c
 </Steps>
 
 <Warning>
-Require mode is powerful and can lock you out. If you lose every browser that holds the key, the flight controller will reject every command until someone with SSH access to the companion computer runs `ados signing clear-fc`. Rotate a copy into a second browser before turning require mode on for a drone you cannot physically reach.
+Require mode is powerful and can lock you out. If you lose every browser that holds the key, the flight controller will reject every command until you clear its signing store with the `Clear FC signing` action in the Key-missing banner. Rotate a copy into a second browser before turning require mode on for a drone you cannot physically reach.
 </Warning>
 
 ## Rotating a key
@@ -81,13 +81,15 @@ If commands suddenly stop working after enabling require mode:
 2. Check the signed-frame counters. A rising `rx invalid` count means the flight controller is receiving frames with the wrong signature, usually because a second GCS is still connected on an old key.
 3. If you are the only operator and nothing on the wire looks right, rotate the key from this browser. That resets the flight controller to trust the new key and kicks any stale browser off.
 
-If you are locked out entirely, SSH to the companion computer and run:
+If you are locked out entirely, clear the flight controller's signing store. When the Signing panel detects a missing key it shows a `Key missing` banner with a `Clear FC signing` button. That button is destructive: it tells the agent to write an all-zero signing key to the flight controller, which ArduPilot reads as "disable signing." The flight controller then accepts unsigned commands again, and you re-enroll from the GCS as if it were a fresh drone.
+
+If you cannot reach the panel, the same action is available as a direct agent call:
 
 ```bash
-ados signing clear-fc
+curl -X POST http://drone-ip:8080/api/mavlink/signing/disable-on-fc
 ```
 
-Type `CLEAR` at the prompt. The flight controller drops its signing store and accepts unsigned commands again. Re-enroll from the GCS as if it were a fresh drone.
+The agent gates this on the flight controller being connected and answers `503` if it is not.
 
 ## Related
 

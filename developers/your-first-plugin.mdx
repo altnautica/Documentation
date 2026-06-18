@@ -34,7 +34,7 @@ gcs:
   isolation: iframe
   permissions:
     - id: ui.slot.fc-tab
-    - id: ui.slot.notification
+    - id: ui.slot.notification-channel
     - id: ui.slot.settings-section
     - id: telemetry.subscribe.battery
     - id: telemetry.subscribe.mavlink
@@ -123,7 +123,7 @@ import { createPluginHarness } from "@altnautica/plugin-sdk/harness";
 const harness = createPluginHarness({
   grantedCapabilities: [
     "telemetry.subscribe.battery",
-    "ui.slot.notification",
+    "ui.slot.notification-channel",
     "recording.write",
   ],
   mount: async (ctx) => {

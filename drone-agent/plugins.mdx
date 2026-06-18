@@ -85,7 +85,7 @@ Risk badges roll up the requested capabilities into one of four levels (informat
 
 ## Built-in plugins
 
-Three plugins ship with the agent as worked examples and as useful surfaces in their own right. They are signed by the Altnautica first-party key and enabled by default.
+Three plugins ship with the agent as worked examples and as useful surfaces in their own right. They are first-party built-ins: their manifest ships in code (not as a packed `.adosplug` archive), they are trusted through the first-party signer allowlist rather than a signed archive, and they run in-process under the supervisor instead of as separate subprocesses. The subprocess and no-in-process-load behavior described in [Resource isolation](#resource-isolation) applies to installed third-party plugins.
 
 ### geofence
 
@@ -93,7 +93,7 @@ Subscribes to the public host topic `vehicle.geofence_breach` and republishes a 
 
 ### telemetry-logger
 
-Subscribes to nine lifecycle topics (vehicle armed, disarmed, mode change, battery, geofence breach, mission start, complete, abort, plus agent ready and shutdown) and emits structured events to journald. Event-only, no MAVLink writes. Useful by itself for compliance-grade logging, and a good reference for building log shippers.
+Subscribes to ten lifecycle topics (vehicle armed, disarmed, mode change, battery, geofence breach, mission start, complete, abort, plus agent ready and shutdown) and emits structured events to journald. Event-only, no MAVLink writes. Useful by itself for compliance-grade logging, and a good reference for building log shippers.
 
 ### mavlink-inspector
 

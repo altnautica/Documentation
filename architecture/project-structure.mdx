@@ -61,8 +61,9 @@ ADOSMissionControl/
 │   │   │   ├── mavlink-adapter.ts  # MAVLinkAdapter (83 decoders)
 │   │   │   ├── msp-adapter.ts      # MSPAdapter (34 decoders, 21 encoders)
 │   │   │   ├── drone-protocol.ts   # DroneProtocol interface
-│   │   │   ├── mavlink-constants.ts # CRC_EXTRA, payload lengths
-│   │   │   └── encoders/           # 6 encoder modules
+│   │   │   ├── mavlink-constants.ts # Sensor-status maps and parsing
+│   │   │   ├── mavlink-crc-extra.ts # CRC_EXTRA, payload lengths
+│   │   │   └── encoders/           # 8 encoder modules
 │   │   ├── video/
 │   │   │   ├── webrtc-client.ts    # WHEP + P2P MQTT WebRTC
 │   │   │   └── mse-player.ts       # MediaSource fallback
@@ -117,7 +118,7 @@ ADOSMissionControl/
 | `src/stores/telemetry-store.ts` | Ring-buffered telemetry with attitude, GPS, battery history |
 | `src/lib/video/webrtc-client.ts` | WHEP and P2P MQTT WebRTC client |
 | `src/hooks/use-panel-params.ts` | Universal parameter hook used by every flight controller config panel (60+) |
-| `src/stores/settings-store.ts` | Persisted user settings (version 31) |
+| `src/stores/settings-store.ts` | Persisted user settings |
 | `convex/schema.ts` | Convex database schema for the OSS standalone backend |
 
 ## ADOS Drone Agent
@@ -166,7 +167,7 @@ ADOSDroneAgent/
 │       │   └── ...
 │       ├── api/
 │       │   ├── runtime.py          # API runtime facade
-│       │   └── routes/             # FastAPI route modules (status, config, pairing, plugins, ...)
+│       │   └── routes/             # FastAPI route modules (config, pairing, plugins, ...)
 │       ├── hal/
 │       │   └── boards/             # Board profile YAMLs (17 profiles)
 │       ├── plugins/                # Plugin manifest, signing, IPC (Python plugin runtime)

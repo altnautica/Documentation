@@ -26,7 +26,7 @@ MAVLink v2 is a binary protocol. Each message has a fixed structure:
 
 Every MAVLink message definition has a CRC_EXTRA constant that acts as a schema version check. The transmitter and receiver must agree on the message layout. If a message was redefined (fields added or reordered), the CRC_EXTRA changes and the receiver rejects the packet.
 
-ADOS Mission Control ships CRC_EXTRA values for all 83 decoded message types. These are defined in `src/lib/protocol/mavlink-constants.ts` alongside the expected payload lengths.
+ADOS Mission Control ships CRC_EXTRA values for the decoded message types. These are defined in `src/lib/protocol/mavlink-crc-extra.ts` alongside the expected payload lengths.
 
 ## Parser architecture
 
@@ -135,7 +135,7 @@ This lets the `usePanelParams` hook (which powers every configure panel) work id
 
 ## Encoder architecture
 
-MAVLink message encoding is split across six modules under `src/lib/protocol/encoders/`:
+MAVLink message encoding is split across eight modules under `src/lib/protocol/encoders/`:
 
 | Module | Purpose |
 |--------|---------|
@@ -145,8 +145,10 @@ MAVLink message encoding is split across six modules under `src/lib/protocol/enc
 | `mission.ts` | MISSION_COUNT, MISSION_ITEM_INT, MISSION_REQUEST_LIST, MISSION_ACK |
 | `frame.ts` | MAVLink v2 frame builder (header + CRC-16 with CRC_EXTRA) |
 | `peripheral.ts` | MAV_CMD_PREFLIGHT_CALIBRATION, MAV_CMD_DO_SET_SERVO, gimbal commands |
+| `ekf-source.ts` | EKF source selection for navigation |
+| `can-forward.ts` | CAN bus frame forwarding |
 
-The barrel file `mavlink-encoder.ts` re-exports everything for convenience.
+The `index.ts` barrel re-exports every module, and `mavlink-encoder.ts` re-exports them for convenience.
 
 ## Transport layer
 
@@ -190,7 +192,7 @@ sequenceDiagram
 
 To add support for a new MAVLink message:
 
-1. Add the message ID, CRC_EXTRA, and payload length to `mavlink-constants.ts`
+1. Add the message ID, CRC_EXTRA, and payload length to `mavlink-crc-extra.ts`
 2. Add a `case` in `MAVLinkAdapter.handleMessage()` that decodes the payload bytes
 3. Add a callback method to `DroneProtocol` (e.g., `onNewMessage`)
 4. Subscribe to the callback in `DroneManager.bridgeTelemetry()`

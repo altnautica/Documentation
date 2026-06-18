@@ -62,7 +62,7 @@ Flight Controller (UART)
 
 Two Unix domain sockets carry data between services:
 
-**`/run/ados/mavlink.sock`** (binary): raw MAVLink frames with a 4-byte little-endian length prefix before each frame. Any service or script can connect and receive the full MAVLink stream.
+**`/run/ados/mavlink.sock`** (binary): raw MAVLink frames with a 4-byte big-endian length prefix before each frame. Any service or script can connect and receive the full MAVLink stream.
 
 **`/run/ados/state.sock`** (JSON): a parsed telemetry summary published at 10 Hz. Contains attitude, position, speed, battery, GPS, and armed state as JSON. Used by the health service, cloud relay, and TUI.
 

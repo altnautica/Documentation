@@ -15,7 +15,7 @@ fixture (the thermal-camera reference plugin ships `MockUvcBackend`; the
 gimbal reference plugin ships a mock router) that the driver constructor
 accepts in place of the real device. The agent SDK testing surface
 (`ados.sdk`) adds `PluginTestHarness`, `FakeVisionEngine`,
-`FakeIpcClient`, and `load_fixture` for plugin-level tests.
+and `load_fixture` for plugin-level tests.
 
 ```python
 def test_open_yields_correct_capabilities():

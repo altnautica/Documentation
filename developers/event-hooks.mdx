@@ -18,7 +18,7 @@ unsolicited requests.
 
 | Method | Capability | Args | When |
 |--------|-----------|------|------|
-| `theme.changed` | `theme.useTheme` | `Record<string, string>` of CSS variables | Initial mount and on every host theme change. |
+| `theme.changed` | none | `Record<string, string>` of CSS variables | Initial mount and on every host theme change. |
 | `config.changed` | none | the plugin's full config object | Operator saves a new config. |
 | `telemetry.<topic>` | `telemetry.subscribe.<topic>` | topic-specific payload | After the plugin subscribed to `<topic>`. |
 

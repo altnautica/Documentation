@@ -69,7 +69,7 @@ ADOS Drone Agent host
 Agent plugin (subprocess)
 ```
 
-Use the plugin's own `plg.<id>.*` topics:
+Use the plugin's own `plugin.<id>.*` topics:
 
 ```python
 # agent half: publish on the plugin's own topic
@@ -78,7 +78,7 @@ await ctx.events.publish("frame.ready", {"frame_id": 42, "ts_ms": now_ms()})
 
 ```ts
 // GCS half (same plugin id): subscribe to the host-pushed event
-ctx.client.on("plg.com.example.thermal.frame.ready", (evt) => {
+ctx.client.on("plugin.com.example.thermal.frame.ready", (evt) => {
   redrawOverlay(evt.frame_id);
 });
 ```

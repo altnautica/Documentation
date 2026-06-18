@@ -25,8 +25,8 @@ Mission Control supports four firmware families. Pick the one that matches your 
 | Flight modes | 18+ (mode switch via MAV_CMD) | 18+ | Box-mode via AUX channels | Box-mode + nav modes (POSHOLD, RTH, WP, CRUISE, COURSE HOLD, LAUNCH, LAND, ALT_HOLD) |
 | OSD configuration | Standard elements + 4 independent screens | Not supported (no OSD in PX4 stack) | Full MSP OSD (25 elements) | Extended element set (100+) + 8 custom text elements |
 | Blackbox | Yes | Yes | Yes | Yes (with iNav nav-extended fields) |
-| CLI | Yes | Yes (shell via SERIAL_CONTROL) | Yes | Yes |
-| Firmware flashing | APJ / DFU | .px4 format | WebUSB DFU | WebUSB DFU (same path as Betaflight) |
+| CLI panel | No dedicated CLI panel | MAVLink Shell (NuttShell over SERIAL_CONTROL) | Yes (MSP command-line) | No dedicated CLI panel |
+| Firmware flashing | APJ via WebUSB DFU (serial-bootloader fallback) | .px4 via PX4 serial bootloader (WebSerial) | WebUSB DFU | WebUSB DFU (same path as Betaflight) |
 | LED strip | Yes | No (DroneCAN) | Yes | Yes (extended LED config) |
 | Gimbal | Gimbal Manager v2 | Yes | No | No |
 | Camera | Servo + distance trigger | Yes | No | No |

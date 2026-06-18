@@ -34,27 +34,30 @@ drivers, the VIO vendor-binary bridge, and the heartbeat snapshot) is
 Rust.
 
 ```
-extensions/vision-nav/agent/
-  Cargo.toml
-  src/
-    main.rs          # binary entry point: builds the plugin, runs to SIGTERM
-    lib.rs           # module declarations
-    config.rs        # per-drone config model + validation (mirrors config-schema.json)
-    framing.rs       # luma extraction from the shared-bus frame formats
-    flow.rs          # clean-room Lucas-Kanade pyramidal optical-flow tracker
-    estimator.rs     # the Estimator trait + EstimatorOutput + EstimatorState
-    estimators.rs    # the six modes + the registry
-    scale.rs         # the rangefinder-free altitude ladder
-    rangefinder.rs   # UART / I2C rangefinder drivers + the FC relay
-    imu.rs           # IMU source (MAVLink RAW_IMU) + frame/IMU time aligner
-    clock_align.rs   # bidirectional TIMESYNC clock alignment
-    mavlink_emit.rs  # message builders + the component router
-    pre_arm.rs       # the mode-aware pre-arm gate
-    health.rs        # the navigation heartbeat snapshot
-    vio.rs           # the VIO vendor-binary bridge (UDS control + SHM frame ring)
-    pipeline.rs      # the per-frame runtime loop + plugin lifecycle
-  calibration-helper/  # one-time offline camera-IMU calibration (Python, out of the hot path)
-  vendor/              # OpenVINS + VINS-Fusion C++ adapters (binaries built by CI)
+extensions/vision-nav/
+  agent/                 # the compiled Rust agent half
+    Cargo.toml
+    src/
+      main.rs          # binary entry point: builds the plugin, runs to SIGTERM
+      lib.rs           # module declarations
+      config.rs        # per-drone config model + validation (mirrors config-schema.json)
+      framing.rs       # luma extraction from the shared-bus frame formats
+      flow.rs          # clean-room Lucas-Kanade pyramidal optical-flow tracker
+      estimator.rs     # the Estimator trait + EstimatorOutput + EstimatorState
+      estimators.rs    # the six modes + the registry
+      scale.rs         # the rangefinder-free altitude ladder
+      rangefinder.rs   # UART / I2C rangefinder drivers + the FC relay
+      imu.rs           # IMU source (MAVLink RAW_IMU) + frame/IMU time aligner
+      clock_align.rs   # bidirectional TIMESYNC clock alignment
+      mavlink_emit.rs  # message builders + the component router
+      pre_arm.rs       # the mode-aware pre-arm gate
+      health.rs        # the navigation heartbeat snapshot
+      vio.rs           # the VIO vendor-binary bridge (UDS control + SHM frame ring)
+      pipeline.rs      # the per-frame runtime loop + plugin lifecycle
+    calibration-helper/  # one-time offline camera-IMU calibration (Python, out of the hot path)
+  vendor/                # OpenVINS + VINS-Fusion C++ adapters (binaries built by CI)
+  gcs/                   # the GCS plugin half
+  locales/               # translation strings
 ```
 
 The estimator, the scale source, the rangefinder, and the IMU source

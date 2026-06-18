@@ -2,6 +2,7 @@
 title: "Your First Mission"
 description: "Plan a survey mission, set altitude and overlap, upload to the FC, and execute in Auto mode."
 icon: "route"
+lastUpdated: "2026-06-18"
 ---
 
 <Note>
@@ -249,13 +250,13 @@ The survey grid is one of seven pattern generators in Mission Control. Here are 
 
 | Pattern | Use Case | How It Works |
 |---------|----------|-------------|
-| **Survey Grid** | Area mapping, photogrammetry | Parallel legs covering a polygon |
-| **Circular Survey** | Point-of-interest coverage | Concentric circles around a center point |
+| **Survey Grid** | Area mapping, photogrammetry | Parallel legs covering a polygon (crosshatch double-pass option for high overlap) |
+| **Orbit** | Point-of-interest coverage | Circle around a center point at a set radius |
 | **Corridor Scan** | Road, pipeline, or river mapping | Parallel legs along a line/path |
-| **Search Pattern** | SAR, lost object search | Expanding square or sector search |
-| **Spiral** | Area search from center outward | Outward spiral from a center point |
-| **Crosshatch** | High-overlap photogrammetry | Two perpendicular survey grids overlaid |
-| **Perimeter** | Fence-line or boundary survey | Follows polygon edges at a set offset |
+| **Expanding Square** | SAR from a last-known position | Square spiral outward from a datum point |
+| **Sector Search** | SAR over a wedge area | Pie-slice legs radiating from a datum point |
+| **Parallel Track** | SAR sweep of a wide area | Evenly spaced parallel legs across a region |
+| **Structure Scan** | Facade and 3D structure capture | Multi-altitude orbit with the camera pointed inward |
 
 Each pattern has its own configuration panel. The workflow is the same: define the area, configure parameters, generate, validate, upload.
 

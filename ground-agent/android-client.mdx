@@ -7,13 +7,15 @@ lastUpdated: "2026-06-18"
 
 # Android Client
 
-Your Android phone or tablet is a first-class client for the ground station. Join the WiFi hotspot or plug in a USB-C cable, and you have live video and telemetry on your phone. Use the ADOS Android app for the best experience, or Chrome for a quick connection.
+Your Android phone or tablet is a client for the ground station. Join the WiFi hotspot or plug in a USB-C cable, and you have live video and telemetry on your phone. Chrome works today with no install. The ADOS Android app is in development and will add native decoding and auto-discovery; the feature notes below describe the planned client.
 
 ## Three connection paths
 
+App latencies are targets for the in-development client. Browser figures reflect what works today.
+
 | Path | How it works | Latency | When to use |
 |------|-------------|---------|-------------|
-| WiFi AP | Phone joins `ADOS-GS-XXXX`, opens app or browser | 50-80 ms (app), 80-120 ms (browser) | Primary field use, no cables |
+| WiFi AP | Phone joins `ADOS-GS-XXXX`, opens the browser (or the planned app) | 80-120 ms (browser), 50-80 ms (app target) | Primary field use, no cables |
 | USB-C tether | Cable from phone to ground station, CDC-NCM Ethernet | 40-70 ms | Wired reliability, phone charges too |
 | Cloud relay | Both ends on separate internet, routed through Altnautica cloud | 150-300 ms | Remote observer, not pilot |
 
@@ -26,10 +28,10 @@ Your Android phone or tablet is a first-class client for the ground station. Joi
   <Step title="Handle the no-internet warning">
     Android will show a "No internet" notification because the ground station is a local network. Tap "Stay connected" or "Use without internet." The ground station is working, it just does not provide internet access.
   </Step>
-  <Step title="Open the app or browser">
-    **ADOS Android app:** The app discovers the ground station automatically via mDNS. Video and telemetry start within 2-3 seconds.
+  <Step title="Open the browser">
+    **Chrome browser (today):** Navigate to `http://192.168.4.1:4000` (Mission Control) or `http://setup.ados.local/` (setup webapp).
 
-    **Chrome browser:** Navigate to `http://192.168.4.1:4000` (Mission Control) or `http://setup.ados.local/` (setup webapp).
+    **ADOS Android app (planned):** The app will discover the ground station automatically via mDNS so video and telemetry start in a few seconds. It is not yet available as a download.
   </Step>
   <Step title="Fly">
     Pilot with touch controls (virtual sticks overlay) or pair a Bluetooth gamepad to your phone. The first device with stick input claims pilot-in-command.
@@ -47,8 +49,8 @@ Android 11 and later supports CDC-NCM USB Ethernet natively.
   <Step title="Approve the connection">
     Tap "Allow." Android creates a USB Ethernet interface and assigns your phone the IP `192.168.7.2`.
   </Step>
-  <Step title="Open the app or browser">
-    The ADOS Android app detects the USB connection and switches to it automatically. In Chrome, navigate to `http://192.168.7.1:4000`.
+  <Step title="Open the browser">
+    In Chrome, navigate to `http://192.168.7.1:4000`. The planned ADOS Android app will detect the USB connection and switch to it automatically.
   </Step>
 </Steps>
 
@@ -56,9 +58,11 @@ Android 11 and later supports CDC-NCM USB Ethernet natively.
 USB-C tether may charge your phone while streaming when the hardware supports it. Power the Ground Agent from its own wall adapter or USB-C power bank for longer field sessions.
 </Tip>
 
-## ADOS Android app vs Chrome
+## ADOS Android app (planned) vs Chrome
 
-| Feature | ADOS Android app | Chrome browser |
+The table below compares Chrome, which works today, with the ADOS Android app that is in development. App rows describe planned behavior.
+
+| Feature | ADOS Android app (planned) | Chrome browser (today) |
 |---------|-----------------|----------------|
 | Video decode | Native MediaCodec (hardware H.264) | WebRTC via browser |
 | Latency | 50-80 ms | 80-120 ms |
@@ -67,9 +71,9 @@ USB-C tether may charge your phone while streaming when the hardware supports it
 | Touch sticks | Native overlay | Web overlay |
 | Power consumption | ~1x baseline | ~2-3x baseline |
 
-The ADOS Android app is the recommended path. It uses native MediaCodec for hardware H.264 decoding, which uses less power and gives lower latency than the browser's WebRTC decoder.
+Chrome is the path that works today. You do not need to install anything. Open the browser and navigate to the ground station URL.
 
-Chrome works for quick checks and testing. You do not need to install anything.
+The ADOS Android app aims to use native MediaCodec for hardware H.264 decoding, for less power draw and lower latency than the browser's WebRTC decoder. It is not yet available as a download.
 
 ## Video codec
 
@@ -97,7 +101,7 @@ If you want your phone to have internet through the ground station, enable "Shar
 
 ## Bluetooth gamepad on Android
 
-You can pair a Bluetooth gamepad to your phone and use it to fly through the ADOS Android app. The app receives stick inputs via the standard Android gamepad API and sends them as `MANUAL_CONTROL` MAVLink messages at 50 Hz.
+You can pair a Bluetooth gamepad to your phone. The planned ADOS Android app will receive stick inputs via the standard Android gamepad API and send them as `MANUAL_CONTROL` MAVLink messages at 50 Hz. Today, use the Web Gamepad API in Chrome as described below.
 
 In Chrome, the Web Gamepad API works but has some restrictions:
 
@@ -107,7 +111,7 @@ In Chrome, the Web Gamepad API works but has some restrictions:
 
 ## Touch fallback
 
-When no gamepad is connected, both the ADOS Android app and Mission Control in Chrome show a virtual sticks overlay on screen. Two touch zones on the left and right sides of the display act as throttle/yaw and pitch/roll sticks. Not ideal for precision flying, but good enough for basic control.
+When no gamepad is connected, Mission Control in Chrome shows a virtual sticks overlay on screen (the planned ADOS Android app will do the same). Two touch zones on the left and right sides of the display act as throttle/yaw and pitch/roll sticks. Not ideal for precision flying, but good enough for basic control.
 
 ## Supported Android versions
 

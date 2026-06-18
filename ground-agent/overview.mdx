@@ -2,6 +2,7 @@
 title: "Overview"
 description: "What the ADOS Ground Agent is and how it connects your drone to any screen."
 icon: "tower-broadcast"
+lastUpdated: "2026-06-18"
 ---
 
 # ADOS Ground Agent
@@ -77,7 +78,7 @@ You do not install separate software for the ground side. The same `curl | bash`
 If the fingerprint is ambiguous, the OLED shows a pick-profile screen. You press a button and you are done.
 
 <Note>
-You can always override the auto-detected profile by setting `agent.profile: ground-station` in `/etc/ados/config.yaml`.
+You can always override the auto-detected profile by setting `agent.profile: ground_station` in `/etc/ados/config.yaml`. Use the underscore form. The config validator rejects the hyphenated `ground-station`.
 </Note>
 
 ## Bench hardware

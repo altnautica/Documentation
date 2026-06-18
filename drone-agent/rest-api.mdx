@@ -53,7 +53,7 @@ The API is organized by domain. The "Served by" column shows where a domain curr
 | System | `/api/system`, `/api/v1/diagnostics` | Rust front | Reboot, shutdown, diagnostics, resource reads |
 | Fleet | `/api/fleet` | Rust front | Fleet enrollment and peers |
 | Peripherals | `/api/peripherals` | FastAPI (proxied) | USB devices, sensors |
-| Vision | `/api/vision`, `/api/vision-models` | Mixed | Vision state, detections, model registry |
+| Vision | `/api/vision`, `/api/vision/models` | FastAPI (proxied) | Vision state, detections, model registry |
 | Logs | `/api/logs`, `/api/observability` | FastAPI (proxied) | Log retrieval (see also the `ados-logd` query API) |
 | Network | `/api/v1/network` | Rust front | MAC pinning, WiFi client |
 | Ground station | `/api/v1/ground-station` | Rust front | Ground-station status, network, PIC, mesh, UI, recording |

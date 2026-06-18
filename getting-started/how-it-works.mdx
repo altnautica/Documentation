@@ -2,6 +2,7 @@
 title: "How It Works"
 description: "End-to-end data flow from flight controller to your browser."
 icon: "gears"
+lastUpdated: "2026-06-18"
 ---
 
 ## The Big Picture
@@ -107,7 +108,7 @@ The agent connects to the FC over a serial UART (typically `/dev/ttyS0` or `/dev
 
 ### In Mission Control
 
-The browser parses MAVLink binary frames directly. The adapter layer (`mavlink-adapter.ts`) handles 83 message types with full CRC validation. It feeds parsed data into Zustand stores that React components subscribe to.
+The browser parses MAVLink binary frames directly. The adapter layer (`mavlink-adapter.ts`) handles the full MAVLink v2 telemetry, mission, parameter, and calibration message set with CRC validation. It feeds parsed data into Zustand stores that React components subscribe to.
 
 Mission Control supports four firmware families:
 
