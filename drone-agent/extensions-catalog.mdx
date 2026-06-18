@@ -2,12 +2,12 @@
 title: "Extensions catalog"
 description: "First-party extensions shipped by Altnautica through the public ADOSExtensions repo."
 icon: "boxes-stacked"
-lastUpdated: "2026-05-19"
+lastUpdated: "2026-06-18"
 ---
 
 # Extensions catalog
 
-These are the first-party extensions Altnautica publishes through the public [`ADOSExtensions`](https://github.com/altnautica/ADOSExtensions) repo. Each one ships as a signed `.adosplug` archive (Ed25519, signer `altnautica-2026-A`) on GitHub Releases and is browsable from the Mission Control [Plugins tab](/mission-control/installing-plugins) on any drone you've connected.
+These are the first-party extensions Altnautica publishes through the public [`ADOSExtensions`](https://github.com/altnautica/ADOSExtensions) repo. Each one ships as a signed `.adosplug` archive (Ed25519, signer `altnautica-2026-A`) on GitHub Releases and installs from the Mission Control [Plugins tab](/mission-control/installing-plugins) on any drone you've connected.
 
 Every extension is licensed GPL-3.0-or-later; hardware reference designs ship CC0 1.0.
 
@@ -64,20 +64,20 @@ MAVLink Gimbal v2 controller with optional driver paths. Manual sliders, ROI loc
 | Field | Value |
 |---|---|
 | Plugin id | `com.altnautica.vision-nav` |
-| Version | 0.2.7 |
+| Version | 0.3.0 |
 | Risk | high |
-| Type | Hybrid (agent subprocess + GCS iframe) |
+| Type | Hybrid (Rust agent binary + GCS iframe) |
 | Hardware | USB UVC global-shutter camera (preferred) or CSI via V4L2; optional rangefinder |
 | FC firmware | ArduPilot 4.5+, PX4 1.14+, iNav 7.0+ |
 | Supported boards | cm4, cm5, rk3582, rk3588s2, rk3576, rpi5, pi-zero-2w |
 
 GPS-denied navigation. Optical flow (downward camera) and visual-inertial odometry (forward or downward camera) feeding the flight controller a 30 Hz position estimate over MAVLink so position-hold, loiter, and missions keep working unchanged.
 
-Six modes covering optical flow with or without a rangefinder, OpenVINS VIO, VINS-Fusion VIO, Hybrid, and Off. A 250 ms internal self-check steps down to a safer mode when features drop or drift grows and surfaces the degradation through a warning notification channel.
+Six modes covering optical flow with or without a rangefinder, OpenVINS VIO, VINS-Fusion VIO, Hybrid, and Off. The agent half is a compiled Rust binary that reads frames from the agent's shared vision bus. A 250 ms internal self-check steps down to a safer mode when features drop or drift grows and surfaces the degradation through a warning notification channel.
 
-**Permissions:** USB UVC + CSI + UART + I2C hardware claims, sensor/depth register, MAVLink read/write + peripheral + VIO components, estimator pose inject, process spawn for the signed vendor binaries (OpenVINS, VINS-Fusion).
+**Permissions:** shared vision frame bus read, UART and I2C rangefinder access, telemetry extend, event publish and subscribe, MAVLink read and write plus the peripheral and VIO components, estimator pose inject, and process spawn for the signed vendor binaries (OpenVINS, VINS-Fusion).
 
-**Vendor binaries:** OpenVINS (`v2.7`, GPL-3.0-only) and VINS-Fusion (HKUST Aerial Robotics, GPL-3.0-only). The plugin host's subprocess sandbox accepts only the two allowlisted basenames (`ados_openvins_shim`, `ados_vins_fusion_shim`). Both binaries live under the plugin's signed `vendor/` directory and stay dormant unless a VIO mode is active.
+**Vendor binaries:** OpenVINS (`v2.7`, GPL-3.0-only) and VINS-Fusion (GPL-3.0-only). The plugin host's subprocess sandbox accepts only the two allowlisted basenames (`ados_openvins_shim`, `ados_vins_fusion_shim`). Both binaries ship inside the signed archive under the plugin's `vendor/` directory and stay dormant unless a VIO mode is active.
 
 **Resources:** 512 MB max RAM, 80% CPU.
 
@@ -88,7 +88,7 @@ See the [Vision Navigation overview](/drone-agent/vision-nav-overview) for the f
 From Mission Control:
 
 1. Open a drone from the fleet, switch to the **Plugins** tab.
-2. Browse the registry, click the extension card.
+2. Click **Install plugin on this drone**, then point the dialog at the extension's `.adosplug` (paste the release URL or upload the downloaded file).
 3. Approve the two-stage install dialog.
 
 From the agent CLI:
@@ -101,4 +101,4 @@ The signature is verified against `/etc/ados/plugin-keys/` before the archive is
 
 ## Submitting an extension
 
-Community extensions land via the [hosted registry](/developers/distribution-registry) submission flow when the registry hits v1.0. Until then, first-party extensions live in the public [`ADOSExtensions`](https://github.com/altnautica/ADOSExtensions) repo and any plugin you build with the [SDK](/developers/sdk-python) installs cleanly via the local `.adosplug` path documented in [Distribution — local install](/developers/distribution-local-install).
+Community extensions land via the [hosted registry](/developers/distribution-registry) submission flow when the registry hits v1.0. Until then, first-party extensions live in the public [`ADOSExtensions`](https://github.com/altnautica/ADOSExtensions) repo and any plugin you build with the [SDK](/developers/sdk-python) installs cleanly via the local `.adosplug` path documented in [Distribution: local install](/developers/distribution-local-install).

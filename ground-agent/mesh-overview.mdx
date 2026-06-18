@@ -2,6 +2,7 @@
 title: "Mesh & Distributed Receive"
 description: "Run more than one Ground Agent and let them share the receive job. The why, the what, and the high-level shape."
 icon: "share-nodes"
+lastUpdated: "2026-06-18"
 ---
 
 # Mesh & Distributed Receive
@@ -84,7 +85,7 @@ Pairing is **field-only**. There is no laptop, no QR code, no cloud service invo
 ## What you do have to manage
 
 - **Hardware:** every relay and receiver needs a second USB WiFi adapter in addition to the primary RTL8812EU. Default is a second RTL8812EU for inventory simplicity and matched TX power. MT7612U or MT7921AU work as alternatives when a mainline kernel driver is preferred on the mesh side.
-- **Channel planning:** the primary WFB-ng radio sits on 5 GHz UNII-3 (channel 149 or 153). The mesh carrier on same-chip 5 GHz deployments sits on UNII-1 (channel 36 or 40) with a 100 MHz guard band. 2.4 GHz mesh carriers stay on channel 1. Either works; pick band at install time based on the interference picture at the deployment site.
+- **Channel planning:** the primary WFB-ng radio sits on 5 GHz UNII-3 (channel 149 or 153). The mesh carrier runs on 2.4 GHz (channel 1 by default, configurable across channels 1 to 13), a separate band from the primary so the two radios do not interfere. Pick the mesh channel at install time based on the 2.4 GHz interference picture at the deployment site.
 - **Role assignment:** decide which node is the receiver before you head out. The receiver is also the GCS connection target by default.
 
 ## Where to next

@@ -17,7 +17,7 @@ Open source is not a marketing angle. It is the architecture decision. Every com
 All ADOS software repositories use the **GNU General Public License v3.0**. This includes:
 
 - [ADOS Mission Control](https://github.com/altnautica/ADOSMissionControl) (TypeScript, Next.js)
-- [ADOS Drone Agent](https://github.com/altnautica/ADOSDroneAgent) (Python)
+- [ADOS Drone Agent](https://github.com/altnautica/ADOSDroneAgent) (Rust and Python)
 
 **What GPLv3 means for you:**
 
@@ -112,7 +112,7 @@ Compare this to the typical proprietary drone stack:
 | Ground control station | Vendor-locked app | ADOS Mission Control (GPLv3) |
 | Video link | Proprietary protocol | WFB-ng (open) |
 | Cloud telemetry | Vendor cloud, subscription | Self-hosted or Altnautica cloud |
-| FC configuration | Vendor-only tool | ADOS Mission Control (36+ panels) |
+| FC configuration | Vendor-only tool | ADOS Mission Control (60+ panels) |
 | Mission planning | Vendor-only tool | ADOS Mission Control (7 patterns) |
 | Hardware designs | Proprietary | CC0 1.0 (public domain) |
 
@@ -122,7 +122,7 @@ Compare this to the typical proprietary drone stack:
 
 QGC is the reference GCS for ArduPilot and PX4. It is open source (Apache 2.0 / GPLv3 dual license). It is a desktop Qt/C++ application.
 
-ADOS Mission Control is a browser-based GCS. It runs in Chrome with no install. It includes features QGC does not have: gamepad flight control at 50Hz, WebSerial firmware flashing, MSP/Betaflight support, a built-in mission simulator, and demo mode. It also covers layers QGC does not touch: the companion computer agent, video pipeline, cloud relay, and ground station software.
+ADOS Mission Control is a browser-based GCS. It runs in Chrome with no install. It includes features QGC does not have: gamepad flight control at 50Hz, browser-based firmware flashing, MSP/Betaflight support, a built-in mission simulator, and demo mode. It also covers layers QGC does not touch: the companion computer agent, video pipeline, cloud relay, and ground station software.
 
 QGC and Mission Planner are excellent tools. ADOS does not replace them for users who are happy with desktop apps. But if you want a browser-based workflow, full-stack coverage, or something you can embed in your own application, ADOS fills a gap.
 
@@ -130,15 +130,15 @@ QGC and Mission Planner are excellent tools. ADOS does not replace them for user
 
 Mission Planner is the ArduPilot-ecosystem GCS. Windows-only (.NET/WinForms), extensive feature set, tightly integrated with ArduPilot. It is open source (GPLv3).
 
-ADOS Mission Control is cross-platform (runs anywhere a browser runs) and supports multiple firmware families (ArduPilot, PX4, Betaflight). If you are on macOS or Linux, or you need Betaflight support, Mission Control is an alternative.
+ADOS Mission Control is cross-platform (runs anywhere a browser runs) and supports multiple firmware families (ArduPilot, PX4, Betaflight, iNav). If you are on macOS or Linux, or you need Betaflight support, Mission Control is an alternative.
 
 ### Betaflight Configurator
 
-The Betaflight Configurator is a Chrome app / Electron app for configuring Betaflight flight controllers. ADOS Mission Control includes full MSP protocol support with 34 message decoders, 21 encoders, and 8 Betaflight-specific panels. You can configure a Betaflight FC from the same GCS you use for ArduPilot.
+The Betaflight Configurator is a Chrome app / Electron app for configuring Betaflight flight controllers. ADOS Mission Control includes full MSP v1/v2 protocol support and Betaflight-specific configuration panels (and iNav over the same MSP codec). You can configure a Betaflight FC from the same GCS you use for ArduPilot.
 
 ### DroneKit / pymavlink
 
-DroneKit is a Python SDK for controlling MAVLink drones. It is no longer actively maintained. The ADOS Drone Agent builds on pymavlink (the actively maintained library) and provides a higher-level Python SDK, a REST API, a TUI, and systemd service management on top.
+DroneKit is a Python SDK for controlling MAVLink drones. It is no longer actively maintained. The ADOS Drone Agent builds on pymavlink (the actively maintained library) and provides a plugin SDK, a REST API, a TUI, and systemd service management on top.
 
 ## What "Full Stack" Means Concretely
 

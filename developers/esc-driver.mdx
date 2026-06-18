@@ -1,6 +1,7 @@
 ---
 title: "ESC driver"
 description: "Implement an EscDriver to read motor telemetry."
+lastUpdated: "2026-06-18"
 ---
 
 An `EscDriver` reads per-motor telemetry from electronic speed
@@ -61,23 +62,25 @@ EscTelemetry(
     timestamp_ns=ns,
     motor_index=0,
     rpm=12500,
-    temperature_c=42.0,
+    temp_c=42.0,
     voltage_v=22.1,
     current_a=0.0,
     throttle_pct=37.5,
 )
 ```
 
-`current_a` is `0.0` when the protocol does not carry it. Set
-`temperature_c=None` for sensors with no thermistor.
+`current_a` is `0.0` when the protocol does not carry it. For a bank
+with no thermistor, report `temp_c=0.0` and set `has_temperature=False`
+in `EscCapabilities` so the GCS hides the column.
 
 ## Manifest permissions
 
 ```yaml
 agent:
   permissions:
-    - sensor.esc.register
-    - mavlink.read       # for ESC_TELEMETRY MAVLink message ingestion
+    - id: sensor.payload.register   # ESC drivers register under the payload cap (no dedicated ESC cap in the current catalog)
+    - id: mavlink.read              # for ESC telemetry carried in the MAVLink stream
+    - id: hardware.uart             # for a direct serial telemetry line
 ```
 
 ## See also

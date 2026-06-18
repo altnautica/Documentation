@@ -2,7 +2,7 @@
 title: "How it works"
 description: "A system-level walkthrough of the Vision Navigation pipeline. Camera and IMU samples become MAVLink messages the flight controller's EKF fuses."
 icon: "diagram-project"
-lastUpdated: "2026-05-16"
+lastUpdated: "2026-06-18"
 ---
 
 # How Vision Navigation works
@@ -36,9 +36,10 @@ The plugin reads four kinds of input and produces one kind of output:
 - A **MAVLink message** on a specific MAVLink component, at a fixed
   rate, that the flight controller's state estimator fuses. The
   message type depends on the mode:
-  - `OPTICAL_FLOW_RAD` on component 198 at 10 Hz for OF modes.
-  - `VISION_POSITION_ESTIMATE` on component 197 at 30 Hz for VIO
-    modes.
+  - `OPTICAL_FLOW_RAD` on component 198 at the camera frame rate
+    (around 30 Hz) for OF modes.
+  - `VISION_POSITION_ESTIMATE` on component 197 at the same rate for
+    VIO modes.
   - Both in parallel for hybrid mode.
 
 ## The chain
@@ -53,8 +54,10 @@ camera -> agent  ->  estimator  ->  MAVLink emit  ->  flight controller EKF
 
 The agent does five things on every camera frame:
 
-1. **Capture.** Grab the frame from `/dev/videoN` (USB) or the
-   libcamera path (CSI). Tag it with a monotonic timestamp.
+1. **Capture.** The agent's vision host grabs the frame from the
+   camera (USB UVC or CSI via V4L2) and publishes it on the shared
+   vision frame bus. The plugin reads it from there, tagged with a
+   monotonic timestamp.
 2. **Pair.** Look up the IMU sample closest to the camera frame's
    timestamp. Apply the calibrated static offset between the two
    clocks. If the residual offset has drifted past 30 ms, mark the
@@ -112,9 +115,9 @@ EKF can rely on.
 Three things:
 
 1. **Sensor abstraction.** The flight controller does not know how
-   to talk to a USB UVC camera. The plugin handles the frame
-   capture, the OpenCV tracker (or the vendor VIO binary), and the
-   timing.
+   to talk to a USB UVC camera. The agent handles the frame
+   capture, the optical-flow tracker (or the vendor VIO binary), and
+   the timing.
 2. **State estimation.** The flight controller's EKF is good at
    fusing pre-computed velocity or pose. It does not run vision
    itself. The plugin runs the vision and hands the result to the

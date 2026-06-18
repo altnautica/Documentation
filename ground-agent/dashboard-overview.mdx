@@ -2,6 +2,7 @@
 title: "Browser Dashboard"
 description: "The ground-station view of the agent's web dashboard at port 8080."
 icon: "layout-dashboard"
+lastUpdated: "2026-06-18"
 ---
 
 # Browser Dashboard
@@ -19,7 +20,7 @@ Same URLs as the drone profile:
 |---|---|
 | mDNS | `http://ados.local:8080` |
 | Hotspot | `http://192.168.4.1:8080` |
-| USB tether | `http://10.55.0.1:8080` |
+| USB tether | `http://192.168.7.1:8080` |
 | LAN | `http://<node-ip>:8080` |
 
 ## Ground Home
@@ -30,12 +31,12 @@ Same URLs as the drone profile:
 
 The home page renders profile-aware tiles and panels:
 
-- **WFB Receive** &mdash; adapter, channel, RSSI, packet loss, FEC,
+- **WFB Receive**. Adapter, channel, RSSI, packet loss, FEC,
   active streams.
-- **Mesh** &mdash; visible only in `relay` and `receiver` roles.
-- **Sources** &mdash; visible only in the `receiver` role.
-- **Hardware**, **Network**, **Cloud Relay**, **Services** &mdash;
-  shared with the drone home.
+- **Mesh**. Visible only in `relay` and `receiver` roles.
+- **Sources**. Visible only in the `receiver` role.
+- **Hardware**, **Network**, **Cloud Relay**, **Services**.
+  Shared with the drone home.
 
 For the full panel breakdown see [Home](/drone-agent/dashboard-home).
 
@@ -47,8 +48,8 @@ The ground sidebar adds three entries to the shared rail:
 |---|---|---|---|
 | Receive | yes | yes | yes |
 | Display & Joystick | yes | yes | yes |
-| Mesh | &mdash; | yes | yes |
-| Sources | &mdash; | &mdash; | yes |
+| Mesh | no | yes | yes |
+| Sources | no | no | yes |
 
 See the [Per-profile visibility matrix](/drone-agent/dashboard-per-profile)
 for the full nav inventory.

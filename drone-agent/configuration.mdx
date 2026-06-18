@@ -2,6 +2,7 @@
 title: "Configuration"
 description: "Structure and key settings of the /etc/ados/config.yaml file."
 icon: "gear"
+lastUpdated: "2026-06-18"
 ---
 
 # Configuration
@@ -19,7 +20,7 @@ When the agent starts, it looks for config in this order:
 
 ## Full config structure
 
-The config is organized into 14 top-level sections. Here is the complete structure with defaults:
+The config is organized into 16 top-level sections. Here is the complete structure with defaults:
 
 ```yaml
 agent:
@@ -93,6 +94,11 @@ server:
   mqtt_username: "ados"
   mqtt_password: ""
 
+remote_access:
+  provider: "none"        # none | cloudflare
+  public_urls: []
+  cloudflare: {}          # Cloudflare Tunnel quick-install settings
+
 security:
   tls:
     enabled: true
@@ -105,23 +111,17 @@ security:
   api:
     api_key: ""
     cors_enabled: true
-    cors_origins: ["*"]
+    cors_origins: []          # Built-in localhost defaults always apply
+    cors_origins_extra: []    # Extra origins added on top of the defaults
   hmac_enabled: false
   hmac_secret: ""
 
-scripting:
-  text_commands:
-    enabled: true
-    udp_port: 8889
-    websocket_port: 8890
-  scripts:
-    enabled: true
-    script_dir: "/var/ados/scripts"
-    max_concurrent: 3
-  rest_api:
+api:
+  rest:
     enabled: true
     host: "0.0.0.0"
     port: 8080
+  mission_control_url: ""
 
 ota:
   channel: "stable"       # stable | beta | dev
@@ -129,7 +129,7 @@ ota:
   auto_install: false     # Auto-install after check
   github_repo: "altnautica/ADOSDroneAgent"
   pip_path: "/opt/ados/venv/bin/pip"
-  service_name: "ados-agent"
+  service_name: "ados-supervisor"
 
 logging:
   level: "info"           # debug | info | warning | error
@@ -179,6 +179,9 @@ ground_station:
     buttons: {}
     screens: {}
   use_live_state_ipc: true
+
+ui:
+  theme: "dark"             # dark | light
 ```
 
 ## Key settings explained
@@ -269,9 +272,9 @@ curl -X PUT http://localhost:8080/api/config \
   -d '{"key": "video.camera.fps", "value": "25"}'
 ```
 
-### From the TUI
+### Editing the file
 
-Press `c` to open the Config screen. Browse sections, view values, and edit them interactively.
+You can edit `/etc/ados/config.yaml` directly with any text editor, then restart the affected service (see the tip at the end of this page). The terminal status page (`ados`) is read-only and does not edit config.
 
 ## Per-board overrides
 

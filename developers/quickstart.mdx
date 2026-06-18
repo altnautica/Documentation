@@ -1,6 +1,7 @@
 ---
 title: "Quickstart"
 description: "Scaffold and install your first plugin in five minutes."
+lastUpdated: "2026-06-18"
 ---
 
 This page takes you from an empty folder to a working plugin
@@ -9,10 +10,12 @@ installed in Mission Control. No prior ADOS experience required.
 ## What you need
 
 - Node.js 20+ and pnpm 9+.
-- Python 3.11+ (used by `pack.sh`).
-- A working Mission Control install (`>=0.6.0`).
-- A working ADOS Drone Agent if you plan to ship the agent half
-  (`>=0.10.0`); the rest of this page only needs the GCS half.
+- Python 3.11+ only if you sign archives (`scripts/sign.sh`); the
+  quickstart packs an unsigned archive and installs it in developer
+  mode, so it is optional here.
+- A working Mission Control install.
+- A working ADOS Drone Agent if you plan to ship the agent half; the
+  rest of this page only needs the GCS half.
 
 ## 1. Get the SDK and templates
 
@@ -125,7 +128,7 @@ The host:
    bundle inside it.
 4. Wired the postMessage bridge so your plugin can call back into
    the host.
-5. Held your plugin's capabilities in the operator's Convex profile
-   so they survive reload.
+5. Recorded your plugin and its approved permissions so the install
+   survives a reload.
 
 For the deep tour, head to [your first plugin](/developers/your-first-plugin).

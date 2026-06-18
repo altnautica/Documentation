@@ -2,7 +2,7 @@
 title: "Physical UI"
 description: "The OLED display and four-button menu system on the ground station."
 icon: "sliders"
-lastUpdated: "2026-05-09"
+lastUpdated: "2026-06-18"
 ---
 
 # Physical UI (OLED + Buttons)
@@ -89,7 +89,7 @@ Shows SBC health and agent version.
 System
 CPU  22%   RAM 640/4096 MB
 Temp 51 C  Up  2d 14h
-Agent v0.49.26
+Agent v0.89.2
 ```
 
 All text renders at 8x16 pixel font size so you can read it with reading glasses at arm's length.
@@ -197,7 +197,7 @@ The OLED and buttons are optional. The ground station works fine without them.
 
 | Missing hardware | Behavior |
 |-----------------|----------|
-| No OLED | Agent skips the OLED service. All menu functions are available via the setup webapp and Mission Control Hardware tab |
+| No OLED | Agent skips the OLED service. All menu functions are available via the setup webapp and the ground-station panel in Mission Control |
 | No buttons | OLED still renders status screens on a 5-second cycle. Configuration is done via setup webapp or GCS |
 | No OLED and no buttons | Agent runs headless. Use WiFi AP + browser, USB tether, or HDMI kiosk for all interaction |
 
@@ -211,7 +211,7 @@ You can remap what each button does (short press and long press) from three plac
 
 - **OLED menu:** not available (you would need buttons to remap buttons)
 - **Setup webapp:** Advanced page
-- **Mission Control:** Hardware tab > Physical UI sub-view
+- **Mission Control:** ground-station panel > Physical UI tab
 
 The button remap matrix supports any combination of actions: record toggle, WiFi toggle, pair, reboot, factory reset, cycle screen, and more.
 

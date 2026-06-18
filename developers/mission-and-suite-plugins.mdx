@@ -1,175 +1,110 @@
 ---
 title: "Mission plugins"
-description: "Extend mission planning with custom pattern generators, mission read/write, geofence and rally extensions."
+description: "Read and write missions from a GCS plugin and contribute a mission template."
+lastUpdated: "2026-06-18"
 ---
 
-Mission planning is an extension point the GCS exposes to plugins. This page covers how to add pattern generators, read and write missions, and write to the geofence + rally surfaces.
+Mission planning is an extension point the GCS exposes to plugins. A
+plugin can read the active mission, write changes back, and register a
+mission template the operator picks from the template list.
 
-Higher-level flight behaviors (Follow-Me, Orbit, thermal overlay, gimbal control, etc.) are scoped per-drone and ship through the [extensions registry](/mission-control/installing-plugins). See [Multi-component plugins](/developers/multi-component-plugins) for the per-drone tab pattern those use.
+Higher-level flight behaviors (Follow-Me, Orbit, thermal overlay, gimbal
+control, and the like) are scoped per-drone and ship through the
+[extensions registry](/mission-control/installing-plugins). See
+[Multi-component plugins](/developers/multi-component-plugins) for the
+per-drone tab pattern those use.
 
 ## Capabilities
 
 | Capability | Lets the plugin... |
 |------------|-----|
 | `mission.read` | Read the active mission and its items. |
-| `mission.write` | Append, replace, or modify mission items. |
-| `mission.pattern.register` | Register a custom pattern generator. |
+| `mission.write` | Upload, edit, or replace the mission. |
+| `ui.slot.mission-template` | Add an entry to the mission template picker. |
 
-`mission.write` is high risk; the operator sees an orange badge.
-`mission.pattern.register` is medium risk because it affects what gets uploaded to the FC.
-
-## Pattern generators
-
-Mission Control ships built-in patterns (grid survey, spiral
-search, waypoint chain). A plugin adds new ones.
-
-```ts
-import { definePlugin, type PatternGenerator } from "@altnautica/plugin-sdk";
-
-const concentricRings: PatternGenerator = {
-  id: "com.example.concentric-rings",
-  name: "Concentric rings",
-  description: "Inspection orbit at increasing radii.",
-  fields: [
-    { id: "center", kind: "latlng", label: "Center" },
-    { id: "minRadius", kind: "number", label: "Min radius (m)", default: 5 },
-    { id: "maxRadius", kind: "number", label: "Max radius (m)", default: 30 },
-    { id: "step", kind: "number", label: "Step (m)", default: 5 },
-    { id: "altitude", kind: "number", label: "Altitude (m AGL)", default: 20 },
-  ],
-  generate(input) {
-    const items = [];
-    for (let r = input.minRadius; r <= input.maxRadius; r += input.step) {
-      for (let theta = 0; theta < 360; theta += 30) {
-        items.push({
-          kind: "waypoint",
-          lat: offsetLat(input.center.lat, r, theta),
-          lng: offsetLng(input.center.lng, r, theta),
-          alt_agl_m: input.altitude,
-        });
-      }
-    }
-    return items;
-  },
-};
-
-definePlugin({
-  id: "com.example.inspection",
-  version: "0.1.0",
-  mount(ctx) {
-    ctx.mission.registerPattern(concentricRings);
-    return null;
-  },
-});
-```
-
-The host renders the form from `fields[]`, calls `generate(input)`
-on submit, and offers the result as a preview the operator can
-edit before upload.
-
-`fields[]` field kinds:
-
-| Kind | Renders as |
-|------|-----------|
-| `text` | Text input |
-| `number` | Number input |
-| `boolean` | Toggle |
-| `select` | Dropdown with `options[]` |
-| `latlng` | Map-pinned point picker |
-| `polygon` | Map polygon drawing tool |
-| `polyline` | Map polyline drawing tool |
-| `altitude` | Altitude picker (AGL / MSL toggle) |
-
-The host validates the form and rejects out-of-range numbers
-before calling `generate`.
+`mission.write` is high risk; the operator sees a warning badge, because
+mission changes drive autonomous flight paths.
 
 ## Reading and writing missions
+
+The GCS context exposes `ctx.mission`. `read` takes a mission id and
+returns the mission; `write` takes a single update object with the
+mission id and the payload:
 
 ```ts
 // read
 const mission = await ctx.mission.read("active");
-console.log(mission.items.length);
 
-// modify
-const next = {
-  ...mission,
-  items: [
-    ...mission.items,
-    { kind: "waypoint", lat: 12.97, lng: 77.59, alt_agl_m: 30 },
-  ],
-};
-await ctx.mission.write("active", next);
+// write
+await ctx.mission.write({
+  missionId: "active",
+  payload: {
+    items: [
+      { kind: "waypoint", lat: 12.97, lng: 77.59, alt_agl_m: 30 },
+    ],
+  },
+});
 ```
 
-The host validates the mission against the FC's accepted item
-types and rejects writes with `schema_invalid` if anything is
-malformed. The validation rules are firmware-specific (ArduPilot
-accepts different MAV_CMDs than Betaflight) and the host applies
-the right rule set automatically.
+The host validates the mission against the flight controller's accepted
+item types and rejects malformed writes. The validation rules are
+firmware-specific (ArduPilot accepts different commands than Betaflight),
+and the host applies the right rule set automatically.
+
+## Contributing a mission template
+
+A plugin that wants to offer the operator a new way to start a mission
+declares the `ui.slot.mission-template` capability and adds a template
+entry to the mission template picker. The plugin renders its own form in
+its sandboxed UI, gathers the operator's input, generates the waypoints,
+and writes them back with `ctx.mission.write`. The waypoint geometry runs
+in the plugin's own code; the GCS provides the picker entry, the form
+surface, and the validated write path.
+
+Declare the capabilities in the manifest:
+
+```yaml
+gcs:
+  permissions:
+    - id: ui.slot.mission-template
+    - id: mission.write
+```
+
+The `ui.slot.mission-template` capability registers the template entry;
+`mission.write` lets the plugin push the generated waypoints once the
+operator confirms.
 
 ## Geofence and rally points
 
-Plugins extend missions; they do not extend geofence directly.
-Use the canonical `mission.write` with the geofence-specific
-mission items:
-
-```ts
-await ctx.mission.write("geofence", {
-  items: [
-    { kind: "fence_polygon_inclusion", points: [...] },
-    { kind: "fence_circle_exclusion", center: {...}, radius_m: 50 },
-  ],
-});
-```
-
-The host enforces a fixed schema for fence items and rejects
-unknown kinds.
-
-## Pattern preview
-
-Patterns show a live preview on the map. The host
-calls `generate` (or `preview` if your generator defines one)
-every time the form changes. Patterns must therefore be cheap;
-spending more than 100 ms per generate is a UX bug.
-
-For expensive generation, ship a `preview` that returns a coarse
-shape and a `generate` that does the full work:
-
-```ts
-{
-  preview(input) { return cheapPolygon(input); },
-  generate(input) { return expensiveWaypointList(input); },
-}
-```
-
-## Persisting custom mission types
-
-If your generator needs to round-trip through the GCS's
-mission library, add a `kind` discriminator to your items and
-register a serializer:
-
-```ts
-ctx.mission.registerItemKind("com.example.soil-sampling", {
-  serialize(item) { return { ...item, version: 1 }; },
-  deserialize(blob) { return blob; },
-});
-```
-
-The host stores serialized items in the mission row in Convex and
-restores them on load. The agent half ignores unknown kinds when
-uploading to the FC unless a handler is registered for them.
+Geofence and rally definitions ride the same `ctx.mission.write` path
+with their own mission id. The host enforces a fixed schema for fence and
+rally items and rejects unknown kinds, so write the items the host
+accepts and let it validate them before upload.
 
 ## Testing
 
-The host ships a mock mission store the SDK exposes for tests:
+Exercise the mission read and write path against the in-memory harness
+from `@altnautica/plugin-sdk/harness`. The harness records every RPC the
+plugin issues so you can assert on the calls without a live GCS:
 
 ```ts
-import { createMockMission } from "@altnautica/plugin-sdk/testing";
+import { createPluginHarness } from "@altnautica/plugin-sdk/harness";
 
-const mission = createMockMission();
-await mission.write("active", { items: [...] });
-const items = await mission.read("active");
-expect(items.length).toBe(3);
+const harness = createPluginHarness({
+  grantedCapabilities: ["mission.read", "mission.write"],
+  mount: async (ctx) => {
+    await ctx.mission.write({
+      missionId: "active",
+      payload: { items: [] },
+    });
+  },
+});
+
+await harness.start();
+expect(harness.calls).toContainEqual(
+  expect.objectContaining({ method: "mission.write" }),
+);
+await harness.teardown();
 ```
 
 ## See also

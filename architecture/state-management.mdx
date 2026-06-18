@@ -2,11 +2,12 @@
 title: "State Management"
 description: "Zustand stores, ring buffers, and how telemetry flows from protocol to pixel."
 icon: "database"
+lastUpdated: "2026-06-18"
 ---
 
 # State Management
 
-ADOS Mission Control uses Zustand for all client-side state. There are 54 stores covering telemetry, drone management, mission planning, video, settings, and more. Each store is a small, focused slice of state with its own actions and selectors.
+ADOS Mission Control uses Zustand for all client-side state. There are more than 70 stores covering telemetry, drone management, mission planning, video, settings, and more. Each store is a small, focused slice of state with its own actions and selectors.
 
 ## Why Zustand
 
@@ -16,16 +17,16 @@ This matters for a GCS because telemetry arrives at 10-50 Hz. A full React conte
 
 ## Store categories
 
-The 54 stores group into six categories:
+The stores group into six broad categories (representative examples shown, not the full list):
 
-| Category | Stores | Examples |
-|----------|--------|---------|
-| Telemetry | 8 | `telemetry-store`, `battery-store`, `gps-store`, `attitude-store`, `sensor-store`, `rc-channels-store`, `servo-output-store`, `esc-store` |
-| Drone management | 5 | `drone-manager`, `protocol-store`, `connection-store`, `demo-store`, `fleet-store` |
-| Mission planning | 7 | `planner-store`, `drawing-store`, `pattern-store`, `geofence-store`, `rally-store`, `plan-library-store`, `simulation-history-store` |
-| Configuration | 6 | `parameter-store`, `calibration-store`, `firmware-store`, `osd-store`, `failsafe-store`, `ports-store` |
-| Video and comms | 5 | `video-store`, `ground-station-store`, `cloud-status-store`, `mqtt-store`, `traffic-store` |
-| UI and settings | 23 | `settings-store`, `theme-store`, `notifications-store`, `layout-store`, `sidebar-store`, and 18 more |
+| Category | Examples |
+|----------|---------|
+| Telemetry | `telemetry-store`, `battery-store`, `gps-store`, `attitude-store`, `sensor-store`, `rc-channels-store`, `servo-output-store`, `esc-store` |
+| Drone management | `drone-manager`, `protocol-store`, `connection-store`, `demo-store`, `fleet-store` |
+| Mission planning | `planner-store`, `drawing-store`, `pattern-store`, `geofence-store`, `rally-store`, `plan-library-store`, `simulation-history-store` |
+| Configuration | `parameter-store`, `calibration-store`, `firmware-store`, `osd-store`, `failsafe-store`, `ports-store` |
+| Video and comms | `video-store`, `ground-station-store`, `cloud-status-store`, `mqtt-store` |
+| UI and settings | `settings-store`, `theme-store`, `notifications-store`, `layout-store`, `sidebar-store`, and more |
 
 ## Ring buffers for telemetry
 
@@ -112,7 +113,7 @@ Every configure panel (failsafe, PID tuning, power, OSD, ports, etc.) uses this 
 
 ## Demo mode and the mock engine
 
-Demo mode runs five simulated drones with realistic telemetry. The mock engine generates synthetic MAVLink messages:
+Demo mode runs seven simulated drones with realistic telemetry, including two iNav vehicles (a quad and a fixed-wing). The mock engine generates synthetic MAVLink messages:
 
 - Attitude oscillates with configurable rates
 - GPS follows circular or waypoint paths

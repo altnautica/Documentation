@@ -2,7 +2,7 @@
 title: "Mode comparison"
 description: "Side-by-side decision table: pick the right Vision Navigation mode based on hardware, scene, and accuracy needs."
 icon: "table"
-lastUpdated: "2026-05-16"
+lastUpdated: "2026-06-18"
 ---
 
 # Mode comparison
@@ -34,7 +34,7 @@ If you can only read one row of this table, it is this one:
 | IMU read | gyro only | gyro only | gyro only | gyro + accel | gyro + accel | gyro + accel |
 | Output | none | OPTICAL_FLOW_RAD | OPTICAL_FLOW_RAD | VISION_POSITION_ESTIMATE | VISION_POSITION_ESTIMATE | both |
 | MAVLink component | none | 198 | 198 | 197 | 197 | 198 + 197 |
-| Emission rate | none | 10 Hz | 10 Hz | 30 Hz | 30 Hz | 10 Hz + 30 Hz |
+| Emission rate | none | ~30 Hz | ~30 Hz | ~30 Hz | ~30 Hz | ~30 Hz (both) |
 | ArduPilot EKF source | n/a | `EK3_SRC1_VELXY=5` | `EK3_SRC1_VELXY=5` | `EK3_SRC1_*=6` | `EK3_SRC1_*=6` | `EK3_SRC1_*` configurable |
 | PX4 EKF param | n/a | `EKF2_OF_CTRL=1` | `EKF2_OF_CTRL=1` | `EKF2_EV_CTRL` | `EKF2_EV_CTRL` | both |
 | Maximum altitude | n/a | rangefinder limit | barometric only | unbounded | unbounded | unbounded |
@@ -84,7 +84,7 @@ you can still fly GPS-denied but the EKF de-weights your samples and
 the operator-visible quality drops by roughly 40 percent on average
 across the scale ladder. The rangefinder is cheap insurance.
 
-**Hybrid vs single estimator.** Hybrid is the most robust mode and
+**Hybrid vs single estimator.** Hybrid is the most resilient mode and
 the most expensive one. Two cameras, two estimators, twice the
 CPU. Worth it for missions that mix indoor low-altitude segments
 (OF strong) with corridor flight (VIO strong). Single-estimator

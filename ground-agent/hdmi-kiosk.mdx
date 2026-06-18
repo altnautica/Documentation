@@ -2,6 +2,7 @@
 title: "HDMI Kiosk Mode"
 description: "Fly with a monitor and gamepad plugged directly into the ground station. No laptop needed."
 icon: "display"
+lastUpdated: "2026-06-18"
 ---
 
 # HDMI Kiosk Mode
@@ -75,7 +76,7 @@ Once paired, the gamepad sends stick inputs at 50 Hz through the existing `MANUA
 When the kiosk starts and a gamepad is connected, the kiosk automatically claims PIC. If a laptop or phone also connects, they are observers until PIC is explicitly transferred.
 
 PIC transfer is done through:
-- The Mission Control Hardware tab on a connected laptop (click "Take Control")
+- The ground-station panel in Mission Control on a connected laptop (click "Take Control")
 - The OLED menu (B3 long-press to release PIC)
 
 If the kiosk client disconnects (monitor unplugged, gamepad dies), PIC auto-transfers to the next connected client with an active gamepad. If no client has a gamepad, the agent sends failsafe intent to the flight controller (hover or RTL, depending on FC configuration).
@@ -86,7 +87,7 @@ You can configure HDMI output from three places:
 
 - **OLED menu:** Display > HDMI Resolution
 - **Setup webapp:** Display page
-- **Mission Control Hardware tab:** Physical UI sub-view
+- **Mission Control:** ground-station panel > Physical UI tab
 
 Available settings:
 - Resolution (auto-detect, 720p, 1080p)

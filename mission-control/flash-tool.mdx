@@ -2,71 +2,48 @@
 title: "Flash Tool"
 description: "Mission Control's universal flasher for flight controller firmware and companion-computer agents."
 icon: "wand-magic-sparkles"
+lastUpdated: "2026-06-18"
 ---
 
-The Flash Tool is the universal flashing UI inside Mission Control at **Settings -> Flash Tool**. It handles both flight controller firmware and companion-computer agents from one place. You never need a separate flashing tool.
+The Flash Tool is the universal flashing UI inside Mission Control at **Settings, then Flash Tool**. It handles both flight controller firmware and companion-computer agents from one place. You never need a separate flashing tool.
 
 ## What it does
 
 The Flash Tool covers two jobs:
 
-- **Flight controller firmware.** Flash ArduPilot, Betaflight, PX4, or iNav onto the FC over WebSerial. The board enters DFU and the firmware binary writes through the bootloader.
-- **Companion computer agents.** Install the ADOS Drone Agent (air-side) or ADOS Ground Agent (ground-side) onto your SBC. The Flash Tool either flashes a complete OS image over WebUSB or surfaces a `curl` install command, depending on the board.
+- **Flight controller firmware.** Flash ArduPilot, Betaflight, PX4, or iNav onto the FC from the browser. The STM32 boards (ArduPilot, Betaflight, iNav) flash over WebUSB DFU; PX4 flashes through its serial bootloader over WebSerial.
+- **Companion computer agents.** Install the ADOS Drone Agent (air-side) or ADOS Ground Agent (ground-side) onto your SBC. The Flash Tool surfaces a `curl` install command for your board, which you paste over SSH.
 
-It is the same panel for both. Pick your firmware stack, pick the board, and the Flash Tool shows the right flow.
+It is the same panel for both. Pick your stack, pick the board, and the Flash Tool shows the right flow.
 
-## Choosing your firmware stack
+## Choosing your stack
 
-When you open the Flash Tool, the first selector picks the firmware stack:
+When you open the Flash Tool, the first selector picks the stack:
 
 | Stack | Where it runs | Flow |
 |-------|---------------|------|
-| ArduPilot | Flight controller (STM32) | WebSerial DFU |
-| Betaflight | Flight controller (STM32) | WebSerial DFU |
-| PX4 | Flight controller (STM32) | WebSerial DFU |
-| iNav | Flight controller (STM32) | WebSerial DFU |
-| ADOS Drone Agent | Companion computer (air-side) | Browser flash or install command |
+| ArduPilot | Flight controller (STM32) | WebUSB DFU |
+| Betaflight | Flight controller (STM32) | WebUSB DFU |
+| PX4 | Flight controller (STM32) | WebSerial bootloader |
+| iNav | Flight controller (STM32) | WebUSB DFU |
+| ADOS Drone Agent | Companion computer (air-side) | Install command |
 | ADOS Ground Agent | Companion computer (ground-side) | Install command |
 
-For flight controller firmware, see [Firmware Flashing](/mission-control/firmware-flashing). The rest of this page covers companion-computer flows.
-
-## Browser flash flow
-
-Some boards run the agent on a complete ADOS-built OS image. For those boards, the Flash Tool writes the image directly to the board's flash over WebUSB. No separate tool, no terminal.
-
-<Steps>
-  <Step title="Pick the board">
-    In the Flash Tool, pick **ADOS Drone Agent** (or **ADOS Ground Agent**) and select a browser-flash board. Today this means the **Luckfox Pico Zero**.
-  </Step>
-  <Step title="Put the board in bootrom mode">
-    Unplug the USB-C cable. Hold the **BOOT** button on the board. Plug the cable in while still holding the button. Release after the host enumerates the device.
-  </Step>
-  <Step title="Connect the board">
-    Click **Flash via browser**. The browser shows its native device picker. Select the Luckfox entry and click **Connect**.
-  </Step>
-  <Step title="Watch the progress bar">
-    The Flash Tool writes the agent image. The progress bar shows percent complete. Do not unplug the cable.
-  </Step>
-  <Step title="Wait for reboot">
-    The board reboots when flashing finishes. The Flash Tool advances to the pairing step automatically.
-  </Step>
-</Steps>
-
-Browser flash needs a Chromium-family browser. See [Browser support](#browser-support) below.
+For flight controller firmware, see [Firmware Flashing](/mission-control/firmware-flashing). The rest of this page covers the companion-agent install flow.
 
 ## Install command flow
 
-For boards that already run a stock vendor OS (Raspberry Pi OS, Radxa OS, Ubuntu, JetPack, and similar), the Flash Tool surfaces a `curl ... | sudo bash` install command. SSH into the board and paste it. The install script handles the rest.
+The companion agents install on a board that already runs a stock vendor OS (Raspberry Pi OS, Radxa OS, Ubuntu, JetPack, and similar). The Flash Tool surfaces a `curl ... | sudo bash` install command pre-filled for your board. SSH into the board and paste it. The install script handles the rest.
 
 <Steps>
   <Step title="Pick the board">
-    In the Flash Tool, pick **ADOS Drone Agent** or **ADOS Ground Agent** and select your board (Pi 4B, Radxa CM4, Jetson, and similar).
+    In the Flash Tool, pick **ADOS Drone Agent** or **ADOS Ground Agent** and select your board (Pi 4B, Pi Zero 2 W, Radxa CM3, CM4, Rock 5C Lite, Cubie A7Z, and similar).
   </Step>
   <Step title="Copy the install command">
     The Flash Tool shows a single command pre-filled for your selected board. Click **Copy**.
   </Step>
   <Step title="Paste over SSH">
-    SSH into the board and paste the command. The install script installs Python, dependencies, the agent itself, and systemd services. It detects the board profile, picks the right tier, and starts the agent.
+    SSH into the board and paste the command. The install script installs Python, dependencies, the agent itself, and the systemd services. It detects the board profile, picks the right tier, and starts the agent.
   </Step>
   <Step title="Watch the installer output">
     The script logs its progress. On a fast network and a Class 10 SD card, expect 3 to 10 minutes.
@@ -76,61 +53,37 @@ For boards that already run a stock vendor OS (Raspberry Pi OS, Radxa OS, Ubuntu
   </Step>
 </Steps>
 
-The install command flow does not need a Chromium browser, because the install runs on the board over SSH. Any browser that displays Mission Control will show you the command.
+The install command runs on the board over SSH, so any browser that displays Mission Control will show you the command. A Chromium-family browser is only needed for the flight controller firmware flow, which uses WebUSB and WebSerial.
 
-## After flash: pairing
+## After install: pairing
 
-Once the agent is running, the board joins your fleet through the same pairing flow regardless of how you installed it.
+Once the agent is running, the board joins your fleet through the same pairing flow. The default and primary path is local, over the LAN.
 
 <Steps>
-  <Step title="Find the setup network">
-    The board exposes a Wi-Fi network named `ados-setup-<id>` where `<id>` is the last few characters of the device ID. Join it from your phone or laptop.
+  <Step title="Open the setup webapp">
+    Open `http://<board-ip>:8080` in a browser, or join the board's `ados-setup-<id>` Wi-Fi network and follow the captive portal. The setup webapp walks you through identity, MAVLink, video, network, and Mission Control.
   </Step>
-  <Step title="Open the captive portal">
-    Most operating systems open the captive portal automatically. If not, open `http://192.168.4.1` in a browser. The setup webapp walks you through identity, MAVLink, video, network, and Mission Control.
+  <Step title="Add the node in Mission Control">
+    In Mission Control's Fleet view, use **Add a Node** and enter the board's hostname or IP. Mission Control pairs with the agent directly over the LAN. Cloud relay is a secondary, opt-in path for remote access.
   </Step>
-  <Step title="Enter your home Wi-Fi credentials">
-    The captive portal asks for your home Wi-Fi (or any uplink network) and a friendly name for the drone. The board reboots onto your network.
-  </Step>
-  <Step title="Watch Fleet view">
-    Open Mission Control's Fleet view. The newly flashed board shows up as a **pending pair**. Approve it and the drone is live.
+  <Step title="Confirm the drone is live">
+    The board shows up in Fleet view. Telemetry, video, and configuration are now available.
   </Step>
 </Steps>
 
 For the full pairing walkthrough, see [Pairing](/drone-agent/pairing) or, for ground-side nodes, [Setup and Pairing](/ground-agent/setup-and-pairing).
 
-## Browser support
-
-The browser flash flow uses WebUSB. The install command flow does not use any browser API beyond clipboard copy.
-
-| Browser | Browser flash | Install command |
-|---------|---------------|-----------------|
-| Chrome (89+) | Yes | Yes |
-| Edge (89+) | Yes | Yes |
-| Brave | Yes | Yes |
-| Opera | Yes | Yes |
-| Safari | No | Yes |
-| Firefox | No | Yes |
-
-If you are on Safari or Firefox, the install command flow still works for any board that already runs a stock OS. For browser flash, switch to a Chromium-family browser.
-
 ## Troubleshooting
 
 <AccordionGroup>
-  <Accordion title="The board does not appear in the device picker">
-    The board is not in bootrom mode. Unplug the cable, hold **BOOT**, plug back in, then release **BOOT**. Try a different USB-C cable. Charge-only cables do not enumerate as data devices. Some hubs filter out bootrom-class devices, so plug the board straight into a host port.
+  <Accordion title="The install command fails on the board">
+    Check that the board has internet access (`ping 1.1.1.1`). The install script downloads Python packages and any kernel-side modules. If your board is behind a corporate proxy, configure `http_proxy` and `https_proxy` before pasting the command. The full troubleshooting list is in [Drone Agent troubleshooting](/drone-agent/troubleshooting).
   </Accordion>
-  <Accordion title="The browser shows no Chromium WebUSB support">
-    You are on Safari or Firefox. Open Mission Control in Chrome, Edge, Brave, or Opera. The install command flow works in any browser if your board runs a stock OS.
+  <Accordion title="The board does not show up in Fleet view">
+    Confirm the agent is running with `ados status` on the board. Then use **Add a Node** with the board's hostname or IP. Mission Control resolves `.local` names over mDNS server-side. If you are on a different network, the LAN path will not reach the board.
   </Accordion>
   <Accordion title="The captive portal does not load">
     Some phones cache an old captive portal. Forget the `ados-setup-<id>` network and rejoin. On Android, toggling Wi-Fi off and on usually fixes it. On iOS, open `http://192.168.4.1` directly. If you still cannot reach the portal, the board may not have started its AP yet. Wait 30 seconds after the LED indicates boot complete.
-  </Accordion>
-  <Accordion title="The install command fails on the board">
-    Check that the board has internet access (`ping 1.1.1.1`). The install script needs to download Python packages and any kernel-side modules. If your board is behind a corporate proxy, configure `http_proxy` and `https_proxy` before pasting the command. The full troubleshooting list is in [Drone Agent troubleshooting](/drone-agent/troubleshooting).
-  </Accordion>
-  <Accordion title="The flash stops partway through">
-    Do not unplug the cable. Click **Retry**. If retry fails, repeat the bootrom-mode procedure (unplug, hold BOOT, replug, release). The bootloader is in mask ROM and a partial flash does not brick the board.
   </Accordion>
 </AccordionGroup>
 

@@ -1,6 +1,7 @@
 ---
 title: "Driver layer"
 description: "Typed base classes hardware-driver plugins subclass."
+lastUpdated: "2026-06-18"
 ---
 
 The driver layer is a sub-pattern of agent plugins. Same manifest,
@@ -57,14 +58,24 @@ agent's peripheral manager handle every kind uniformly.
    reports a list of `XCandidate`s for devices it claims it can
    open.
 3. Multiple drivers may claim the same device. The peripheral
-   manager arbitrates by priority (manifest's `driver_priority`
-   field) and falls back to first-registered when ties occur.
+   manager arbitrates among the candidates and opens one of them.
 4. The winning driver gets `open(candidate, config)` called against
    it. `config` is the operator-edited config validated against
    `config-schema.json`.
 5. The driver yields data through its kind-specific stream method
    (`frame_iterator`, `fix_iterator`, `state_iterator`, etc.).
 6. On unload or hotplug-disappear, `close(session)` runs.
+
+## Registration capabilities
+
+A driver registers under a `sensor.*.register` capability that the
+manifest must declare. Camera, depth, lidar, imu, and payload drivers
+each gate on their own capability (`sensor.camera.register`,
+`sensor.depth.register`, `sensor.lidar.register`,
+`sensor.imu.register`, `sensor.payload.register`). Gimbal, GPS, and
+ESC drivers do not have dedicated capabilities in the current catalog;
+they register under `sensor.payload.register`. The per-kind pages note
+which capability each one uses.
 
 ## Errors
 

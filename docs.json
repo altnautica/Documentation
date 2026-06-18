@@ -198,10 +198,8 @@
             ]
           },
           {
-            "group": "Scripting and Extensions",
+            "group": "Extensions",
             "pages": [
-              "drone-agent/python-sdk",
-              "drone-agent/text-commands",
               "drone-agent/plugins",
               "drone-agent/extensions-catalog"
             ]

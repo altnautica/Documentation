@@ -1,6 +1,7 @@
 ---
 title: "Manifest reference"
 description: "Every field of plugin manifest.yaml, in dependency order."
+lastUpdated: "2026-06-18"
 ---
 
 The manifest is the entire contract between a plugin and the host.
@@ -9,81 +10,108 @@ mounting, capability checks) falls into place automatically.
 
 ## File location
 
-`manifest.yaml` lives at the root of the `.adosplug` archive. The
-host opens the archive, reads the manifest first, and refuses to
-unpack anything else if the manifest fails validation.
+`manifest.yaml` lives at the root of the `.adosplug` archive. The host
+opens the archive, reads the manifest first, and refuses to unpack
+anything else if the manifest fails validation.
 
 ## Top-level shape
 
+Identity and configuration live as flat top-level keys. There is no
+`plugin:` wrapper.
+
 ```yaml
-plugin:           # required, identity block
-compatibility:    # required, version + profile gates
-agent:            # optional, agent half
-gcs:              # optional, GCS half
-assets:           # required, file list with hashes
-signing:          # required, Ed25519 signature
+schema_version: 1     # 1 or 2
+id: com.example.thermal
+version: "1.0.0"
+name: "Example Thermal"
+description: "One sentence."
+author: "Example Author"
+homepage: "https://example.com/thermal"
+license: "GPL-3.0-or-later"
+risk: medium          # low | medium | high | critical
+
+compatibility:        # required
+agent:                # optional, agent half
+gcs:                  # optional, GCS half
 ```
 
 At least one of `agent` or `gcs` must be present. The host accepts
-plugins that ship only one half; first-party Battery Health Panel,
+plugins that ship only one half; the first-party Battery Health Panel,
 for example, is GCS-only.
-
-## `plugin`
 
 | Field | Type | Notes |
 |-------|------|-------|
-| `id` | string | Reverse-DNS, lowercase, dotted. Regex `^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)+$`. |
+| `schema_version` | int | `1` baseline, `2` unlocks the v2 agent fields (`vendor_attribution`, `subprocess_spawn`, `per_drone_config`). |
+| `id` | string | Reverse-DNS, lowercase, dotted. Validated against the plugin-id pattern. |
 | `version` | string | Semver. |
 | `name` | string | Operator-facing display name. |
-| `author` | string | Free-form. Single name or organization. |
+| `description` | string | One short sentence. |
+| `author` | string | Free-form. |
+| `homepage` | url | Optional. |
 | `license` | string | SPDX expression. `GPL-3.0-or-later` recommended. |
-| `description` | string | One sentence under 200 chars. |
-| `homepage` | url | Optional. Direct link to the plugin's source. |
-| `source` | url | Optional. The repository URL. |
-| `tags` | string[] | Optional. For registry search later. |
+| `risk` | enum | `low`, `medium`, `high`, `critical`. Defaults to `medium`. |
+
+The manifest also accepts optional install-dialog content fields the GCS
+renders for a richer pre-install summary (`description_long`, `features`,
+`hardware_requirements`, `resource_impact`, `required_fc_parameters`,
+`telemetry_fields`, `documentation_url`, `screenshots`). The agent does
+not interpret any of them.
 
 ## `compatibility`
 
 | Field | Notes |
 |-------|-------|
-| `ados_version` | semver range. The agent half compares against setup status or `/api/version`. |
-| `gcs_version` | semver range. The GCS half compares against the running build. |
-| `python_version` | optional. Required only if `agent:` is set. |
-| `min_tier` | integer. Vehicle integration tier. `0` means any drone. |
-| `supported_boards` | array. Either `["*"]` or specific board ids the plugin needs. |
-| `profiles` | array. Subset of `["drone", "ground-station"]`. |
+| `ados_version` | Required. Semver range. The agent half compares against setup status or `/api/version`. |
+| `gcs_version` | Optional. Semver range matched against the running Mission Control build. |
+| `supported_boards` | Array. `["*"]` or specific board ids the plugin needs. |
+| `min_tier` | Optional integer 1 to 4. Minimum vehicle integration tier. |
+
+Node profiles are declared on the agent half (`agent.target_profiles`),
+not here.
 
 ## `agent`
 
 ```yaml
 agent:
   entrypoint: "agent/plugin.py"
-  isolation: "subprocess"        # or "inprocess" for first-party
+  isolation: "subprocess"        # subprocess (default) or inprocess (first-party)
+  runtime: "python"              # python (default) or rust
   permissions:
-    - event.publish
-    - event.subscribe
-    - mavlink.read
+    - id: event.publish
+    - id: mavlink.read
   resources:
-    max_ram_mb: 64
-    max_cpu_percent: 10
-    max_pids: 4
+    max_ram_mb: 96               # default 96, range 8 to 4096
+    max_cpu_percent: 25          # default 25, range 1 to 100
+    max_pids: 12                 # default 12, range 1 to 256
+  target_profiles: ["drone"]     # subset of drone, ground-station
   contributes:
-    services: []                 # optional, named services on the agent bus
+    services: []                 # optional, plugin-declared extra systemd services
 ```
 
+`entrypoint` is a relative path inside the archive (no absolute paths,
+no `..`). For a file-path entrypoint like `agent/plugin.py` the runner
+loads a class named `Plugin`. A `module:Class` entrypoint is also
+accepted and is how built-in plugins declare themselves.
+
 `isolation: subprocess` is the default and the only mode third-party
-plugins are allowed to declare. `inprocess` is reserved for built-in
-plugins that ship inside the agent itself.
+plugins may declare. `inprocess` is reserved for first-party plugins
+that import into the supervisor. `runtime: rust` runs the entrypoint as
+its own binary (rust always runs subprocess).
+
+Optional v2 agent fields: `mavlink_components`, `contains_vendor_binary`
+plus `vendor_attribution` (see [Vendor binaries](/developers/vendor-binaries)),
+`subprocess_spawn` (the `process.spawn` allowlist), `per_drone_config`,
+and `test_fixtures`.
 
 ## `gcs`
 
 ```yaml
 gcs:
-  bundle: "gcs/plugin.bundle.js"
-  isolation: "iframe-sandbox"    # only mode supported
+  entrypoint: "gcs/plugin.bundle.js"
+  isolation: "iframe"            # iframe (default), worker, or inline
   permissions:
-    - ui.slot.fc-tab
-    - telemetry.subscribe.battery
+    - id: ui.slot.fc-tab
+    - id: telemetry.subscribe.battery
   contributes:
     panels:
       - id: battery-health-tab
@@ -95,52 +123,36 @@ gcs:
       - id: battery-anomaly
         title: "Battery anomaly"
         severity: warning
-    settings_sections:
-      - id: battery-health-settings
-        title: "Battery Health"
-    locales:
-      - "en"
+  locales:
+    - "en"
 ```
 
-Slots from the [12-slot taxonomy](/developers/permissions) live in
-`contributes.panels[].slot`. Each panel needs an id unique within the
-plugin, a slot, and a human-readable title.
+`contributes` carries `panels`, `overlays`, `notifications`, and
+`smart_functions`. The `slot` value in `contributes.panels[].slot` comes
+from the slot taxonomy (`fc.tab`, `command.tab`, `video.overlay`, and
+the rest; see the [glossary](/developers/glossary)). Mounting in a slot
+also requires the matching `ui.slot.*` permission listed under
+`gcs.permissions`. Locales are listed under `gcs.locales`, a sibling of
+`contributes`.
 
-## `assets`
+## Signing and the archive
 
-Every file the host needs to extract must be listed:
+The `.adosplug` archive is a zip. There is no per-asset hash list in the
+manifest and no `signing:` block. Instead the archive carries a separate
+top-level `SIGNATURE` file with two lines: the signer key id, then the
+base64 Ed25519 signature over a canonical payload hash (the SHA-256 of
+the sorted `<path>\n<sha256-hex>\n` lines for every entry except
+`SIGNATURE`). Because the hash covers every entry, any tampering after
+signing fails verification.
 
-```yaml
-assets:
-  - path: "gcs/plugin.bundle.js"
-    role: "gcs-bundle"
-    sha256: "<computed-by-pack.sh>"
-  - path: "locales/en.json"
-    role: "gcs-locale"
-    sha256: "<computed-by-pack.sh>"
-```
-
-The role catalog: `gcs-bundle`, `gcs-style`, `gcs-locale`, `icon`,
-`config-schema`, `agent-entrypoint`, `agent-source`. The host
-verifies SHA-256 on every asset at install time. If a hash mismatches
-the install is rejected with code `12` (`manifest_invalid`).
-
-## `signing`
-
-```yaml
-signing:
-  signature: "<base64 ed25519>"
-  signer_key_id: "altnautica-2026-A"
-  algorithm: "ed25519"
-```
-
-Sign the canonical manifest body (signature placeholder set to `""`
-during signing). The host re-canonicalizes the same way on verify.
-Unknown signer ids are rejected with code `10` unless the agent is
-in developer mode.
+Archives are size-bounded (50 MB per archive, 25 MB per entry) and
+reject path-traversal entries (`..`, absolute paths, symlinks). A
+manifest that fails validation raises a manifest error; a signature from
+an unknown or revoked signer is rejected (see
+[Signing keys](/developers/signing-keys)).
 
 ## See also
 
 - [Permissions reference](/developers/permissions)
 - [Lifecycle](/developers/lifecycle)
-- [Distribution](/developers/distribution-local-install)
+- [Signing keys](/developers/signing-keys)

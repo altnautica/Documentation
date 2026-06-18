@@ -2,7 +2,7 @@
 title: "MAVLink Signing"
 description: "HMAC-SHA256 authentication of every command sent to the flight controller, with the key held in the GCS browser."
 icon: "lock"
-lastUpdated: "2026-05-09"
+lastUpdated: "2026-06-18"
 ---
 
 # MAVLink Signing
@@ -49,7 +49,12 @@ After enrollment, signed and unsigned commands both work. The flight controller 
 Flip `Require signed commands` from the Signing panel to set `SIGNING_REQUIRE=1` on the flight controller. From that moment the flight controller silently drops any frame without a valid signature.
 
 <Warning>
-Require mode can lock you out of your own drone. If every browser that holds the key gets wiped or replaced and you have not exported a copy, the flight controller will reject every command. Recovery requires physical access: SSH into the companion computer and run `ados signing clear-fc` to send a zero-key `SETUP_SIGNING`, then re-enroll from a fresh GCS session.
+Require mode can lock you out of your own drone. If every browser that holds the key gets wiped or replaced and you have not exported a copy, the flight controller will reject every command. Recovery requires local access: on the companion computer, call the `disable-on-fc` endpoint to send a zero-key `SETUP_SIGNING`, then re-enroll from a fresh GCS session.
+
+```bash
+curl -X POST http://localhost:8080/api/mavlink/signing/disable-on-fc \
+  -H "X-ADOS-Key: your_key"
+```
 </Warning>
 
 ## Rotating keys
@@ -85,18 +90,7 @@ All routes live under `/api/mavlink/signing/` and are gated by the existing `X-A
 
 Request-body redaction strips `key_hex` from structured logs. The fingerprint (`key_id`) is safe to log and appears in audit entries.
 
-## CLI
-
-The `ados` CLI exposes a smaller signing surface for SSH-only diagnostics.
-
-```bash
-ados signing capability       # print FC support status
-ados signing counters         # show signed-frame counters
-ados signing require on|off   # read or set SIGNING_REQUIRE on the FC
-ados signing clear-fc         # emergency recovery: zero the FC signing store
-```
-
-`clear-fc` requires a typed `CLEAR` confirmation. Use it only when you have lost every browser copy of the key and need the flight controller back.
+These routes are served natively by the Rust front. Signing is managed from the GCS Configure panel; for SSH-only diagnostics or emergency recovery, call the endpoints above with `curl` on the companion computer (for example, `GET /capability` to check support or `POST /disable-on-fc` to recover from a lockout).
 
 ## Troubleshooting
 

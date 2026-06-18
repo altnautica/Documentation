@@ -2,6 +2,7 @@
 title: "HAL and Tiers"
 description: "Board auto-detection, YAML profiles, tier mapping, and adding new boards."
 icon: "layer-group"
+lastUpdated: "2026-06-18"
 ---
 
 # HAL and Tiers
@@ -166,26 +167,25 @@ The tier system determines which features are active. The agent picks a tier bas
 | Video pipeline | No | No | Yes | Yes |
 | WFB-ng link | No | No | Yes | Yes |
 | Cloud relay | No | No | Yes | Yes |
-| Scripting engine | No | No | Yes | Yes |
 | OTA updates | No | No | Yes | Yes |
 | Peripherals manager | No | No | Yes | Yes |
-| Vision model registry | No | No | No | Yes |
+| Vision host and model registry | No | No | No | Yes |
 
 ### RAM guidelines
 
 | Tier | Minimum RAM | Typical boards |
 |------|------------|----------------|
-| 1 | 64 MB | Luckfox Pico (RV1103, RV1106) |
-| 2 | 256 MB | RV1126B, generic ARM64 |
-| 3 | 1 GB | Raspberry Pi 4B/CM4, Jetson Nano, Radxa CM3 |
-| 4 | 4 GB | ROCK 5C Lite, RPi 5/CM5, Jetson Orin Nano, Orange Pi 5 |
+| 1 | minimal | (no current board profile defaults here) |
+| 2 | 256-512 MB | Raspberry Pi 3/CM3, Radxa Cubie A7Z, generic ARM64 |
+| 3 | 1-2 GB | Raspberry Pi 4B/CM4, Jetson Nano, Radxa CM3, RV1126B |
+| 4 | 4 GB+ | ROCK 5C Lite, RPi 5/CM5, Jetson Orin Nano, Orange Pi 5, Radxa CM4 |
 
 ## HAL modules
 
 Beyond board detection, the HAL provides several hardware abstraction modules:
 
-| Module | File | Purpose |
-|--------|------|---------|
+| Module | Purpose |
+|--------|---------|
 | `detect.py` | Board identification and profile loading |
 | `camera.py` | Camera detection (CSI, USB V4L2) |
 | `gpio.py` | GPIO pin access for buttons, LEDs |

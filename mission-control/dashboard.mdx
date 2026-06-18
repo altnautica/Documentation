@@ -2,6 +2,7 @@
 title: "Dashboard"
 description: "The main view showing your fleet, drone cards, and live map."
 icon: "grid-2"
+lastUpdated: "2026-06-18"
 ---
 
 The Dashboard is the first screen you see when you open Mission Control. It shows all connected drones, their live positions on a map, and quick-access telemetry cards.
@@ -23,7 +24,7 @@ The dashboard has three main areas:
 Each connected drone gets a card in the left panel. The card displays:
 
 - **Connection status** (connected, degraded, disconnected)
-- **Firmware badge** (ArduPilot, PX4, Betaflight)
+- **Firmware badge** (ArduPilot, PX4, Betaflight, iNav)
 - **Flight mode** (Stabilize, Loiter, Auto, etc.)
 - **Armed state** with a color indicator (red when armed, gray when disarmed)
 - **Battery percentage** with a color-coded bar
@@ -60,27 +61,38 @@ Select a drone to see expanded information:
 
 ## Demo Mode
 
-In demo mode (`npm run demo`), the dashboard populates with five simulated drones:
+In demo mode (`npm run demo`), the dashboard populates with seven simulated drones across three firmware families:
 
-| Drone | Firmware | Behavior |
-|-------|----------|----------|
-| Demo Copter 1 | ArduPilot (Copter) | Flies a circular pattern |
-| Demo Copter 2 | ArduPilot (Copter) | Hovers at a fixed position |
-| Demo Plane 1 | ArduPilot (Plane) | Flies a racetrack pattern |
-| Demo Rover 1 | ArduPilot (Rover) | Follows a ground path |
-| Demo Copter 3 | PX4 (Copter) | Flies a figure-eight |
+| Drone | Firmware | Status |
+|-------|----------|--------|
+| Alpha-1 | ArduPilot (Copter) | Flying a security patrol loop in Auto |
+| Bravo-2 | ArduPilot (Copter) | Flying a survey grid in Auto |
+| Echo-5 | ArduPilot (Copter) | Flying a search-and-rescue pattern in Guided |
+| Charlie | ArduPilot (Copter) | Idle on the ground |
+| Delta | PX4 (Copter) | Offline for maintenance |
+| Foxtrot (iNav) | iNav (Copter) | Flying an iNav survey loop in Auto |
+| Golf (iNav FW) | iNav (Fixed-wing) | Flying an iNav fixed-wing circuit in Auto |
 
-Each simulated drone generates realistic telemetry, including GPS noise, battery discharge, and radio signal variation. This is useful for testing the UI, building dashboards, or learning the interface.
+Each flying drone generates realistic telemetry, including GPS noise, battery discharge, and radio signal variation. The idle and maintenance drones show how grounded and offline states render. This is useful for testing the UI, building dashboards, or learning the interface.
 
 ## Top Navigation
 
-The top bar is consistent across all tabs. It shows:
+The top bar is consistent across the app. The primary tabs are:
 
-- **Tab navigation:** Dashboard, Command, Plan, Simulate, History, Hardware, Config, Community
-- **Connection button:** Opens the connect dialog
-- **Active drone selector:** Switch between connected drones
-- **Armed/Disarmed badge:** Shows the currently selected drone's armed state
-- **Settings gear:** Quick access to the settings page
+- **Dashboard:** the fleet overview and live map (this screen)
+- **Plan:** the mission planner
+- **Simulate:** the 3D mission preview and replay
+- **History:** recorded flight logs
+
+The top bar also carries:
+
+- **Connection button:** opens the connect dialog
+- **Active drone selector:** switch between connected drones
+- **Armed/Disarmed badge:** shows the selected drone's armed state
+- **Settings gear:** opens the configuration pages
+- **Quick links:** community chat, documentation, and the source repository
+
+Agent and ground-station management is unified into the per-drone detail view on the Dashboard, so there is no separate Command tab.
 
 ## Fleet Management
 

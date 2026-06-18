@@ -2,7 +2,7 @@
 title: "Calibration Math"
 description: "The math the wizard runs: pinhole intrinsics from a planar target, per-frame extrinsics via PnP, and the joint camera-IMU timeshift fit."
 icon: "function"
-lastUpdated: "2026-05-16"
+lastUpdated: "2026-06-18"
 ---
 
 # Calibration Math
@@ -100,11 +100,13 @@ any frame that sees at least four non-coplanar tag corners.
 
 The wizard's per-frame poses are intermediate values; the wire output
 is the joint `T_cam_imu` that connects the IMU frame to the camera
-frame, not the per-frame camera-target poses. The v1 wizard assumes
-the operator mounted the camera with a known orientation relative to
-the IMU and sets `T_cam_imu = I` (identity). A future revision will
-add a full inertial-visual bundle adjustment that recovers `T_cam_imu`
-from the joint solve, removing the manual-mounting assumption.
+frame, not the per-frame camera-target poses. The current wizard
+assumes the operator mounted the camera with a known orientation
+relative to the IMU and sets `T_cam_imu = I` (identity). Recovering
+`T_cam_imu` from a full inertial-visual bundle adjustment is a possible
+research direction, not a shipped feature; today that heavyweight joint
+VIO calibration lives in external tools (such as the Kalibr binary),
+not in the in-app wizard.
 
 ---
 

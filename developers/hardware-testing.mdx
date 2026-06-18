@@ -1,6 +1,7 @@
 ---
 title: "Hardware testing"
 description: "SITL, hardware-in-loop, and bench-rig patterns for plugin development."
+lastUpdated: "2026-06-18"
 ---
 
 A plugin's tests have to run somewhere. This page covers the four
@@ -9,9 +10,12 @@ fidelity.
 
 ## 1. Pure-Python unit tests with a mock backend
 
-The cheapest pass. Most driver plugins ship a `Mock<Bus>Backend`
-fixture (`MockUvcBackend`, `MockSerialBackend`, `MockMavlinkRouter`)
-that the driver constructor accepts in place of the real device.
+The cheapest pass. Most driver plugins ship their own mock backend
+fixture (the thermal-camera reference plugin ships `MockUvcBackend`; the
+gimbal reference plugin ships a mock router) that the driver constructor
+accepts in place of the real device. The agent SDK testing surface
+(`ados.sdk`) adds `PluginTestHarness`, `FakeVisionEngine`,
+`FakeIpcClient`, and `load_fixture` for plugin-level tests.
 
 ```python
 def test_open_yields_correct_capabilities():
@@ -81,8 +85,9 @@ Run it before cutting a release tag.
 
 A good bench-rig session captures:
 
-- `journalctl -u ados-plugin-<id>` while exercising the device
-- A `.bag` of telemetry over the test window
+- `ados plugin logs <id>` (or `journalctl -u ados-plugin-<id>.service`)
+  while exercising the device
+- A telemetry log capture over the test window
 - A photo or short video of the rig and the device under test
 
 These three artifacts go in the release notes for the tag.
@@ -93,7 +98,7 @@ These three artifacts go in the release notes for the tag.
 |--------|--------------|---------|------|-------|
 | Battery Health Panel | n/a (no device) | yes | n/a | yes |
 | FLIR Lepton USB UVC | `MockUvcBackend` | yes | n/a | gated on hardware |
-| MAVLink Gimbal v2 | `MockMavlinkRouter` | yes | yes | gated on hardware |
+| MAVLink Gimbal v2 | mock router | yes | yes | gated on hardware |
 
 "Gated on hardware" means CI passes against the mock and harness
 passes; the real bench rig is exercised before the release tag is

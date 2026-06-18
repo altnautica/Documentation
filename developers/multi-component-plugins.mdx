@@ -1,6 +1,7 @@
 ---
 title: "Multi-component plugins"
 description: "Patterns for plugins that span agent, GCS, and driver halves. Lifecycle ordering, cross-half RPC, version compatibility."
+lastUpdated: "2026-06-18"
 ---
 
 A plugin can ship up to three pieces in one archive:
@@ -22,8 +23,8 @@ Ship two halves when the plugin needs both of:
 
 The Battery Health plugin is GCS-only because it reads normalized
 telemetry and renders a chart. The Thermal Camera plugin is
-hybrid because it needs `usb.read` on the drone (driver half) plus
-a video overlay in the GCS.
+hybrid because it needs `hardware.usb.uvc` on the drone (driver half)
+plus a video overlay in the GCS.
 
 Do not split work that belongs in one half. If the plugin only
 needs telemetry and renders a panel, it is GCS-only. If the
@@ -40,12 +41,12 @@ Install order is fixed:
    in one grid.
 4. Host calls install on both halves in parallel. The agent host
    unpacks the agent half; the GCS host registers the bundle in
-   the user's Convex profile.
-5. On enable, the **agent half starts first**. The supervisor
-   waits for `Type=notify` ready signal (default 30 s timeout).
-6. Once the agent reports ready, the GCS half mounts. The GCS
-   bridge gates outbound RPC until the agent acknowledges it is
-   listening.
+   the user's install record.
+5. On enable, the **agent half starts first** as its own systemd
+   subprocess.
+6. Once the agent half is running, the GCS half mounts in its iframe.
+   The GCS bridge gates outbound RPC to the agent until the agent half
+   is listening.
 
 Disable runs in reverse: GCS unmounts first, then the supervisor
 sends `SIGTERM` to the agent.
@@ -71,66 +72,74 @@ Agent plugin (subprocess)
 Use the plugin's own `plg.<id>.*` topics:
 
 ```python
-# agent half
+# agent half: publish on the plugin's own topic
 await ctx.events.publish("frame.ready", {"frame_id": 42, "ts_ms": now_ms()})
 ```
 
 ```ts
-// GCS half (same plugin id)
-ctx.events.subscribe("plg.com.example.thermal.frame.ready", (evt) => {
+// GCS half (same plugin id): subscribe to the host-pushed event
+ctx.client.on("plg.com.example.thermal.frame.ready", (evt) => {
   redrawOverlay(evt.frame_id);
 });
 ```
 
-The host enforces that subscribers and publishers in the same
-plugin id can talk freely without an explicit grant; the
-`event.publish` and `event.subscribe` capabilities are sufficient.
+On the agent side, publishing and subscribing on the plugin's own
+topics use the `event.publish` and `event.subscribe` capabilities. The
+GCS half receives host-pushed events through its client, so it does not
+open a network connection of its own.
 
 ## Shared manifest
 
 One manifest. Two contributing blocks:
 
 ```yaml
-plugin:
-  id: com.example.thermal
-  version: 0.1.0
-  name: "Thermal Camera"
-  license: GPL-3.0-or-later
+schema_version: 1
+id: com.example.thermal
+name: "Thermal Camera"
+version: "0.1.0"
+description: "Radiometric thermal imaging with a video overlay and FC tab."
+license: "GPL-3.0-or-later"
+risk: medium
 
 compatibility:
-  ados_version: ">=0.9.0 <1.0.0"
-  gcs_version: ">=0.5.0 <1.0.0"
-  python_version: ">=3.11"
-  min_tier: 1
-  profiles: ["drone"]
+  ados_version: ">=0.10.0"
+  gcs_version: ">=0.5.0"
+  supported_boards: ["cm4", "cm5", "rk3576", "rk3566"]
 
 agent:
   entrypoint: "agent/plugin.py"
+  isolation: subprocess
   permissions:
-    - event.publish
-    - event.subscribe
-    - usb.read
-    - sensor.camera.register
+    - id: event.publish
+    - id: event.subscribe
+    - id: hardware.usb.uvc
+    - id: sensor.camera.register
   resources:
-    max_ram_mb: 256
-    max_cpu_percent: 30
+    max_ram_mb: 192
+    max_cpu_percent: 35
+    max_pids: 16
 
 gcs:
-  bundle: "gcs/plugin.bundle.js"
+  entrypoint: "gcs/plugin.bundle.js"
+  isolation: iframe
   permissions:
-    - ui.slot.video-overlay
-    - ui.slot.fc-tab
-    - event.subscribe
+    - id: ui.slot.video-overlay
+    - id: ui.slot.fc-tab
+    - id: telemetry.subscribe.thermal
   contributes:
     panels:
       - id: thermal-overlay
         slot: video.overlay
       - id: thermal-tab
         slot: fc.tab
+  locales:
+    - en
 ```
 
-Both halves carry the same `id` and `version`. The host treats
-them as one install row.
+The top-level fields (`id`, `name`, `version`, `license`, `risk`) are
+flat, not nested under a `plugin:` block. Permissions are a list of
+`- id: <capability>` entries. Both halves carry the same `id` and
+`version`, so the host treats them as one install row.
 
 ## Version compatibility between halves
 
@@ -163,15 +172,15 @@ plugin can register a `CameraDriver` plus a `GpsDriver` from the
 same agent half:
 
 ```python
-async def on_start(self, ctx: Context) -> None:
+async def on_start(self, ctx) -> None:
     cam = ThermalCameraDriver()
-    gps = ExternalGpsDriver()
+    lidar = ExternalLidarDriver()
     await ctx.peripherals.register_camera_driver(cam)
-    await ctx.peripherals.register_gps_driver(gps)
+    await ctx.peripherals.register_lidar_driver(lidar)
 ```
 
 Each registration is gated by its own capability
-(`sensor.camera.register`, `sensor.gps.register`). Both must be
+(`sensor.camera.register`, `sensor.lidar.register`). Both must be
 declared in the manifest.
 
 ## Worked example: hybrid plugin skeleton
@@ -190,32 +199,31 @@ com.example.thermal/
 └── icon.png
 ```
 
-Agent entry point:
+Agent entry point. For a file-path entrypoint (`agent/plugin.py`), the
+runner imports a class named `Plugin` and calls its lifecycle hooks:
 
 ```python
-from ados.sdk import Plugin, Context
-from ados.sdk.drivers import CameraDriver
+from ados.sdk import CameraDriver
 from .thermal_driver import ThermalDriver
 
-class MyPlugin(Plugin):
-    async def on_start(self, ctx: Context) -> None:
-        driver = ThermalDriver()
+class Plugin:
+    async def on_start(self, ctx) -> None:
+        driver = ThermalDriver()  # subclasses CameraDriver
         await ctx.peripherals.register_camera_driver(driver)
 ```
 
-GCS entry point:
+GCS entry point. The manifest declares which panel renders in which
+slot; the bundle sets up its UI from the single `mount` call:
 
 ```tsx
-import { definePlugin, getMountSlot } from "@altnautica/plugin-sdk";
-import Overlay from "./overlay";
-import Tab from "./tab";
+import { definePlugin } from "@altnautica/plugin-sdk";
+import { mountUI } from "./ui";
 
 definePlugin({
   id: "com.example.thermal",
   version: "0.1.0",
-  mount(ctx) {
-    if (getMountSlot() === "video.overlay") return <Overlay ctx={ctx} />;
-    if (getMountSlot() === "fc.tab") return <Tab ctx={ctx} />;
+  mount(ctx, info) {
+    mountUI(ctx);
   },
 });
 ```

@@ -1,77 +1,95 @@
 ---
 title: "Lifecycle"
 description: "Install, parse, enable, disable, remove. The states a plugin moves through and the operator actions that drive them."
+lastUpdated: "2026-06-18"
 ---
 
-A plugin lives through six observable states. The host is the state
-machine; the plugin reacts to events the host pushes.
+A plugin moves through a small set of recorded states. The host is the
+state machine; the plugin reacts to lifecycle hooks the runner calls.
 
 ## States
 
+The supervisor records one status per installed plugin in
+`/var/ados/state/plugin-state.json`:
+
 | State | Meaning |
 |-------|---------|
-| `installed` | Archive unpacked, manifest validated, signature accepted. Permissions are recorded as `granted=false`. The plugin is dormant. |
-| `enabled` | Operator approved the manifest's permissions. The plugin can run but has not been started yet. |
-| `running` | The agent half is alive under `ados-supervisor`; the GCS half is mounted in its iframe. |
-| `disabled` | Operator stopped the plugin. The agent subprocess is dead; the iframe is unmounted. State on disk is preserved. |
-| `crashed` | The supervisor circuit-breaker fired (too many restarts in too short a window). Manual intervention required. |
-| `removed` | The plugin is gone. Disk state is wiped unless the operator chose `--keep-data`. |
+| `installed` | Archive unpacked, manifest validated, signature accepted. Permissions recorded but not yet granted. The plugin is dormant. |
+| `enabled` | Operator approved the permissions. The plugin is set to run. |
+| `running` | The agent half is alive under its systemd unit; the GCS half is mounted in its iframe. |
+| `disabled` | Operator stopped the plugin. The subprocess is dead and the iframe is unmounted. State on disk is preserved. |
+| `failed` | The unit could not stay up (it exceeded the systemd start limit). Operator intervention required. |
+| `incompatible` | The running host version fell outside the manifest's compatibility range. The plugin will not start until the range matches. |
+
+Removal deletes the install entry rather than moving it to a state.
 
 ## Parse before install
 
 The install flow is deliberately two-stage:
 
 1. **Parse**: the host opens the archive in memory, validates the
-   manifest, verifies the signature, and returns a manifest summary.
+   manifest, verifies the Ed25519 signature, and returns a summary.
    Nothing is written to disk.
 2. **Install**: only after the operator approves the requested
-   permissions does the host commit the install. The agent unpacks
-   the archive into `/var/ados/plugins/<id>/`; the GCS records the
-   install in the user's Convex profile.
+   permissions does the host commit the install. The agent unpacks the
+   archive into `/var/ados/plugins/<id>/`; the GCS records the install in
+   the operator's profile.
 
-This means a malicious archive cannot leave traces just by being
-"previewed". The dialog runs `parse`; the **Install** button calls
-`install`.
+A malicious archive cannot leave traces just by being previewed. The
+dialog runs parse; the **Install** button commits.
 
-## Enable / disable
+## Enable and disable
 
-Enable is the first time the plugin actually runs. The agent host
-generates a systemd unit, writes it to `/etc/systemd/system/`,
-reloads the daemon, and starts the unit. The GCS host sets the
-status to `enabled` and mounts the iframe in every contributing
-slot.
+Enable is the first time the plugin actually runs. For a subprocess
+plugin the agent generates a systemd unit (`ados-plugin-<id>.service`),
+writes it under `/etc/systemd/system/`, reloads the daemon, and starts
+the unit inside the shared `ados-plugins.slice`. The GCS host sets the
+status to enabled and mounts the iframe in every contributing slot.
 
-Disable stops the agent subprocess and unmounts the iframe. State
-on disk persists. Re-enable resumes from where it left off.
+Disable stops the unit and unmounts the iframe. State on disk persists.
+Re-enable resumes from where it left off.
 
-## Crash and circuit breaker
+## Failure and the start limit
 
-The agent half can fail. Three restarts within five minutes trips
-the circuit breaker, the host marks the install `crashed`, and the
-operator sees the failure under **Settings -> Plugins -> [plugin] ->
-Events**. The operator decides whether to disable, remove, or
-investigate the logs. The plugin does not auto-recover from a tripped
-breaker; that would mask underlying bugs.
+The per-plugin unit restarts on failure (`Restart=on-failure`,
+`RestartSec=2s`). If it exceeds the start limit (5 starts within 60
+seconds) systemd stops restarting it and the supervisor records the
+plugin as `failed`. The plugin does not auto-recover from that; the
+operator inspects the logs and decides whether to re-enable, remove, or
+investigate. Auto-recovery would mask the underlying bug.
 
-## Remove
+## Lifecycle hooks (agent half)
 
-`ados plugin remove <id>` (or the GCS UI button) tears the plugin
-out:
+The runner calls these hooks on the plugin class, each optional. It
+awaits the ones that return a coroutine:
 
-1. Stop the systemd unit if running.
-2. Delete the unit file.
-3. Reload the daemon.
-4. Remove the install directory.
-5. Drop the install row from the GCS Convex profile.
-6. Drop every permission grant.
+| Hook | When |
+|------|------|
+| `on_install` | Once, the first time the runner starts after install. |
+| `on_enable` | When the plugin is enabled. |
+| `on_configure(ctx, config)` | At start and on a configuration change. |
+| `on_start(ctx)` | Every time the process starts. |
+| `on_stop(ctx)` | On shutdown, before the process exits. |
+| `on_disable(ctx)` | When the plugin is disabled. |
 
-`--keep-data` preserves the plugin's data directory at
-`/var/ados/plugins-data/<id>/` for later reinstall.
+A built-in agent plugin is a plain class (no base class to subclass)
+named by the `module:Class` entrypoint; a file-path entrypoint loads a
+class named `Plugin`. The `ctx` argument is the plugin context (see
+[event hooks and bus](/developers/event-hooks-and-bus)).
 
-## Lifecycle hooks in plugin code
+```python
+class TelemetryLoggerPlugin:
+    async def on_start(self, ctx) -> None:
+        await ctx.events.subscribe("vehicle.armed", self._on_armed)
+        ctx.log.info("started")
 
-Plugins can react to lifecycle events in their `mount` and `unmount`
-callbacks:
+    async def on_stop(self, ctx) -> None:
+        ctx.log.info("stopped")
+```
+
+## Lifecycle hooks (GCS half)
+
+The GCS half exposes `mount` and `unmount` through `definePlugin`:
 
 ```ts
 import { definePlugin } from "@altnautica/plugin-sdk";
@@ -88,28 +106,31 @@ definePlugin({
 });
 ```
 
-`unmount` runs when the host disposes the iframe (operator disabled
-the plugin, navigated away, or removed it). Use it to flush any
-in-flight state.
+`unmount` runs when the host disposes the iframe (operator disabled the
+plugin, navigated away, or removed it). Use it to flush in-flight state.
+
+## Remove
+
+`ados plugin remove <id>` (or the GCS button) tears the plugin out:
+
+1. Stop the unit if running.
+2. Delete the unit file (and any declared extra-service units). Reload
+   the daemon.
+3. Remove the install directory `/var/ados/plugins/<id>/`.
+4. Drop the install entry from the state file.
+
+`--keep-data` additionally retains the plugin's log file. The plugin's
+data directory under `/var/ados/plugin-data/<id>/` is not deleted by
+remove, so a reinstall can pick up where it left off.
 
 ## Configuration changes
 
-`config.changed` is an event the host pushes whenever the operator
-edits the plugin's configuration. It is not a separate state. The
-plugin stays `running` and subscribes to recompute internal state
-without restarting:
-
-```ts
-ctx.config.onChange<MyConfig>((next) => {
-  store.setConfig(next);
-});
-```
-
-See [event hooks](/developers/event-hooks) for the full list of
-events the host pushes.
+A configuration edit re-runs `on_configure` with the new config; the
+plugin stays running. On the GCS side the host pushes a `config.changed`
+event the plugin subscribes to with `ctx.config.onChange`.
 
 ## State observability
 
-Every transition is recorded as a row in `cmd_pluginEvents` (GCS) and
-mirrored on the agent's plugin event log. Operators see the full
-history under **Settings -> Plugins -> [plugin] -> Events**.
+Every transition is recorded. Operators see the plugin's history through
+`ados plugin info <id>` and `ados plugin logs <id>` on the agent, and on
+the plugin detail page in Mission Control.

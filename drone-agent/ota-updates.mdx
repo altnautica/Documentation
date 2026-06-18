@@ -2,7 +2,7 @@
 title: "OTA Updates"
 description: "Over-the-air updates: check, upgrade, rollback, and channel management."
 icon: "arrows-rotate"
-lastUpdated: "2026-05-09"
+lastUpdated: "2026-06-18"
 ---
 
 # OTA Updates
@@ -62,7 +62,7 @@ Response:
 ```json
 {
   "status": "update_available",
-  "version": "0.49.26",
+  "version": "0.89.2",
   "changelog": "Fixed video pipeline restart on camera hot-plug. Improved MQTT reconnection."
 }
 ```
@@ -72,7 +72,7 @@ If no update is available:
 ```json
 {
   "status": "up_to_date",
-  "version": "0.49.26"
+  "version": "0.89.2"
 }
 ```
 
@@ -85,10 +85,10 @@ The `ados update` command checks, downloads, installs, and restarts in one step:
 ```bash
 $ ados update
 Checking for updates...
-Update available: v0.49.26
-Install v0.49.26? [y/N]: y
+Update available: v0.89.2
+Install v0.89.2? [y/N]: y
 Downloading and installing...
-Installed v0.49.26
+Installed v0.89.2
 Restarting service...
 Done.
 ```
@@ -124,33 +124,19 @@ Auto-install restarts the agent immediately after installing an update. If the d
 
 ## Rolling back
 
-If an update causes problems, roll back to the previous version:
+If an update causes problems, roll back to a previous version through the REST API. Rollback downloads the requested version from PyPI and reinstalls it. Your config is preserved.
 
 ```bash
-$ ados rollback
-Rollback complete. Reverted to v0.49.25.
-```
-
-Roll back to a specific version:
-
-```bash
-$ ados rollback 0.49.24
-Rollback complete. Reverted to v0.49.24.
-```
-
-The rollback command downloads the specified version from PyPI and reinstalls it. Your config is preserved.
-
-Via the REST API:
-
-```bash
-# Rollback to previous version
+# Roll back to the previous version
 curl -X POST http://localhost:8080/api/ota/rollback \
   -H "X-ADOS-Key: $KEY"
 
-# Rollback to specific version
-curl -X POST "http://localhost:8080/api/ota/rollback?version=0.49.24" \
+# Roll back to a specific version
+curl -X POST "http://localhost:8080/api/ota/rollback?version=0.89.0" \
   -H "X-ADOS-Key: $KEY"
 ```
+
+Mission Control's OTA card uses the same endpoint, so you can also roll a drone back from the GCS.
 
 ## Update status
 
@@ -158,11 +144,11 @@ Check the current OTA state:
 
 ```bash
 $ ados update
-Version:    0.49.26
+Version:    0.89.2
 State:      idle
 Channel:    stable
 Repo:       altnautica/ADOSDroneAgent
-Last check: 2026-05-09T10:00:00
+Last check: 2026-06-18T10:00:00
 ```
 
 Possible states:

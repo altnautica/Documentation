@@ -2,6 +2,7 @@
 title: "Display & Joystick"
 description: "HDMI display state, gamepad assignment, Bluetooth pairings."
 icon: "gamepad-2"
+lastUpdated: "2026-06-18"
 ---
 
 # Display & Joystick
@@ -17,9 +18,10 @@ panel, attached gamepads, and Bluetooth controllers.
 ## Display
 
 The local panel state: panel name, resolution, rotation, touch support,
-brightness. Driven by the agent's display manager. Empty state suggests
-running the setup wizard's display step or `ados display install` if no
-panel is configured.
+brightness. Driven by the agent's display service. Empty state suggests
+running the setup wizard's display step if no panel is configured. The
+installer auto-provisions a supported panel end to end, so a fresh
+install usually needs no manual step.
 
 ## Gamepads / joysticks
 

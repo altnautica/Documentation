@@ -1,71 +1,116 @@
 ---
 title: "Python SDK"
-description: "ados.sdk reference. The SDK every agent-side plugin uses."
+description: "ados.sdk reference. The driver, vision, and testing surface every agent-side plugin uses."
+lastUpdated: "2026-06-18"
 ---
 
 The agent half of a plugin runs as a Python subprocess under
-`ados-supervisor`. The SDK gives you a typed wrapper around the IPC
-channel the supervisor opens at startup.
+`ados-supervisor`. The public author surface is the `ados.sdk`
+package: the typed driver base classes, the vision-engine client
+types, and an in-process test harness. Import from `ados.sdk`, not
+from internal agent modules.
+
+<Warning>
+The plugin lifecycle context (the `ctx` object passed to a plugin's
+hooks) is **not yet re-exported from `ados.sdk`**. The SDK's own
+docstring says the context, event, and MAVLink-component helpers
+"land here as the host APIs stabilise." For now, plugins consume the
+context the runtime hands them and follow the reference extensions.
+This page documents the real, current surface and does not invent an
+API that does not exist yet.
+</Warning>
 
 ## Install
 
-```sh
-uv pip install ados-sdk
-# or
-pip install ados-sdk
-```
+The standalone `ados-sdk` PyPI package is still in flight. Until it
+publishes, plugin source vendors the contract types directly from the
+agent tree at
+[`altnautica/ADOSDroneAgent/src/ados`](https://github.com/altnautica/ADOSDroneAgent/tree/main/src/ados),
+or develops against a checked-out agent so `import ados.sdk` resolves.
 
-Once the SDK lands on PyPI, plugins depend on it as a normal Python
-package. Until then, plugin source can vendor the contract types
-directly from
-[`altnautica/ADOSDroneAgent/src/ados/plugins`](https://github.com/altnautica/ADOSDroneAgent/tree/main/src/ados/plugins).
-
-## Hello plugin
+## What `ados.sdk` exports today
 
 ```python
-from __future__ import annotations
-
-import asyncio
-
 from ados.sdk import (
-    Plugin,
-    Context,
-    BatterySample,
-    publish_event,
-    subscribe_telemetry,
+    # Driver base classes (one per hardware kind)
+    CameraDriver, GimbalDriver, LidarDriver,
+    GpsDriver, EscDriver, PayloadActuatorDriver,
+    # Per-kind data types (candidate / capabilities / session / samples)
+    CameraCandidate, CameraCapabilities, CameraSession, FrameBuffer,
+    GimbalCandidate, GimbalCapabilities, GimbalSession, GimbalState,
+    LidarCandidate, LidarCapabilities, LidarSession, LidarFrame, LidarPoint,
+    GpsCandidate, GpsCapabilities, GpsSession, GpsFix,
+    EscCandidate, EscCapabilities, EscSession, EscTelemetry,
+    PayloadCandidate, PayloadCapabilities, PayloadSession,
+    PayloadCommand, PayloadState,
+    # Driver errors
+    DriverError, DriverDeviceNotFound, DriverPermissionDenied,
+    # Vision-engine client + types
+    VisionClient, Frame, FrameDescriptor, FrameFormat, RingLayout,
+    Detection, DetectionBatch, BoundingBox,
+    ModelKind, ModelExecution, ModelMetadata, Pose, Odometry,
+    # Testing
+    PluginTestHarness, FakeVisionEngine, load_fixture,
 )
-
-
-class MyPlugin(Plugin):
-    id = "com.example.hello"
-    version = "0.1.0"
-
-    async def on_start(self, ctx: Context) -> None:
-        async for sample in subscribe_telemetry(ctx, "battery"):
-            await self.handle(sample)
-
-    async def handle(self, sample: BatterySample) -> None:
-        if sample.remaining_percent < 25:
-            await publish_event(
-                "battery.low",
-                payload={"pack_id": sample.pack_id, "percent": sample.remaining_percent},
-            )
-
-
-if __name__ == "__main__":
-    asyncio.run(Plugin.run(MyPlugin()))
 ```
 
-`Plugin.run(...)` opens the IPC channel, reads the `Context`
-(includes the granted capabilities, the operator-edited config, the
-plugin's data dir), and dispatches lifecycle hooks (`on_start`,
-`on_stop`, `on_config_change`).
+Three groups:
+
+- **Driver layer.** The base classes hardware-driver plugins
+  subclass, plus the dataclasses they exchange with the host. See
+  [driver layer](/developers/driver-layer) and the per-kind pages.
+- **Vision.** `VisionClient` and the frame, detection, and model
+  types a plugin uses to read frames from the vision engine and
+  publish detections back.
+- **Testing.** `PluginTestHarness`, `FakeVisionEngine`, and
+  `load_fixture` let you exercise a plugin in-process with no real
+  agent.
+
+## The agent-half plugin shape
+
+A plugin's agent half is a plain Python class. The manifest's
+`agent.entrypoint` points the runner at it, in one of two forms:
+
+- `module:Class`, for code packaged as an importable module
+  (`altnautica_thermal_camera.plugin:ThermalUsbPlugin`).
+- A path inside the archive (`agent/plugin.py`), in which case the
+  class must be named `Plugin`.
+
+The runner constructs the class with no arguments, then calls the
+lifecycle hooks it finds. Every hook is optional and may be sync or
+async:
+
+```python
+class Plugin:
+    async def on_start(self, ctx):
+        # Build and register drivers, open subscriptions, etc.
+        ...
+
+    async def on_stop(self, ctx):
+        # Release anything on_start acquired.
+        ...
+```
+
+The full hook order the runner walks is `on_install`, `on_enable`,
+`on_configure(ctx, config)`, `on_start`, then it waits for shutdown
+(`SIGTERM`), then `on_stop`, `on_disable`. Most plugins implement
+only `on_start` and `on_stop`.
+
+`ctx` is the runtime-provided plugin context. It exposes the host
+service helpers a plugin needs, including
+`ctx.peripheral_manager.register_*_driver(...)`, `ctx.config`, and
+`ctx.process.spawn`. Because the context type is not yet published in
+`ados.sdk`, the reference extensions declare a local `Protocol` for
+the parts they use. Read the
+[thermal camera](/developers/camera-driver) and
+[gimbal](/developers/gimbal-driver) extensions for the current shape.
 
 ## IPC
 
-The supervisor passes the path to a Unix domain socket via the
-`ADOS_PLUGIN_SOCKET` environment variable. The SDK opens the socket
-and speaks msgpack RPC against it.
+The supervisor passes a Unix domain socket path in the
+`ADOS_PLUGIN_SOCKET` environment variable, the capability token in
+`ADOS_PLUGIN_TOKEN`, and the bound drone id in `ADOS_PLUGIN_AGENT_ID`.
+The runtime opens the socket and speaks msgpack RPC over it:
 
 ```
 plugin -> {"id": "...", "type": "request", "method": "event.publish", "args": {...}}
@@ -73,24 +118,11 @@ host   -> {"id": "...", "type": "response", "args": {...}}
 host   -> {"id": "...", "type": "event",    "method": "telemetry.battery", "args": {...}}
 ```
 
-Identical envelope to the GCS bridge; identical capability gate.
-
-## Capabilities
-
-Every privileged call must be backed by a manifest permission. The
-SDK reads the granted set from the host on startup and rejects
-requests that exercise an undeclared capability before they reach
-the wire:
-
-```python
-try:
-    await ctx.mavlink.send_command(...)
-except CapabilityError as exc:
-    log.warning("plugin lacks capability %s", exc.capability)
-```
-
-This catches missing manifest entries during development before
-they reach the host.
+The envelope and the capability gate match the GCS bridge. Every
+privileged method is checked against the granted capability set
+before it reaches a handler; a call that exercises an ungranted
+capability is rejected with a `capability_denied` error naming the
+missing capability.
 
 ## Resource limits
 
@@ -104,32 +136,68 @@ agent:
     max_pids: 4
 ```
 
-On Linux these become cgroup v2 controllers under
-`ados-plugins.slice/<plugin-id>.scope`. The plugin sees them as
-hard caps; an OOM kill is reported to the host as a
-`crashed` lifecycle event.
+On Linux these become cgroup v2 controllers in the plugin slice
+(`ados-plugins.slice`). The plugin sees them as hard caps; an
+out-of-memory kill is reported to the host as a `crashed` lifecycle
+event and trips the circuit breaker.
 
 ## Testing
 
-Until the SDK ships its own harness, `pytest` against in-memory
-transports works the same way as the TypeScript harness. The agent
-repo's `tests/test_api_plugins.py` and `tests/test_plugin_runner.py`
-have working examples.
+`ados.sdk` ships an in-process harness. It wires a real plugin
+context to fake host stubs so a single `pytest` run drives the
+plugin's lifecycle hooks with no agent and no hardware:
 
-## What is in the SDK today
+```python
+import pytest
+from ados.sdk import PluginTestHarness, load_fixture
 
-The agent host module at
+
+@pytest.mark.asyncio
+async def test_plugin_publishes_on_low_battery():
+    async with PluginTestHarness(
+        plugin_id="com.example.hello",
+        granted_capabilities={"event.publish", "telemetry.read"},
+    ) as harness:
+        plugin = Plugin()
+        await plugin.on_start(harness.context)
+
+        # Deliver an event as if a peer published it.
+        await harness.publish_event("telemetry.battery", {"remaining_percent": 18})
+
+        # Assert on what the plugin published back.
+        events = harness.published_events()
+        assert any(topic == "battery.low" for topic, _ in events)
+```
+
+The harness:
+
+- exposes `harness.context`, the `PluginContext` to pass to the
+  plugin's hooks;
+- injects events with `await harness.publish_event(topic, payload)`
+  and captures the plugin's output with `harness.published_events()`;
+- replays recorded scenarios with
+  `await harness.replay_fixture(name_or_path)` (load files with
+  `load_fixture`);
+- grants and revokes capabilities at runtime with `harness.grant(...)`
+  and `harness.revoke(...)`.
+
+For vision plugins, `FakeVisionEngine` stands in for the real engine
+and lets a test push synthetic frames into a `VisionClient`.
+
+## Where the rest of the contract lives
+
+The agent host modules at
 [`altnautica/ADOSDroneAgent/src/ados/plugins/`](https://github.com/altnautica/ADOSDroneAgent/tree/main/src/ados/plugins)
-already exposes:
+define the install and runtime machinery the SDK sits on:
 
-- `manifest.PluginManifest` (Pydantic schema)
+- `manifest` (the Pydantic manifest schema)
 - `signing` (Ed25519 verification + revocation list)
-- `archive` (pack / unpack with traversal protection)
-- `state` (persistent install / permission state)
+- `archive` (pack and unpack with traversal protection)
+- `state` (persistent install and permission state)
 - `supervisor` (lifecycle: install / enable / disable / remove)
-- `runner` (the entrypoint shim plugin code calls into)
+- `runner` (the process entrypoint that loads a plugin and calls its
+  hooks)
 
-The standalone `ados-sdk` PyPI package is in flight; it will
-re-export the contracts above plus an async event loop helper. Watch
-the [Discord](https://discord.gg/uxbvuD4d5q) and the
-[GitHub releases](https://github.com/altnautica) for the publish.
+Watch the [GitHub releases](https://github.com/altnautica) for the
+`ados-sdk` PyPI publish, which will re-export the contracts above and
+add the context helpers once they stabilise.

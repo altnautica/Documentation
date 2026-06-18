@@ -1,21 +1,17 @@
 ---
 title: "REST API"
-description: "FastAPI server on port 8080 with endpoints for every agent capability."
+description: "HTTP API on port 8080, served by the native Rust front with a residual FastAPI behind it."
 icon: "code"
-lastUpdated: "2026-05-09"
+lastUpdated: "2026-06-18"
 ---
 
 # REST API
 
-The agent runs a FastAPI server on port 8080. It provides HTTP endpoints for status, telemetry, commands, configuration, video, scripts, OTA, pairing, and everything else the agent can do.
+Port 8080 is owned by the native Rust front (`ados-control`, an axum server). It serves migrated routes directly and reverse-proxies the rest to a residual FastAPI on an internal Unix socket (`/run/ados/api-internal.sock`). From a client's point of view it is one HTTP API for status, telemetry, commands, configuration, video, OTA, pairing, and everything else the agent can do.
 
-The API is the backbone that the CLI, TUI, Mission Control, and your own scripts all talk to.
+The API is the backbone that the CLI, TUI, and Mission Control all talk to.
 
-The REST surface stays the same whether the agent is running as the main
-runtime or as the standalone API service. Internally, route modules read agent
-state through the API runtime facade, so callers do not need to know which
-process owns flight controller state, video state, WFB-ng state, scripts, or
-parameter cache data.
+The split between native and proxied routes moves over time as more routes migrate into the Rust front. Callers do not need to know which process answers a given route. A route that has not yet migrated is forwarded transparently to the FastAPI upstream; on a zero-Python build with no upstream present, an un-migrated route returns `501` rather than `404`.
 
 ## Base URL
 
@@ -36,29 +32,33 @@ curl http://localhost:8080/api/status \
 
 A few endpoints are exempt from auth (like `/api/pairing/info`) so that unpaired agents can still be discovered and paired.
 
-## Route modules
+## Route domains
 
-The API is organized into route modules, each handling a domain:
+The API is organized by domain. The "Served by" column shows where a domain currently lives: the Rust front, the residual FastAPI (proxied through the front), or a mix while migration is in progress.
 
-| Module | Prefix | Purpose |
-|--------|--------|---------|
-| `status` | `/api/status` | Agent status, board, FC, health |
-| `config` | `/api/config` | Read/write configuration |
-| `commands` | `/api/command`, `/api/commands` | Send MAVLink commands and list supported commands |
-| `video` | `/api/video` | Video pipeline, snapshot, recording |
-| `wfb` | `/api/wfb` | WFB-ng link stats |
-| `scripts` | `/api/scripts` | Script management, run, stop |
-| `plugins` | `/api/plugins` | Plugin lifecycle, install, list, perms |
-| `pairing` | `/api/pairing` | Pair, unpair, info |
-| `ota` | `/api/ota` | Update check, install, rollback |
-| `services` | `/api/services` | Systemd service control |
-| `logs` | `/api/logs` | Log retrieval |
-| `system` | `/api/system` | Reboot, shutdown, diagnostics |
-| `fleet` | `/api/fleet` | Fleet/swarm coordination |
-| `peripherals` | `/api/peripherals` | USB devices, sensors |
-| `params` | `/api/params` | FC parameter reads from the local cache |
-| `vision_models` | `/api/vision-models` | Vision model registry for plugin consumers |
-| `ground_station` | `/api/v1/ground-station` | Ground station specific endpoints |
+| Domain | Prefix | Served by | Purpose |
+|--------|--------|-----------|---------|
+| Status | `/api/status`, `/api/status/full` | Rust front | Agent status, board, FC, health |
+| Configuration | `/api/config` | FastAPI (proxied) | Read/write configuration |
+| Commands | `/api/command`, `/api/commands` | Rust front | Send MAVLink commands and list supported commands |
+| Telemetry | `/api/telemetry` | Rust front | Cached telemetry snapshot |
+| Parameters | `/api/params`, `/api/params/{name}` | Rust front | FC parameter reads and writes through the cache |
+| Video | `/api/video` | Mixed | Pipeline config, snapshot, recording (live device enumeration stays Python) |
+| WFB-ng | `/api/wfb` | Rust front | Link stats, channel, pairing |
+| MAVLink signing | `/api/mavlink/signing` | Rust front | MAVLink2 signing capability and FC enrollment |
+| Pairing | `/api/pairing` | Mixed | Pair, unpair, info, code |
+| Plugins | `/api/plugins` | FastAPI (proxied) | Plugin lifecycle, install, list, perms |
+| OTA | `/api/ota` | FastAPI (proxied) | Update check, install, rollback |
+| Services | `/api/services` | Rust front | Systemd service control |
+| System | `/api/system`, `/api/v1/diagnostics` | Rust front | Reboot, shutdown, diagnostics, resource reads |
+| Fleet | `/api/fleet` | Rust front | Fleet enrollment and peers |
+| Peripherals | `/api/peripherals` | FastAPI (proxied) | USB devices, sensors |
+| Vision | `/api/vision`, `/api/vision-models` | Mixed | Vision state, detections, model registry |
+| Logs | `/api/logs`, `/api/observability` | FastAPI (proxied) | Log retrieval (see also the `ados-logd` query API) |
+| Network | `/api/v1/network` | Rust front | MAC pinning, WiFi client |
+| Ground station | `/api/v1/ground-station` | Rust front | Ground-station status, network, PIC, mesh, UI, recording |
+| WHEP | `/whep` | FastAPI (proxied) | WebRTC video playback signaling |
+| Setup | `/api/setup`, `/setup` | FastAPI (proxied) | First-boot setup wizard webapp |
 
 ## Common endpoints
 
@@ -74,7 +74,7 @@ Response:
 
 ```json
 {
-  "version": "0.49.26",
+  "version": "0.89.2",
   "uptime_seconds": 3847,
   "board": {
     "name": "Radxa ROCK 5C Lite (RK3582)",
@@ -148,24 +148,16 @@ Response:
 }
 ```
 
-### Scripts
+### Parameters
 
 ```bash
-# List running scripts
-curl http://localhost:8080/api/scripts \
+# Read cached FC parameters
+curl http://localhost:8080/api/params \
   -H "X-ADOS-Key: $KEY"
 
-# Run a script
-curl -X POST http://localhost:8080/api/scripts/run \
-  -H "X-ADOS-Key: $KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"path": "/var/ados/scripts/my_mission.py"}'
-
-# Send a text command
-curl -X POST http://localhost:8080/api/scripting/command \
-  -H "X-ADOS-Key: $KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"command": "takeoff"}'
+# Read a single parameter
+curl http://localhost:8080/api/params/RC1_MIN \
+  -H "X-ADOS-Key: $KEY"
 ```
 
 ### Pairing
@@ -227,24 +219,26 @@ curl -X POST http://localhost:8080/api/v1/ground-station/pic/heartbeat \
 
 ## CORS
 
-CORS is enabled by default with `*` allowed origins. This lets any browser-based app connect to the API. You can restrict origins in config:
+CORS is enabled by default with an allowlist, not a wildcard. The defaults cover the local Mission Control development origins (`localhost:4000`, `localhost:4001`). Add your own origins in config without dropping the defaults:
 
 ```yaml
 security:
   api:
     cors_enabled: true
-    cors_origins: ["https://command.altnautica.com"]
+    cors_origins_extra: ["https://command.altnautica.com"]
 ```
+
+The effective allowlist is the union of the built-in defaults, `cors_origins`, and `cors_origins_extra`.
 
 ## OpenAPI docs
 
-FastAPI generates interactive API documentation automatically. When the agent is running, open:
+The residual FastAPI generates interactive API documentation, served through the front. When the agent is running with the Python API present, open:
 
 - **Swagger UI:** `http://localhost:8080/docs`
 - **ReDoc:** `http://localhost:8080/redoc`
 
-These pages list every endpoint with request/response schemas and a "Try it out" button.
+These pages list the FastAPI endpoints with request/response schemas and a "Try it out" button. On a zero-Python build (where the residual API is not present), these paths are not available.
 
 <Tip>
-The Swagger UI is the fastest way to explore the API. It shows all available endpoints, required parameters, and response shapes. You can send test requests directly from the browser.
+The Swagger UI is a fast way to explore the proxied endpoints. It shows the available endpoints, required parameters, and response shapes, and you can send test requests directly from the browser.
 </Tip>

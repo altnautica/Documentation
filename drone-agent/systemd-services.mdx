@@ -2,11 +2,14 @@
 title: "Systemd Services"
 description: "All service units, dependencies, startup order, resource limits, and log access."
 icon: "server"
+lastUpdated: "2026-06-18"
 ---
 
 # Systemd Services
 
-The agent runs as a collection of systemd services. Each service handles one responsibility: MAVLink, video, cloud, health, and so on. The supervisor service manages the lifecycle of all child services.
+The agent runs as a collection of systemd services. Each service handles one responsibility: MAVLink, video, cloud, health, and so on. The supervisor (`ados-supervisor`, a native Rust orchestrator) manages the lifecycle of all child services through `systemctl`.
+
+The unit names are a stable interface: you type the same `systemctl restart ados-<name>` commands regardless of which language a unit runs. Most units now exec a native Rust binary; a few stay Python by design (AI and vision, hardware-detection and bootstrap glue, the residual API, and some ground-station hardware managers). The "Runs" and "Lang" columns below show which is which.
 
 This architecture gives you per-service restart, resource isolation via cgroups, and clean dependency ordering.
 
@@ -14,41 +17,53 @@ This architecture gives you per-service restart, resource isolation via cgroups,
 
 ### Core services (all profiles)
 
-| Service | Description | Tier |
-|---------|-------------|------|
-| `ados-supervisor` | Parent service, starts and monitors children | All |
-| `ados-mavlink` | FC serial connection and MAVLink proxy | 1+ |
-| `ados-api` | FastAPI REST server on port 8080 | 2+ |
-| `ados-health` | CPU, RAM, disk, temperature monitoring | 2+ |
-| `ados-discovery` | mDNS advertisement (`_ados._tcp.local.`) | 2+ |
-| `ados-video` | Camera detection, encoding, MediaMTX | 3+ |
-| `ados-wfb` | WFB-ng video transmitter | 3+ |
-| `ados-cloud` | MQTT and Convex cloud relay | 3+ |
-| `ados-scripting` | Python script executor and text commands | 3+ |
-| `ados-peripherals` | USB hot-plug, sensor manager | 3+ |
-| `ados-ota` | GitHub release polling, upgrade, rollback | 3+ |
+| Service | Runs | Lang | Description |
+|---------|------|------|-------------|
+| `ados-supervisor` | supervisor | Rust | Parent orchestrator, starts and monitors children |
+| `ados-mavlink` | `ados-mavlink-router` | Rust | FC serial connection and MAVLink router (WS on `:8765`) |
+| `ados-control` | `ados-control` | Rust | HTTP front on port 8080 (proxies the residual API) |
+| `ados-api` | `ados.services.api` | Python | Residual FastAPI behind the front, on an internal socket |
+| `ados-cloud` | `ados-cloud` | Rust | MQTT and Convex cloud relay |
+| `ados-logd` | `ados-logd` | Rust | Black-box logging store and query API |
+| `ados-health` | `ados.services.health` | Python | CPU, RAM, disk, temperature monitoring |
+| `ados-discovery` | mDNS | Python | mDNS advertisement (`_ados._tcp.local.`) |
+| `ados-plugin-host` | plugin host | Rust | Plugin subprocess supervisor |
+| `ados-peripherals` | peripherals manager | Python | USB hot-plug, sensor manager |
+| `ados-ota` | `ados.services.ota` | Python | Release polling, upgrade, rollback |
+
+### Drone profile services
+
+| Service | Runs | Lang | Description |
+|---------|------|------|-------------|
+| `ados-video` | `ados-video` | Rust | Camera detection, encoding, MediaMTX |
+| `ados-wfb` | `ados-radio` | Rust | WFB-ng video transmitter |
+| `ados-vision` | `ados-vision` | Rust | Vision host (on capable boards) |
+| `ados-gpio` | `ados-gpio` | Rust | GPIO output substrate (ships disabled until enabled) |
 
 ### Ground station services (ground_station profile only)
 
-| Service | Description |
-|---------|-------------|
-| `ados-wfb-rx` | WFB-ng video receiver |
-| `ados-mediamtx-gs` | MediaMTX for ground-side video relay |
-| `ados-hostapd` | WiFi hotspot (access point) |
-| `ados-dnsmasq-gs` | DHCP and DNS for the hotspot |
-| `ados-setup-captive` | Captive portal DNS responder |
-| `ados-usb-gadget` | USB CDC-NCM/RNDIS gadget for laptop tether |
-| `ados-usb-gadget-setup` | One-shot USB gadget configuration |
-| `ados-oled` | OLED display driver (SSD1306 I2C) |
-| `ados-buttons` | GPIO button handler |
-| `ados-input` | Bluetooth and USB gamepad input manager |
-| `ados-kiosk` | HDMI kiosk mode (Chromium + cage Wayland) |
-| `ados-pic` | Priority Input Controller arbiter |
-| `ados-uplink-router` | Internet uplink priority and data cap |
-| `ados-cloud-relay` | Cloud relay bridge for ground station |
-| `ados-wifi-client` | WiFi client connection manager |
-| `ados-modem` | Cellular modem manager |
-| `ados-ethernet` | Ethernet connection manager |
+| Service | Runs | Lang | Description |
+|---------|------|------|-------------|
+| `ados-wfb-rx` | `ados-groundlink` | Rust | WFB-ng video receiver (relay/receiver base) |
+| `ados-oled` | `ados-display` | Rust | OLED/LCD display UI |
+| `ados-display-probe` | `ados-display-probe` | Rust | Display panel detection |
+| `ados-pic` | `ados-pic` | Rust | Panel-in-charge input arbiter |
+| `ados-input` | `ados-input` | Rust | Bluetooth and USB gamepad input manager |
+| `ados-buttons` | `ados.services.ui.button_service` | Python | GPIO button handler |
+| `ados-uplink-router` | `ados-net` | Rust | Internet uplink priority and data cap |
+| `ados-ethernet` | `ground_station.ethernet_manager` | Python | Ethernet connection manager |
+| `ados-wifi-client` | `ground_station.wifi_client_manager` | Python | WiFi client connection manager |
+| `ados-modem` | `ground_station.modem_manager` | Python | Cellular modem manager |
+| `ados-hostapd` | `ground_station.hostapd_manager` | Python | WiFi hotspot (manages hostapd) |
+| `ados-mediamtx-gs` | `ground_station.mediamtx_manager` | Python | MediaMTX for ground-side video relay |
+| `ados-kiosk` | kiosk service | Python | HDMI kiosk mode (Chromium + cage Wayland) |
+| `ados-dnsmasq-gs` | dnsmasq | C | DHCP and DNS for the hotspot |
+| `ados-setup-captive` | captive DNS | Python | Captive portal DNS responder |
+| `ados-usb-gadget` | USB gadget | Python | USB CDC-NCM/RNDIS gadget for laptop tether |
+| `ados-usb-gadget-setup` | gadget setup | shell | One-shot USB gadget configuration |
+| `ados-batman` | `ground_station.mesh_manager` | Python | batman-adv mesh carrier (gated) |
+| `ados-wfb-relay` / `ados-wfb-receiver` | `ados-groundlink` | Rust | Mesh relay / receiver roles (gated) |
+| `ados-mesh-pairing` | pairing daemon | Python | Mesh tap-to-pair daemon (gated) |
 
 ## Startup order
 
@@ -58,16 +73,18 @@ The supervisor starts first and brings up child services in dependency order:
 ados-supervisor
   │
   ├── ados-mavlink        (starts immediately)
-  ├── ados-api            (starts immediately)
+  ├── ados-control        (starts immediately, owns :8080)
+  ├── ados-api            (starts immediately, behind the front)
   ├── ados-health         (starts immediately)
+  ├── ados-logd           (starts immediately)
   ├── ados-discovery      (starts immediately)
   │
   ├── ados-video          (after camera detected)
   ├── ados-wfb            (after ados-video)
-  ├── ados-cloud          (after ados-api)
-  ├── ados-scripting      (after ados-api)
-  ├── ados-peripherals    (after ados-api)
-  └── ados-ota            (after ados-api)
+  ├── ados-cloud          (after ados-control)
+  ├── ados-plugin-host    (after ados-control)
+  ├── ados-peripherals    (after ados-control)
+  └── ados-ota            (after ados-control)
 ```
 
 Hardware-dependent services (video, wfb, modem) only start when the relevant hardware is detected.
@@ -77,25 +94,24 @@ Hardware-dependent services (video, wfb, modem) only start when the relevant har
 Each service runs with cgroup resource limits to prevent any single service from consuming all system resources:
 
 ```ini
-# Example from ados-video.service
+# Example from ados-mavlink.service
 [Service]
-MemoryMax=512M
-CPUQuota=80%
+MemoryMax=50M
+CPUQuota=25%
 ```
 
-Typical memory allocation on a 2 GB board:
+Memory caps configured on a representative drone profile:
 
 | Service | MemoryMax | Typical usage |
 |---------|-----------|---------------|
-| ados-mavlink | 64M | ~20 MB |
+| ados-mavlink | 50M | ~20 MB |
+| ados-control | 128M | ~25 MB |
 | ados-api | 128M | ~40 MB |
 | ados-video | 512M | ~100-200 MB |
-| ados-cloud | 128M | ~30 MB |
-| ados-health | 64M | ~15 MB |
-| ados-scripting | 256M | ~30-100 MB |
-| Total core | ~1.2 GB cap | ~250-400 MB actual |
+| ados-cloud | 256M | ~30 MB |
+| ados-health | 20M | ~15 MB |
 
-This leaves headroom for the OS, ffmpeg, MediaMTX, and any scripts you run.
+This leaves headroom for the OS, ffmpeg, and MediaMTX.
 
 ## Circuit breaker
 

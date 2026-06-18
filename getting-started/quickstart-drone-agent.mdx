@@ -10,6 +10,13 @@ By the end of this page, ADOS Drone Agent will be running on a companion
 computer connected to your drone's flight controller. You will open the local
 setup webapp, confirm MAVLink telemetry, and connect Mission Control.
 
+<Note>
+The agent is a Rust-first hybrid. Native Rust services run the REST front on
+port 8080, MAVLink routing, video, radio, and the cloud relay. Python handles AI
+and vision, hardware bootstrap, and the plugin runtime. systemd supervises every
+service.
+</Note>
+
 ## Prerequisites
 
 **Hardware you need:**
@@ -29,7 +36,7 @@ setup webapp, confirm MAVLink telemetry, and connect Mission Control.
 
 ## Install
 
-The recommended path is to open Mission Control's [Flash Tool](/mission-control/flash-tool) and pick your board. The Flash Tool either flashes a complete OS image (for boards like the Luckfox Pico Zero) or hands you a one-line install command to paste over SSH (for stock-OS boards like the Pi 4B and Radxa CM4). See [Install paths](/getting-started/install-paths) for the full decision tree.
+The recommended path is to open Mission Control's [Flash Tool](/mission-control/flash-tool) and pick your board. The Flash Tool hands you a one-line install command to paste over SSH on a board running a stock OS (Pi 4B, Pi Zero 2 W, Radxa CM3, CM4, Rock 5C Lite, Cubie A7Z). See [Install paths](/getting-started/install-paths) for the full decision tree.
 
 The install usually takes 3-8 minutes. It installs dependencies, creates the
 `ados` user and directories, detects the board, writes config, sets up systemd,
@@ -94,7 +101,7 @@ configure Cloudflare Tunnel with the token or install command from Cloudflare.
 ```bash
 ados                 # terminal status page and setup URLs
 ados status          # compact status
-ados status --json   # scriptable setup status
+ados status --json   # machine-readable setup status
 ados update          # update the agent
 ados uninstall       # uninstall the agent
 ```

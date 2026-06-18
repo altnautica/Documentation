@@ -1,6 +1,7 @@
 ---
 title: "Vision plugins"
 description: "Subscribe to engine frames over the shared frame bus, register or run inference models, and publish detections."
+lastUpdated: "2026-06-18"
 ---
 
 The agent ships a **vision engine**: a host service that owns the camera(s),
@@ -51,11 +52,11 @@ In Python, `ctx.vision` is a `VisionClient`. Subscribe with a callback that
 runs once per resolved frame:
 
 ```python
-class MyPlugin(Plugin):
-    async def on_start(self, ctx: Context) -> None:
+class MyPlugin:
+    async def on_start(self, ctx) -> None:
         async def on_frame(frame):
             # frame.descriptor.width, .height, .format, .camera_id, .ts_ms
-            # frame.pixels — the resolved bytes for this frame
+            # frame.pixels is the resolved bytes for this frame
             detections = self.run(frame)
             for d in detections:
                 ...
@@ -130,11 +131,11 @@ plugins that is the difference between 50% CPU and 5% CPU.
 
 A `Detection` has:
 
-- `bbox` — pixel-space box `{x, y, width, height}`, origin top-left, in the
+- `bbox`: pixel-space box `{x, y, width, height}`, origin top-left, in the
   frame's own resolution.
-- `class_label` — the class string.
-- `confidence` — the model's score.
-- `track_id` — optional stable id across frames, for tracking models.
+- `class_label`: the class string.
+- `confidence`: the model's score.
+- `track_id`: optional stable id across frames, for tracking models.
 
 Detections are published as a `DetectionBatch` on the `vision.detection` topic,
 labelled by `model_id` plus the source `camera_id`, `frame_id`, and `ts_ms` so a

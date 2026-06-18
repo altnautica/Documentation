@@ -1,6 +1,7 @@
 ---
 title: "GPS driver"
 description: "Implement a GpsDriver to add a new GNSS receiver."
+lastUpdated: "2026-06-18"
 ---
 
 A `GpsDriver` decodes a position-fix stream from a u-blox, NMEA,
@@ -80,10 +81,13 @@ DGPS, 5 RTK float, 6 RTK fixed.
 ```yaml
 agent:
   permissions:
-    - sensor.gps.register
-    - serial.read_write
-    - mavlink.gps_inject       # only if the driver forwards RTCM to the FC
+    - id: sensor.payload.register   # GPS drivers register under the payload cap (no dedicated GPS cap in the current catalog)
+    - id: hardware.uart             # serial or USB-CDC receiver
+    - id: hardware.usb              # for a raw USB device behind a vendor SDK
 ```
+
+`inject_rtcm` writes corrections back over the same device link the
+driver already opened, so it needs no extra capability.
 
 ## See also
 

@@ -2,6 +2,7 @@
 title: "Setup and Pairing"
 description: "Get your ground station paired with a drone and ready to fly in under two minutes."
 icon: "link"
+lastUpdated: "2026-06-18"
 ---
 
 # Setup and Pairing
@@ -85,7 +86,7 @@ A future update will add QR code scanning. The drone's OLED shows a QR code, and
 
 To pair with a different drone:
 
-1. Open the setup webapp, OLED menu, or Mission Control Hardware tab
+1. Open the setup webapp, OLED menu, or the ground-station panel in Mission Control
 2. Unpair the current drone
 3. Start "Pair with drone"
 4. Enter the new drone's pairing key
@@ -120,15 +121,16 @@ This path is slower than the webapp but works with nothing except the ground sta
 
 ## Setup from Mission Control
 
-Once you have a browser connected (WiFi or USB tether), Mission Control's Hardware tab provides the full setup interface:
+Once you have a browser connected (WiFi or USB tether), select the ground-station node in Mission Control to open its detail panel, which provides the full setup interface:
 
 - **Overview:** pair with drone, inspect link status, inspect current PIC
-- **Network** sub-view: WiFi AP config, WiFi client, Ethernet, 4G modem, uplink priority
-- **Physical UI** sub-view: OLED brightness, display settings, factory reset
-- **Controllers and Peripherals** sub-views: gamepads, Bluetooth devices, and connected accessories
-- **Distributed RX and Mesh** sub-views: role, relay, receiver, and mesh state on mesh-capable nodes
+- **Radio** tab: channel, bitrate, FEC, TX power, and video link
+- **Network** tab: WiFi AP config, WiFi client, Ethernet, 4G modem, uplink priority
+- **Display and Physical UI** tabs: LCD calibration, OLED brightness, Bluetooth gamepads, and factory reset
+- **Peripherals** tab: connected USB and Bluetooth accessories
+- **Distributed RX and Mesh** tabs: role, relay, receiver, and mesh state on mesh-capable nodes
 
-The Hardware tab is the most feature-rich setup interface. The setup webapp and OLED cover the basics.
+This panel is the most feature-rich setup interface. The setup webapp and OLED cover the basics.
 
 ## After setup
 
@@ -145,7 +147,7 @@ If you need to start over, factory reset clears the pairing keys, network config
 
 - **OLED:** Hold B4 for 10 seconds, then confirm by holding B4 again for 3 seconds
 - **Setup webapp:** Advanced page > Factory Reset
-- **Mission Control:** Hardware tab > Physical UI > Factory Reset (requires typed confirmation)
+- **Mission Control:** ground-station panel > Physical UI tab > Factory Reset (requires typed confirmation)
 - **CLI:** `sudo ados factory-reset`
 
 After reset, the ground station reboots and returns to the first-boot state. On a mesh-capable node the reset additionally clears the mesh identity (`mesh_id`, `psk.key`, receiver hint, revocation list) and transitions the role back to `direct` so the box can be paired into a different deployment.

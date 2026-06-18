@@ -2,6 +2,7 @@
 title: "Project Structure"
 description: "Directory maps and key files for both ADOS repositories."
 icon: "folder-tree"
+lastUpdated: "2026-06-18"
 ---
 
 # Project Structure
@@ -21,30 +22,31 @@ ADOSMissionControl/
 │   │   ├── page.tsx                # Dashboard (home)
 │   │   ├── command/                # Drone Command tab
 │   │   ├── plan/                   # Mission Planning tab
-│   │   ├── configure/              # FC Configuration tab
-│   │   ├── simulate/               # Simulation tab
-│   │   ├── hardware/               # Ground station Hardware tab
-│   │   │   ├── overview/
-│   │   │   ├── network/
-│   │   │   ├── wfb/
-│   │   │   ├── ui/
-│   │   │   └── storage/
+│   │   ├── simulate/               # Simulation tab (Cesium 3D preview/replay)
+│   │   ├── config/                 # App configuration
+│   │   ├── pair/                   # Add-a-node local pairing flow
+│   │   ├── flight-logs/            # Flight log review
 │   │   ├── hud/                    # Standalone HUD (kiosk mode)
-│   │   ├── history/                # Flight History tab
 │   │   ├── community/              # Changelog, roadmap, kanban
-│   │   └── api/                    # Auth route handler
+│   │   └── api/                    # Route handlers (auth, LAN-pairing proxy)
 │   │
 │   ├── components/                 # React components
 │   │   ├── command/                # Command tab components
-│   │   ├── configure/              # FC panel components (38 panels)
-│   │   ├── plan/                   # Mission planning components
-│   │   ├── hardware/               # Ground station components
+│   │   ├── fc/                     # Flight controller config panels (60+ panels)
+│   │   ├── drone-detail/           # Per-drone detail tabs (overview, parameters, configure, ...)
+│   │   ├── planner/                # Mission planning components
+│   │   ├── simulation/             # Simulation components
+│   │   ├── hardware/               # Ground station Hardware tab
 │   │   ├── map/                    # Leaflet map layers
-│   │   ├── video/                  # VideoFeedCard, transport switcher
 │   │   ├── hud/                    # HUD overlay widgets
+│   │   ├── plugins/                # Plugin host and UI slots
+│   │   ├── vision/                 # Vision engine UI
+│   │   ├── fleet/                  # Fleet sidebar and drone cards
+│   │   ├── dashboard/              # Dashboard panels and drone-detail tab descriptors
+│   │   ├── shared/                 # Shared components
 │   │   └── ui/                     # Shared UI primitives
 │   │
-│   ├── stores/                     # Zustand state stores (54 files)
+│   ├── stores/                     # Zustand state stores (more than 70 files)
 │   │   ├── telemetry-store.ts
 │   │   ├── drone-manager.ts
 │   │   ├── video-store.ts
@@ -64,23 +66,27 @@ ADOSMissionControl/
 │   │   ├── video/
 │   │   │   ├── webrtc-client.ts    # WHEP + P2P MQTT WebRTC
 │   │   │   └── mse-player.ts       # MediaSource fallback
-│   │   ├── api/
-│   │   │   └── ground-station-api.ts
+│   │   ├── agent/                  # Local-first pairing client + capability inference
+│   │   ├── plugins/                # GCS plugin capabilities and slot registry
 │   │   └── utils/
 │   │
 │   ├── hooks/                      # Custom React hooks
 │   │   ├── use-panel-params.ts     # Parameter read/write for panels
-│   │   ├── use-video-transport-cascade.ts
+│   │   ├── use-visible-tabs.ts     # Capability-driven tab visibility
 │   │   └── use-ground-station-subscriptions.ts
 │   │
-│   └── locales/                    # i18n translations (16 languages)
-│       ├── en.json
-│       ├── hi.json
-│       ├── ja.json
-│       └── ...
+│   ├── mock/                       # Demo-mode mock engine + 7 simulated drones
+│   │
+│   └── ... (locales live at the repo root)
+│
+├── locales/                        # i18n translations (16 languages)
+│   ├── en.json
+│   ├── hi.json
+│   ├── ja.json
+│   └── ...
 │
 ├── convex/                         # Convex backend (OSS standalone)
-│   ├── schema.ts                   # 25 tables (7 auth + 18 custom)
+│   ├── schema.ts                   # auth tables plus custom application tables
 │   ├── profiles.ts
 │   ├── communityChangelog.ts
 │   ├── cmdDroneStatus.ts           # Cloud relay drone status
@@ -110,7 +116,7 @@ ADOSMissionControl/
 | `src/stores/drone-manager.ts` | Central coordinator between protocol and stores |
 | `src/stores/telemetry-store.ts` | Ring-buffered telemetry with attitude, GPS, battery history |
 | `src/lib/video/webrtc-client.ts` | WHEP and P2P MQTT WebRTC client |
-| `src/hooks/use-panel-params.ts` | Universal parameter hook used by all 38 configure panels |
+| `src/hooks/use-panel-params.ts` | Universal parameter hook used by every flight controller config panel (60+) |
 | `src/stores/settings-store.ts` | Persisted user settings (version 31) |
 | `convex/schema.ts` | Convex database schema for the OSS standalone backend |
 
@@ -118,95 +124,76 @@ ADOSMissionControl/
 
 **Repository:** [github.com/altnautica/ADOSDroneAgent](https://github.com/altnautica/ADOSDroneAgent)
 
-**Stack:** Python 3.11+, FastAPI, pymavlink, structlog, Rich, systemd
+**Stack:** Rust (Cargo workspace, tokio, axum) plus Python 3.11+ (FastAPI, structlog), systemd-managed. The long-running and safety-critical services are Rust binaries in `crates/`; Python handles AI and vision, the plugin runtime, setup and OTA, HAL detection, and the residual web API.
 
 ```
 ADOSDroneAgent/
+├── crates/                         # Rust services and shared libraries (Cargo workspace lives here)
+│   ├── ados-supervisor/            # Process orchestrator: gates and supervises the systemd units
+│   ├── ados-mavlink-router/        # FC serial link, MAVLink IPC fan-out, vehicle-state snapshot
+│   ├── ados-control/               # Native HTTP front on :8080 (status/pairing/command API)
+│   ├── ados-cloud/                 # Cloud relay: heartbeat push, command poll, MQTT + WebRTC signaling
+│   ├── ados-video/                 # Video pipeline: ffmpeg / MediaMTX / wfb_tee supervisor
+│   ├── ados-radio/                 # WFB-ng TX manager: monitor mode, FHSS hop, watchdogs (drone)
+│   ├── ados-groundlink/            # WFB receive, channel acquisition, video fan-out, mesh (ground)
+│   ├── ados-net/                   # Ground-station uplink matrix: priority failover + health probe
+│   ├── ados-display/               # OLED / SPI-LCD render engine, drivers, boot-time probe
+│   ├── ados-hid/                   # Touch calibration, PIC arbiter, button + gamepad daemons
+│   ├── ados-gpio/                  # GPIO output substrate (buzzer / LED, software PWM)
+│   ├── ados-vision/                # Vision host: frame rings, model registry, plugin bridge
+│   ├── ados-plugin-host/           # Plugin RPC host: per-plugin socket + capability-token gating
+│   ├── ados-logd/                  # Durable SQLite log + telemetry store, queryable on :8090
+│   ├── ados-macpin/                # Stable-MAC pinning for adapters that randomize each boot
+│   ├── ados-hal-probe/             # Probe-first hardware-capability detection
+│   ├── ados-protocol/              # IPC wire contracts: framing, plugin RPC, vehicle-state codec
+│   ├── ados-capabilities-codegen/  # Generates the capability catalog (Python/Rust/TS) from capabilities.toml
+│   ├── ados-sdk/                   # Rust plugin-author SDK (IPC client, driver traits, runner)
+│   ├── ados-installer/             # Step-graph installer that turns a fresh SBC into a paired agent
+│   └── ados-tui/                   # Terminal dashboard launched by `ados` with no subcommand
+│
 ├── src/
-│   └── ados/
+│   └── ados/                       # Python: AI/vision, plugin runtime, setup/OTA, HAL, residual API
 │       ├── __init__.py             # Version (single source of truth)
-│       ├── core/
-│       │   ├── supervisor.py       # Service lifecycle manager
-│       │   ├── config.py           # Pydantic config models
-│       │   ├── circuit_breaker.py  # 5-in-60s failure detection
-│       │   └── ipc.py              # Unix socket read/write
-│       │
-│       ├── services/
-│       │   ├── mavlink/
-│       │   │   ├── proxy.py        # FC serial <-> MAVLink socket
-│       │   │   └── stream_manager.py
-│       │   ├── video/
-│       │   │   ├── pipeline.py     # Camera detect + ffmpeg launch
-│       │   │   └── mediamtx.py     # MediaMTX config + management
-│       │   ├── cloud/
-│       │   │   ├── mqtt_bridge.py  # MQTT publish (paho)
-│       │   │   ├── convex_relay.py # HTTP POST to Convex
-│       │   │   └── webrtc_signaling.py  # P2P SDP relay over MQTT
-│       │   ├── wfb/
-│       │   │   ├── wfb_tx.py       # WFB-ng transmit (air)
-│       │   │   └── wfb_rx.py       # WFB-ng receive (ground)
-│       │   ├── network/
-│       │   │   ├── wifi_ap_manager.py
-│       │   │   ├── wifi_client_manager.py
-│       │   │   ├── ethernet_manager.py
-│       │   │   ├── modem_manager.py
-│       │   │   └── uplink_router.py
-│       │   ├── ui/
-│       │   │   ├── oled_service.py
-│       │   │   ├── button_service.py
-│       │   │   └── screens/
-│       │   ├── setup_webapp/
-│       │   │   ├── server.py
-│       │   │   ├── static/         # Drone setup pages
-│       │   │   ├── static-ground/  # Ground station setup pages
-│       │   │   └── captive_dns.py
-│       │   └── kiosk/
-│       │       └── kiosk_service.py
-│       │
-│       ├── api/
-│       │   ├── runtime.py          # API facade and runtime boundary
-│       │   └── routes/
-│       │       ├── status.py       # /api/status, /api/status/full
-│       │       ├── video.py        # /api/video/*
-│       │       ├── commands.py     # /api/command, /api/commands
-│       │       ├── config.py       # /api/config
-│       │       └── ground_station.py  # /api/v1/ground-station/*
-│       │
-│       ├── hal/
-│       │   └── boards/             # Board profile YAMLs
-│       │       ├── pi4b.yaml
-│       │       ├── rock-5c-lite.yaml
-│       │       ├── rk3576.yaml
-│       │       └── ... (17 profiles)
-│       │
-│       ├── cli/
-│       │   ├── main.py             # Click CLI entry point
-│       │   ├── status.py           # ados status
+│       ├── core/                   # IPC helpers, config models, identity, pairing, health probe
+│       ├── services/               # Python-backed units and driver/manager glue
+│       │   ├── api/                # Residual FastAPI (internal socket, behind ados-control)
+│       │   ├── health/             # CPU / RAM / temperature monitor
+│       │   ├── ota/                # Release poll and upgrade
+│       │   ├── peripherals/        # USB and sensor manager
+│       │   ├── discovery/          # mDNS advertisement
+│       │   ├── ground_station/     # Ethernet, WiFi-client, modem managers
+│       │   ├── setup_webapp/       # First-boot setup and captive portal
 │       │   └── ...
-│       │
+│       ├── api/
+│       │   ├── runtime.py          # API runtime facade
+│       │   └── routes/             # FastAPI route modules (status, config, pairing, plugins, ...)
+│       ├── hal/
+│       │   └── boards/             # Board profile YAMLs (17 profiles)
+│       ├── plugins/                # Plugin manifest, signing, IPC (Python plugin runtime)
+│       ├── sdk/                    # Python plugin-author SDK (driver, vision, testing)
 │       ├── setup/                  # Universal setup facade and models
-│       ├── webapp/                 # Local setup webapp assets
-│       │   └── screens/            # 9 TUI screens
-│       │
+│       ├── cli/                    # Click CLI (ados, status, update, ...)
 │       └── bootstrap/
 │           └── profile_detect.py   # Hardware fingerprint scoring
 │
-├── scripts/
-│   ├── install.sh                  # One-line installer
-│   └── usb-gadget/                 # libcomposite setup scripts
-│
 ├── data/
-│   └── systemd/                    # All systemd unit files
+│   └── systemd/                    # All systemd unit files (~39 units)
 │       ├── ados-supervisor.service
 │       ├── ados-mavlink.service
+│       ├── ados-control.service
 │       ├── ados-api.service
+│       ├── ados-cloud.service
+│       ├── ados-logd.service
 │       ├── ados-video.service
 │       ├── ados-wfb.service
-│       ├── ados-wifi-ap.service
+│       ├── ados-hostapd.service
 │       ├── ados-oled.service
-│       ├── ados-buttons.service
-│       ├── ados-kiosk.service
-│       └── ... (28 units total)
+│       └── ...
+│
+├── scripts/
+│   ├── install.sh                  # One-line installer bootstrap (fetches the Rust installer)
+│   ├── drivers/                    # Out-of-tree driver build helpers
+│   └── ...
 │
 ├── docs/
 │   ├── oem/                        # Integrator deployment and provisioning notes
@@ -222,16 +209,14 @@ ADOSDroneAgent/
 | File | What it does |
 |------|-------------|
 | `src/ados/__init__.py` | Version string used by package metadata, API status, and setup status |
-| `src/ados/core/supervisor.py` | Starts, stops, and monitors child systemd services |
-| `src/ados/core/circuit_breaker.py` | 5-in-60s breaker pattern for service restarts |
-| `src/ados/services/mavlink/proxy.py` | Reads FC serial, writes to `/run/ados/mavlink.sock` |
-| `src/ados/api/runtime.py` | API-facing facade over main and standalone runtimes |
-| `src/ados/services/api/__main__.py` | Standalone FastAPI service entrypoint |
-| `src/ados/services/video/pipeline.py` | Camera detection, ffmpeg launch, watchdog |
-| `src/ados/services/video/mediamtx.py` | MediaMTX config generation (STUN, ICE, ports) |
+| `crates/ados-supervisor/src/registry.rs` | The service catalog: profile gates, role gates, and the circuit breaker |
+| `crates/ados-mavlink-router/` | Reads FC serial, fans MAVLink to `/run/ados/mavlink.sock`, serves the `:8765` WS |
+| `crates/ados-control/` | The native HTTP front on `:8080` |
+| `crates/ados-video/` | Camera encode and MediaMTX supervision (drone) |
+| `src/ados/api/runtime.py` | Residual FastAPI runtime facade, reached behind the Rust front |
 | `src/ados/bootstrap/profile_detect.py` | Score-based hardware fingerprint for air vs ground |
-| `src/ados/hal/boards/*.yaml` | Board-specific GPIO, UART, video, and USB config |
-| `scripts/install.sh` | The one-line installer that does everything |
+| `src/ados/hal/boards/*.yaml` | Board-specific GPIO, UART, video, and navigation config |
+| `scripts/install.sh` | The one-line installer bootstrap |
 
 ## Config files on a deployed system
 
@@ -239,10 +224,12 @@ ADOSDroneAgent/
 |------|---------|
 | `/etc/ados/config.yaml` | Main agent configuration (profile, cloud, network, video) |
 | `/etc/ados/profile.conf` | Detected profile with fingerprint snapshot |
-| `/opt/ados/` | Installed agent code and virtual environment |
+| `/opt/ados/bin/` | Installed Rust service binaries |
+| `/opt/ados/venv/` | Installed Python virtual environment |
 | `/run/ados/mavlink.sock` | Runtime MAVLink IPC socket |
 | `/run/ados/state.sock` | Runtime JSON telemetry socket |
-| `/var/log/ados/` | Agent logs (rotated daily) |
+| `/run/ados/api-internal.sock` | Internal FastAPI socket behind the Rust front |
+| `/var/ados/logd/logs.db` | Durable log and telemetry store (`ados logs query`) |
 
 ## What is next
 

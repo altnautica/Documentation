@@ -2,7 +2,7 @@
 title: "FAQ"
 description: "The questions that come up every time. Do I need a rangefinder, which board for VIO, what about night flight, how does it compare to GPS."
 icon: "circle-question"
-lastUpdated: "2026-05-16"
+lastUpdated: "2026-06-18"
 ---
 
 # Frequently Asked Questions
@@ -131,18 +131,17 @@ The rolling time-sync residual the GCS shows is a per-flight
 measurement against the calibrated offset; if it stays in the green
 band, no recalibration is needed.
 
-## Why does the GCS button labelled "VIO" hide instead of grey-out?
+## When can I switch the EKF source to VIO?
 
-The button hides because there is no VIO engine wired on this drone.
-A greyed-out button suggests "click me later when I am ready"; a
-hidden button is honest about the fact that VIO is not an available
-option at all.
+The plugin ships the VIO engines, so the agent's heartbeat reports
+`vioSupported: true` whenever Vision Navigation is installed. The VIO
+source-set switch is gated on the estimator actually being ready: the
+button enables only when the estimator state is `converged`, so the
+switch never silently fails mid-flight.
 
-The button appears when the agent's heartbeat reports
-`vioSupported: true` (a VIO engine is installed and the estimator
-has converged at least once). The strict-gate also requires the
-estimator state to be `converged` so the switch never silently fails
-mid-flight.
+Until the VIO estimator converges (calibration loaded, a VIO mode
+selected, enough features tracked), the switch stays disabled and the
+tooltip explains which condition is unmet.
 
 ## How accurate is it?
 

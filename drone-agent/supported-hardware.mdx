@@ -1,82 +1,77 @@
 ---
 title: "Supported Hardware"
-description: "All 20 supported board profiles, tier system, and recommended hardware."
+description: "The 17 board profiles, tier system, and recommended hardware."
 icon: "circuit-board"
-lastUpdated: "2026-05-09"
+lastUpdated: "2026-06-18"
 ---
 
 # Supported Hardware
 
-The ADOS Drone Agent ships with 20 board profiles. Each profile is a YAML file that tells the agent what SoC it is running on, which buses are available, what video encoders exist, and which features to enable.
+The ADOS Drone Agent ships with 17 board profiles. Each profile is a YAML file that tells the agent what SoC it is running on, which buses are available, what video encoders exist, and which features to enable.
 
 <Note>
-**Ready to install?** Use the [Flash Tool in Mission Control](/mission-control/flash-tool). Pick your board from the catalog, then either flash via browser (Luckfox) or copy the install one-liner (Pi, Radxa, and others).
+**Ready to install?** Use the [Flash Tool in Mission Control](/mission-control/flash-tool). Pick your board from the catalog, then copy the install one-liner for it.
 </Note>
 
 ## Board profiles
 
 The agent reads `/proc/device-tree/model` at boot and matches it against the patterns in each profile. If no match is found, it falls back to `generic-arm64`.
 
-| Board | SoC | Architecture | Default Tier | Video Encode | NPU | Install path |
-|-------|-----|-------------|-------------|-------------|-----|--------------|
-| Raspberry Pi CM4 | BCM2711 | aarch64 | 3 | H.264 | No | Install command |
-| Raspberry Pi CM5 | BCM2712 | aarch64 | 4 | H.264 | No | Install command |
-| Raspberry Pi 4B | BCM2711 | aarch64 | 3 | H.264 | No | Install command |
-| Raspberry Pi 5 | BCM2712 | aarch64 | 4 | H.264 | No | Install command |
-| Raspberry Pi Zero 2 W | BCM2710A1 | aarch64 | 1 | H.264 | No | Install command |
-| Radxa ROCK 5C Lite | RK3582 | aarch64 | 4 | H.264, H.265 | 6 TOPS | Install command |
-| Radxa Cubie A7Z | Allwinner A733 | aarch64 | 3 | H.264 | No | Install command |
-| Radxa CM3 (RK3566) | RK3566 | aarch64 | 3 | H.264 | 0.8 TOPS | Install command |
-| Radxa CM4 (RK3588S2) | RK3588S2 | aarch64 | 4 | H.264, H.265 | 6 TOPS | Install command |
-| Rockchip RK3576 | RK3576 | aarch64 | 4 | H.264, H.265 | 6 TOPS | Install command |
-| Orange Pi 5 | RK3588S | aarch64 | 4 | H.264, H.265 | 6 TOPS | Install command |
-| NVIDIA Jetson Nano | Tegra X1 | aarch64 | 3 | H.264, H.265 | 0.5 TFLOPS | Install command |
-| NVIDIA Jetson Orin Nano | Tegra Orin | aarch64 | 4 | H.264, H.265 | 40 TOPS | Install command |
-| Rockchip RV1126B | RV1126B | armv7l | 2 | H.264, H.265 | 2 TOPS | Install command |
-| Luckfox Pico Pro/Max RV1106 | RV1106 | armv7l | 1 | H.264 | 0.5 TOPS | Install command |
-| Luckfox Pico Zero RV1106G3 | RV1106G3 | armv7l | 1 | H.264 | 0.5 TOPS | Browser flash |
-| Luckfox Pico RV1103 | RV1103 | armv7l | 1 | H.264 | No | Install command |
-| Luckfox Lyra RK3506G2 | RK3506G2 | armv7l | 1 | None | No | Install command |
-| Rockchip RK3506 (Reference) | RK3506 | armv7l | 1 | None | No | Install command |
-| Generic ARM64 | Unknown | aarch64 | 2 | None | No | Install command |
+| Board | SoC | Architecture | Default Tier | Video Encode | NPU |
+|-------|-----|-------------|-------------|-------------|-----|
+| Raspberry Pi Compute Module 3 | BCM2837 | aarch64 | 2 | None | No |
+| Raspberry Pi CM4 | BCM2711 | aarch64 | 3 | H.264 | No |
+| Raspberry Pi CM5 | BCM2712 | aarch64 | 4 | H.265 | No |
+| Raspberry Pi 3 | BCM2837 | aarch64 | 2 | None | No |
+| Raspberry Pi 4B | BCM2711 | aarch64 | 3 | H.264 | No |
+| Raspberry Pi 5 | BCM2712 | aarch64 | 4 | H.265 | No |
+| Radxa ROCK 5C Lite | RK3582 | aarch64 | 4 | H.264, H.265 | 6 TOPS |
+| Radxa Cubie A7Z | Allwinner A733 | aarch64 | 2 | H.264 | 3 TOPS |
+| Radxa CM3 | RK3566 | aarch64 | 3 | H.264, H.265 | 0.8 TOPS |
+| RK3566 (reference) | RK3566 | aarch64 | 3 | H.264, H.265 | 0.8 TOPS |
+| Radxa CM4 (RK3588S2) | RK3588S2 | aarch64 | 4 | H.264, H.265 | 6 TOPS |
+| Rockchip RK3576 (reference) | RK3576 | aarch64 | 3 | H.264, H.265 | 6 TOPS |
+| Orange Pi 5 | RK3588S | aarch64 | 4 | H.264, H.265 | 6 TOPS |
+| NVIDIA Jetson Nano | Tegra X1 | aarch64 | 3 | H.264, H.265 | GPU |
+| NVIDIA Jetson Orin Nano | Tegra Orin | aarch64 | 4 | H.264, H.265 | GPU |
+| Rockchip RV1126B | RV1126B | armv7l | 3 | H.264, H.265 | 2 TOPS |
+| Generic ARM64 | Unknown | aarch64 | 2 | None | No |
 
-The **Install path** column shows the recommended Flash Tool flow per board. Browser-flash boards run a complete ADOS OS image written from Mission Control over WebUSB. Install-command boards run the agent on top of their stock vendor OS via the `curl` install script. See [Install paths](/getting-started/install-paths) for the full decision tree.
+Every board installs the agent on top of its stock vendor OS through the Flash Tool's install one-liner. The "Video Encode" column lists hardware encoders; boards with decode-only video acceleration fall back to software encoding. NPU figures are the vendor-stated on-chip accelerator capability where one exists.
 
 ## Tier system
 
 Tiers control which agent features are enabled based on available system resources. The agent selects a tier automatically from the board profile, but you can override it in config.
 
 <AccordionGroup>
-  <Accordion title="Tier 1 (64-128 MB RAM)">
-    The bare minimum. Only the MAVLink proxy runs. No REST API, no video, no cloud connectivity. Suitable for ultra-low-cost boards like the Luckfox Pico where you just need serial MAVLink forwarding.
+  <Accordion title="Tier 1 (minimal)">
+    The bare minimum: only the MAVLink proxy runs, with no REST API, video, or cloud connectivity. This is a capability floor for ultra-low-memory boards. No board profile currently defaults to Tier 1 (the sub-512 MB boards were retired), but the tier remains as an override.
 
     **Enabled services:** `ados-mavlink`
-
-    **Boards:** RV1103, RV1106, RV1106G3, RK3506G2
   </Accordion>
 
   <Accordion title="Tier 2 (256-512 MB RAM)">
-    Adds the REST API and basic health monitoring. You can query the agent over HTTP and get telemetry. No video pipeline, no scripting.
+    Adds the REST API and basic health monitoring. You can query the agent over HTTP and get telemetry. No video pipeline.
 
-    **Enabled services:** `ados-mavlink`, `ados-api`, `ados-health`, `ados-discovery`
+    **Enabled services:** `ados-mavlink`, `ados-control`, `ados-api`, `ados-health`, `ados-discovery`
 
-    **Boards:** RV1126B, generic-arm64
+    **Boards:** Raspberry Pi Compute Module 3, Raspberry Pi 3, Radxa Cubie A7Z, generic-arm64
   </Accordion>
 
   <Accordion title="Tier 3 (1-2 GB RAM)">
-    Adds the full video pipeline, scripting engine, cloud relay, and OTA updates. This is the minimum tier for a useful companion computer on a real drone.
+    Adds the full video pipeline, cloud relay, and OTA updates. This is the minimum tier for a useful companion computer on a real drone.
 
-    **Enabled services:** All Tier 2 services plus `ados-video`, `ados-wfb`, `ados-cloud`, `ados-scripting`, `ados-peripherals`, `ados-ota`
+    **Enabled services:** All Tier 2 services plus `ados-video`, `ados-wfb`, `ados-cloud`, `ados-peripherals`, `ados-ota`
 
-    **Boards:** Raspberry Pi CM4, Raspberry Pi 4B, Jetson Nano, Radxa CM3 (RK3566)
+    **Boards:** Raspberry Pi CM4, Raspberry Pi 4B, Jetson Nano, Radxa CM3, RK3566, RK3576, RV1126B
   </Accordion>
 
   <Accordion title="Tier 4 (4 GB+ RAM)">
-    Full feature set. Everything from Tier 3 plus the vision model registry (fetch, download, cache, and select NPU-optimized inference models) and the vision-nav extension for GPS-denied navigation. An NPU or GPU helps with on-device inference.
+    Full feature set. Everything from Tier 3 plus the vision host, the vision model registry (fetch, download, cache, and select NPU-optimized inference models), and the vision-nav extension for GPS-denied navigation. An NPU or GPU helps with on-device inference.
 
-    **Enabled services:** All Tier 3 services plus `ados-plugin-host` and the vision model registry, which back the vision-nav extension
+    **Enabled services:** All Tier 3 services plus `ados-vision` and `ados-plugin-host`, which back the vision model registry and the vision-nav extension
 
-    **Boards:** Raspberry Pi CM5, Raspberry Pi 5, ROCK 5C Lite, Radxa CM4 (RK3588S2), RK3576, Orange Pi 5, Jetson Orin Nano
+    **Boards:** Raspberry Pi CM5, Raspberry Pi 5, ROCK 5C Lite, Radxa CM4 (RK3588S2), Orange Pi 5, Jetson Orin Nano
   </Accordion>
 </AccordionGroup>
 
@@ -108,7 +103,7 @@ The RK3576 is a production-oriented SoC with 6 TOPS NPU, H.265 4K60 encode, trip
 
 **Rockchip RV1126B**
 
-A good option for cost-sensitive builds. Hardware ISP, H.264/H.265 encode, and 2 TOPS NPU in a small package. Runs at Tier 2 with MAVLink proxy, REST API, and basic telemetry.
+A good option for cost-sensitive builds. Hardware ISP, H.264/H.265 encode, and 2 TOPS NPU in a small package. Runs at Tier 3 with the MAVLink proxy, REST API, video pipeline, and cloud relay.
 
 ## WiFi adapter for WFB-ng
 

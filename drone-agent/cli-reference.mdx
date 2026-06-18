@@ -1,32 +1,49 @@
 ---
 title: "CLI Reference"
-description: "Everyday ados commands for status, update, uninstall, and the plugin subgroup."
+description: "Everyday ados commands plus the hardware, logs, network, plugin, profile, radio, and runtime subgroups."
 icon: "terminal"
-lastUpdated: "2026-05-09"
+lastUpdated: "2026-06-18"
 ---
 
 # CLI Reference
 
-The public `ados` CLI is intentionally small. It helps you find the local setup
-webapp, check agent status, update the agent, and uninstall it.
+The `ados` CLI covers everyday operations: find the local setup webapp, check
+agent status, update and uninstall the agent, and inspect or tune hardware,
+logs, network adapters, plugins, the profile, the radio link, and which services
+run the native implementation.
 
-Configuration, pairing, MAVLink, video, ground-station setup, logs, and remote
-access are handled in the local setup webapp or ADOS Mission Control.
+Most flight-operations configuration (pairing, MAVLink, video, ground-station
+setup, remote access) lives in the local setup webapp or ADOS Mission Control.
 
-## Commands
+## Top-level commands
 
 | Command | Use it for |
 |---|---|
 | `ados` | Open the full-screen terminal status page when using a TTY. Prints plain status when run from a script or pipe. |
 | `ados status` | Print setup, MAVLink, video, network, remote access, and service status. |
 | `ados status --json` | Print the full setup status payload for scripts and support tools. |
+| `ados version` | Print the installed agent version. Works even when the service is down. |
 | `ados update` | Check for and install an available agent update. |
 | `ados update --check-only` | Check for updates without installing. |
 | `ados update --yes` | Install without an interactive confirmation. |
 | `ados update --json` | Print update check details as JSON. |
+| `ados install --status` | Show the last install result and which checkpoints are done or missing. |
+| `ados install --resume` | Resume an interrupted install. |
 | `ados uninstall` | Remove ADOS Drone Agent from the system. |
 | `ados uninstall --purge` | Remove config in addition to package files and runtime data. |
 | `ados uninstall --yes` | Skip the uninstall confirmation prompt. |
+
+## Subgroups
+
+| Subgroup | Use it for |
+|---|---|
+| `ados hardware` | Inspect the persisted hardware snapshot and bust the hardware-check cache. |
+| `ados logs` | Query, tail, aggregate, export, and push the black-box log store. |
+| `ados network` | Inspect and manage network adapters: stable-MAC pinning and the operating-region posture. |
+| `ados plugin` | Manage the plugin host (install, enable, disable, remove, inspect, logs). |
+| `ados profile` | Show or override the agent profile (drone or ground station). |
+| `ados radio` | Inspect and tune the WFB-ng radio link, including pairing. |
+| `ados rust` | Switch services between the native and packaged implementations. |
 
 ## `ados`
 
@@ -61,7 +78,7 @@ ados status
 Example output:
 
 ```text
-ADOS Drone Agent 0.49.26
+ADOS Drone Agent 0.89.2
 Device:  ADOS Agent (ados-1234)
 Profile: drone
 Setup:   67%
@@ -149,6 +166,82 @@ The `ados plugin` subgroup manages the agent plugin host: install, enable, disab
 `install`, `enable`, `disable`, `remove`, and `perms --revoke` prompt for confirmation by default. Pass `--yes` to skip prompts in scripts.
 
 The full operator and OEM guide is at [Plugins](/drone-agent/plugins). Plugin authoring lives under the [Developers](/developers/your-first-plugin) tab.
+
+## `ados hardware`
+
+Inspect and reset the hardware-detection cache.
+
+| Command | What it does |
+|---|---|
+| `ados hardware show [--json]` | Print the persisted hardware snapshot (board, buses, peripherals). |
+| `ados hardware bust-cache` | Clear the cached hardware-check result so the next boot re-probes. |
+
+## `ados logs`
+
+Query the black-box logging store. The store keeps logs, telemetry history, discrete events, and hardware samples in a durable local database that survives reboots and is reachable when the network is down.
+
+| Command | What it does |
+|---|---|
+| `ados logs query` | Query log lines with filters. |
+| `ados logs tail` | Follow logs live. |
+| `ados logs aggregate` | Summarize counts and rates over a window. |
+| `ados logs sessions` | List recorded boot/run sessions. |
+| `ados logs status` | Show store health and capture state. |
+| `ados logs export` | Export a slice of the store. |
+| `ados logs push` | Push a captured slice to a support endpoint. |
+
+Add `--json` for machine-readable output where supported.
+
+## `ados network`
+
+Manage network adapters. Two nested groups.
+
+| Command | What it does |
+|---|---|
+| `ados network mac status [--json]` | Show per-adapter stable-MAC verdicts. |
+| `ados network mac pin <iface>` | Pin a stable MAC on an adapter. |
+| `ados network mac unpin <iface>` | Remove an adapter's pin or override. |
+| `ados network mac verify <iface>` | Show which `.link` file wins for an interface (no reboot). |
+| `ados network regulatory status [--json]` | Show the current operating-region posture. |
+| `ados network regulatory region` | Pin an operating region. |
+| `ados network regulatory unrestricted` | Opt into the operator-acknowledged unrestricted posture. |
+
+## `ados profile`
+
+Show or override which profile the node runs.
+
+| Command | What it does |
+|---|---|
+| `ados profile show [--json]` | Print the resolved agent profile. |
+| `ados profile set` | Persist a profile choice (drone or ground station) for this node. |
+
+## `ados radio`
+
+Inspect and tune the WFB-ng radio link, including pairing.
+
+| Command | What it does |
+|---|---|
+| `ados radio status [--json]` | Show the current WFB-ng link status. |
+| `ados radio set-tx-power` | Set the transmit power. |
+| `ados radio hop` | Trigger a coordinated channel hop. |
+| `ados radio test` | Run a link test. |
+| `ados radio adapters` | List detected radio adapters. |
+| `ados radio pair status [--json]` | Print pair state for this rig. |
+| `ados radio pair local` | Run a local over-radio bind. |
+| `ados radio pair failover-status` | Show pairing failover state. |
+| `ados radio pair unpair [--yes]` | Wipe pair keys and clear pair state. |
+| `ados radio pair auto on` | Re-arm auto-pair (only when unpaired). |
+| `ados radio pair auto off` | Disable auto-pair. |
+
+## `ados rust`
+
+Switch individual services between the native (Rust) and packaged implementations. This writes a marker file the supervisor reconciles. It never hand-edits live unit files.
+
+| Command | What it does |
+|---|---|
+| `ados rust status` | Show the native-vs-packaged state per service. |
+| `ados rust enable <service>...` | Run the native implementation for one or more services. |
+| `ados rust disable <service>...` | Fall back to the packaged service for one or more services. |
 
 ## Where the old commands went
 

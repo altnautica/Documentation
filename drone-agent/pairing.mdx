@@ -1,16 +1,25 @@
 ---
 title: "Pairing"
-description: "How to pair your drone with ADOS Mission Control for cloud connectivity."
+description: "Pair your drone with ADOS Mission Control: local-first over the LAN, with cloud relay as the secondary path."
 icon: "link"
+lastUpdated: "2026-06-18"
 ---
 
 # Pairing
 
-Pairing connects your drone agent to your ADOS Mission Control account. Once paired, the drone appears in your GCS dashboard, telemetry flows through the cloud, and you can send commands from anywhere.
+Pairing connects your drone agent to ADOS Mission Control so the drone appears in your GCS, telemetry flows, and you can send commands.
 
-Pairing is optional. The agent works fully without it (local MAVLink, local video, local REST API). Cloud features require pairing.
+ADOS is local-first. The primary path is direct, over the LAN. The cloud pairing code is the secondary, opt-in path for reaching a drone on a different network. The agent also works fully unpaired (local MAVLink, local video, local REST API).
 
-## How pairing works
+## Local pairing over the LAN (default)
+
+When Mission Control and the agent are on the same network, the GCS reaches the agent directly. In the Add-a-Node card, enter the agent's hostname, IP address, or `.local` mDNS name. The GCS calls the agent's `/api/pairing/info` (probe) and `/api/pairing/claim` (claim) over the LAN and stores the returned API key locally in the browser. No cloud account or internet connection is required.
+
+Claiming works only while the agent is unpaired, so being on the same LAN is the authorization boundary. An agent in local mode (cloud relay off) is the default and is correct, not a misconfiguration.
+
+## Cloud pairing for remote access
+
+For a drone on a different network, use the cloud pairing code. This path requires the agent to be reachable through the cloud relay.
 
 <Steps>
   <Step title="Agent generates a pairing code">

@@ -1,73 +1,73 @@
 ---
 title: "Event hooks"
-description: "Every event the host pushes and every RPC the plugin can call."
+description: "The events the host pushes to a GCS plugin and the requests the plugin can send."
+lastUpdated: "2026-06-18"
 ---
 
-The host runs the bridge; plugins consume two flavors of message:
+On the GCS half the host runs the bridge; the plugin consumes two flavors
+of message:
 
 - **Events**: pushed from the host, no response expected
   (`config.changed`, `theme.changed`, `telemetry.<topic>`).
-- **Responses**: returned by the host in reply to a plugin
-  **request**.
+- **Responses**: returned by the host in reply to a plugin **request**.
 
-Plugins themselves only **subscribe** to events and **send** requests.
+Plugins subscribe to events and send requests; they never receive
+unsolicited requests.
 
 ## Events the host pushes
 
 | Method | Capability | Args | When |
 |--------|-----------|------|------|
-| `theme.changed` | `theme.useTheme` | `Record<string, string>` of CSS variables | Initial mount; whenever the host theme changes. |
-| `config.changed` | none | the plugin's full config object | Operator saves a new config under Settings -> Plugins. |
-| `telemetry.<topic>` | `telemetry.subscribe.<topic>` | topic-specific payload | After the plugin called `telemetry.subscribe`. |
-| `lifecycle.tick` | none | `{ uptimeMs }` | Once a minute while the plugin is running. |
-| `recording.started` | none | `{ recordingId, startedAtMs }` | Operator starts a recording. |
-| `recording.stopped` | none | `{ recordingId, durationMs }` | Operator stops a recording. |
+| `theme.changed` | `theme.useTheme` | `Record<string, string>` of CSS variables | Initial mount and on every host theme change. |
+| `config.changed` | none | the plugin's full config object | Operator saves a new config. |
+| `telemetry.<topic>` | `telemetry.subscribe.<topic>` | topic-specific payload | After the plugin subscribed to `<topic>`. |
 
-Subscribe via `ctx.client.on("config.changed", handler)` or via the
-typed wrappers on `ctx.config.onChange`, `ctx.theme.onChange`, etc.
+Subscribe via `ctx.client.on("config.changed", handler)` or the typed
+wrappers `ctx.config.onChange`, `ctx.theme.onChange`, and
+`ctx.telemetry.subscribe`.
 
 ## Requests the plugin can send
 
-Every RPC carries `{ method, capability, args }`. The host
-re-resolves the required capability from `method` and `args` and
-checks the granted set. The plugin never has to compute the
-capability id itself.
+The SDK context exposes these high-level wrappers. Each delegates to a
+single `PluginClient`; drop to `ctx.client.request(method, capability,
+args)` for anything else.
 
-| Method | Capability | Args | Returns |
-|--------|-----------|------|---------|
-| `telemetry.subscribe` | `telemetry.subscribe.<topic>` | `{ topic }` | `{ ok }` |
-| `telemetry.unsubscribe` | derived | `{ topic }` | `{ ok }` |
-| `command.send` | `command.send` | `{ command, args }` | host-defined |
-| `mission.read` | `mission.read` | `{ missionId }` | mission body |
-| `mission.write` | `mission.write` | `{ missionId, payload }` | `{ ok, version }` |
-| `notification.publish` | `ui.slot.notification` | `{ channelId, severity, title, body, meta }` | `{ ok }` |
-| `recording.mark` | `recording.write` | `{ label, meta }` | `{ ok }` |
-| `event.publish` | `event.publish` | `{ topic, payload }` | `{ ok }` |
-| `event.subscribe` | `event.subscribe` | `{ topic }` | `{ ok }` |
+| Wrapper | Method | Capability | Returns |
+|---------|--------|-----------|---------|
+| `ctx.telemetry.subscribe(topic, handler)` | `telemetry.subscribe` | `telemetry.subscribe.<topic>` | unsubscribe function |
+| `ctx.command.send(command, args)` | `command.send` | `command.send` | host-defined |
+| `ctx.notifications.publish(payload)` | `notification.publish` | `ui.slot.notification` | host-defined |
+| `ctx.recording.mark(payload)` | `recording.mark` | `recording.write` | host-defined |
+| `ctx.mission.read(missionId)` | `mission.read` | `mission.read` | mission body |
+| `ctx.mission.write(update)` | `mission.write` | `mission.write` | host-defined |
+
+The host re-resolves the required capability from the method (and, for
+telemetry, from the topic) and checks the granted set. The plugin never
+computes the capability id itself.
 
 ## Wire shape
 
 ```ts
-interface RpcEnvelope {
+interface RpcEnvelope<TArgs = unknown> {
   id: string;
   type: "request" | "response" | "event";
   method: string;
   capability: string;
-  args: unknown;
+  args: TArgs;
   version: 1;
   error?: { code: string; message: string };
 }
 ```
 
-The plugin never builds these by hand. The SDK's `PluginClient`
-generates the `id`, attaches the protocol version, and waits for the
-correlated response.
+The plugin never builds these by hand. The SDK's `PluginClient` generates
+the `id`, attaches the protocol version, and waits for the correlated
+response.
 
 ## Error envelopes
 
 When the host rejects a request it returns a response with
 `error: { code, message }`. The SDK throws a `HostError` whose `code`
-field carries the machine-readable error code:
+field carries the machine-readable code:
 
 | Code | Meaning |
 |------|---------|
@@ -75,16 +75,15 @@ field carries the machine-readable error code:
 | `method_unknown` | The method is not in the host's registry. |
 | `schema_invalid` | Args failed schema validation. |
 | `handler_unset` | The host knows the method but no handler is wired. |
-| `handler_error` | The host's handler threw. The message is the thrown error's message. |
+| `handler_error` | The host's handler threw; the message carries the cause. |
 
-Plugins should branch on `code`, not on `message`. Messages are for
-log lines.
+Branch on `code`, not on `message`. Messages are for log lines.
 
 ## Theming
 
-`theme.changed` arrives once on mount and again on every theme
-toggle. The payload is a `Record<string, string>` of CSS variables.
-Apply them by walking the entries:
+`theme.changed` arrives once on mount and again on every theme toggle.
+The payload is a `Record<string, string>` of CSS variables. Apply them by
+walking the entries:
 
 ```ts
 ctx.theme.onChange((vars) => {
@@ -94,19 +93,25 @@ ctx.theme.onChange((vars) => {
 });
 ```
 
-The SDK does not auto-apply because plugins choose how granular they
-want to be (full root, scoped to a panel, or ignored).
+The SDK does not auto-apply because plugins choose how granular they want
+to be (full root, scoped to a panel, or ignored).
 
 ## i18n
 
-Plugin authors ship a locale bundle in their archive; the host
-streams the active bundle to the plugin on mount. The SDK formats
-keys with `ctx.i18n.t(key, params)`:
+Plugin authors ship a locale bundle in their archive; the host streams
+the active bundle to the plugin on mount. The SDK formats keys with
+`ctx.i18n.t(key, params)`:
 
 ```ts
 ctx.i18n.t("anomaly.cellLow", { voltage: 3.4 });
 // "Cell low: 3.4 V"
 ```
 
-Missing keys fall back to the key itself; missing parameters render
-the `{name}` placeholder so it is visible in QA.
+Missing keys fall back to the key itself; missing parameters render the
+`{name}` placeholder so it is visible in QA.
+
+## See also
+
+- [Event hooks and bus](/developers/event-hooks-and-bus)
+- [Permissions](/developers/permissions)
+- [SDK TypeScript](/developers/sdk-typescript)

@@ -2,7 +2,7 @@
 title: "Installation"
 description: "Install the Ground Agent on your SBC with a single command."
 icon: "download"
-lastUpdated: "2026-05-09"
+lastUpdated: "2026-06-18"
 ---
 
 # Installation
@@ -93,7 +93,7 @@ ados status
 You should see output like:
 
 ```
-ADOS Drone Agent v0.49.26
+ADOS Drone Agent v0.89.2
 Profile: ground-station
 Board: pi4b (Raspberry Pi 4B)
 
@@ -136,7 +136,7 @@ Every ground-station install already pulls the mesh dependencies. There is no fl
 1. apt-installs `batctl`, `avahi-daemon`, `wpasupplicant` (and tries `wpasupplicant-mesh-sae` or `wpad-mesh-wolfssl` for the 802.11s SAE backend; falls back to IBSS carrier if neither is available).
 2. Creates `/etc/ados/mesh/` (mode 0755) so role-transition flows have somewhere to land mesh identity files.
 3. Installs the three role-gated systemd units (`ados-batman.service`, `ados-wfb-relay.service`, `ados-wfb-receiver.service`). They stay masked until a role transition starts them. The node stays in `direct` mode by default.
-4. `profile_detect` scans for a second USB-attached WiFi adapter at boot and sets `mesh_capable: true` in `/etc/ados/profile.conf` when one is present. That flag unlocks the OLED Mesh submenu, the GCS Distributed RX and Mesh Hardware sub-views, and the `/api/v1/ground-station/role` REST PUT for relay/receiver targets.
+4. `profile_detect` scans for a second USB-attached WiFi adapter at boot and sets `mesh_capable: true` in `/etc/ados/profile.conf` when one is present. That flag unlocks the OLED Mesh submenu, the GCS Distributed RX and Mesh tabs, and the `/api/v1/ground-station/role` REST PUT for relay/receiver targets.
 
 To act as a `relay` or `receiver`, plug a **second RTL8812EU USB adapter** into the node (default). This matches the primary adapter one-for-one so inventory stays simple and both radios run at the same 29 dBm for matched mesh range. Any 802.11s-capable USB WiFi adapter also works; MediaTek MT7612U (mainline `mt76`) and MT7921AU (mainline `mt7921u`) are the common alternatives when an operator prefers a mainline kernel driver for the mesh carrier.
 

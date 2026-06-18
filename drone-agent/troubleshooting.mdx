@@ -2,6 +2,7 @@
 title: "Troubleshooting"
 description: "Common problems and how to fix them: FC not detected, video frozen, cloud disconnected."
 icon: "wrench"
+lastUpdated: "2026-06-18"
 ---
 
 # Troubleshooting
@@ -196,18 +197,19 @@ for support tickets and scripts.
   </Accordion>
 
   <Accordion title="Check channel match">
-    The air unit and ground station must use the same WFB-ng channel:
-    ```bash
-    Use the setup webapp Video or Ground Station page to confirm both sides are
-    on the same channel.
+    The air unit and ground station must use the same WFB-ng channel. Use the setup webapp Video or Ground Station page to confirm both sides are on the same channel.
   </Accordion>
 
   <Accordion title="Check key match">
-    Both sides need the same WFB-ng encryption key:
+    Both sides need matching WFB-ng keys. The drone transmits with `tx.key` and the ground station receives with `rx.key`:
     ```bash
-    cat /etc/ados/wfb.key
+    # On the drone
+    cat /etc/ados/wfb/tx.key
+
+    # On the ground station
+    cat /etc/ados/wfb/rx.key
     ```
-    Compare the key on the air unit and ground station. They must be identical.
+    With auto-bind these are exchanged automatically. If you pair manually, the keys must match across the link.
   </Accordion>
 </AccordionGroup>
 
@@ -251,7 +253,7 @@ for support tickets and scripts.
 <AccordionGroup>
   <Accordion title="Check which service is using resources">
     ```bash
-    ados health
+    ados status
     top -b -n 1 | head -20
     ```
     If `ffmpeg` is using high CPU, the video encoder may not be using hardware acceleration. Check that `hw_video_codecs` in your board profile includes `h264_enc`.

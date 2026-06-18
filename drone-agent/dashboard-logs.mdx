@@ -2,12 +2,14 @@
 title: "Logs"
 description: "Live tail of structured agent logs with level and service filters."
 icon: "scroll-text"
+lastUpdated: "2026-06-18"
 ---
 
 # Logs
 
 The Logs page is a live tail of the agent's structured log stream.
 Each entry shows timestamp, level, service, event, and a JSON payload.
+The stream is backed by the durable black-box logging store (`ados-logd`), which also keeps telemetry, events, and hardware samples across reboots. The same store is queryable from the CLI with `ados logs query` and `ados logs tail`, including off-box when the agent's HTTP port is down.
 
 <Frame caption="Logs page during a quiet idle window.">
   ![Logs page](/images/dashboard/drone/logs-full.png)
@@ -37,7 +39,7 @@ The agent uses standard syslog levels:
 
 ## Profile gating
 
-Shared route &mdash; visible on both profiles.
+Shared route, visible on both profiles.
 
 ## Backend endpoints
 

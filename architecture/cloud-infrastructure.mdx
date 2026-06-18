@@ -2,6 +2,7 @@
 title: "Cloud Infrastructure"
 description: "Three relay layers for remote access: Convex HTTP, MQTT telemetry, and WebRTC video."
 icon: "cloud"
+lastUpdated: "2026-06-18"
 ---
 
 # Cloud Infrastructure
@@ -14,15 +15,13 @@ The cloud layer is optional. Every core ADOS function works without internet. Bu
 %%{init: {'theme': 'dark'}}%%
 flowchart LR
     subgraph Agent["Drone/Ground Agent"]
-        A_HTTP["HTTP POST<br/>(every 5s)"]
-        A_MQTT["MQTT publish<br/>(2 Hz)"]
-        A_WebRTC["WebRTC signaling<br/>(on-demand)"]
+        Cloud["ados-cloud (Rust)<br/>one service:<br/>HTTP status + MQTT telemetry<br/>+ WebRTC signaling"]
     end
 
-    subgraph Cloud["Cloud Services"]
+    subgraph CloudSvc["Cloud Services"]
         Convex["Convex Backend<br/>(convex.altnautica.com)"]
         Mosquitto["Mosquitto MQTT<br/>(mqtt.altnautica.com)"]
-        Bridge["MQTT-to-Convex Bridge"]
+        Bridge["MQTT-to-Convex bridge<br/>(self-host helper)"]
     end
 
     subgraph GCS["Mission Control (Browser)"]
@@ -31,21 +30,23 @@ flowchart LR
         B_WebRTC["WebRTC peer connection"]
     end
 
-    A_HTTP -->|HTTPS| Convex
-    A_MQTT -->|TLS 8883| Mosquitto
-    A_WebRTC -->|MQTT topics| Mosquitto
+    Cloud -->|HTTPS POST every 5s| Convex
+    Cloud -->|MQTT TLS 8883| Mosquitto
+    Cloud -->|WebRTC signaling over MQTT| Mosquitto
 
-    Mosquitto --> Bridge
-    Bridge -->|HTTP POST| Convex
+    Mosquitto -.->|keeps Convex fresh| Bridge
+    Bridge -.->|HTTP POST| Convex
 
     Convex -->|Reactive| B_Convex
     Mosquitto -->|WebSocket 9001| B_MQTT
     Mosquitto -->|SDP relay| B_WebRTC
 ```
 
+On the agent, all three layers are the work of one native Rust service, `ados-cloud`: it POSTs status to Convex, publishes telemetry to MQTT, and handles WebRTC signaling over MQTT. The agent reaches Convex directly, so the cloud-side MQTT-to-Convex bridge is an optional helper that keeps Convex fresh from the higher-rate MQTT stream, not a required hop.
+
 ## Layer 1: Convex HTTP (baseline)
 
-The simplest relay. The agent POSTs a JSON status payload to the Convex backend every 5 seconds. Mission Control uses Convex's reactive queries to display the data in real time.
+The simplest relay. The agent's native Rust cloud service (`ados-cloud`) POSTs a JSON status payload to the Convex backend every 5 seconds. Mission Control uses Convex's reactive queries to display the data in real time.
 
 | Detail | Value |
 |--------|-------|
@@ -93,7 +94,7 @@ Live video does not go through a cloud media server. Instead, the browser and ag
 The signaling flow:
 
 1. Browser publishes an SDP offer to `ados/{deviceId}/webrtc/offer`
-2. Agent's `WebrtcSignalingRelay` service receives the offer via MQTT
+2. The agent's `ados-cloud` service receives the offer via MQTT
 3. Agent creates a WebRTC answer using the local MediaMTX WHEP endpoint
 4. Agent publishes the SDP answer to `ados/{deviceId}/webrtc/answer`
 5. Browser receives the answer, ICE candidates are exchanged

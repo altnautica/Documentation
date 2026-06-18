@@ -2,6 +2,7 @@
 title: "Receiver Mode"
 description: "Set up the hub of a distributed-receive deployment. Aggregator, mDNS publisher, FEC combine, and cloud gateway election."
 icon: "tower-cell"
+lastUpdated: "2026-06-18"
 ---
 
 # Receiver Mode
@@ -17,7 +18,7 @@ There is exactly one receiver per deployment. Every other mesh node is a relay.
 | Ground Agent SBC | Pi 4B is the bench reference |
 | RTL8812EU USB WiFi adapter (primary) | Drone-facing radio. Same as a single-node setup. |
 | Second RTL8812EU USB adapter (default mesh carrier) | Same chip as the primary for inventory simplicity and matched 29 dBm TX power. Any 802.11s-capable USB WiFi dongle also works; MT7612U and MT7921AU are common alternatives when mainline kernel coverage is preferred on the mesh side. |
-| Antennas | 5 GHz omni on each radio. Primary on UNII-3 (channel 149 or 153), mesh on UNII-1 (channel 36 or 40). Keep 30 cm minimum between antennas on the same chassis. |
+| Antennas | Primary 5 GHz omni on UNII-3 (channel 149 or 153) for the drone link, 2.4 GHz omni on the mesh radio (channel 1 by default). Keep 30 cm minimum between antennas on the same chassis. |
 | OLED + 4 buttons | For the Accept window during pairing |
 | Power, case, cabling | Same shape as a relay |
 
@@ -51,7 +52,7 @@ The transition masks the direct-mode `ados-wfb-rx.service`, masks `ados-wfb-rela
 
 ## Verify
 
-Open the setup webapp Ground Station page or Mission Control Hardware tab. The
+Open the setup webapp Ground Station page or the ground-station panel in Mission Control. The
 role should show `receiver`, mesh should be up, and the relay list should be
 empty until a relay joins.
 
@@ -73,7 +74,7 @@ curl -X POST http://localhost:8080/api/v1/ground-station/pair/accept \
   -d '{"duration_s": 60}'
 ```
 
-The receiver binds a UDP listener on `bat0:5801`. When a relay sends a join request over the mesh, it appears in the pending list on the OLED, setup webapp, and GCS Hardware tab.
+The receiver binds a UDP listener on `bat0:5801`. When a relay sends a join request over the mesh, it appears in the pending list on the OLED, setup webapp, and the ground-station panel in Mission Control.
 
 To approve a pending relay:
 
@@ -121,7 +122,7 @@ The receiver runs batman-adv in `gw client` mode by default. If any node on the 
 
 When a gateway dies, batman-adv evicts it and the receiver picks the next best automatically. No operator action needed.
 
-You can pin a specific gateway from the GCS Hardware tab's Mesh sub-view, or:
+You can pin a specific gateway from the Mesh tab in the ground-station panel, or:
 
 ```bash
 curl -X PUT http://localhost:8080/api/v1/ground-station/mesh/gateway_preference \
@@ -134,7 +135,7 @@ Set `mode: auto` to release the pin.
 ## Where to monitor
 
 - **OLED:** the status header shows `Rx<id>` as the role badge. Mesh -> Neighbors lists every paired relay with TQ. The Accept window screen shows pending relays during pairing.
-- **GCS Mission Control:** Hardware tab -> Distributed RX renders a RelayCard for each paired relay with fragment counts, plus a CombinedStreamStats card showing FEC-repaired fragments and output kbps. Mesh tab shows MeshHealthCard, MeshNeighborsTable, MeshGatewaysTable.
+- **GCS Mission Control:** the Distributed RX tab renders a RelayCard for each paired relay with fragment counts, plus a CombinedStreamStats card showing FEC-repaired fragments and output kbps. The Mesh tab shows MeshHealthCard, MeshNeighborsTable, MeshGatewaysTable.
 - **Setup webapp:** Ground Station and System pages show role, mesh health,
   neighbors, gateways, relays, and combined stream stats.
 - **REST API:** `/api/v1/ground-station/wfb/receiver/relays` and
@@ -144,7 +145,7 @@ Set `mode: auto` to release the pin.
 
 To revoke a relay so it can no longer rejoin without re-pairing:
 
-**GCS:** Hardware tab -> Distributed RX -> RelayCard -> Revoke. Type the relay's device id to confirm.
+**GCS:** Distributed RX tab -> RelayCard -> Revoke. Type the relay's device id to confirm.
 
 **Setup webapp:** Ground Station -> Relays -> Revoke.
 

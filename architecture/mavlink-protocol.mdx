@@ -2,6 +2,7 @@
 title: "MAVLink Protocol"
 description: "How ADOS Mission Control speaks MAVLink v2 and MSP, with the adapter pattern that supports multiple firmware."
 icon: "code"
+lastUpdated: "2026-06-18"
 ---
 
 # MAVLink Protocol Layer
@@ -153,10 +154,14 @@ The protocol adapters do not care how bytes arrive. A `Transport` abstraction ha
 
 | Transport | Use case |
 |-----------|----------|
-| WebSocket | Remote connection to drone agent or ground station. Default for LAN and cloud |
+| WebSocket | Remote connection to drone agent or ground station. Default for LAN and cloud. The agent serves the MAVLink WebSocket on `:8765` with HMAC-ticket auth |
 | WebSerial | Direct USB connection to a flight controller from the browser. Used for configuration and firmware flashing |
 | SITL TCP-to-WS bridge | ArduPilot SITL simulator for development. The bundled `tools/sitl/` bridges TCP to WebSocket |
-| Mock | Demo mode. Generates synthetic telemetry from 5 simulated drones |
+| Mock | Demo mode. Generates synthetic telemetry from 7 simulated drones |
+
+## The agent-side router
+
+On the aircraft, MAVLink does not reach the browser directly. The drone agent runs a native Rust router (`ados-mavlink-router`, the `ados-mavlink` unit) that reads the flight controller's serial link, fans frames out on the `/run/ados/mavlink.sock` IPC socket for other agent services, and exposes the stream to Mission Control over a WebSocket on `:8765`. That WebSocket is gated by a short-lived HMAC ticket, so a client proves it is authorized before the router bridges it to the flight controller. The framing, message decoding, and adapter logic described below run in the browser on whatever stream the transport delivers.
 
 ## Message flow example
 

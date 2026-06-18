@@ -2,6 +2,7 @@
 title: "Uplink Matrix"
 description: "Five connectivity options for reaching the cloud, with automatic failover and data caps."
 icon: "arrows-up-to-line"
+lastUpdated: "2026-06-18"
 ---
 
 # Uplink Matrix
@@ -49,7 +50,7 @@ Every 15 seconds, the agent sends an HTTPS HEAD request to `convex.altnautica.co
 
 Recovery checks run every 60 seconds on lower-priority uplinks. If a higher-priority uplink recovers (three consecutive successes), the agent switches back.
 
-Failover events are logged and visible on the OLED Network screen, the Hardware tab Network sub-view, and the agent log.
+Failover events are logged and visible on the OLED Network screen, the Network tab in the ground-station panel, and the agent log.
 
 ## Default configuration
 
@@ -77,7 +78,7 @@ ground_station:
 ```
 
 <Note>
-4G is never enabled by default. You must opt in from the setup webapp, the OLED menu, or the Mission Control Hardware tab. This prevents unexpected cellular data charges.
+4G is never enabled by default. You must opt in from the setup webapp, the OLED menu, or the ground-station panel in Mission Control. This prevents unexpected cellular data charges.
 </Note>
 
 ## Data cap and throttle cascade
@@ -92,7 +93,7 @@ When a 4G modem is active, the agent tracks data usage via the kernel network st
 
 The data cap resets on the 1st of each month at midnight local time.
 
-You can set the cap from the setup webapp Network page or the Hardware tab. The default is 5 GB per month.
+You can set the cap from the setup webapp Network page or the Network tab in the ground-station panel. The default is 5 GB per month.
 
 ## Bandwidth profile
 
@@ -123,7 +124,7 @@ By default, devices connected to the WiFi AP cannot use the ground station's int
 
 If you want to share internet access with AP clients:
 
-1. Open the setup webapp Network page or Mission Control Hardware tab
+1. Open the setup webapp Network page or the ground-station panel in Mission Control
 2. Enable "Share uplink with AP clients"
 3. The agent enables IP forwarding and NAT
 
@@ -137,7 +138,7 @@ When uplink sharing is enabled, every phone on the AP can use the ground station
 
 You can change uplink settings from three places:
 
-| Setting | OLED menu | Setup webapp | Hardware tab |
+| Setting | OLED menu | Setup webapp | Mission Control |
 |---------|-----------|-------------|-------------|
 | WiFi AP on/off | Yes | Yes | Yes |
 | WiFi client scan and join | Yes (limited) | Yes | Yes |
@@ -160,7 +161,7 @@ Each mesh node makes its own gateway-server decision based on `ground_station.cl
 | `force_on` | Always advertises (useful for nodes you trust to be the deployment gateway) |
 | `force_off` | Never advertises (this node will never be elected even if it has uplink) |
 
-The receiver runs `batctl gw_mode client` and picks the best gateway by Transmit Quality (TQ). If the active gateway dies, the next-best one takes over within a few seconds. You can pin a specific gateway via the GCS Hardware tab Mesh sub-view, the CLI, or the REST API:
+The receiver runs `batctl gw_mode client` and picks the best gateway by Transmit Quality (TQ). If the active gateway dies, the next-best one takes over within a few seconds. You can pin a specific gateway via the Mesh tab in the ground-station panel, the CLI, or the REST API:
 
 ```bash
 curl -X PUT http://localhost:8080/api/v1/ground-station/mesh/gateway_preference \

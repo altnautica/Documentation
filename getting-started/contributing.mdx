@@ -19,7 +19,7 @@ ADOS has two main repositories. Both are on GitHub, both are GPLv3.
     Browser-based GCS. TypeScript, Next.js 16, React 19.
   </Card>
   <Card title="ADOS Drone Agent" icon="microchip" href="https://github.com/altnautica/ADOSDroneAgent">
-    Companion computer software. Python 3.11+, FastAPI, Rich, local setup webapp.
+    Companion computer software. Rust services plus Python 3.11+, native HTTP front, local setup webapp.
   </Card>
 </CardGroup>
 
@@ -43,7 +43,7 @@ The Ground Agent is part of the Drone Agent repo (it is the same codebase, activ
 
 ### Prerequisites
 
-- Node.js 18+ (LTS)
+- Node.js 20+ (LTS)
 - npm 9+
 - Git
 
@@ -85,31 +85,36 @@ npm run build
 ### Project Structure
 
 ```
-src/
-├── app/              # Next.js App Router pages and layouts
-├── components/       # React components, organized by feature
-│   ├── command/      # Agent management (Command tab)
-│   ├── configure/    # FC configuration panels (36+)
-│   ├── flight/       # Flight control UI
-│   ├── hardware/     # Ground station Hardware tab
-│   ├── mission/      # Mission planning tools
-│   ├── simulate/     # Mission simulation
-│   └── ui/           # Shared UI primitives
-├── hooks/            # Custom React hooks
-├── lib/
-│   ├── protocol/     # MAVLink and MSP protocol implementation
-│   │   ├── adapters/ # Firmware-specific adapters
-│   │   ├── decoders/ # Binary message decoders
-│   │   └── encoders/ # Binary message encoders
-│   ├── video/        # WebRTC client, transport cascade
-│   └── mission/      # Mission file parsers, pattern generators
-├── stores/           # Zustand state stores (27 total)
-└── locales/          # i18n translation files (16 languages)
+ADOSMissionControl/
+├── src/
+│   ├── app/              # Next.js App Router pages and layouts
+│   ├── components/       # React components, organized by feature
+│   │   ├── command/      # Agent and fleet management UI
+│   │   ├── dashboard/    # Per-node detail panels
+│   │   ├── fc/           # Flight controller configuration panels (60+)
+│   │   ├── flight/       # Flight control UI
+│   │   ├── hardware/     # Ground station hardware management
+│   │   ├── planner/      # Mission planning tools
+│   │   ├── simulation/   # 3D mission simulation
+│   │   └── ui/           # Shared UI primitives
+│   ├── hooks/            # Custom React hooks
+│   ├── lib/
+│   │   ├── protocol/     # MAVLink and MSP protocol implementation
+│   │   │   ├── firmware/ # Firmware-specific adapters
+│   │   │   ├── messages/ # Binary message decoders
+│   │   │   └── encoders/ # Binary message encoders
+│   │   ├── video/        # WebRTC client, transport cascade
+│   │   └── patterns/     # Mission pattern generators
+│   ├── stores/           # Zustand state stores (60+)
+│   └── i18n.ts           # Locale registry
+├── locales/              # i18n translation files (16 languages)
+├── convex/               # Convex backend (optional, cloud features)
+└── tools/                # SITL launcher, MQTT bridge, video relay
 ```
 
 ### Key Architecture Concepts
 
-**Protocol adapters.** Each firmware (ArduPilot, PX4, Betaflight) has its own adapter that implements the `DroneProtocol` TypeScript interface. The adapters handle the differences between MAVLink and MSP, between ArduPilot parameter names and PX4 parameter names, and between different capability sets. New firmware support means writing a new adapter.
+**Protocol adapters.** Each firmware (ArduPilot, PX4, Betaflight, iNav) has its own adapter that implements the `DroneProtocol` TypeScript interface. The adapters handle the differences between MAVLink and MSP, between ArduPilot parameter names and PX4 parameter names, and between different capability sets. New firmware support means writing a new adapter.
 
 **Zustand stores.** All state lives in Zustand stores. Components subscribe to store slices via selectors. Stores are independent. The telemetry store uses ring buffers (300 samples) for time-series data.
 
@@ -148,40 +153,40 @@ ados --help
 ### Project Structure
 
 ```
-src/ados/
-├── __init__.py          # Version (single source of truth)
-├── cli.py               # Click CLI
-├── setup/               # Universal setup facade
-├── webapp/              # Local setup webapp assets
-├── api/                 # FastAPI REST API
-│   ├── runtime.py       # API facade and runtime boundary
-│   └── routes/          # Domain route modules
-├── services/
-│   ├── api/             # Standalone API service entrypoint
-│   ├── mavlink/         # MAVLink proxy and FC communication
-│   ├── video/           # Video pipeline (ffmpeg, mediamtx)
-│   ├── cloud/           # MQTT cloud relay
-│   ├── health/          # System health monitoring
-│   ├── wfb/             # WFB-ng TX/RX management
-│   └── supervisor/      # Process supervisor
-├── hal/
-│   ├── boards/          # Board profile YAMLs (17 profiles)
-│   └── detect.py        # Hardware auto-detection
-├── config/              # Configuration management
+ADOSDroneAgent/
+├── crates/              # Rust services (supervisor, control front,
+│   │                    #   mavlink-router, cloud, video, radio,
+│   │                    #   vision, logd, net, groundlink, and more)
+├── src/ados/            # Python layer
+│   ├── __init__.py      # Version (single source of truth)
+│   ├── cli/             # ados command-line interface
+│   ├── setup/           # Universal setup facade
+│   ├── webapp/          # Local setup webapp assets
+│   ├── api/             # Residual FastAPI (permanent-Python features)
+│   │   ├── runtime.py   # API facade and runtime boundary
+│   │   └── routes/      # Domain route modules
+│   ├── services/        # Python service glue (AI/vision,
+│   │                    #   peripherals, ground-station managers)
+│   ├── plugins/         # Plugin host, signing, manifest
+│   ├── sdk/             # Python plugin SDK
+│   ├── hal/
+│   │   ├── boards/      # Board profile YAMLs (17 profiles)
+│   │   └── detect.py    # Hardware auto-detection
+│   └── config/          # Configuration management
 └── scripts/
-    └── install.sh       # One-line installer
+    └── install.sh       # One-line installer bootstrap
 ```
 
 ### Key Architecture Concepts
 
-**systemd services.** In production, each agent service (mavlink, api, video, cloud, health, wfb) runs as a separate systemd unit. The supervisor service manages them. For development, you can run individual services directly.
+**systemd services.** In production, each agent service runs as a separate systemd unit. Many units run native Rust binaries (the supervisor, MAVLink router, control front, cloud relay, video, radio). Others run Python (the residual API, health, OTA, and the ground-station hardware managers). A Rust supervisor orchestrates the unit catalog through systemd. For development, you can run individual services directly.
 
 **HAL board profiles.** Each supported SBC has a YAML profile (`src/ados/hal/boards/*.yaml`) that describes its hardware: serial ports, camera paths, GPIO pins, capabilities. The agent reads the profile at boot and configures itself accordingly.
 
 **IPC via Unix sockets.** Agent services communicate through Unix domain sockets at `/run/ados/`. The MAVLink service writes parsed telemetry to `/run/ados/mavlink.sock`. Other services read from it.
 
-**API runtime facade.** API route modules should use the accessors in
-`ados.api.runtime` for telemetry, FC, video, WFB-ng, script, and parameter
+**API runtime facade.** Residual Python API route modules should use the
+accessors in `ados.api.runtime` for telemetry, FC, video, WFB-ng, and parameter
 state. If a new route needs more runtime data, add a facade method instead of
 reading private process fields from a route handler.
 
@@ -246,7 +251,7 @@ Keep commit messages focused on what the change does. Do not reference issue tra
 
 ## Translation Guide
 
-Mission Control supports 16 languages. Translation files live at `src/locales/<lang>.json`.
+Mission Control supports 16 languages. Translation files live at `locales/<lang>.json`.
 
 ### Current Languages
 
@@ -271,8 +276,8 @@ Mission Control supports 16 languages. Translation files live at `src/locales/<l
 
 ### How to Contribute Translations
 
-1. Open `src/locales/en.json` (the reference file)
-2. Open the target language file (e.g., `src/locales/hi.json`)
+1. Open `locales/en.json` (the reference file)
+2. Open the target language file (e.g., `locales/hi.json`)
 3. Find keys that are missing or have English placeholder values
 4. Translate them
 5. Submit a PR
@@ -284,9 +289,9 @@ Keep these in mind:
 
 ### Adding a New Language
 
-1. Copy `src/locales/en.json` to `src/locales/<code>.json`
+1. Copy `locales/en.json` to `locales/<code>.json`
 2. Translate all keys
-3. Add the language to the locale registry in `src/lib/i18n.ts`
+3. Add the language to the locale registry in `src/i18n.ts`
 4. Submit a PR
 
 ## Reporting Security Issues

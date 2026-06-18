@@ -2,13 +2,14 @@
 title: "Agent Services"
 description: "The multi-process systemd architecture, IPC sockets, circuit breaker, and profile detection."
 icon: "server"
+lastUpdated: "2026-06-18"
 ---
 
 # Agent Services
 
 The ADOS Drone Agent uses a multi-process architecture where each service runs as an independent systemd unit. A supervisor service manages the lifecycle. Services communicate through Unix domain sockets and share no memory.
 
-The agent is a hybrid system. The core long-running services (the supervisor, MAVLink router, cloud relay, and video pipeline) are native Rust binaries. Python handles the FastAPI web layer, AI and vision, the scripting engine, HAL detection, device drivers, and shared libraries. Several ground-station services (the radio data plane, uplink matrix, physical UI, and display) have native Rust implementations that are opt-in today and fall back to the packaged Python service otherwise. The supervisor never spawns these processes itself: it issues `systemctl` against a fixed catalog, so systemd remains the process manager and owns the cgroup, restart, and journald wiring.
+The agent is a Rust-first hybrid. Most long-running services are native Rust binaries: the supervisor, the MAVLink router, the cloud relay, the video pipeline, the radio data plane, the ground-side receiver, the physical-UI display, the uplink router, the logging daemon, and the vision host. Port 8080 is owned by the native Rust front, `ados-control`, which answers migrated routes directly and reverse-proxies the rest to a residual FastAPI process on an internal Unix socket. Python stays where the ecosystem lives: AI and vision inference, the plugin runtime, the setup and OTA webapp, HAL board detection and first-boot bootstrap, the config layer, the health monitor, and some ground-station hardware glue (Ethernet, WiFi client, modem, buttons, peripherals). The supervisor never spawns these processes itself: it issues `systemctl` against a fixed catalog, so systemd remains the process manager and owns the cgroup, restart, and journald wiring. Many unit names are stable shims that exec a Rust binary, so the commands you type (`systemctl restart ados-oled`, `ados-wfb`) keep working while the implementation underneath is native.
 
 ## Why multi-process
 
@@ -25,48 +26,52 @@ The multi-process design isolates failures. A crashed `ados-video` gets restarte
 ```mermaid
 %%{init: {'theme': 'dark'}}%%
 flowchart TB
-    Supervisor["ados-supervisor"]
-    
+    Supervisor["ados-supervisor (Rust)<br/>orchestrates systemd"]
+
     subgraph Core["Core Services (always running)"]
-        MAVLink["ados-mavlink<br/>FC serial router"]
-        API["ados-api<br/>FastAPI :8080"]
-        Cloud["ados-cloud<br/>MQTT + Convex"]
-        Health["ados-health<br/>CPU, RAM, temp"]
+        MAVLink["ados-mavlink<br/>runs ados-mavlink-router (Rust)<br/>FC serial router + :8765 WS"]
+        Control["ados-control (Rust)<br/>HTTP front on :8080"]
+        API["ados-api (Python)<br/>residual FastAPI, internal socket"]
+        Cloud["ados-cloud (Rust)<br/>MQTT + Convex relay"]
+        Health["ados-health (Python)<br/>CPU, RAM, temp"]
+        Logd["ados-logd (Rust)<br/>black-box logging :8090"]
     end
-    
+
     subgraph HW["Hardware-Dependent"]
-        Video["ados-video<br/>Camera + encoder"]
-        WFB["ados-wfb<br/>WFB-ng TX (drone)"]
-        Sensors["ados-peripherals<br/>USB + sensor mgr"]
+        Video["ados-video (Rust, drone)<br/>camera + HW encode"]
+        WFB["ados-wfb<br/>runs ados-radio (Rust, drone)<br/>WFB-ng TX"]
+        Vision["ados-vision (Rust)<br/>vision host"]
+        Sensors["ados-peripherals (Python)<br/>USB + sensor mgr"]
+        GPIO["ados-gpio (Rust)<br/>GPIO output, off until enabled"]
     end
-    
+
     subgraph OnDemand["On-Demand"]
-        Scripting["ados-scripting<br/>script executor"]
-        OTA["ados-ota<br/>GitHub release poll"]
-        Discovery["ados-discovery<br/>mDNS"]
+        OTA["ados-ota (Python)<br/>release poll + upgrade"]
+        Discovery["ados-discovery (Python)<br/>mDNS"]
+        Plugins["ados-plugin-host (Rust)<br/>subprocess plugin supervisor"]
     end
-    
+
     subgraph GroundOnly["Ground Station Profile"]
-        WFBRX["ados-wfb-rx<br/>WFB-ng RX"]
-        HostAP["ados-hostapd<br/>WiFi AP"]
-        OLED["ados-oled<br/>I2C display"]
-        Buttons["ados-buttons<br/>GPIO input"]
-        Kiosk["ados-kiosk<br/>Chromium HDMI"]
+        WFBRX["ados-wfb-rx<br/>runs ados-groundlink (Rust)"]
+        OLED["ados-oled<br/>runs ados-display (Rust)"]
+        DispProbe["ados-display-probe (Rust)<br/>panel detect"]
+        PIC["ados-pic (Rust)<br/>panel arbiter"]
+        Input["ados-input (Rust)<br/>joystick + touch"]
+        Buttons["ados-buttons (Python)<br/>GPIO input"]
+        Uplink["ados-uplink-router<br/>runs ados-net (Rust)<br/>uplink matrix"]
+        Ethernet["ados-ethernet (Python)<br/>wired uplink"]
+        Modem["ados-modem (Python)<br/>cellular uplink"]
+        HostAP["ados-hostapd (C)<br/>WiFi AP"]
         MediaMTXGS["ados-mediamtx-gs<br/>RTSP + WHEP"]
-        USBGadget["ados-usb-gadget<br/>CDC-NCM setup"]
-        SetupCaptive["ados-setup-captive<br/>Captive portal"]
-        DnsmasqGS["ados-dnsmasq-gs<br/>Probe responder"]
-        UplinkRouter["ados-uplink-router<br/>Uplink matrix"]
-        Ethernet["ados-ethernet<br/>Wired uplink"]
-        Modem["ados-modem<br/>Cellular uplink"]
-        Input["ados-input<br/>Joystick + touch"]
-        PIC["ados-pic<br/>Panel arbiter"]
+        Kiosk["ados-kiosk<br/>Chromium HDMI"]
+        USBGadget["ados-usb-gadget<br/>CDC-NCM tether"]
+        Captive["ados-setup-captive + ados-dnsmasq-gs<br/>first-boot portal"]
     end
 
     subgraph CrossProfile["Cross-Profile (any profile)"]
-        WiFiClient["ados-wifi-client<br/>WiFi station"]
+        WiFiClient["ados-wifi-client (Python)<br/>WiFi station"]
     end
-    
+
     Supervisor --> Core
     Supervisor --> HW
     Supervisor --> OnDemand
@@ -80,7 +85,7 @@ The supervisor starts child services based on the active profile (air or ground-
 
 ## Systemd unit structure
 
-Each service has a unit file in `/etc/systemd/system/`. Native Rust services run a binary from `/opt/ados/bin/`; the FastAPI service and the Python-backed services run through the virtual environment in `/opt/ados/venv/`.
+Each service has a unit file in `/etc/systemd/system/`. Native Rust services run a binary from `/opt/ados/bin/`; the Python-backed units run through the virtual environment in `/opt/ados/venv/`. The unit name stays stable even when the implementation is native: `ados-mavlink` runs `ados-mavlink-router`, `ados-oled` runs `ados-display`, `ados-wfb` runs `ados-radio`, `ados-uplink-router` runs `ados-net`, and `ados-wfb-rx` runs `ados-groundlink`.
 
 ```ini
 [Unit]
@@ -91,9 +96,10 @@ PartOf=ados-supervisor.service
 [Service]
 Type=simple
 User=ados
-# Native Rust core service. Python-backed units (for example ados-api)
-# use /opt/ados/venv/bin/python -m ados.services.<name> instead.
-ExecStart=/opt/ados/bin/ados-mavlink
+# The ados-mavlink unit execs the native Rust router binary. Python-backed
+# units (for example ados-api, ados-health) use
+# /opt/ados/venv/bin/python -m ados.services.<name> instead.
+ExecStart=/opt/ados/bin/ados-mavlink-router
 Restart=on-failure
 RestartSec=3
 MemoryMax=128M
@@ -121,7 +127,9 @@ Binary protocol. Each frame is a 4-byte little-endian length prefix followed by 
 | LENGTH (4 bytes, LE) | MAVLink v2 frame (LEN bytes) |
 ```
 
-The MAVLink service writes decoded FC messages to this socket. Other services (cloud, scripting, API) read from it. This is a publish-subscribe pattern implemented over a Unix socket. Multiple readers get all messages.
+The MAVLink router writes FC messages to this socket. Other services (cloud, logging, the HTTP front) read from it. This is a publish-subscribe pattern implemented over a Unix socket. Multiple readers get all messages.
+
+Two more sockets round out the IPC surface: `/run/ados/api-internal.sock` (the internal socket the residual FastAPI binds, reached only through the `ados-control` front) and `/run/ados/logd-query.sock` (the on-box query socket for the logging daemon, used by `ados logs query`).
 
 ### State socket (`/run/ados/state.sock`)
 
@@ -175,27 +183,29 @@ The result is written to `/etc/ados/profile.conf` with the full fingerprint snap
 <Tabs>
   <Tab title="Air profile">
     Always started:
-    - `ados-supervisor`, `ados-mavlink`, `ados-api`, `ados-cloud`, `ados-health`
+    - `ados-supervisor`, `ados-mavlink`, `ados-control`, `ados-api`, `ados-cloud`, `ados-health`, `ados-logd`
 
     Hardware-dependent:
     - `ados-video` (if camera detected)
     - `ados-wfb` in TX mode (if RTL8812EU detected)
+    - `ados-vision` (if the vision engine is provisioned)
     - `ados-peripherals` (if USB sensors detected)
+    - `ados-gpio` (off until enabled, for a status buzzer or LED)
 
     On-demand:
-    - `ados-scripting` (if enabled in config)
-    - `ados-ota`, `ados-discovery`
+    - `ados-ota`, `ados-discovery`, `ados-plugin-host`
 
     Masked (never started):
     - All ground-station services (hostapd, oled, buttons, kiosk, etc.)
   </Tab>
   <Tab title="Ground station profile">
     Always started:
-    - `ados-supervisor`, `ados-api`, `ados-cloud`, `ados-health`, `ados-cloud-relay`
+    - `ados-supervisor`, `ados-control`, `ados-api`, `ados-cloud`, `ados-health`, `ados-logd`
     - `ados-hostapd`, `ados-oled`, `ados-buttons`
     - `ados-wfb-rx` (in the `direct` role)
     - `ados-mediamtx-gs`
     - `ados-uplink-router` (uplink matrix), `ados-pic` (front-panel arbiter)
+    - `ados-display-probe` (panel detect)
     - `ados-setup-captive`, `ados-dnsmasq-gs` (first boot)
 
     Hardware-dependent:
@@ -212,9 +222,13 @@ The result is written to `/etc/ados/profile.conf` with the full fingerprint snap
   </Tab>
 </Tabs>
 
-## FastAPI REST server
+The `ados-cloud` unit is a single cross-profile service. On the ground-station profile it also runs the cloud-relay bridge that forwards a drone's telemetry and video signaling on to the cloud, so there is no separate relay unit.
 
-The `ados-api` service runs a FastAPI server on port 8080. It provides:
+## HTTP control surface
+
+Port 8080 is served by the native Rust front, `ados-control`. It answers migrated routes directly and reverse-proxies everything else to the residual FastAPI process (the `ados-api` unit) over an internal Unix socket at `/run/ados/api-internal.sock`. From a client's point of view there is one HTTP surface on `:8080`. The split is internal, and the request paths, response bodies, and schemas stay the same across the boundary.
+
+The surface provides:
 
 - `/api/status` and `/api/status/full` for agent state
 - `/api/video/*` for video pipeline status and MediaMTX integration
@@ -222,71 +236,63 @@ The `ados-api` service runs a FastAPI server on port 8080. It provides:
 - `/api/command` for drone commands (arm, disarm, mode change)
 - `/api/config` for reading and writing agent configuration
 
-Authentication uses the `X-ADOS-Key` header with a key stored in `/etc/ados/config.yaml`. The key is generated at install time.
+Authentication uses the `X-ADOS-Key` header with a key stored in `/etc/ados/config.yaml`, generated at install time. The MAVLink WebSocket on `:8765` (served by `ados-mavlink-router`) uses a short-lived HMAC ticket instead.
 
-### Runtime boundary
-
-The REST server exposes a stable HTTP surface, but it does not own flight
-controller, video, WFB-ng, script, or parameter state directly. Route modules
-read those domains through the API runtime facade.
-
-In main agent mode, the facade wraps the active process runtime. In standalone
-API service mode, it reads live telemetry from state IPC and uses public runtime
-handles for optional subsystems. This boundary is internal to the agent. It does
-not change request paths, response bodies, or OpenAPI schemas.
+The residual FastAPI keeps the features that stay in Python: AI and vision endpoints, the plugin runtime surface, the setup and OTA webapp, the device-discovery and peripherals routes, and the WHEP video bridge. As more routes move to the Rust front, the FastAPI footprint shrinks toward those Python-bound features only.
 
 ## HAL board profiles
 
-Each supported SBC has a YAML profile in `src/ados/hal/boards/`. The profile defines:
+Each supported SBC has a YAML profile in `src/ados/hal/boards/`. The profile defines the SoC, the UART and GPIO map, the video codec support, and the navigation hardware:
 
 ```yaml
-# Example: pi4b.yaml
+# Example: rpi4b.yaml
+name: "Raspberry Pi 4B"
 vendor: "Raspberry Pi"
-name: "Pi 4B"
 soc: "BCM2711"
-ram_mb: 4096
-tier: 3
-uart:
-  - path: /dev/ttyAMA0
-    baud: 921600
-    purpose: mavlink
-i2c:
-  - bus: 1
-    purpose: oled
-gpio:
-  buttons: [5, 6, 13, 19]
-usb:
-  ports: 4
+arch: "aarch64"
+model_patterns:
+  - "Raspberry Pi 4 Model B"
+default_tier: 3
+uart_paths:
+  - /dev/ttyAMA0
+  - /dev/ttyS0
+gpio_pins: [2, 3, 14, 15, 18]
+hw_video_codecs:
+  - h264_enc
+  - h264_dec
+  - h265_dec
 video:
-  encode: "libx264"  # no hardware encoder on Pi 4B
-hdmi:
-  available: true
-usb_gadget:
-  available: true
-  otg_port: "usb0"
+  csi_ports: 1
+  max_encode_resolution: "1920x1080"
+  max_encode_fps: 30
+  encoder_api: v4l2
+buses:
+  i2c:
+    - id: i2c1
 ```
 
-The profile drives service startup, GPIO mapping, video encoder selection, and feature gating. Unknown boards fall back to safe defaults (I2C bus 1, libx264 encoding, generic GPIO).
+The profile drives service startup, GPIO mapping, video encoder selection, and feature gating. Detection runs on `/proc/device-tree/model`, `/proc/cpuinfo`, and an optional `/etc/ados/board_override`. Unknown boards fall back to safe `generic-arm64` defaults.
 
 ## Resource budget
 
-Total memory usage for the ground-station profile on a Pi 4B with 4 GB RAM:
+Memory use is dominated by the Python residual (FastAPI), the video encoder buffers, and Chromium when the HDMI kiosk runs. The native Rust services are lean: each orchestrator sits in the tens of MB. Indicative figures for the ground-station profile on a Pi 4B (4 GB RAM):
 
 | Service | Typical RAM |
 |---------|-------------|
-| ados-supervisor | 15 MB |
-| ados-api (FastAPI) | 40 MB |
-| ados-wfb-rx | 20 MB |
-| ados-mediamtx-gs | 30 MB |
-| ados-hostapd | 5 MB |
-| ados-oled | 10 MB |
-| ados-buttons | 5 MB |
-| ados-health | 10 MB |
+| ados-supervisor (Rust) | ~15 MB |
+| ados-control (Rust front) | ~15 MB |
+| ados-api (FastAPI, internal socket) | ~40 MB |
+| ados-wfb-rx (Rust) | ~20 MB |
+| ados-mediamtx-gs | ~30 MB |
+| ados-hostapd | ~5 MB |
+| ados-oled (Rust) | ~10 MB |
+| ados-buttons (Python) | ~5 MB |
+| ados-health (Python) | ~10 MB |
 | ados-kiosk (Chromium) | 280-520 MB |
-| **Total (no kiosk)** | **~135 MB** |
-| **Total (with kiosk 720p)** | **~415 MB** |
+| **Total (no kiosk)** | **~155 MB** |
+| **Total (with kiosk 720p)** | **~435 MB** |
 
-On a 4 GB Pi 4B, this leaves over 3.5 GB free without kiosk, or about 3.5 GB free with kiosk at 720p.
+On a 4 GB Pi 4B this leaves multiple GB free with or without the kiosk. A lean flight node can run a zero-Python core (the MAVLink router, camera encode, radio, and the `ados-control` front) for a much smaller footprint.
 
 ## What is next
 

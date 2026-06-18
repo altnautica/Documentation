@@ -1,32 +1,41 @@
 ---
 title: "Hardware Tab"
-description: "Manage your ground station from Mission Control's Hardware tab."
+description: "Manage your ground station from its detail panel in Mission Control."
 icon: "gear"
+lastUpdated: "2026-06-18"
 ---
 
-# Hardware Tab in Mission Control
+# Ground Station Controls in Mission Control
 
-The Hardware tab is a top-level tab in ADOS Mission Control. It gives you a browser control surface for the connected Ground Agent: status, network, physical UI, controllers, peripherals, distributed receive, and mesh.
+When Mission Control connects to a node running the ground-station profile, that node gets its own detail panel: a browser control surface for status, radio, network, display, physical UI, peripherals, distributed receive, and mesh.
 
-<Frame caption="The Hardware tab Overview sub-view showing ground station status, connected clients, and quick actions">
-  <img src="/images/placeholder-hardware-tab.png" alt="Mission Control Hardware tab showing ground station overview with link health and connected clients" />
+<Frame caption="The ground-station Overview tab showing ground station status, connected clients, and quick actions">
+  <img src="/images/placeholder-hardware-tab.png" alt="Mission Control ground-station overview with link health and connected clients" />
 </Frame>
 
 ## Where to find it
 
-The Hardware tab sits in the top navigation bar of Mission Control, after **Command** and before **Plan**. It appears when Mission Control is connected to an Agent running in the ground-station profile.
+Open the Mission Control Dashboard and select the ground-station node from the fleet. Its detail panel opens with a row of role-aware tabs. The tab set adapts to the node's current role (`direct`, `relay`, or `receiver`), so you only see the surfaces that make sense for the running profile.
 
-## Current sub-views
+## Tabs
 
 ### Overview
 
-The landing page for the Hardware tab. It shows:
+The landing tab. It shows:
 
 - Ground station profile, board, uptime, and paired-drone state
 - Link health, including RSSI, bitrate, channel, and FEC counters when available
 - Uplink summary and current role
 - Pairing action for the drone link
 - PIC widget showing who currently has pilot-in-command authority
+
+### Radio
+
+Drone-facing radio controls. Hidden in the `receiver` role, which does not transmit:
+
+- Channel, bitrate, and FEC counters
+- TX power slider
+- Video link status
 
 ### Network
 
@@ -37,72 +46,79 @@ Full network configuration:
 - Ethernet status and configuration
 - Cellular modem status and APN settings
 - Uplink priority order
-- Share-uplink toggle for local clients
+- Adapter stability and share-uplink toggle for local clients
+
+### Display
+
+The SPI touch LCD surface, when a panel is attached:
+
+- Live preview of the on-device dashboard
+- Remote control, theme toggle, and camera switch
+- Recording monitor
+- Five-point touch calibration from the desk
+
+See [Display](/ground-agent/display) for the full panel reference.
 
 ### Physical UI
 
-OLED and device UI settings:
+OLED, buttons, and controller management:
 
-- OLED brightness
-- Auto-dim behavior
-- Screen timing and screen settings where supported
+- OLED brightness and auto-dim behavior
+- Live preview of the OLED screen and four front buttons
+- Bluetooth scan, pair, and forget for gamepads and accessories
 - Factory reset with typed confirmation
 
-Button remapping and screen reorder controls are present as configuration surfaces, but remain limited until the matching Agent endpoints are fully supported.
-
-### Controllers
-
-Gamepad and pilot-control management:
-
-- Connected gamepad list
-- Primary gamepad selection
-- PIC claim, release, confirm, and heartbeat state
-- Bluetooth scan, pair, and forget actions where available
+Button remapping and screen reorder controls are present as configuration surfaces, but remain limited until the matching agent endpoints are fully supported.
 
 ### Peripherals
 
 Connected accessory management:
 
-- Enumerated USB, Bluetooth, and Agent-discovered devices
+- Enumerated USB, Bluetooth, and agent-discovered devices
 - Per-device health and status
 - Device configuration and supported action buttons
 
 ### Distributed RX
 
-Shown on mesh-capable nodes. The page is role-aware:
+Shown on mesh-capable nodes in `relay` or `receiver` role. The tab is role-aware:
 
-- **Direct:** shows that distributed receive is off and offers role change.
 - **Relay:** shows receiver reachability, relay status, and fragment forwarding stats.
 - **Receiver:** shows paired relays, pending join requests, pairing-window state, revoke actions, and combined-stream stats.
 
-This page polls the role and distributed-receive endpoints while visible. It can change role, open and close the receiver pairing window, approve pending relays, and revoke relays.
+This tab polls the role and distributed-receive endpoints while visible. It can change role, open and close the receiver pairing window, approve pending relays, and revoke relays.
 
 ### Mesh
 
-Shown on mesh-capable nodes. The page shows:
+Shown on mesh-capable nodes in `relay` or `receiver` role. The tab shows:
 
 - Mesh health, mesh id, peer count, partition indicator, and selected gateway
 - Neighbor table with link quality and last-seen age
 - Gateway table with advertised gateways and pin action
 - Mesh event toasts for partitions, gateway failover, receiver unreachable, relay revoked, and relay disconnected
-- Disabled log-aggregation action until the Agent log bundle endpoint ships
+- Disabled log-aggregation action until the agent log bundle endpoint ships
 
-The page polls mesh health, neighbors, routes, and gateways while visible. Live mesh deltas arrive through the mesh WebSocket stream.
+The tab polls mesh health, neighbors, routes, and gateways while visible. Live mesh deltas arrive through the mesh WebSocket stream.
 
-## Planned sub-views
+## Role gating
 
-Two sub-views are planned but are not separate pages in the current Mission Control route tree:
+The visible tab set depends on the node's role:
 
-| Sub-view | Planned coverage |
-|---|---|
-| Radio | Channel, bitrate, FEC, diversity, and recording controls |
-| Storage and Logs | SD usage, recording downloads, log bundles, and cleanup policy |
+| Tab | direct | relay | receiver |
+|---|---|---|---|
+| Overview | yes | yes | yes |
+| Radio | yes | yes | no |
+| Network | yes | yes | yes |
+| Display | yes | yes | yes |
+| Physical UI | yes | yes | yes |
+| Peripherals | yes | yes | yes |
+| Distributed RX | no | yes | yes |
+| Mesh | no | yes | yes |
 
-Today, drone pairing and link health live in Overview, while mesh log aggregation is shown as a disabled action in Mesh.
+Drone pairing and link health live in Overview, while mesh log aggregation is shown as a disabled action in Mesh.
 
 ## Data flow
 
-The Hardware tab communicates with the Ground Agent through:
+The ground-station detail panel communicates with the Ground Agent through:
 
 | Channel | Path |
 |---|---|
@@ -121,9 +137,9 @@ For ground stations on the local network, the browser connects directly over WiF
 - Polling pauses when the browser tab is hidden.
 - Last-known state is retained when a node goes offline, then refreshed when it reconnects.
 
-## Using Hardware tab offline
+## Using the controls offline
 
-The Hardware tab works offline as long as your browser can reach the Ground Agent over the local network. Cloud features are additive. Local video, telemetry, role management, and network setup do not require internet.
+The ground-station detail panel works offline as long as your browser can reach the Ground Agent over the local network. Cloud features are additive. Local video, telemetry, role management, and network setup do not require internet.
 
 ## What is next
 

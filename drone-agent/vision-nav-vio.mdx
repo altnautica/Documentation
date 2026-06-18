@@ -1,16 +1,16 @@
 ---
 title: "Visual Inertial Odometry"
-description: "Full 6-degree-of-freedom pose estimation by fusing a forward camera with the FC's IMU. Python plumbing and GCS surfaces ship today; vendor binaries land in a follow-up release."
+description: "Full 6-degree-of-freedom pose estimation by fusing a forward or downward camera with the FC's IMU. Two engines (OpenVINS, VINS-Fusion) ship as bundled vendor binaries."
 icon: "compass"
-lastUpdated: "2026-05-16"
+lastUpdated: "2026-06-18"
 ---
 
 # Visual Inertial Odometry
 
-Visual Inertial Odometry (VIO) is the bigger sibling of optical flow. Where optical flow gives you horizontal velocity from a downward camera plus a rangefinder, VIO gives you a full 6-degree-of-freedom pose (position and orientation in three dimensions) from a forward-facing camera fused with the FC's IMU.
+Visual Inertial Odometry (VIO) is the bigger sibling of optical flow. Where optical flow gives you horizontal velocity from a downward camera plus a rangefinder, VIO gives you a full 6-degree-of-freedom pose (position and orientation in three dimensions) from a forward or downward camera fused with the FC's IMU.
 
 <Note>
-VIO ships with its Python plumbing, GCS surfaces, calibration wizard, and auto-detect probe today. The vendor-binary upstream integration (the OpenVINS and VINS-Fusion binaries) arrives in a follow-up release once validated end-to-end on target hardware. In the meantime, use the optical-flow modes for low-altitude GPS-denied flight.
+VIO ships in the plugin. Two engines (OpenVINS and VINS-Fusion) ride inside the signed plugin archive as vendor binaries. They stay on disk and never run until you select a VIO mode. VIO needs a one-time camera-IMU calibration and a board with an NPU or a strong multicore CPU; on a weak board the estimator cannot keep up. For low-altitude GPS-denied flight on light hardware, the optical-flow modes are the simpler path.
 </Note>
 
 ## What it adds
@@ -22,7 +22,7 @@ Optical flow tells the EKF "the drone is moving north at 2.1 m/s." VIO tells the
 - Maintain heading-relative position over long flights without GPS or compass drift.
 - Land on uneven terrain by combining VIO altitude with the IMU's gravity vector.
 
-The trade-off is compute. A monocular VIO at 30 Hz on a 640x480 camera needs an NPU or a strong CPU. The plugin's VIO mode will refuse to enable on boards that don't have one.
+The trade-off is compute. A monocular VIO at 30 Hz on a 640x480 camera needs an NPU or a strong CPU. VIO modes are intended for capable boards; a weak board cannot run them at the rate the EKF expects.
 
 ## Two engines, side by side
 
@@ -31,7 +31,7 @@ The plugin ships two VIO modes:
 - **`vio_openvins`** uses OpenVINS, a filter-based (MSCKF)
   estimator. Lower CPU cost, strong on fast motion, slightly looser
   bound on long-flight drift.
-- **`vio_vins_fusion`** uses HKUST VINS-Fusion, a sliding-window
+- **`vio_vins_fusion`** uses VINS-Fusion, a sliding-window
   bundle-adjustment estimator. Higher CPU cost, tighter drift bound
   in feature-rich scenes, stronger in low-feature or texture-poor
   environments.
@@ -41,9 +41,7 @@ boards with the headroom.
 
 ## Hardware requirements
 
-The plugin's VIO modes target a monocular forward-facing camera plus
-the FC IMU. Stereo and full-SLAM (loop-closure) engines are not in
-the first VIO release; the architecture leaves the seam open.
+The plugin's VIO modes target a monocular forward-facing or downward-facing camera plus the FC IMU. Stereo and full-SLAM (loop-closure) engines are not in this release; the architecture leaves the seam open.
 
 | Board | OpenVINS | VINS-Fusion |
 |-------|----------|-------------|
@@ -55,75 +53,75 @@ the first VIO release; the architecture leaves the seam open.
 | Raspberry Pi 4B, CM4 | Marginal | No (over budget) |
 | Raspberry Pi Zero 2 W | No | No |
 
-Camera: a forward-facing global-shutter camera at 30 Hz, 640x480 or
+Camera: a forward-facing or downward-facing camera at 30 Hz, 640x480 or
 higher. A rolling-shutter camera works but is more sensitive to fast
 motion. Global shutter is strongly preferred.
 
-IMU: the FC's IMU, sampled through MAVLink. The plugin prefers
-`SCALED_IMU2` (100 Hz on ArduPilot) and falls back to `RAW_IMU`
-(50 to 200 Hz depending on FC config). A higher-rate direct IMU path
-(I2C or DroneCAN) is a later option.
+IMU: the FC's IMU, sampled through MAVLink `RAW_IMU` (the universal
+path every FC publishes). A higher-rate direct IMU path (a direct-I2C
+BMI088 at around 400 Hz) is a planned addition; until it lands the
+MAVLink path is the only source.
 
 ## How it plugs in
 
 The VIO engine runs as a vendor binary inside the plugin's process
 sandbox, started by the plugin and watched by a heartbeat watchdog.
-Frames flow into the binary through a shared-memory ring (zero-copy);
-IMU samples and control messages flow through a Unix-domain socket
-encoded as length-prefixed msgpack. Pose estimates flow back over the
-same socket.
+The Rust agent reads frames from the shared vision frame bus and
+bridges them into the engine's shared-memory ring (zero-copy); IMU
+samples and control messages flow through a Unix-domain socket encoded
+as length-prefixed msgpack. Pose estimates flow back over the same
+socket.
 
 The plugin then emits `VISION_POSITION_ESTIMATE` on MAVLink
-component 197 (`MAV_COMP_ID_VISUAL_INERTIAL_ODOMETRY`) at 30 Hz.
-ArduPilot's EKF3 fuses these messages when `EK3_SRC1_POSXY`,
-`EK3_SRC1_VELXY`, and `EK3_SRC1_YAW` are set to `ExternalNav` (6).
-PX4's EKF2 fuses them when `EKF2_EV_CTRL` enables external vision.
+component 197 (`MAV_COMP_ID_VISUAL_INERTIAL_ODOMETRY`) at the camera
+frame rate (around 30 Hz). ArduPilot's EKF3 fuses these messages when
+`EK3_SRC1_POSXY`, `EK3_SRC1_VELXY`, and `EK3_SRC1_YAW` are set to
+`ExternalNav` (6). PX4's EKF2 fuses them when `EKF2_EV_CTRL` enables
+external vision.
 
 The IPC protocol is documented in the
 [Architecture page](/drone-agent/vision-nav-architecture). Adding a
-third engine (ORB-SLAM3, a future home-grown estimator) is a single
-subclass of the shim's engine base class plus a new vendor binary
-that speaks the same protocol.
+third engine (a future home-grown estimator) is a new VIO engine
+variant plus a vendor binary that speaks the same protocol.
 
 ## Calibration
 
 VIO needs calibrated intrinsics and known camera-IMU extrinsics
 including the static time offset between the two clocks. The plugin
-accepts Kalibr-compatible `camchain.yaml` files directly. See
+accepts Kalibr-compatible `camchain.yaml` files directly, or you can
+run the guided in-app wizard. See
 [Calibration](/drone-agent/vision-nav-calibration) for the full
 workflow.
 
 The pre-arm gate refuses to arm a VIO mode without loaded
-calibration files. The GCS sensors card surfaces a Calibrate CTA
+calibration files. The GCS sensors card surfaces a Calibrate prompt
 when intrinsics are not yet loaded.
 
-## GPL §6 compliance
+## License compliance
 
 Both OpenVINS and VINS-Fusion are GPL-3.0-licensed. Shipping a
-pre-compiled binary inside the plugin archive triggers the GPL
+pre-compiled binary inside the plugin archive carries the GPL
 source-offer obligation. The plugin's manifest declares a
 `vendor_attribution` block for each engine with the upstream
 repository, the license, the upstream version, and a notice. The
-install dialog surfaces these blocks during Stage 1 so operators
-know what they're installing.
+install dialog surfaces these blocks during the summary stage so
+operators see what they are installing.
 
-The Python plumbing, the GCS surfaces, the pre-arm gate, the
-estimator card, and the fallback banner all ship today. The vendor
-binaries land in a follow-up release once they're validated end-to-end
-on target hardware.
+## When to use VIO vs optical flow
 
-## What you can do today
+If you fly close to the ground (under 8 m), have a downward camera, and
+need stable hover and waypoint flight, the optical-flow modes are the
+simpler path. See [Configure optical flow](/drone-agent/vision-nav-optical-flow)
+for the setup.
 
-The optical flow release covers the most common indoor and low-altitude GPS-denied use cases. If you're flying close to the ground (under 8 m), have a downward camera, and need stable hover and waypoint flight, optical flow is enough. See [Configure optical flow](/drone-agent/vision-nav-optical-flow) for the setup.
-
-If you're flying at altitude, in long corridors, or in environments where the downward camera has nothing to track, the optical flow release won't be sufficient and you'll want to wait for the VIO release.
+If you fly at altitude, in long corridors, or in environments where the
+downward camera has nothing to track, VIO is the mode you want, on a
+board with the compute to run it.
 
 ## Stay in the loop
 
-Releases are announced through the standard channels:
+Plugin updates are announced through the standard channels:
 
-- The ADOS Extensions GitHub repository's release feed.
+- The ADOSExtensions GitHub repository's release feed.
 - The Mission Control update notifier (in-app banner when a new plugin version is published).
 - Community channels listed in [Open source](/getting-started/open-source).
-
-The VIO release date isn't promised. It lands when it's validated end-to-end on target hardware, not before.

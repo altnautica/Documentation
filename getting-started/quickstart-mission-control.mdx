@@ -6,13 +6,13 @@ icon: "display"
 
 ## What You Will Build
 
-By the end of this page, you will have ADOS Mission Control running in your browser with 5 simulated drones. You can explore the dashboard, plan missions, try the configuration panels, and fly a simulated drone with your keyboard or gamepad. No hardware needed.
+By the end of this page, you will have ADOS Mission Control running in your browser with 7 simulated drones. You can explore the dashboard, plan missions, try the configuration panels, and fly a simulated drone with your keyboard or gamepad. No hardware needed.
 
 ## Prerequisites
 
 You need:
 
-- **Node.js 18+** (LTS recommended). Check with `node --version`
+- **Node.js 20+** (LTS recommended). Check with `node --version`
 - **npm 9+** (ships with Node.js). Check with `npm --version`
 - **Git**. Check with `git --version`
 - A modern browser: Chrome, Edge, or Firefox. Chrome recommended for WebSerial support.
@@ -25,7 +25,7 @@ Mission Control uses WebSerial for USB flight controller connections and WebUSB 
 
 The fastest way to try ADOS Mission Control is the hosted demo at [command.altnautica.com](https://command.altnautica.com).
 
-It loads with 5 simulated drones, demo telemetry, and all features enabled. Nothing to install. Just open the link.
+It loads with 7 simulated drones, demo telemetry, and all features enabled. Nothing to install. Just open the link.
 
 ## Option B: Run Locally
 
@@ -53,12 +53,12 @@ It loads with 5 simulated drones, demo telemetry, and all features enabled. Noth
     This starts the development server on port 4000 with demo mode enabled. Open [http://localhost:4000](http://localhost:4000) in your browser.
 
     <Tip>
-    Demo mode sets `NEXT_PUBLIC_DEMO_MODE=true` and populates the dashboard with 5 simulated drones showing live-updating telemetry. It requires no Convex backend, no SITL, and no hardware.
+    Demo mode sets `NEXT_PUBLIC_DEMO_MODE=true` and populates the dashboard with 7 simulated drones showing live-updating telemetry. It requires no Convex backend, no SITL, and no hardware.
     </Tip>
   </Step>
 
   <Step title="Explore the dashboard">
-    You should see the main dashboard with 5 simulated drones. Each drone shows:
+    You should see the main dashboard with 7 simulated drones. Each drone shows:
 
     - Attitude indicator (artificial horizon)
     - GPS coordinates and altitude
@@ -66,8 +66,8 @@ It loads with 5 simulated drones, demo telemetry, and all features enabled. Noth
     - Flight mode (Stabilize, Loiter, Auto, etc.)
     - Connection status
 
-    <Frame caption="Mission Control dashboard with 5 simulated drones in demo mode">
-      <img src="/images/dashboard/dashboard-demo.png" alt="Mission Control dashboard showing 5 drone cards with telemetry data" />
+    <Frame caption="Mission Control dashboard with 7 simulated drones in demo mode">
+      <img src="/images/dashboard/dashboard-demo.png" alt="Mission Control dashboard showing 7 drone cards with telemetry data" />
     </Frame>
   </Step>
 </Steps>
@@ -96,7 +96,7 @@ The mission planning interface. You can:
 
 ### Configure
 
-36+ configuration panels for your flight controller. In demo mode, these show example values. With a real FC connected, you can read and write parameters.
+60+ configuration panels for your flight controller. In demo mode, these show example values. With a real FC connected, you can read and write parameters.
 
 Key panels include:
 
@@ -223,7 +223,7 @@ The desktop app is the same codebase with an Electron wrapper. It uses about 200
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `NEXT_PUBLIC_DEMO_MODE` | `false` | Enable demo mode with 5 simulated drones |
+| `NEXT_PUBLIC_DEMO_MODE` | `false` | Enable demo mode with 7 simulated drones |
 | `PORT` | `4000` | Dev server port |
 | `NEXT_PUBLIC_CONVEX_URL` | (none) | Convex backend URL for cloud features |
 | `NEXT_PUBLIC_MQTT_URL` | (none) | MQTT broker URL for real-time telemetry |
@@ -243,7 +243,7 @@ ADOSMissionControl/
 │   │   ├── protocol/     # MAVLink/MSP codec and adapters
 │   │   ├── video/        # WebRTC client, transport cascade
 │   │   └── mission/      # Mission file parsers, pattern generators
-│   ├── stores/           # Zustand state stores (27 total)
+│   ├── stores/           # Zustand state stores (60+)
 │   └── hooks/            # Custom React hooks
 ├── convex/               # Convex backend (optional, for cloud features)
 ├── tools/
@@ -267,6 +267,6 @@ ADOSMissionControl/
     Deep dive into the mission planner.
   </Card>
   <Card title="FC Configuration" icon="sliders" href="/mission-control/fc-configuration">
-    Explore all 36+ configuration panels.
+    Explore all 60+ configuration panels.
   </Card>
 </CardGroup>

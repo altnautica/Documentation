@@ -2,6 +2,7 @@
 title: "WiFi AP Mode"
 description: "Connect your laptop or phone to the ground station over WiFi."
 icon: "wifi"
+lastUpdated: "2026-06-18"
 ---
 
 # WiFi AP Mode
@@ -83,7 +84,7 @@ Once connected to the AP, your browser can reach:
 
 Up to 3-4 devices can stream video simultaneously over the 2.4 GHz AP before throughput starts to degrade. Each client gets its own WebRTC session from MediaMTX. Telemetry over WebSocket is lightweight and supports many more clients.
 
-Only one client at a time has pilot-in-command authority (the ability to send stick inputs to the drone). The first client with an active gamepad claims PIC. Other clients can request it through the Mission Control Hardware tab.
+Only one client at a time has pilot-in-command authority (the ability to send stick inputs to the drone). The first client with an active gamepad claims PIC. Other clients can request it through Mission Control.
 
 ## WiFi AP configuration
 
@@ -91,7 +92,7 @@ You can change the AP settings from three places:
 
 - **OLED menu:** Navigate to Network > WiFi AP
 - **Setup webapp:** Open the Network page
-- **Mission Control:** Open the Hardware tab > Network sub-view
+- **Mission Control:** Open the ground-station panel > Network tab
 
 Configurable settings:
 

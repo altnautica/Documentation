@@ -2,6 +2,7 @@
 title: "Home"
 description: "The dashboard landing page. Live tiles, video, FC, hardware, network, cloud, services."
 icon: "house"
+lastUpdated: "2026-06-18"
 ---
 
 # Home
@@ -36,17 +37,17 @@ dashboard snapshot endpoint.
 
 ### Panels
 
-- **Video** &mdash; the live stream. WHEP first, HLS fallback, snapshot
+- **Video**: the live stream. WHEP first, HLS fallback, snapshot
   fallback. Reads encoder details (codec, resolution, fps, bitrate,
   glass-to-glass latency) from the snapshot.
-- **Flight Controller** &mdash; connection state, vehicle type, firmware,
+- **Flight Controller**: connection state, vehicle type, firmware,
   mode, arm state, GPS fix and satellites, battery voltage and remaining,
   RC link, prearm.
-- **Hardware** &mdash; the required and optional component list, the
+- **Hardware**: the required and optional component list, the
   same rows the wizard's hardware check used.
-- **Network** &mdash; active uplink, RSSI, IP addresses by interface.
-- **Cloud Relay** &mdash; MQTT, HTTPS heartbeat, RTT, pairing state.
-- **Services** &mdash; quick health line for the systemd unit set.
+- **Network**: active uplink, RSSI, IP addresses by interface.
+- **Cloud Relay**: MQTT, HTTPS heartbeat, RTT, pairing state.
+- **Services**: quick health line for the systemd unit set.
 
 ## Ground-station profile
 
@@ -61,14 +62,14 @@ receive side (WFB-rx, mesh peers, downlink quality).
 
 ### Panels
 
-- **WFB Receive** &mdash; adapter, channel, RSSI, packet loss, FEC
+- **WFB Receive**: adapter, channel, RSSI, packet loss, FEC
   counters, active streams.
-- **Mesh** &mdash; visible when the node's role is `relay` or `receiver`.
+- **Mesh**: visible when the node's role is `relay` or `receiver`.
   Shows batman-adv peers, gateway node, partition state, and the local
   mesh address.
-- **Sources** &mdash; visible only on the `receiver` role. Aggregated
+- **Sources**: visible only on the `receiver` role. Aggregated
   bitrate, frames combined, dedup, per-relay FEC stats.
-- **Hardware**, **Network**, **Cloud Relay**, **Services** &mdash; same
+- **Hardware**, **Network**, **Cloud Relay**, **Services**: same
   set as on the drone home.
 
 ## Backend endpoints

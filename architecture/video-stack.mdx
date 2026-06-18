@@ -2,11 +2,12 @@
 title: "Video Stack"
 description: "The full video pipeline from camera sensor to browser pixel, including WFB-ng, MediaMTX, and WebRTC."
 icon: "video"
+lastUpdated: "2026-06-18"
 ---
 
 # Video Stack
 
-The ADOS video pipeline carries live HD video from the drone's camera to your browser with 40-100 ms latency, depending on the connection. It uses standard open-source tools at every stage: V4L2 for capture, ffmpeg for encoding, WFB-ng for radio transport, MediaMTX for local serving, and WebRTC for browser delivery.
+The ADOS video pipeline carries live HD video from the drone's camera to your browser with 40-100 ms latency, depending on the connection. It uses standard open-source tools at every stage: V4L2 for capture, ffmpeg for encoding, WFB-ng for radio transport, MediaMTX for local serving, and WebRTC for browser delivery. On the aircraft, the native Rust video service (`ados-video`, the `ados-video` unit) supervises the encoder and the local MediaMTX instance; the ground station receives the stream through `ados-mediamtx-gs`.
 
 ## Full pipeline
 
@@ -40,9 +41,9 @@ The drone agent detects cameras at boot by scanning `/dev/video*` devices. It su
 - **MIPI CSI cameras** via V4L2 (Radxa Camera 4K, Arducam modules)
 - **USB UVC cameras** via V4L2 (any standard webcam)
 
-The camera service runs `v4l2-ctl` to configure resolution, framerate, and pixel format before starting the encoder. Default: 1080p at 30 fps, YUV420p.
+The video service configures resolution, framerate, and pixel format before starting the encoder. Default: 1080p at 30 fps, YUV420p.
 
-On boards with hardware-capable SoCs (RK3588, RK3576), the agent can use `rkmpp` (Rockchip Media Process Platform) for zero-copy encode directly from the camera ISP. On boards without hardware encode (Pi 4B), it falls back to `libx264` via ffmpeg.
+The encoder choice comes from the board's HAL profile. On boards with a Rockchip media engine (RK3588, RK3576), the agent can use `rkmpp` (Rockchip Media Process Platform) for zero-copy encode directly from the camera ISP. Boards that expose a V4L2 hardware encoder use it through ffmpeg. On boards without a usable hardware encoder, it falls back to `libx264`.
 
 ## Stage 2: Encode
 
@@ -91,7 +92,7 @@ Key properties:
 
 On the air side, `wfb_tx` reads the RTSP stream from MediaMTX and broadcasts it. On the ground side, `wfb_rx` receives and reassembles the stream, feeding it back into a ground-side MediaMTX instance.
 
-The agent manages `wfb_tx` and `wfb_rx` as systemd services. It does not use OpenHD as a runtime dependency. WFB-ng is the transport protocol, and the agent controls it directly.
+The agent supervises `wfb_tx` and `wfb_rx` from native Rust services: the radio TX service (`ados-radio`, the `ados-wfb` unit) on the drone and the receiver service (`ados-groundlink`, the `ados-wfb-rx` unit) on the ground station. It does not use OpenHD as a runtime dependency. WFB-ng is the transport protocol, and the agent controls the underlying `wfb_tx` / `wfb_rx` binaries directly.
 
 ## Stage 4: Ground serving
 

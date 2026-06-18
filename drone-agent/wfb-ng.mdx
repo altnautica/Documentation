@@ -2,13 +2,14 @@
 title: "WFB-ng Video Link"
 description: "Long-range HD video using WFB-ng protocol and RTL8812EU WiFi adapters."
 icon: "wifi"
+lastUpdated: "2026-06-18"
 ---
 
 # WFB-ng Video Link
 
 WFB-ng (WiFi Broadcast next generation) is the protocol the agent uses for long-range HD video. It is not standard WiFi. Instead, it broadcasts raw 802.11 frames in monitor mode with forward error correction (FEC). This gives you 10-50+ km range at 30-70 ms latency.
 
-The agent manages WFB-ng directly as the `ados-wfb` systemd service. No OpenHD or other wrapper is required.
+The agent manages WFB-ng directly as the `ados-wfb` systemd service (the native Rust `ados-radio` binary). No OpenHD or other wrapper is required.
 
 ## How it works
 
@@ -108,17 +109,18 @@ Higher parity means more resilience but also more bandwidth overhead. The defaul
 
 ## Key management
 
-WFB-ng uses a shared key for stream encryption. The agent generates a key at install time and stores it at `/etc/ados/wfb.key`. The ground station needs the same key to receive the stream.
+WFB-ng uses a shared key for stream encryption. The keys live under `/etc/ados/wfb/`: the air unit transmits with `tx.key`, and the ground station receives with `rx.key`. Both sides must share the matching key.
 
-When using the ADOS Ground Station (another instance of the agent in ground-station profile), the key is exchanged automatically during pairing.
+When using the ADOS Ground Station (another instance of the agent in ground-station profile), the keys are generated and exchanged automatically over the local radio during pairing (see [WFB Pairing](/drone-agent/wfb-pairing)). You normally never touch the key files by hand.
 
 For manual key management:
 
 ```bash
-# On the air unit (drone), the key is at:
-cat /etc/ados/wfb.key
+# On the air unit (drone), the transmit key is at:
+cat /etc/ados/wfb/tx.key
 
-# Copy it to the ground station's /etc/ados/wfb.key
+# The matching receive key on the ground station is at:
+cat /etc/ados/wfb/rx.key
 ```
 
 ## Link quality monitoring

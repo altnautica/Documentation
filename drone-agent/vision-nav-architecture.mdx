@@ -1,123 +1,110 @@
 ---
 title: "Architecture"
-description: "The modular shape of Vision Navigation: camera, IMU, rangefinder, scale, and estimator as independent modules behind a common contract."
+description: "The modular shape of Vision Navigation: the compiled Rust agent half, its module map, the estimator contract, the scale ladder, the VIO vendor-binary bridge, and the heartbeat."
 icon: "sitemap"
-lastUpdated: "2026-05-16"
+lastUpdated: "2026-06-18"
 ---
 
 # Architecture
 
 Vision Navigation is built around a single design rule: the camera,
-the IMU, the rangefinder, and the estimator are four independent
-modules. Any estimator runs on any combination of camera, IMU, and
-optional rangefinder; new estimators plug in behind a stable contract
+the IMU, the rangefinder, and the estimator are independent pieces.
+Any estimator runs on any combination of camera, IMU, and optional
+rangefinder; a new estimator plugs in behind a stable contract
 without rewiring the plugin.
 
-This page is for developers who want to add a new estimator (a
-stereo VIO, a future ORB-SLAM3, a learned monocular depth network),
-extend the calibration loader, or audit the data flow.
+The agent half is a **compiled Rust binary**. The plugin host execs
+it directly under systemd, hands it the per-plugin socket on the
+command line, and passes the capability token and agent id through
+the unit environment. The binary subscribes to the agent's shared
+vision frame bus instead of opening a camera itself. Operator-facing
+behaviour is unchanged from earlier releases; this page documents the
+shape for developers who want to add a new estimator, extend the
+calibration loader, or audit the data flow.
 
 ---
 
 ## Module map (agent half)
 
+The agent crate lives at `extensions/vision-nav/agent/`. The hot path
+(frame consumption, optical-flow tracking, the six-mode degradation
+state machine, the scale ladder, the pre-arm gate, the MAVLink
+component router, TIMESYNC clock alignment, IMU sourcing, rangefinder
+drivers, the VIO vendor-binary bridge, and the heartbeat snapshot) is
+Rust.
+
 ```
-extensions/vision-nav/agent/src/altnautica_vision_nav/
-  capture/                # camera frame producers
-    base_camera.py
-    v4l2_source.py
-    libcamera_source.py
-  imu/                    # IMU sample producers
-    base.py               # BaseImuSource ABC + ImuSample
-    mavlink_raw_imu.py
-    mavlink_scaled_imu2.py
-    direct_i2c.py         # BMI088 at ~400 Hz over I2C
-    time_aligner.py       # frame-IMU pairing + drift band
-  autodetect/             # start-up hardware probes
-    profile.py            # drone vs ground-station gate
-    camera.py             # /dev/video* enumeration + per-mode pick
-    rangefinder.py        # I2C + UART probe across known drivers
-    imu.py                # BMI088 chip-id handshake, source picker
-    mode.py               # suggested-mode decision tree
-  rangefinder/            # distance source drivers
-    base.py
-    tfluna_uart.py
-    garmin_lidarlite_i2c.py
-    vl53l1x_i2c.py
-    relay_distance_sensor.py
-  scale/                  # rangefinder-free altitude ladders
-    base.py               # BaseScaleSource + ScalePick
-    mavlink_ladder.py
-  estimators/             # the inner loop
-    base.py               # BaseEstimator + EstimatorOutput
-    null_estimator.py
-    optical_flow.py       # wraps OpticalFlowLk
-    optical_flow_no_range.py
-    vio_engine.py         # VioEstimator + subclasses
-  calibration/            # intrinsics + extrinsics loaders + runner
-    intrinsics.py
-    extrinsics.py
-    runner.py             # cv2.aruco + cv2.calibrateCamera +
-                          #   golden-section timeshift fit
-  shim/                   # vendor-binary IPC layer
-    ipc.py                # SHM ring + msgpack channel
-    engine.py             # BaseVioEngine + OpenVINS/VINS-Fusion
-    heartbeat.py          # restart-on-silence watchdog
-  mavlink/
-    encoders.py           # OPTICAL_FLOW_RAD, DISTANCE_SENSOR,
-                          #   VISION_POSITION_ESTIMATE
-    component_router.py   # picks comp 198 (OF) or 197 (VIO)
-  health.py               # heartbeat publisher
-  pre_arm_gate.py         # mode-aware arm-readiness evaluator
-  plugin.py               # lifecycle entry point
+extensions/vision-nav/agent/
+  Cargo.toml
+  src/
+    main.rs          # binary entry point: builds the plugin, runs to SIGTERM
+    lib.rs           # module declarations
+    config.rs        # per-drone config model + validation (mirrors config-schema.json)
+    framing.rs       # luma extraction from the shared-bus frame formats
+    flow.rs          # clean-room Lucas-Kanade pyramidal optical-flow tracker
+    estimator.rs     # the Estimator trait + EstimatorOutput + EstimatorState
+    estimators.rs    # the six modes + the registry
+    scale.rs         # the rangefinder-free altitude ladder
+    rangefinder.rs   # UART / I2C rangefinder drivers + the FC relay
+    imu.rs           # IMU source (MAVLink RAW_IMU) + frame/IMU time aligner
+    clock_align.rs   # bidirectional TIMESYNC clock alignment
+    mavlink_emit.rs  # message builders + the component router
+    pre_arm.rs       # the mode-aware pre-arm gate
+    health.rs        # the navigation heartbeat snapshot
+    vio.rs           # the VIO vendor-binary bridge (UDS control + SHM frame ring)
+    pipeline.rs      # the per-frame runtime loop + plugin lifecycle
+  calibration-helper/  # one-time offline camera-IMU calibration (Python, out of the hot path)
+  vendor/              # OpenVINS + VINS-Fusion C++ adapters (binaries built by CI)
 ```
 
-Each subpackage has its own base class. Concrete implementations sit
-beside the base in the same directory. Adding a new IMU source (say
-DroneCAN over a USB-CAN adapter) is a single file under `imu/` that
-subclasses `BaseImuSource`.
+The estimator, the scale source, the rangefinder, and the IMU source
+each sit behind a Rust trait. Adding a new IMU source (DroneCAN over a
+USB-CAN adapter, for example) is a new type that implements the IMU
+contract.
+
+The one-time camera-IMU calibration stays Python. It is a heavyweight,
+infrequent, OpenCV-bound flow that runs once per camera mount, far off
+the 30 Hz pose-emit path, so it is not on the Rust hot path. It lives
+at `calibration-helper/` and produces a Kalibr-style `camchain.yaml`
+that the Rust agent reads at start-up.
 
 ---
 
 ## The EstimatorOutput contract
 
-Every estimator returns the same record:
+Every estimator answers `step(...)` with one `EstimatorOutput`:
 
-```python
-@dataclass
-class EstimatorOutput:
-    timestamp_us: int
-    output_mode: Literal["optical_flow", "vio", "none"]
-    state: Literal[
-        "off", "init", "converging",
-        "converged", "degraded", "failed",
-    ]
-    # OF path (None for VIO and off)
-    flow_rate_x: Optional[float]
-    flow_rate_y: Optional[float]
-    flow_rate_z: Optional[float]
-    flow_quality: Optional[int]
-    flow_distance_m: Optional[float]
-    flow_scale_source: Optional[
-        Literal["rangefinder", "baro", "gps", "vision"]
-    ]
-    integration_time_us: Optional[int]
-    # VIO path (None for OF and off)
-    pose: Optional[Sequence[float]]   # (x, y, z, roll, pitch, yaw)
-    velocity: Optional[Sequence[float]]
-    covariance: Optional[Sequence[float]]
-    feature_count: Optional[int]
-    reset_counter: Optional[int]
-    # Cross-mode diagnostics
-    drift_estimate_m: Optional[float]
-    sync_offset_ms: Optional[float]
-    extras: dict
+```rust
+pub struct EstimatorOutput {
+    pub timestamp_us: i64,
+    pub output_mode: OutputMode,   // OpticalFlow | Vio | None
+    pub state: EstimatorState,     // off|init|converging|converged|degraded|failed
+    // OF path (None for VIO and off)
+    pub flow_rate_x: Option<f32>,
+    pub flow_rate_y: Option<f32>,
+    pub flow_rate_z: Option<f32>,
+    pub flow_quality: Option<i32>,
+    pub flow_distance_m: Option<f32>,
+    pub flow_scale_source: Option<ScaleSourceLabel>, // rangefinder|baro|gps|vision
+    pub integration_time_us: Option<i64>,
+    // VIO path (None for OF and off)
+    pub pose: Option<(f32, f32, f32, f32, f32, f32)>, // (x,y,z,roll,pitch,yaw)
+    pub velocity: Option<(f32, f32, f32)>,
+    pub covariance: Option<Vec<f32>>,                 // 21-element upper-triangular
+    pub feature_count: Option<i32>,
+    pub reset_counter: Option<u32>,
+    // Hybrid co-emit: an OF sample to also fire on comp 198
+    pub extras_of: Option<Box<EstimatorOutput>>,
+}
 ```
 
-The component router reads `output_mode` and dispatches to either the
-OF emitter (component 198, `OPTICAL_FLOW_RAD`) or the VIO emitter
-(component 197, `VISION_POSITION_ESTIMATE`). The two halves never
-both carry data on the same record.
+An optical-flow sample fills the `flow_*` fields and leaves the VIO
+fields `None`; a VIO sample fills `pose` / `velocity` / `covariance`
+and leaves the flow fields `None`. The component router reads
+`output_mode` and dispatches to either the OF emitter (component 198,
+`OPTICAL_FLOW_RAD`) or the VIO emitter (component 197,
+`VISION_POSITION_ESTIMATE`). A hybrid tick carries a co-emitted OF
+sample in `extras_of` so one tick fires on both components.
 
 ---
 
@@ -126,151 +113,124 @@ both carry data on the same record.
 The simplified flow for one frame in `optical_flow` mode:
 
 ```
-1. capture/v4l2_source emits (ts_ns, frame) on its async iterator.
-2. plugin.py pairs (prev_frame, curr_frame, dt) and feeds the active
-   estimator.
-3. estimators/optical_flow consults imu/time_aligner.lookup(ts_ns)
-   to fetch the closest IMU sample (gyro only for OF).
-4. estimators/optical_flow.step() calls into processors/
-   optical_flow_lk.process() and produces an EstimatorOutput.
-5. mavlink/component_router.emit(sample) routes the OF half to
-   mavlink/encoders.emit_optical_flow_rad() on component 198.
-6. health.py publishes the heartbeat with the latest flow_quality,
-   flow_rate_hz, distance, and estimator state.
+1. The agent's vision host publishes the frame on the shared vision
+   frame bus. The plugin's frame subscription receives it on the IPC
+   reader task and forwards it down a channel (the callback never
+   blocks).
+2. framing::frame_to_gray converts the frame (nv12 / yuv420p / rgb24)
+   to a packed grayscale image.
+3. The worker pairs (prev_gray, curr_gray, dt) and looks up the
+   closest IMU sample via imu::TimeAligner (gyro only for OF).
+4. estimators::OpticalFlowEstimator::step runs flow::OpticalFlowLk and
+   produces an EstimatorOutput.
+5. mavlink_emit::ComponentRouter::emit routes the OF sample to
+   build_optical_flow_rad on component 198 over the host MAVLink path.
+6. health::HealthSnapshot refreshes with flow quality, rate, distance,
+   and estimator state; the 1 Hz health tick publishes the navigation
+   block.
 7. The cloud relay forwards the heartbeat to Mission Control; the
    navigation card refreshes.
 ```
 
-In `vio_openvins` mode the path changes at step 4 to push the frame
-into the shim's SHM ring and the IMU samples to the shim's UDS
-control channel. The vendor binary returns pose messages
-asynchronously; the estimator drains them per tick and produces an
-EstimatorOutput with the `pose` six-tuple filled. The router emits
-on component 197 instead of 198.
+In `vio_openvins` mode the path changes at step 4: the worker bridges
+the frame into the VIO engine's shared-memory ring and hands IMU
+samples to the engine over its UDS control channel. The vendor binary
+returns pose messages asynchronously; the estimator drains them per
+tick and fills the `pose` six-tuple. The router emits on component 197
+instead of 198.
 
 ---
 
-## The calibration runner
+## Calibration (separate Python helper)
 
-`calibration/runner.py` is the agent-side counterpart to the Mission
-Control wizard. It runs in-process inside the plugin's asyncio loop
-and is subscribed to the `vision-nav.start_calibration` event topic.
+The Rust agent does not run calibration in its hot loop. The one-time
+camera-IMU calibration is a separate Python package at
+`calibration-helper/` (`altnautica_vision_nav_calib`) with three
+modules: `intrinsics` (Kalibr `cam0` intrinsics loader and validator),
+`extrinsics` (the `T_cam_imu` plus timeshift loader and validator), and
+`runner` (the wizard coroutine).
 
-The runner walks five substeps, publishing
-`vision-nav.calibration_progress` events after each:
+The runner decodes the captured frame bundle the GCS sends, runs
+OpenCV AprilTag detection (`cv2.aruco`, AprilGrid `t36h11`), solves the
+pinhole plus radial-tangential intrinsics with `cv2.calibrateCamera`,
+and fits the camera-IMU timeshift with a golden-section search over
+`[-200 ms, +200 ms]`. It writes a Kalibr-compatible `camchain.yaml`
+(the `cam0` block: `camera_model`, `intrinsics`, `distortion_model`,
+`distortion_coeffs`, `resolution`, `T_cam_imu`, `timeshift_cam_imu`).
+The maths is in [Calibration math](/drone-agent/vision-nav-calibration-math).
 
-1. **Decode the bundle.** The GCS event carries 20 to 30 base64-encoded
-   PNG frames plus an IMU recording window. The runner decodes
-   frames via OpenCV and rejects any that fail decode.
-2. **Detect AprilTags.** `cv2.aruco.ArucoDetector` with the `t36h11`
-   family extracts corner positions per tag. Frames with fewer than
-   eight detected tags are rejected.
-3. **Solve intrinsics.** `cv2.calibrateCamera` fits the pinhole
-   camera matrix K and the radial-tangential distortion vector
-   against the per-frame corner correspondences.
-4. **Recover per-frame poses.** Each frame's
-   `(rvec, tvec)` from the intrinsics solve is the camera-target
-   pose at that frame's timestamp.
-5. **Fit the camera-IMU timeshift.** A golden-section search over
-   `[-200 ms, +200 ms]` minimises the residual between the
-   camera-derived angular velocity (from consecutive frame
-   rotations) and the IMU's gyro trace in the shifted window. The
-   detail is in [Calibration math](/drone-agent/vision-nav-calibration-math).
-
-The runner writes the result to `<plugin_data_dir>/camchain.yaml` in
-the Kalibr-compatible format and publishes
-`vision-nav.calibration_complete` with the result. The plugin's
-event handler applies the new `timeshift_cam_imu` to the live
-`TimeAligner` and flips `cameraIntrinsicsLoaded` to true on the
-heartbeat so the GCS pre-arm card refreshes.
-
-A new calibration plugged in via the YAML upload path skips the
-runner entirely: the event handler validates the YAML, persists it,
-and applies the new timeshift directly.
-
----
-
-## Auto-detect on start-up
-
-The `autodetect` subpackage probes the host's hardware once at
-`on_start` and merges the result into the live config:
-
-```
-1. autodetect/profile.detect_host_profile() reads
-   /etc/ados/profile.conf (falling back to the ADOS_PROFILE env var).
-   The plugin refuses to enable when the result is a
-   ground-station variant.
-2. autodetect/camera.detect_cameras() globs /dev/video* and tags
-   each node UVC or CSI based on whether a media controller node
-   exists.
-3. autodetect/camera.pick_camera_for_mode() picks the right node
-   for the active estimator mode (CSI for VIO, first UVC for OF).
-4. autodetect/rangefinder.detect_rangefinder() walks every I2C bus
-   probing LIDAR-Lite (0x62) and VL53L1X (0x29), then falls back
-   to UART probing the TF-Luna at 115200 baud.
-5. autodetect/imu.detect_preferred_imu_source() probes every I2C
-   bus for a BMI088 chip-id handshake. When both the accel and
-   gyro dies respond, the plugin instantiates DirectI2cImu at
-   ~400 Hz; otherwise it falls back to MavlinkRawImu.
-6. autodetect/mode.derive_suggested_mode() folds the detected
-   hardware into a SuggestedMode dataclass that rides on the
-   heartbeat as `suggestedMode`.
-```
-
-If `optical_flow` is selected but no rangefinder responded, the
-plugin's `_auto_flip_mode_for_hardware` rewrites the active mode
-to `optical_flow_degraded` before opening the capture. The flip is
-logged so an operator can trace why the estimator state shows
-"degraded" on a fresh install.
+The Rust agent loads `camchain.yaml` at start-up. VIO modes feed it to
+the vendor estimator and to the time aligner. A calibration uploaded
+directly as YAML skips the wizard: the agent validates the file,
+persists it, and applies the new timeshift.
 
 ---
 
 ## The scale ladder
 
-`MavlinkScaleLadder` (in `scale/mavlink_ladder.py`) walks four rungs
-on every `pick()` call:
+`scale::ScaleLadder` runs only in `optical_flow_degraded` mode, where
+the tracker has no dedicated rangefinder. It walks four rungs on every
+`pick()` and returns the first healthy one, falling back to a static
+value so the estimator can always emit at the lowest quality rather
+than refuse to feed the EKF:
 
 ```
-                                     ┌─ healthy ─> ScalePick(0.7)
-relative_alt freshness < 2 s? ───────┤
-                                     └─ stale ──┐
+                                      ┌─ fresh ─> ScalePick(quality x0.7)
+GLOBAL_POSITION_INT.relative_alt ─────┤
+(<= 2 s old)                          └─ stale ─┐
                                                 ▼
-                                     ┌─ healthy ─> ScalePick(0.6)
-vfr_alt freshness < 2 s? ────────────┤
-                                     └─ stale ──┐
+                                      ┌─ fresh ─> ScalePick(quality x0.6)
+VFR_HUD.alt minus take-off ───────────┤
+(<= 2 s old)                          └─ stale ─┐
                                                 ▼
-gps_alt fresh + 3D fix + HDOP<=2 +   ┌─ healthy ─> ScalePick(0.4)
-outdoor_flag? ──────────────────────┤
-                                     └─ unhealthy
+GPS_RAW_INT.alt minus take-off,       ┌─ healthy ─> ScalePick(quality x0.4)
+outdoor flag + 3D fix + eph <= 200 cm ┤
+                                      └─ unhealthy
                                                 ▼
-                                              ScalePick(0.2)  static
-                                              fallback @ 1.5 m
+                                       ScalePick(quality x0.2) static
+                                       fallback @ 1.5 m
 ```
 
-The estimator multiplies the OF tracker's raw quality by the rung's
-quality multiplier before emitting. The EKF then automatically
-de-weights the sample. The estimator marks itself `degraded` when
-the static rung is active so the GCS surfaces the warn banner.
-
-A future scale source (vision-only depth, or a stereo-VIO derived
-scale) plugs in behind the same `BaseScaleSource` ABC. The estimator
+Distance is clamped to `[0.3, 50.0]` m so a glitch reading cannot
+produce a runaway scale. The estimator multiplies the OF tracker's raw
+quality by the rung's multiplier before emitting, so the EKF
+auto-de-weights degraded rungs. The estimator marks itself `degraded`
+when the static rung is active so the GCS surfaces the warning banner.
+A new scale source plugs in behind the same contract; the estimator
 does not need to know which rung produced the number.
 
 ---
 
-## The shim and the vendor binaries
+## The rangefinder drivers
 
-The VIO modes spawn an out-of-process vendor binary via the plugin
+`rangefinder.rs` supports four sources behind one trait:
+
+- **`fc_relay`** is the default and universal path. The flight
+  controller already publishes `DISTANCE_SENSOR`; the plugin relays the
+  latest reading. No extra wiring.
+- **`tfluna_uart`** is a fully implemented Benewake TF-Luna UART
+  driver (a pure 9-byte frame parser).
+- **`garmin_lidarlite_i2c`** and **`vl53l1x_i2c`** are documented stubs
+  that fail safe (they return no reading) until the plugin SDK exposes
+  an I2C facade. Wire an I2C sensor to the flight controller and use
+  the `fc_relay` path instead.
+
+---
+
+## The VIO bridge and the vendor binaries
+
+The VIO modes spawn an out-of-process vendor binary through the plugin
 SDK's `process.spawn` allowlist. The plugin host's subprocess sandbox
 checks that the basename is declared in the manifest's
-`subprocess_spawn` list and that the binary lives under
-`<install_dir>/vendor/`. The signed `.adosplug` archive bundles the
-binary; on install the supervisor extracts it under the plugin's
-cgroup slice.
+`subprocess_spawn` list (`ados_openvins_shim`, `ados_vins_fusion_shim`)
+and that the binary lives under `<install_dir>/vendor/`. CI builds the
+binaries on tag push and attaches the signed tarballs to the release;
+the install path unpacks them under the plugin's cgroup slice. They
+stay on disk and never execute unless a VIO mode is selected.
 
 ```
 +---------------------+   SHM ring (frames)    +---------------------+
-| vision-nav (Python) | ────────────────────>  | ados_openvins_shim  |
+| vision-nav (Rust)   | ────────────────────>  | ados_openvins_shim  |
 |                     |   UDS msgpack (IMU,    | (C++ + libov_msckf) |
 |                     |   pose, config, alive) |                     |
 |                     | <────────────────────  |                     |
@@ -282,52 +242,55 @@ cgroup slice.
   -> comp 197                                     (MSCKF state)
 ```
 
-The same shim shape handles both engines. `OpenVinsEngine` and
-`VinsFusionEngine` differ only in the binary basename and the
-engine-id string they advertise on the handshake. Adding a third VIO
-engine (ORB-SLAM3, for example) is a new subclass of `BaseVioEngine`
-plus a registry entry plus a vendor binary that speaks the IPC v1
-protocol.
-
-The IPC protocol is documented inline in `shim/engine.py`. The wire
-format is length-prefixed msgpack on a SOCK_SEQPACKET UDS (with a
-SOCK_STREAM fallback). The control channel handles
-hello/hello_ack/config/imu/pose/alive/log/shutdown messages; the
-SHM ring carries frames zero-copy.
+The Rust plugin no longer captures frames. It bridges the shared
+vision-bus frames into the SHM ring the engine owns, then notifies the
+binary over the control channel. `vio::VioEngine` owns one spawned
+binary and the two channels it speaks: a POSIX shared-memory ring for
+camera frames (8 slots, the binary opens it read-only and reads the
+highest-sequence slot) and a length-prefixed msgpack control channel
+over a Unix-domain socket (`hello` / `config` / `imu` / `frame_ready`
+out; `hello_ack` / `pose` / `alive` / `log` in). The byte layouts
+match the vendored C++ adapters exactly so the binaries run unchanged.
+A missed `alive` heartbeat tears the engine down; a pose that fails to
+decode is dropped. Adding a third engine (a future home-grown
+estimator, for example) is a new `VioEngine` variant plus a vendor
+binary that speaks the same protocol.
 
 ---
 
 ## The pre-arm gate
 
-`PreArmGate.evaluate()` is a pure function over `PreArmInputs`. It
-produces a `PreArmReport` with a list of individual checks, each
-carrying a severity (`ok` / `pending` / `blocking`) and an
-operator-readable detail string.
+`pre_arm::PreArmGate::evaluate()` is a pure function over its inputs.
+It produces a report with a list of individual checks, each carrying a
+severity (`ok` / `pending` / `blocking`) and an operator-readable
+detail string. The aggregate `armable` flag is true only when every
+check is `ok`.
 
 The gate is mode-aware. Adding a new mode means:
 
-1. Adding the mode key to the registry in `estimators/__init__.py`.
-2. Adding the mode literal to `config.py` (`VisionNavConfig.mode`).
-3. Adding a branch to `PreArmGate.evaluate()` that picks the right
+1. Adding the mode key to the registry in `estimators.rs`.
+2. Adding the mode variant to `config.rs` (`Mode`).
+3. Adding a branch to `PreArmGate::evaluate()` that picks the right
    check set for the new mode.
-4. Adding the mode label to the GCS `ModeCard` and the
-   `navigationModeBadge` helper.
+4. Adding the mode label to the GCS mode card and the drone-card pill.
 
-The gate does not call out to the network, does not touch the
-filesystem, and never blocks. The plugin invokes it on the same
-heartbeat tick that publishes the snapshot to the cloud relay.
+The gate does not call the network, does not touch the filesystem, and
+never blocks. The pipeline invokes it on the same tick that publishes
+the snapshot to the cloud relay.
 
 ---
 
 ## How a heartbeat is built
 
-Every tick, `HealthPublisher.snapshot()` returns:
+Every health tick, `health::HealthSnapshot::to_value()` returns the
+`navigation` block (all keys camelCase; field names that drift to
+snake_case silently drop at the relay):
 
 ```json
 {
   "opticalFlowSupported": true,
-  "vioSupported": false,
-  "rangefinderTopology": "companion",
+  "vioSupported": true,
+  "rangefinderTopology": "fc",
   "recommendedCameraId": "/dev/video0",
   "flowQuality": 180,
   "flowRateHz": 29.5,
@@ -338,6 +301,7 @@ Every tick, `HealthPublisher.snapshot()` returns:
   "companionState": "active",
   "mode": "optical_flow",
   "availableEstimators": [
+    "hybrid_of_plus_vio",
     "off",
     "optical_flow",
     "optical_flow_degraded",
@@ -350,25 +314,25 @@ Every tick, `HealthPublisher.snapshot()` returns:
   "imuRateHz": 100,
   "cameraImuSyncOffsetMs": 4.2,
   "cameraIntrinsicsLoaded": true,
+  "estimatorFeatureCount": null,
   "preArmReport": {
     "mode": "optical_flow",
     "armable": true,
     "checks": [
       {"id": "companion_active", "severity": "ok", "detail": ""},
       {"id": "flow_quality", "severity": "ok", "detail": "Quality 180/255."},
-      {"id": "rangefinder", "severity": "ok", "detail": "Topology: companion"}
+      {"id": "rangefinder", "severity": "ok", "detail": "Topology: fc"}
     ]
   }
 }
 ```
 
 This rides the cloud relay's `cmd_droneStatus.navigation` field. The
-Mission Control normaliser reads the field through
-`infer-capabilities.ts:normalizeNavigation` and routes it into the
-per-drone `agent-capabilities-store`. Every UI surface
-(`NavigationTab`, `ModeCard`, `SensorsCard`, `EstimatorCard`,
-`FallbackBanner`, `EkfSourceSwitcher`, `PreArmStatus`, the drone-card
-pill, and the fleet GPS-denied count) reads from that store.
+Mission Control normaliser reads it and routes it into the per-drone
+capability store. Every UI surface (the mode card, the sensors card,
+the estimator card, the fallback banner, the source-set switcher, the
+pre-arm status, the drone-card pill, and the fleet GPS-denied count)
+reads from that store.
 
 ---
 
@@ -376,24 +340,21 @@ pill, and the fleet GPS-denied count) reads from that store.
 
 The full recipe:
 
-1. **Implement** `BaseEstimator` in a new file under `estimators/`.
-2. **Register** the class in the `ESTIMATOR_REGISTRY` dict in
-   `estimators/__init__.py`. The registry key must equal the class's
-   `estimator_id` attribute (a contract test enforces this).
-3. **Extend** the `mode` literal in `config.py`
-   (`VisionNavConfig.mode`).
-4. **Add a branch** to `PreArmGate.evaluate()` that lists the
-   pre-arm checks the new estimator needs.
-5. **Update** the GCS:
-   - Add the mode to `ALL_MODES` in `ModeCard.tsx` with a description
-     and hardware-requirements string.
-   - Add the mode to `EstimatorMode` in `types.ts`.
-   - Add the mode badge to `navigationModeBadge` in the host GCS so
-     the drone-card pill renders correctly.
-6. **Write tests**. The existing `tests/test_estimators_scaffold.py`
-   patterns cover the contract; the new estimator's tests verify the
-   state machine + output shape.
+1. **Implement** the `Estimator` trait in `estimators.rs` (or a new
+   module): `estimator_id`, `output_mode`, `step`, plus `configure` /
+   `shutdown` if it backs a subprocess.
+2. **Register** the id in `available_estimators()` so the heartbeat
+   advertises it and the GCS mode picker offers it.
+3. **Add** the mode variant to `Mode` in `config.rs` with its wire
+   string.
+4. **Add a branch** to `PreArmGate::evaluate()` listing the pre-arm
+   checks the new estimator needs.
+5. **Update** the GCS: add the mode to the mode card with a
+   description and hardware-requirements string, add it to the GCS mode
+   type, and add the drone-card pill label.
+6. **Write tests.** The existing Rust unit tests cover the contract;
+   the new estimator's tests verify its state machine and output shape.
 
-Doing this for a stereo VIO engine, a learned monocular depth
-network, or a vendor MSCKF implementation is the same recipe each
-time. The plugin pipeline does not need changes.
+Doing this for a stereo VIO engine, a learned monocular depth network,
+or a vendor MSCKF implementation is the same recipe each time. The
+pipeline does not change.

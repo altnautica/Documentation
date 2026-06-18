@@ -1,102 +1,106 @@
 ---
 title: "Vendor binaries"
 description: "Ship a closed-source .so or vendor SDK alongside an open plugin."
+lastUpdated: "2026-06-18"
 ---
 
-Hardware drivers sometimes need a closed-source shared library to
-talk to the device. A FLIR camera SDK, a vendor LiDAR
-decompressor, or a mount-control DLL fall into this bucket. ADOS
-plugins can include these binaries, but the manifest must declare
-them honestly so operators see the trust signal in the install
-dialog.
+Hardware drivers sometimes need a closed-source shared library to talk to
+the device: a camera SDK, a LiDAR decompressor, a mount-control library.
+ADOS plugins can include these binaries, but the manifest must declare
+the inclusion so operators see the trust signal in the install dialog.
 
-## Declare the binary
+## Declare the vendor binary
 
-In `manifest.yaml`:
+The agent half sets `contains_vendor_binary: true` and provides
+`vendor_attribution`. The two go together: the schema rejects one without
+the other.
 
 ```yaml
 agent:
-  vendor_binaries:
-    - path: "agent/vendor/libfooflir.so"
-      sha256: "<computed-by-pack.sh>"
-      vendor: "FLIR"
+  entrypoint: "agent/plugin.py"
+  isolation: subprocess
+  contains_vendor_binary: true
+  vendor_attribution:
+    - name: "Example Vendor"
       license: "Proprietary"
-      purpose: "Decode radiometric Y16 frames into Celsius"
+      source_url: "https://example-vendor.example.com/sdk"
+      upstream_repo: "https://example-vendor.example.com/repo"
+      upstream_version: "2.4.1"
+      notice: "Decodes radiometric frames into Celsius."
+  permissions:
+    - id: hardware.usb.uvc
 ```
 
-`pack.sh` computes the hash from the staged file. The signer key
-covers the binary too via the manifest signature, so any tampering
-between sign and install fails verification.
+There is no per-binary `path` or `sha256` field in the manifest. The
+archive's single `SIGNATURE` file covers every entry's hash, so the
+vendor binary is protected by the same signature as the rest of the
+archive. `license` is the only required attribution field; the rest are
+optional provenance (`name`, `source_url`, `source_offer_url`,
+`upstream_repo`, `upstream_version`, `commit_sha`, `notice`).
 
 ## Trust signal in the install dialog
 
-The two-stage install flow shows a "Vendor binary" badge on the
-risk panel whenever `vendor_binaries` is non-empty. The operator
-sees:
-
-- The binary's path inside the archive
-- The vendor name and license string
-- The purpose line, in the operator's locale
-
-The dialog labels the plugin as "Mixed source" rather than
-"Open source" in the trust column. Operators can still install,
-but the signal is loud.
+When `contains_vendor_binary` is true the install dialog shows the vendor
+attribution and labels the plugin as carrying a vendor binary rather than
+pure open source. The operator can still install, but the signal is loud.
 
 ## Loading the binary at runtime
 
-The agent unpacks the archive into the plugin's data dir at
-install time. The binary lives at
-`/var/ados/plugins/<plugin-id>/agent/vendor/libfooflir.so`.
+The agent unpacks the archive under the plugin's install directory at
+`/var/ados/plugins/<plugin-id>/`. Resolve the binary relative to your
+plugin module and load it with `ctypes`:
 
 ```python
 import ctypes
 from pathlib import Path
 
-class FooFlirDriver(CameraDriver):
+class FooDriver:
     def __init__(self) -> None:
-        sdk_path = Path(__file__).parent.parent / "vendor" / "libfooflir.so"
+        sdk_path = Path(__file__).parent / "vendor" / "libfoo.so"
         self._lib = ctypes.CDLL(str(sdk_path))
 ```
 
 The plugin runs inside its sandbox, so the binary cannot escape the
-plugin's permission set. A vendor `.so` that tries to open
-`/dev/video0` still requires the plugin to declare
-`hal.dev_video` in its manifest.
+plugin's permission set. A vendor `.so` that opens a USB camera still
+requires the plugin to declare the matching capability (here
+`hardware.usb.uvc`). If the vendor code must run as its own process
+rather than load in-process, the plugin needs `process.spawn` plus a
+`subprocess_spawn` allowlist entry naming the binary.
 
 ## License note
 
-Open hardware files and developer docs that Altnautica ships are
-dedicated to the public domain under CC0 1.0. Plugins that wrap
-GPL or CC0 source are themselves GPLv3 by default. A plugin that
-wraps a closed-source vendor `.so` is still GPLv3 in its own
-source files, but operators see the "Mixed source" badge because
-of the vendor binary inclusion.
+Altnautica's own open hardware files and developer docs are dedicated to
+the public domain under CC0 1.0; the agent and the GCS are GPL-3.0. A
+plugin that wraps a closed-source vendor `.so` is still under its own
+declared license in its own source files; the install dialog flags the
+vendor-binary inclusion separately so operators see it.
 
 ## Architecture support
 
-The pack script does not validate that the `.so` matches the
-target SBC's architecture. Ship architecture-specific subfolders if
-your plugin runs on both `aarch64` and `armv7l`:
+Nothing validates that the `.so` matches the target SBC architecture.
+Ship architecture-specific subfolders if your plugin runs on more than
+one:
 
 ```
 agent/vendor/
 ├── aarch64/
-│   └── libfooflir.so
+│   └── libfoo.so
 └── armv7l/
-    └── libfooflir.so
+    └── libfoo.so
 ```
 
 And resolve at runtime:
 
 ```python
 import platform
+from pathlib import Path
+
 arch = platform.machine()
-sdk_path = Path(__file__).parent.parent / "vendor" / arch / "libfooflir.so"
+sdk_path = Path(__file__).parent / "vendor" / arch / "libfoo.so"
 ```
 
 ## See also
 
-- [Manifest reference](/developers/manifest) for the full
-  `vendor_binaries` schema.
+- [Manifest reference](/developers/manifest) for the full `agent` block.
 - [Distribution and local install](/developers/distribution-local-install)
   for the pack and sign flow.

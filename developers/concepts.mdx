@@ -1,6 +1,7 @@
 ---
 title: "Concepts"
 description: "Manifest, signing, sandboxing, and capability tokens. The four primitives every plugin author works with."
+lastUpdated: "2026-06-18"
 ---
 
 Four primitives describe every plugin in ADOS: a **manifest**, a
@@ -17,25 +18,28 @@ asset.
 
 The host validates the manifest against
 `schemas/plugin-manifest.schema.json` before unpacking anything. A
-malformed manifest is rejected with code `12` (`manifest_invalid`).
+malformed manifest is rejected before any file is written to disk.
 
 See [manifest reference](/developers/manifest) for the full field list.
 
 ## Signature
 
-The archive is an Ed25519-signed zip. The signing pass:
+The archive is an Ed25519-signed zip. Two steps produce it:
 
-1. Computes a SHA-256 over each declared asset.
-2. Writes the hashes back into `manifest.yaml`.
-3. Signs the canonical manifest body with an Ed25519 private key.
-4. Embeds the base64 signature back into `manifest.yaml`'s `signing`
-   block.
+1. **Pack.** Compute a SHA-256 over each declared asset and write the
+   hashes into `manifest.yaml`, then zip the tree into a `.adosplug`.
+2. **Sign.** Compute the canonical payload hash (a SHA-256 over the
+   path-sorted `<path>\n<sha256-hex>` of every archive entry except
+   the signature file itself), sign that 32-byte digest with an
+   Ed25519 private key, and write a separate `SIGNATURE` file into the
+   archive. The `SIGNATURE` file has two lines: the signer key id, then
+   the base64 signature.
 
-On install the agent verifies the signature against its trust list.
-First-party publishers (e.g. `altnautica-2026-A`) are pre-trusted.
-Third-party keys must be added explicitly. Unsigned archives install
-only when the agent is in **developer mode** (red banner, manual
-toggle).
+On install the agent recomputes the payload hash and verifies the
+signature against its trust list. First-party publishers (e.g.
+`altnautica-2026-A`) are pre-trusted. Third-party keys must be added
+explicitly. Unsigned archives install only when the agent is in
+**developer mode** (red banner, manual toggle).
 
 ## Sandbox
 

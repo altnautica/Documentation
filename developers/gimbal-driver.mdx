@@ -1,6 +1,7 @@
 ---
 title: "Gimbal driver"
 description: "Implement a GimbalDriver to add a new mount to the agent."
+lastUpdated: "2026-06-18"
 ---
 
 A `GimbalDriver` moves a stabilised mount to a commanded attitude
@@ -103,9 +104,11 @@ detail list.
 ```yaml
 agent:
   permissions:
-    - sensor.gimbal.register    # required
-    - mavlink.command.send      # if the driver speaks MAVLink
-    - serial.read_write         # if the driver speaks raw serial
+    - id: sensor.payload.register   # gimbal drivers register under the payload cap (no dedicated gimbal cap in the current catalog)
+    - id: mavlink.component.gimbal  # to own a MAVLink gimbal component id (the reference path)
+    - id: mavlink.write             # if the driver sends MAVLink
+    - id: mavlink.read              # to observe gimbal status messages
+    - id: hardware.uart             # if the driver speaks raw serial
 ```
 
 ## ROI vs attitude
@@ -130,7 +133,7 @@ The reference MAVLink driver maps ROI to
 ```python
 class Plugin:
     async def on_start(self, ctx):
-        self.driver = MyGimbalDriver(mavlink_router=ctx.mavlink_router)
+        self.driver = MyGimbalDriver()
         await ctx.peripheral_manager.register_gimbal_driver(self.driver)
 ```
 

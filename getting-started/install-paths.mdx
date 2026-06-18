@@ -2,59 +2,32 @@
 title: "Install paths"
 description: "Pick the right install flow for your hardware. Mission Control's Flash Tool drives every supported path."
 icon: "route"
+lastUpdated: "2026-06-18"
 ---
 
-Mission Control's Flash Tool installs the ADOS agent on every supported companion computer. Pick your starting state below to find the right path.
+Mission Control's Flash Tool installs the ADOS agent on every supported companion computer. For each supported board it hands you a one-line install command to paste over SSH. Pick your starting state below to find the right path.
 
 ## Pick your starting point
 
-<CardGroup cols={3}>
-  <Card title="I have a Luckfox Pico Zero" icon="bolt" href="#luckfox-pico-zero">
-    Browser flash. No terminal.
-  </Card>
-  <Card title="I have a board running stock OS" icon="terminal" href="#stock-os-board">
-    Copy a command. Paste over SSH.
+<CardGroup cols={2}>
+  <Card title="I have a board running a stock OS" icon="terminal" href="#stock-os-board">
+    Copy the install command. Paste it over SSH.
   </Card>
   <Card title="I have a fresh SD card with no OS" icon="sd-card" href="#fresh-sd-card">
-    Get the vendor OS running first.
+    Get the vendor OS running first, then install.
   </Card>
 </CardGroup>
 
-## Luckfox Pico Zero
-
-The Luckfox Pico Zero ships without a usable stock OS for the agent, so the Flash Tool writes a complete ADOS image directly from your browser. No terminal, no SSH, no separate flashing tool.
-
-<Steps>
-  <Step title="Open Mission Control">
-    Open Mission Control in a Chromium-family browser (Chrome, Edge, Brave, or Opera). Browser flash uses WebUSB, which Safari and Firefox do not support.
-  </Step>
-  <Step title="Open the Flash Tool">
-    Go to **Settings -> Flash Tool**. Pick **ADOS Drone Agent** as the firmware stack, then pick **Luckfox Pico Zero** as the target board.
-  </Step>
-  <Step title="Put the board in bootrom mode">
-    Unplug the board. Hold the **BOOT** button. Plug the USB-C cable in while still holding **BOOT**. Release the button after the board enumerates.
-  </Step>
-  <Step title="Pick the device">
-    Click **Flash via browser**. The browser device picker lists the Luckfox in bootrom mode. Select it and click **Connect**.
-  </Step>
-  <Step title="Wait for the flash to complete">
-    The Flash Tool writes the ADOS image and shows a progress bar. The board reboots when flashing finishes.
-  </Step>
-  <Step title="Pair from your phone or laptop">
-    The board exposes a Wi-Fi network named `ados-setup-<id>`. Join it from any device, finish the captive portal wizard, and the board appears in Mission Control's Fleet view as a pending pair.
-  </Step>
-</Steps>
-
 ## Stock OS board
 
-If your board is a Raspberry Pi, Radxa, Jetson, or any other supported SBC running its standard vendor OS, the Flash Tool surfaces a `curl` install command. Paste it on the board over SSH and the install script does the rest.
+If your board is a Raspberry Pi, Radxa, Jetson, or any other supported SBC running its standard vendor OS, the Flash Tool surfaces a `curl` install command. Paste it on the board over SSH and the install script does the rest. The supported boards today are the Raspberry Pi 4B and Pi Zero 2 W, the Radxa CM3, CM4, Rock 5C Lite, and Cubie A7Z, plus the other profiles listed in [Supported hardware](/drone-agent/supported-hardware).
 
 <Steps>
   <Step title="Boot your board with stock OS">
     Boot the board with its standard vendor OS. SSH must be enabled and you must be able to reach the board over the network.
   </Step>
   <Step title="Open the Flash Tool">
-    In Mission Control, go to **Settings -> Flash Tool**. Pick **ADOS Drone Agent** (for the air-side) or **ADOS Ground Agent** (for the ground-side) as the firmware stack, then pick your board.
+    In Mission Control, go to **Settings, then Flash Tool**. Pick **ADOS Drone Agent** (for the air-side) or **ADOS Ground Agent** (for the ground-side) as the stack, then pick your board.
   </Step>
   <Step title="Copy the install command">
     The Flash Tool shows a single `curl ... | sudo bash` line. Click **Copy**.
@@ -67,9 +40,7 @@ If your board is a Raspberry Pi, Radxa, Jetson, or any other supported SBC runni
   </Step>
 </Steps>
 
-This flow works in any browser that runs Mission Control. Browser flash is not required for stock-OS boards because the install command runs over SSH on the board itself.
-
-For the canonical curl walkthrough, see [Drone Agent installation](/drone-agent/installation) or [Ground Agent installation](/ground-agent/installation).
+The install command runs over SSH on the board itself, so any browser that displays Mission Control can show you the command. For the canonical walkthrough, see [Drone Agent installation](/drone-agent/installation) or [Ground Agent installation](/ground-agent/installation).
 
 ## Fresh SD card
 
@@ -77,22 +48,9 @@ Bringing up a brand-new Raspberry Pi or Radxa board from a blank SD card is out 
 
 Get the board running its standard vendor OS first, then come back here. The board falls into the [Stock OS board](#stock-os-board) flow once it boots and you can SSH in.
 
-<Note>
-Browser-based OS flashing is supported today only for boards where the agent owns the entire image. The Luckfox Pico Zero is the first such target. More boards will follow as their bringup matures.
-</Note>
+## Flashing flight controller firmware
 
-## Browser support
-
-| Browser | Browser flash | Install command |
-|---------|---------------|-----------------|
-| Chrome (89+) | Yes | Yes |
-| Edge (89+) | Yes | Yes |
-| Brave | Yes | Yes |
-| Opera | Yes | Yes |
-| Safari | No | Yes |
-| Firefox | No | Yes |
-
-Browser flash needs WebUSB, which is a Chromium-family feature. The install command flow runs entirely on the board, so any browser that can copy text works.
+The Flash Tool also flashes flight controller firmware (ArduPilot, PX4, Betaflight, iNav), which is a separate flow from installing the companion agent. That path runs in the browser and needs a Chromium-family browser (Chrome, Edge, Brave, Opera) because it uses WebUSB and WebSerial. See [Firmware Flashing](/mission-control/firmware-flashing) and the [Flash Tool walkthrough](/mission-control/flash-tool).
 
 ## What's next
 

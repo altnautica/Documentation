@@ -1,7 +1,8 @@
 ---
 title: "Mesh Troubleshooting"
-description: "Symptoms and fixes for the most common mesh and pairing failures. journalctl queries, setup webapp checks, and recovery paths."
+description: "Symptoms and fixes for the most common mesh and pairing failures. Log queries, setup webapp checks, and recovery paths."
 icon: "wrench"
+lastUpdated: "2026-06-18"
 ---
 
 # Mesh Troubleshooting
@@ -10,7 +11,7 @@ This page collects the failure modes we have observed during mesh and pairing de
 
 ## Mesh services do not start after role transition
 
-**Symptom:** the setup webapp or Hardware tab reports the configured role correctly, but mesh health is down. `systemctl status ados-batman` shows `inactive (dead)`.
+**Symptom:** the setup webapp or the ground-station panel in Mission Control reports the configured role correctly, but mesh health is down. `systemctl status ados-batman` shows `inactive (dead)`.
 
 **Likely cause:** the second USB WiFi dongle is not detected, or `mesh_capable` is `false` in `/etc/ados/profile.conf`.
 
@@ -26,9 +27,8 @@ cat /etc/ados/profile.conf
 # Expected: mesh_capable: true
 
 # If the flag is still false after plugging the second dongle in,
-# re-run the installer or restart the bootstrap service to trigger
-# a profile_detect rescan.
-sudo systemctl restart ados-bootstrap
+# re-run the installer to trigger a profile_detect rescan.
+sudo ./install.sh
 ```
 
 If the second dongle is plugged in but not enumerating, check `dmesg` for driver bind messages and confirm the dongle's chipset has Linux mesh-mode (`802.11s` or `IBSS`) driver support.
@@ -56,7 +56,7 @@ If the second dongle is plugged in but not enumerating, check `dmesg` for driver
 
 **Cause:** `mesh_capable` is `false` in `/etc/ados/profile.conf`. The second USB WiFi adapter was not present when `profile_detect` ran last.
 
-**Recovery:** plug in the second USB WiFi adapter and rerun `profile_detect` by restarting the bootstrap service (`sudo systemctl restart ados-bootstrap`), or manually flip the flag if the dongle is already up:
+**Recovery:** plug in the second USB WiFi adapter and rerun `profile_detect` by re-running the installer (`sudo ./install.sh`), or manually flip the flag if the dongle is already up:
 
 ```bash
 sudo sed -i 's/^mesh_capable:.*/mesh_capable: true/' /etc/ados/profile.conf
@@ -110,7 +110,7 @@ curl -X PUT http://localhost:8080/api/v1/ground-station/mesh/gateway_preference 
   -d '{"mode": "pinned", "pinned_mac": "AA:BB:CC:DD:EE:01"}'
 ```
 
-Or from the GCS: Hardware tab -> Mesh -> Gateways -> Pin.
+Or from the GCS: ground-station panel -> Mesh tab -> Gateways -> Pin.
 
 To release the pin: `mode: auto`.
 

@@ -1,10 +1,13 @@
 ---
 title: "Linting"
 description: "Run static analysis on a packed plugin before submission."
+lastUpdated: "2026-06-18"
 ---
 
-`ados plugin lint` runs the same static-analysis rule set the registry
-applies at submission time. Run it locally before you push a tag.
+`ados plugin lint` runs a static-analysis rule set over a packed
+archive. It is the same rule set the planned registry will apply at
+submission time, so running it locally before you push a tag catches
+findings early.
 
 ## Quickstart
 
@@ -72,8 +75,8 @@ keyed by rule id with severity and the source location.
 
 | Rule | Severity | What it flags |
 |------|----------|--------------|
-| ARC001-archive-size | error | Archive exceeds the 100 MB cap |
-| ARC002-entry-size | error | A single entry exceeds the per-entry cap |
+| ARC001-archive-size | error | Archive exceeds the 50 MB archive cap |
+| ARC002-entry-size | error | A single entry exceeds the 25 MB per-entry cap |
 | SIG001-unsigned | warn | Archive does not carry a SIGNATURE file |
 | VND001-vendor-binary | info | Manifest declares `contains_vendor_binary` |
 | PERM001-high-risk | info | Manifest declares a high-risk capability (`vehicle.command`, `vehicle.payload.actuate`, `filesystem.host`, `mavlink.command.send`) |
@@ -92,8 +95,8 @@ Each finding deducts points:
 | error | 10 |
 | critical | 25 |
 
-Floor at 0. The registry uses the same score; the auto-publish gate
-expects 90 or above plus zero `error` findings.
+Floor at 0. The planned registry will use the same score, with an
+auto-publish gate at 90 or above plus zero `error` findings.
 
 ## Network imports versus permissions
 

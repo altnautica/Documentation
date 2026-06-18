@@ -2,7 +2,7 @@
 title: "Vision Navigation Overview"
 description: "GPS-denied drone navigation with six modes: optical flow (with or without a rangefinder), monocular VIO via two engines, or a hybrid of both."
 icon: "compass"
-lastUpdated: "2026-05-16"
+lastUpdated: "2026-06-18"
 ---
 
 # Vision Navigation
@@ -37,37 +37,35 @@ See [Modes](/drone-agent/vision-nav-modes) for the full per-mode breakdown inclu
 
 ## How it works
 
-The agent reads the active camera at 30 frames per second, pairs each frame with the closest IMU sample, and runs the selected estimator. Optical-flow estimators emit `OPTICAL_FLOW_RAD` on MAVLink component 198 at 10 Hz. VIO estimators emit `VISION_POSITION_ESTIMATE` on MAVLink component 197 at 30 Hz. ArduPilot's EKF3 or PX4's EKF2 fuses the matching source set when configured.
+The agent reads the active camera at 30 frames per second, pairs each frame with the closest IMU sample, and runs the selected estimator. Optical-flow estimators emit `OPTICAL_FLOW_RAD` on MAVLink component 198 at the camera frame rate (around 30 Hz). VIO estimators emit `VISION_POSITION_ESTIMATE` on MAVLink component 197 at the same rate. ArduPilot's EKF3 or PX4's EKF2 fuses the matching source set when configured.
 
 <Note>
-Optical flow modes (`optical_flow`, `optical_flow_degraded`) are runtime-complete. VIO modes are in development: the Python plumbing, the GCS surfaces, the auto-detect probe, and the build pipeline for the vendor binaries ship today. The vendor-binary upstream integration lands in a follow-up release once it's validated end-to-end on target hardware. See [Visual Inertial Odometry](/drone-agent/vision-nav-vio).
+All six modes ship. The optical-flow modes (`optical_flow`, `optical_flow_degraded`) run on light hardware. The VIO modes (`vio_openvins`, `vio_vins_fusion`, `hybrid_of_plus_vio`) run the bundled OpenVINS or VINS-Fusion engines, need a one-time camera-IMU calibration, and want a board with an NPU or a strong multicore CPU. See [Visual Inertial Odometry](/drone-agent/vision-nav-vio).
 </Note>
 
-## Hardware auto-detect
+## Hardware and configuration
 
-The plugin probes the host at start-up and adapts to whatever
-hardware it finds. On a fresh drone the operator does not need to
-touch the config:
+The plugin reads frames from the agent's shared vision bus. The
+agent's vision host owns the camera; the plugin subscribes to the
+normalized frame stream rather than opening a device itself. The mode,
+the camera orientation, the rangefinder topology and driver, and the
+firmware target are per-drone config fields you set in Mission
+Control:
 
-- Cameras are enumerated from `/dev/video*` with a CSI hint when a
-  media controller is present. The wizard picks the right node for
-  the selected mode (downward UVC for OF, CSI for VIO).
-- Rangefinders are probed on every I2C bus for LIDAR-Lite (0x62) and
-  VL53L1X (0x29). The TF-Luna is probed on the standard UART nodes
-  at 115200 baud.
-- IMU sources prefer a direct-I2C BMI088 at ~400 Hz when the bus
-  answers a chip-id handshake, falling back to MAVLink RAW_IMU at
-  the FC's stream rate when no direct path is present.
-- The detected hardware combination drives a `suggestedMode` field
-  on the heartbeat. Mission Control's ModeCard renders a Suggested
-  badge on the mode the agent recommends.
-- If `optical_flow` is selected but no rangefinder answers the
-  probe, the plugin auto-flips to `optical_flow_degraded` and logs
-  the flip so the operator sees what happened.
+- **Camera.** The configured camera feeds the agent's vision host
+  (USB UVC or CSI via V4L2). The plugin consumes the resulting frames.
+- **Rangefinder.** The default and universal path is the FC relay:
+  the flight controller already publishes `DISTANCE_SENSOR` and the
+  plugin reads it (no extra wiring). A companion-direct Benewake
+  TF-Luna over UART is also supported. I2C sensors (LIDAR-Lite,
+  VL53L1X) wire to the FC and ride the relay path.
+- **IMU.** The plugin reads the FC's IMU over MAVLink `RAW_IMU`, the
+  universal path every FC publishes. A higher-rate direct-I2C path is
+  a planned addition.
 
-The plugin refuses to enable on ground-station-profile hosts. Vision
-Navigation is drone-only; a ground station does not have an FC
-MAVLink channel or a flight-side camera.
+Vision Navigation is a drone-side plugin: it needs an FC MAVLink
+channel and a flight-side camera, neither of which a ground station
+has.
 
 ## Supported firmware
 
@@ -75,7 +73,7 @@ MAVLink channel or a flight-side camera.
 |----------|--------------|-----|
 | ArduPilot 4.5+ (Copter, Plane, Rover) | Yes | Yes |
 | PX4 1.14+ | Yes | Yes |
-| iNav 7.0+ | Yes (via MAVLink rx) | Experimental |
+| iNav 7.0+ | Yes (via MAVLink rx) | No (disabled on iNav) |
 | Betaflight | No | No |
 
 The plugin auto-detects which firmware the FC is running and tunes its MAVLink output accordingly. ArduPilot and PX4 consume `OPTICAL_FLOW_RAD` natively. iNav consumes the same message when the FC's serial port is configured as MAVLink rx and `opflow_hardware` is set to `MAVLINK`. The plugin's iNav setup notes list every parameter; see [Optical flow](/drone-agent/vision-nav-optical-flow).
@@ -84,16 +82,16 @@ The plugin auto-detects which firmware the FC is running and tunes its MAVLink o
 
 Betaflight is a flight controller designed for racing and freestyle, not autonomous position-hold. It does not ship a position estimator. Optical flow needs a consumer inside the FC's EKF; without one, there is nothing to fuse the flow samples into. This is an upstream firmware decision, not a limitation we can work around from the companion. Operators who need GPS-denied flight on a small board should run iNav or ArduPilot Copter on the same hardware. Most STM32F405 / F722 / H743 boards run all three firmwares.
 
-### iNav: optical flow yes, VIO experimental
+### iNav: optical flow yes, VIO not supported
 
-iNav 7.0 and newer accepts MAVLink-injected optical flow via `opflow_hardware = MAVLINK`, drives position hold via `nav_use_optflow_for_poshold = ON`, and can fuse a rangefinder for terrain-following. The plugin emits the same `OPTICAL_FLOW_RAD` message it sends to ArduPilot and PX4. VIO support on iNav is **experimental**: iNav has external position-injection hooks but the EKF integration is not as polished as ArduPilot EKF3's `VISION_POSITION_ESTIMATE` path, so the plugin disables VIO modes on iNav at install time. Operators who want VIO on a small FC should cross-flash ArduPilot Copter.
+iNav 7.0 and newer accepts MAVLink-injected optical flow via `opflow_hardware = MAVLINK`, drives position hold via `nav_use_optflow_for_poshold = ON`, and can fuse a rangefinder for terrain-following. The plugin emits the same `OPTICAL_FLOW_RAD` message it sends to ArduPilot and PX4. The plugin disables VIO modes on iNav: config validation rejects `vio_openvins`, `vio_vins_fusion`, and `hybrid_of_plus_vio` on an iNav FC because iNav's external position-injection path is not as mature as ArduPilot EKF3's `VISION_POSITION_ESTIMATE` fusion. Operators who want VIO on a small FC should cross-flash ArduPilot Copter.
 
 ## Supported boards
 
 Optical flow runs on any board with enough CPU headroom for a 320x240 grayscale tracker at 30 Hz plus a USB or CSI camera. In practice:
 
-| Board | Optical Flow | VIO (roadmap) |
-|-------|--------------|---------------|
+| Board | Optical Flow | VIO |
+|-------|--------------|-----|
 | Radxa ROCK 5C Lite (RK3582) | Yes | Yes |
 | Radxa CM4 (RK3588S2) | Yes | Yes |
 | Rockchip RK3576 | Yes | Yes |
@@ -108,20 +106,19 @@ The plugin reads the active HAL board profile and refuses to enable on boards th
 ## How it sits in the stack
 
 ```
-flight controller (UART)
-        |
-    ados-mavlink  <-- (FC heartbeat, IMU, ATTITUDE, DISTANCE_SENSOR relay)
-        |
-   ados-supervisor
-        |
-   ados-plugin-host
-        |
-   ados-vision-nav (this plugin)
-   /             \
-USB/CSI camera   UART or I2C rangefinder
+flight controller (UART)            USB / CSI camera
+        |                                  |
+   ados-mavlink                       ados-vision (vision host)
+   (FC heartbeat, IMU,                     |
+    DISTANCE_SENSOR relay)            shared vision frame bus
+        \                                  /
+         \                                /
+          ados-supervisor + ados-plugin-host
+                        |
+                vision-nav (this plugin) --> TF-Luna over UART (optional)
 ```
 
-The plugin lives inside the agent's plugin sandbox, talks to the FC through the MAVLink router, and registers itself as MAVLink component 198 on the vehicle bus. Mission Control sees the live optical flow rate and quality through a per-drone Navigation tab on the drone detail panel.
+The plugin lives inside the agent's plugin sandbox, talks to the FC through the MAVLink router, reads frames from the shared vision bus, and registers MAVLink components 198 (optical flow) and 197 (VIO) on the vehicle bus. Mission Control sees the live estimator state, flow rate, and quality through a per-drone Navigation tab on the drone detail panel.
 
 ## Next steps
 

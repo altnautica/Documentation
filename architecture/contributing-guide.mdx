@@ -2,6 +2,7 @@
 title: "Contributing Guide"
 description: "How to set up the dev environment, add features, and submit pull requests."
 icon: "code-pull-request"
+lastUpdated: "2026-06-18"
 ---
 
 # Contributing Guide
@@ -34,7 +35,7 @@ ADOS Mission Control and ADOS Drone Agent are open-source under GPLv3. Contribut
     Opens at `http://localhost:4000`. Turbopack provides fast hot module replacement.
   </Step>
   <Step title="Launch demo mode">
-    Open the app in your browser. The welcome modal offers a "Try Demo" button that starts 5 simulated drones. No hardware needed.
+    Open the app in your browser. The welcome modal offers a "Try Demo" button that starts 7 simulated drones. No hardware needed.
   </Step>
 </Steps>
 
@@ -60,7 +61,7 @@ To test with a real ArduPilot simulator:
   </Step>
 </Steps>
 
-### Drone Agent
+The agent is a Rust and Python hybrid. The long-running services are Rust binaries in `crates/`; Python carries AI and vision, the plugin runtime, setup and OTA, HAL detection, and the residual web API. A full dev setup needs both a Rust toolchain and Python.
 
 <Steps>
   <Step title="Clone the repo">
@@ -69,14 +70,23 @@ To test with a real ArduPilot simulator:
     cd ADOSDroneAgent
     ```
   </Step>
-  <Step title="Create a virtual environment">
+  <Step title="Create a Python virtual environment">
     ```bash
     python3 -m venv venv
     source venv/bin/activate
     pip install -e ".[dev]"
     ```
 
-    Requires Python 3.11+.
+    Requires Python 3.11+. (`uv` works too if you prefer it.)
+  </Step>
+  <Step title="Build the Rust services">
+    ```bash
+    cd crates
+    cargo build
+    cargo test
+    ```
+
+    Requires a recent stable Rust toolchain. The Cargo workspace lives in `crates/`.
   </Step>
   <Step title="Run the CLI">
     ```bash
@@ -253,29 +263,29 @@ export const useMyNewStore = create<MyNewState>()(
   <Step title="Create the YAML profile">
     ```yaml
     # src/ados/hal/boards/my-board.yaml
-    vendor: "Board Manufacturer"
     name: "My Board Name"
+    vendor: "Board Manufacturer"
     soc: "RK3566"
-    ram_mb: 2048
-    tier: 3
-    uart:
-      - path: /dev/ttyS0
-        baud: 921600
-        purpose: mavlink
-    i2c:
-      - bus: 3
-        purpose: oled
-    gpio:
-      buttons: [5, 6, 13, 19]
-    usb:
-      ports: 4
+    arch: "aarch64"
+    model_patterns:
+      - "My Board Model String"
+    default_tier: 3
+    uart_paths:
+      - /dev/ttyS0
+    gpio_pins: [5, 6, 13, 19]
+    hw_video_codecs:
+      - h264_enc
+      - h264_dec
     video:
-      encode: "rkmpp"
-    hdmi:
-      available: true
-    usb_gadget:
-      available: false
+      csi_ports: 1
+      max_encode_resolution: "1920x1080"
+      encoder_api: rkmpp
+    buses:
+      i2c:
+        - id: i2c3
     ```
+
+    `model_patterns` are matched against `/proc/device-tree/model` and `/proc/cpuinfo` for auto-detection.
   </Step>
   <Step title="Test detection">
     On the target board, run:
@@ -289,6 +299,8 @@ export const useMyNewStore = create<MyNewState>()(
 </Steps>
 
 ## Adding an agent service (Drone Agent)
+
+New long-running or safety-critical services are written as Rust crates under `crates/` and run a binary from `/opt/ados/bin/`. An ancillary Python-backed service is still fine for ecosystem-bound work (AI, drivers, setup glue); the steps below show the Python case. Either way, the unit is registered in the supervisor catalog.
 
 <Steps>
   <Step title="Create the service module">
@@ -334,7 +346,7 @@ export const useMyNewStore = create<MyNewState>()(
     ```
   </Step>
   <Step title="Register in the supervisor">
-    Add the service to the `SERVICE_REGISTRY` in `src/ados/core/supervisor.py` with its profile gate and hardware dependencies.
+    Add the unit to the `SERVICE_REGISTRY` in `crates/ados-supervisor/src/registry.rs` with its category (core, hardware, on-demand), its profile gate, and any ground-station role gate. The supervisor drives the unit through `systemctl`; it does not spawn the process itself.
   </Step>
 </Steps>
 
@@ -344,6 +356,7 @@ export const useMyNewStore = create<MyNewState>()(
 
 - Run `tsc --noEmit` for Mission Control (zero errors required)
 - Run `python -m py_compile` on any modified Python files
+- Run `cargo fmt --check`, `cargo clippy`, and `cargo test` for any Rust crate changes
 - Check for em dashes in any user-facing strings (there should be none)
 - Test with demo mode or SITL for Mission Control changes
 - Bump the version in `src/ados/__init__.py` for agent changes
@@ -389,7 +402,9 @@ For large features, open a draft PR early with a description of what you plan to
 
 **Mission Control:** Follow the existing patterns. Zustand for state, `usePanelParams` for configure panels, selectors for subscriptions. Tailwind for styling. No CSS modules.
 
-**Drone Agent:** Use `structlog` for logging, `asyncio` for async code, Pydantic for config models. Type hints on all function signatures. `black` for formatting.
+**Drone Agent (Python):** Use `structlog` for logging, `asyncio` for async code, Pydantic for config models. Type hints on all function signatures. `black` for formatting.
+
+**Drone Agent (Rust):** Format with `cargo fmt`, lint with `cargo clippy`, and keep the IPC wire contracts defined in the `ados-protocol` crate as the single source of truth.
 
 ## Getting help
 

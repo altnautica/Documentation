@@ -1,6 +1,7 @@
 ---
 title: "Developers"
 description: "Build plugins and extensions for ADOS Mission Control and the ADOS Drone Agent."
+lastUpdated: "2026-06-18"
 ---
 
 A plugin lets you add code, hardware drivers, UI panels, and behaviors
@@ -40,13 +41,19 @@ and the operator must approve each declared permission at install time.
   </Card>
 </CardGroup>
 
-## Distribution at v0.1
+## Distribution today
 
-Plugin authors ship signed `.adosplug` archives. Operators install
-them by drag-drop in **Mission Control -> Settings -> Plugins**, or
-by `ados plugin install <file>.adosplug` on the agent. The hosted
-registry lands later; until then, GitHub Releases is the recommended
-publishing channel.
+Plugin authors ship signed `.adosplug` archives. Two install channels
+work today:
+
+- **Local file.** Drag-drop the archive in **Mission Control ->
+  Settings -> Plugins**, or run `ados plugin install <file>.adosplug`
+  on the agent.
+- **URL.** Install from a hosted archive (for example a GitHub
+  Releases asset) through the Mission Control install dialog.
+
+The hosted plugin registry is not live yet. Until it ships, GitHub
+Releases is the recommended publishing channel.
 
 See [distribution and local install](/developers/distribution-local-install).
 

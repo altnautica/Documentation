@@ -2,7 +2,7 @@
 title: "Calibration"
 description: "In-app calibration wizard for camera intrinsics, camera-IMU extrinsics, and time-sync. Walks frame capture, IMU motion, solve, and verify without a terminal."
 icon: "ruler"
-lastUpdated: "2026-05-16"
+lastUpdated: "2026-06-18"
 ---
 
 # Calibration
@@ -241,15 +241,11 @@ timeshift residual is red.
 
 ## Advanced: upload an existing `camchain.yaml`
 
-Operators with an existing Kalibr calibration can skip the wizard
-entirely. The plugin's `upload_calibration` event accepts a
-Kalibr-style `camchain.yaml` file directly. From a terminal:
-
-```bash
-curl -fsS -X POST http://drone.local:8000/api/agent/plugins/com.altnautica.vision-nav/events \
-  -H 'content-type: application/json' \
-  -d "$(jq -Rs '{type:"upload_calibration", camchain_yaml: .}' < camchain.yaml)"
-```
+Operators with an existing Kalibr calibration can skip the capture
+wizard. The Vision Nav tab's calibration drawer has an upload option
+that takes a Kalibr-style `camchain.yaml` directly: the agent
+validates the file, persists it, and applies the new timeshift to the
+live time aligner without running a capture.
 
 The loader accepts both Kalibr layouts:
 

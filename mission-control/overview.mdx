@@ -2,6 +2,7 @@
 title: "What is ADOS Mission Control?"
 description: "A browser-based ground control station for ArduPilot, PX4, Betaflight, and iNav drones."
 icon: "display"
+lastUpdated: "2026-06-18"
 ---
 
 ADOS Mission Control is an open-source ground control station (GCS) that runs in your browser. It connects to your flight controller over USB, Wi-Fi, or the cloud, and gives you everything you need to fly, plan missions, configure your FC, and manage a fleet.
@@ -24,7 +25,7 @@ Traditional GCS tools are desktop-only, platform-locked, and built for a single 
 ## Feature Highlights
 
 <CardGroup cols={2}>
-  <Card title="38 Configuration Panels" icon="sliders">
+  <Card title="60+ Configuration Panels" icon="sliders">
     Flight modes, failsafes, PID tuning, power monitoring, OSD editor, serial ports, sensors, gimbal, camera, LED, VTX, CAN bus, and more.
   </Card>
   <Card title="83 MAVLink Decoders" icon="message-code">
@@ -74,13 +75,13 @@ npm run desktop:build:linux
 
 ## Demo Mode
 
-Try Mission Control without any hardware. Demo mode simulates 5 drones with realistic telemetry, flight modes, and GPS tracks.
+Try Mission Control without any hardware. Demo mode simulates seven drones across ArduPilot, PX4, and iNav, with realistic telemetry, flight modes, and GPS tracks.
 
 ```bash
 npm run demo
 ```
 
-Open `http://localhost:4000` and you will see five simulated drones on the dashboard. All panels, calibration wizards, and mission planning tools work in demo mode.
+Open `http://localhost:4000` and you will see seven simulated drones on the dashboard. All panels, calibration wizards, and mission planning tools work in demo mode.
 
 <Tip>
 You can also activate demo mode in the browser by adding `?demo=true` to the URL.
@@ -92,7 +93,7 @@ You can also activate demo mode in the browser by adding `?demo=true` to the URL
 |-------|------------|
 | Framework | Next.js 16 (App Router) + React 19 |
 | Language | TypeScript (strict mode) |
-| State | 54+ Zustand stores with ring-buffered telemetry |
+| State | 60+ Zustand stores with ring-buffered telemetry |
 | Styling | Tailwind CSS v4 |
 | Maps | Leaflet (2D), CesiumJS (3D simulation) |
 | Video | WebRTC (WHEP + MQTT signaling) |

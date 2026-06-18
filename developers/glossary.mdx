@@ -1,6 +1,7 @@
 ---
 title: "Glossary"
 description: "The vocabulary the plugin system uses, in one page."
+lastUpdated: "2026-06-18"
 ---
 
 | Term | Meaning |
@@ -9,7 +10,7 @@ description: "The vocabulary the plugin system uses, in one page."
 | **Extension** | An Altnautica-published plugin shipped from the public `ADOSExtensions` repo. Same on-disk format as a third-party plugin. |
 | **Manifest** | The `manifest.yaml` at the root of the archive. Declares id, version, permissions, contributes, and asset hashes. |
 | **Half** | The portion of a plugin that runs on one side of the system. `agent` half runs on the drone; `gcs` half runs in Mission Control. |
-| **Slot** | A named mount point in the Mission Control UI. There are 12 slots (e.g. `fc.tab`, `sidebar.left`, `status.bar`). The plugin manifest declares which slots its panels target. |
+| **Slot** | A named mount point in the Mission Control UI. There are 13 slots (e.g. `fc.tab`, `video.overlay`, `notification.channel`, `command.tab`, `drone.detail.tab`). The plugin manifest declares which slots its panels target. |
 | **Capability** | A runtime grant derived from a manifest permission. Held by the plugin for the duration of a session. Required for every privileged call. |
 | **Capability token** | The signed string that represents a capability on the wire. HMAC-SHA256 with a host key. Short TTL. |
 | **Risk band** | One of `low`, `medium`, `high`, `critical`. Computed from the most-privileged permission the plugin requests. Surfaced in the install dialog. |
@@ -20,7 +21,7 @@ description: "The vocabulary the plugin system uses, in one page."
 | **Permission** | A request the plugin makes for one slice of authority. Declared in the manifest, granted by the operator at install. |
 | **Operator** | The human running ADOS. Approves permissions, grants and revokes them through the Settings -> Plugins UI. |
 | **Publisher** | The Ed25519 keypair the plugin is signed with. Pre-trusted publishers (Altnautica's keys) get a verified-publisher badge. |
-| **Trust list** | The agent's local file of accepted publisher key ids. Edited explicitly; rotation goes through `ados plugin keys`. |
+| **Trust list** | The agent's local file of accepted publisher key ids, stored as PEM files under `/etc/ados/plugin-keys/`. Edited explicitly; new publisher keypairs are created with `ados plugin keygen`. |
 | **Revocation list** | A list of plugin ids the host refuses to load. Distributed with the registry once it lands. |
 | **Two-stage install** | The install dialog flow: `parse` returns a manifest preview without committing, `install` commits only after operator consent on permissions. |
 | **`.adosplug`** | The file extension for a plugin archive. A zip with `manifest.yaml` at the root. |

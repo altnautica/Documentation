@@ -1,12 +1,13 @@
 ---
 title: "Performance and budgets"
-description: "Resource budgets, profiling, cgroup throttling, memory pressure, ados plugin profile."
+description: "Resource budgets, cgroup throttling, memory pressure, and how to profile."
+lastUpdated: "2026-06-18"
 ---
 
-A plugin runs on a small SBC alongside the rest of the agent.
-The supervisor budgets resources tightly. This page covers what
-the budgets are, how to spot when you blow them, and how to
-profile.
+A plugin runs on a small SBC alongside the rest of the agent. The
+supervisor budgets resources through systemd and the shared
+`ados-plugins.slice` cgroup. This page covers the budgets, how to spot
+when you blow them, and how to profile.
 
 ## Default budgets
 
@@ -14,63 +15,58 @@ When a plugin's manifest does not declare resources, it gets:
 
 | Resource | Default cap |
 |----------|-------------|
-| RAM | 64 MB |
-| CPU | 10% of one core |
-| PIDs | 4 |
-| Disk | 100 MB |
+| RAM | 96 MB |
+| CPU | 25% of one core |
+| PIDs | 12 |
 | Inbound topic outbox | 256 messages per topic |
 
-Declare higher caps in the manifest:
+Declare different caps in the manifest:
 
 ```yaml
 agent:
   resources:
-    max_ram_mb: 256
-    max_cpu_percent: 30
-    max_pids: 8
-    max_disk_mb: 500
+    max_ram_mb: 256       # 8 to 4096
+    max_cpu_percent: 30   # 1 to 100
+    max_pids: 8           # 1 to 256
 ```
 
-Honest declarations matter. The operator sees them in the install
-dialog with a yellow warning if any of them are above the
-defaults. Lying to skip the warning ends with the operator
-disabling your plugin when it crashes the drone.
+Honest declarations matter. The operator sees the requested budget in the
+install dialog. Asking for far more than you use is a bad signal; asking
+for too little ends with the kernel killing your process.
+
+The caps map straight to the per-plugin systemd unit: `max_ram_mb` to
+`MemoryMax`, `max_cpu_percent` to `CPUQuota`, `max_pids` to `TasksMax`.
 
 ## Spotting cgroup throttling
 
-`max_cpu_percent` is enforced by the cgroup `cpu.max` controller.
-A plugin that breaches it does not crash; it gets throttled. The
-symptom is "everything got slower for no reason."
+`max_cpu_percent` is enforced by the cgroup CPU controller. A plugin that
+breaches it does not crash; it gets throttled. The symptom is
+"everything got slower for no reason."
 
-Read the throttle stats:
+Read the throttle stats from the unit's cgroup (the unit name is
+`ados-plugin-<id>` with the dots in your plugin id replaced by hyphens):
 
 ```sh
-cat /sys/fs/cgroup/ados-plugins.slice/ados-plugin@<id>.service/cpu.stat
+cat /sys/fs/cgroup/ados-plugins.slice/ados-plugin-com-example-battery.service/cpu.stat
 ```
 
-The interesting field is `nr_throttled`. If it climbs every
-second, your plugin is over budget. Either optimize the code or
-declare a higher `max_cpu_percent`.
-
-`ados plugin profile <id>` (see below) surfaces this in a
-human-readable table.
+The interesting field is `nr_throttled`. If it climbs every second, your
+plugin is over budget. Optimize the code or declare a higher
+`max_cpu_percent`.
 
 ## Memory pressure
 
-`max_ram_mb` is enforced by `memory.max`. A breach OOM-kills the
-process. The supervisor marks it `crashed` and the circuit
-breaker counts toward the three-strikes-in-five-minutes rule.
-
-Watch for the warning band:
+`max_ram_mb` is enforced by `MemoryMax`. A breach OOM-kills the process.
+The unit restarts on failure, and repeated kills that exceed the start
+limit move the plugin to `failed`.
 
 ```sh
-cat /sys/fs/cgroup/ados-plugins.slice/ados-plugin@<id>.service/memory.current
-cat /sys/fs/cgroup/ados-plugins.slice/ados-plugin@<id>.service/memory.events
+cat /sys/fs/cgroup/ados-plugins.slice/ados-plugin-com-example-battery.service/memory.current
+cat /sys/fs/cgroup/ados-plugins.slice/ados-plugin-com-example-battery.service/memory.events
 ```
 
-`memory.events` shows `low`, `high`, `max`, `oom`, `oom_kill`
-counters. Any non-zero `high` or `max` means the kernel started
-applying pressure (reclaiming page cache, swapping if allowed).
+`memory.events` shows `low`, `high`, `max`, `oom`, `oom_kill` counters.
+Any non-zero `high` or `max` means the kernel started applying pressure.
 
 To stay under the cap:
 
@@ -79,35 +75,25 @@ To stay under the cap:
 - Stream files; do not load whole logs into RAM.
 - Use `array.array` or `numpy` over a Python list of floats.
 
-## The `ados plugin profile` subcommand
+## Inspecting a running plugin
 
-`ados plugin profile <id>` runs for 60 seconds and prints a
-summary:
+`ados plugin info <id>` shows the plugin's recorded state, granted
+permissions, and recent events. Pair it with the cgroup stat files above
+and the durable log query for a full picture:
 
-```
-plugin           com.example.battery
-window           60s
-cpu_user_pct     7.8 (cap: 10.0)
-cpu_throttle_ms  120 (8 throttle events)
-ram_avg_mb       38 (cap: 64)
-ram_peak_mb      52
-ram_events       0 high, 0 max, 0 oom
-disk_used_mb     12 (cap: 100)
-ipc_in_msgs      4400  (73/s)
-ipc_out_msgs     280   (4.7/s)
-ipc_inflight_p99 18 ms
-back_pressure    0 events
-restarts         0
+```sh
+ados plugin info com.example.battery
+ados plugin logs com.example.battery
+ados logs query --unit ados-plugin-com-example-battery
 ```
 
-Use the cap columns to see how close you are to your declared
-budgets. A plugin running consistently above 80% of any cap is
-one bad input away from a crash.
+A plugin running consistently near any cap is one bad input away from a
+throttle stall or an OOM kill.
 
 ## Profiling Python plugins
 
-The SDK does not bundle a profiler; use `cProfile` or
-`pyinstrument`. The simplest path:
+The SDK does not bundle a profiler; use `cProfile` or `pyinstrument`
+inside your own start path:
 
 ```python
 import cProfile, pstats
@@ -122,38 +108,29 @@ def on_start_profiled(self, ctx):
         pstats.Stats(pr).sort_stats("cumulative").print_stats(30)
 ```
 
-Or push an `async` handler through `pyinstrument`:
-
-```sh
-uv pip install pyinstrument
-python -m pyinstrument -m ados.plugin_runner com.example.battery
-```
-
-Output goes to journal under the unit name. Read it with
-`journalctl -u ados-plugin@com.example.battery.service`.
+Plugin stdout and stderr append to `/var/log/ados/plugins/<id>.log`, so
+profiler output lands there (or read it with
+`journalctl -u ados-plugin-<id>.service`).
 
 ## Profiling TypeScript plugins
 
-Open the GCS in developer mode (`?dev=1`), pick the plugin's
-iframe in the browser devtools (Sources tab), and use the
-Performance recorder. The iframe is a real browsing context with
-the standard devtools surface.
+Open the GCS in developer mode, pick the plugin's iframe in browser
+devtools (Sources tab), and use the Performance recorder. The iframe is a
+real browsing context with the standard devtools surface.
 
 Common GCS hot paths:
 
-- React re-renders triggered by every telemetry event. Coalesce
-  with `requestAnimationFrame` and a local ref.
-- Heavy SVG redraws. Switch to canvas if the path count goes
-  above ~200.
-- Synchronous JSON parse in the message handler. Move it to a
-  Web Worker or off the main thread.
+- React re-renders triggered by every telemetry event. Coalesce with
+  `requestAnimationFrame` and a local ref.
+- Heavy SVG redraws. Switch to canvas past a few hundred paths.
+- Synchronous JSON parse in the message handler. Move it off the main
+  thread.
 
 ## Event-loop discipline
 
-The biggest cause of agent-plugin crashes is a blocked event
-loop. Symptoms: missed watchdog ping, supervisor `SIGKILL`, the
-`crashed` lifecycle event, and journal showing
-`Watchdog timeout (limit 30s)`.
+The biggest cause of agent-plugin stalls is a blocked event loop. A
+plugin that blocks the loop stops responding and the supervisor restarts
+it.
 
 Don't:
 
@@ -167,49 +144,24 @@ Do:
 - `await asyncio.to_thread(heavy_work)`.
 - `aiofiles` or chunked reads for slow I/O.
 
-## Disk discipline
+## Disk and network discipline
 
-Disk I/O is the second-most-common cause of throttling. A plugin
-writing 1 MB samples per second to its data dir on an SD card is
-already at the SBC's sustained-write ceiling for the cheap end of
-the SD card market.
+Disk I/O is a common cause of throttling. A plugin writing a megabyte of
+samples per second to an SD card is already at the sustained-write
+ceiling for the cheap end of the market. Batch writes (one `fsync` per
+second is plenty), compress logs, and rotate them.
 
-To stay under the cap:
-
-- Batch writes. One `fsync` per second is plenty.
-- Compress logs (`zstd` is fast and saves a lot on JSONL).
-- Rotate. The SDK helper `ctx.logging.rotating_file_handler`
-  does what it says.
-- Delete on uninstall. The host wipes your data dir, but in-life
-  cleanup is your job.
-
-## Network discipline
-
-Plugins with `network.outbound` are under no host-imposed
-bandwidth cap, but the drone's link is shared with telemetry and
-video. A plugin pulling weights from the cloud during flight is
-a UX bug. Pull during ground time and cache.
+Plugins with `network.outbound` share the drone's link with telemetry and
+video. Pulling large payloads in flight is a UX bug; pull during ground
+time and cache.
 
 ## Thermal behavior
 
-On the Rock 5C Lite at 30C ambient, sustained 80% CPU on one
-core lifts the SoC about 18C. The agent throttles its own
-non-essential tasks at 75C. A plugin pushing the SoC into
-thermal throttle is observable as cgroup throttle events on
-**every** plugin, not just yours, because the kernel is reducing
-the budget pool.
-
-Watch the system telemetry topic:
-
-```python
-async with ctx.events.subscribe("telemetry.system") as stream:
-    async for sample in stream:
-        if sample.temperature_c > 70:
-            self.reduce_workload()
-```
-
-The well-behaved plugin reduces its workload before the kernel
-forces the issue.
+Sustained high CPU on a small SoC raises its temperature and the kernel
+eventually throttles the whole package, which shows up as cgroup throttle
+events on every plugin, not just yours. The agent reduces its own
+non-essential work as the SoC heats up. A well-behaved plugin watches the
+system telemetry and backs off before the kernel forces the issue.
 
 ## See also
 

@@ -2,6 +2,7 @@
 title: "Connecting to Your Drone"
 description: "Connect to a flight controller over USB, WebSocket, or the cloud."
 icon: "plug"
+lastUpdated: "2026-06-18"
 ---
 
 Mission Control supports three connection methods. Choose the one that fits your setup.
@@ -89,7 +90,7 @@ Mission Control supports three connection methods. Choose the one that fits your
     - **WebRTC:** Peer-to-peer video with MQTT-relayed SDP signaling.
 
     <Note>
-    Cloud relay is entirely optional. Most users connect over USB or local WebSocket. The cloud path is useful for remote monitoring, fleet management, or when the drone is on a cellular network.
+    Cloud relay is the secondary path, not the default. When the agent is on the same network as Mission Control, pair it locally by hostname or IP using the Add-a-Node card. That talks to the agent directly over the LAN, stores nothing in the cloud, and needs no Convex account. Reach for cloud relay only when the drone is on a different network or a cellular link.
     </Note>
   </Tab>
 </Tabs>
@@ -117,7 +118,7 @@ The GCS automatically loads the correct protocol adapter, parameter set, and UI 
 
 You can connect to multiple drones simultaneously. Each drone gets its own entry in the fleet sidebar. Select a drone to view its telemetry, send commands, or configure its parameters.
 
-In demo mode, five simulated drones are connected automatically. In real use, each additional connection requires its own serial port or WebSocket URL.
+In demo mode, seven simulated drones appear in the fleet automatically. In real use, each additional connection requires its own serial port or WebSocket URL.
 
 ## Bluetooth
 
@@ -138,7 +139,7 @@ Once connected, the top bar shows connection health:
     Check that your USB cable supports data (not charge-only). Try a different USB port. On Linux, your user may need to be in the `dialout` group: `sudo usermod -aG dialout $USER` and log out/in.
   </Accordion>
   <Accordion title="Connected but no telemetry">
-    Verify the baud rate matches your FC configuration. For ArduPilot, the default is 115200 on the USB port. Check that no other application (like Mission Planner or QGroundControl) is holding the serial port.
+    Verify the baud rate matches your FC configuration. For ArduPilot, the default is 115200 on the USB port. Check that no other ground station application is holding the serial port (only one app can own a serial port at a time).
   </Accordion>
   <Accordion title="WebSocket connection refused">
     Confirm the target service is running and the URL is correct. For SITL, make sure the bridge is started (see [SITL Testing](/mission-control/sitl-testing)). Firewalls may block WebSocket connections on non-standard ports.

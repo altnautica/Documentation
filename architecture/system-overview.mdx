@@ -2,6 +2,7 @@
 title: "System Overview"
 description: "The three-tier ADOS architecture and how drone, ground station, and cloud fit together."
 icon: "sitemap"
+lastUpdated: "2026-06-18"
 ---
 
 # System Overview
@@ -107,6 +108,9 @@ Each connection between components uses a specific protocol:
 | WFB-ng air to ground | 5 GHz monitor mode (IEEE 802.11) | FEC-encoded packets | 4-8 Mbps |
 | Ground to browser (video) | WebRTC WHEP | H.264 RTP | 4-8 Mbps |
 | Ground to browser (telemetry) | WebSocket | JSON MAVLink | 10-30 Kbps |
+| GCS to agent (control) | HTTP REST on `:8080` (Rust front `ados-control`) | JSON | On demand |
+| GCS to agent (MAVLink) | WebSocket on `:8765` (HMAC ticket) | Binary MAVLink | Streaming |
+| Agent log/telemetry query | HTTP on `:8090` + unix socket (`ados-logd`) | JSON | On demand |
 | Agent to cloud (status) | HTTPS POST to Convex | JSON | Every 5 s |
 | Agent to cloud (telemetry) | MQTT (TLS) | JSON | 2 Hz |
 | Agent to cloud (video) | WebRTC P2P via MQTT signaling | H.264 RTP | 4-8 Mbps |
@@ -117,10 +121,12 @@ The entire ADOS stack lives in two public repositories:
 
 | Repository | Language | Purpose |
 |-----------|----------|---------|
-| [altnautica/ADOSMissionControl](https://github.com/altnautica/ADOSMissionControl) | TypeScript (Next.js 16, React 19) | Ground control station, web app |
-| [altnautica/ADOSDroneAgent](https://github.com/altnautica/ADOSDroneAgent) | Python 3.11+ | Drone agent and ground agent |
+| [altnautica/ADOSMissionControl](https://github.com/altnautica/ADOSMissionControl) | TypeScript (Next.js 16, React 19, Zustand 5) | Ground control station, web app |
+| [altnautica/ADOSDroneAgent](https://github.com/altnautica/ADOSDroneAgent) | Rust + Python hybrid | Drone agent and ground agent |
 
 Both are GPLv3. The agent runs on the drone and the ground station (same code, different profile). Mission Control runs in a browser and talks to both.
+
+The agent is Rust-first. The long-running and safety-critical services (MAVLink router, cloud relay, video pipeline, radio, supervisor, logging, the HTTP front) are native Rust binaries; Python stays for AI and vision, the plugin runtime, setup and OTA, HAL detection, and some ground-station hardware glue. See [Agent Services](/architecture/agent-services) for the full breakdown.
 
 ## Key architectural decisions
 

@@ -1,140 +1,81 @@
 ---
 title: "Install from a URL"
-description: "Install a signed plugin directly from an HTTPS download link."
+description: "Hand a paired GCS an HTTPS link to a signed plugin and let the agent download, verify, and install it."
+lastUpdated: "2026-06-18"
 ---
 
 URL install is the second distribution mechanism. Local file install
-remains the baseline; URL install adds a one-line install command for
-plugins hosted on a release page or an internal HTTPS server.
+remains the baseline. URL install lets a paired Mission Control hand the
+agent an HTTPS link to a published `.adosplug`; the agent downloads it,
+verifies the signature, and runs the same install flow as a local file.
+
+## How it works
+
+URL install is a GCS-driven flow, not a standalone agent command. The
+GCS posts the URL to the agent's `POST /api/plugins/install_from_url`
+endpoint. The agent downloads the archive directly (no intermediate
+storage hop), then hands the bytes to the same installer that local file
+install uses: archive parse, signature verify, manifest validation,
+board-compatibility check, and permission gating all run unchanged. Only
+the transport differs.
+
+There is no `ados plugin install <url>` command. The agent CLI installs
+from a local path; the URL path is reached through the GCS.
 
 ## When to use it
 
 Local file install is right when you have the `.adosplug` on disk and
 want a deterministic, sneakernet-friendly path. URL install is right
-when:
+when you want the operator to paste a published release link into the
+GCS instead of downloading the file first.
 
-- You want to publish a copy-paste install command on a release page
-  or partner support portal.
-- You run an internal HTTPS server for fleet rollout and want every
-  SBC to pull from the same canonical URL.
-- You want short-lived caching so re-running the same command within
-  a window does not re-download the archive.
+## GCS flow
 
-## CLI
-
-```sh
-ados plugin install https://releases.example.com/com.example.foo-1.0.0.signed.adosplug
-```
-
-The agent fetches the URL, verifies the signature against the trusted
-key list, runs the same install flow as a local file, and prints the
-permission summary for grant approval.
-
-To pin a specific signer:
-
-```sh
-ados plugin install \
-  --signer-key-id example-2026-A \
-  https://releases.example.com/com.example.foo-1.0.0.signed.adosplug
-```
-
-The install fails fast if the signer id in `SIGNATURES` does not
-match.
+In **Mission Control -> Settings -> Plugins -> Install plugin**, choose
+**Install from URL**, paste the link, and submit. The GCS forwards it to
+the agent over the host bridge. Once the agent has downloaded and parsed
+the archive, the same permission dialog as local file install appears:
+name, version, signer, risk band, and requested permissions for approval.
 
 ## Rules the agent enforces
 
 | Rule | Detail |
 |------|--------|
-| HTTPS only | `http://` is rejected with exit code `5`. |
-| Content type | The response must declare `application/octet-stream` or `application/zip`. HTML responses (`text/html`) are rejected. |
-| Redirect chain | Up to 5 hops. Every hop must be HTTPS. A single plain-HTTP hop in the chain aborts the install. |
-| User-Agent | The agent sends `User-Agent: ados-plugin/<agent-version>` so server logs can identify the install client. |
-| Size cap | 100 MB. Larger archives are rejected at the streaming layer before disk write. |
-| TLS verification | System trust store. Self-signed certificates need `--ca-bundle` (see below). |
+| HTTPS only | The URL scheme must be `https`. Plain `http://` is rejected. |
+| Host allowlist | The default set is GitHub release assets (`github.com`, `objects.githubusercontent.com`), S3 (`amazonaws.com`), and `localhost` for dev rigs. The match is on the labelled host boundary, so `evil-github.com` does not match `github.com`. |
+| Download size | The streamed body is capped at 100 MB and aborts mid-stream once it exceeds the cap. The archive itself must also fit the 50 MB plugin-archive limit at parse time. |
+| Optional hash pin | When the caller supplies an expected SHA-256, the agent compares it against the streamed bytes and aborts on mismatch. |
+| Timeouts | 60 seconds to open the connection, 5 minutes total. |
 
-## Cache layout
+A URL whose host is not on the allowlist is rejected before any bytes
+are downloaded.
 
-Downloaded archives land under `/var/cache/ados/plugins/` keyed by a
-hash of the URL:
+## Self-hosted release hosts
 
-```
-/var/cache/ados/plugins/
-  └── <sha256-of-url>/
-      ├── archive.adosplug
-      ├── source-url.txt
-      ├── fetched-at.iso
-      └── content-length.txt
-```
+The host allowlist ships with the GitHub and S3 defaults so a plugin
+published to a GitHub release works out of the box. Hosting archives on
+your own server is a reserved extension point: the allowlist is a
+configurable constant, and pointing the agent at an internal release
+host means extending that allowlist in the agent configuration. The v1
+defaults do not include arbitrary internal hosts.
 
-A re-install of the same URL within 24 hours hits the cache and skips
-the network round trip. To force a refresh:
+## Integrity is identical to local install
 
-```sh
-ados plugin install --no-cache https://releases.example.com/foo.signed.adosplug
-```
-
-The cache is bounded at 1 GB total. The eviction policy is
-least-recently-used.
-
-## Self-signed and private mirrors
-
-Closed deployments often host their archives on an internal CA. Pass
-the CA bundle in:
-
-```sh
-ados plugin install \
-  --ca-bundle /etc/ados/internal-ca.pem \
-  https://releases.internal.example.com/foo.signed.adosplug
-```
-
-Or set `network.ca_bundle` in `/etc/ados/agent.conf` to apply the
-bundle to every plugin install.
-
-## Authentication
-
-If the URL requires a bearer token:
-
-```sh
-ADOS_PLUGIN_AUTH="Bearer $(cat /etc/ados/secrets/registry-token)" \
-  ados plugin install https://releases.internal.example.com/foo.signed.adosplug
-```
-
-The agent sends the contents of `ADOS_PLUGIN_AUTH` as the
-`Authorization` header. The token is never written to the cache or
-logs.
-
-## GCS button
-
-Mission Control has an "Install from URL" entry under Settings,
-Plugins, Install plugin. Paste the URL, the GCS forwards it to the
-agent over the host bridge, and the agent runs the same fetch and
-verify flow. The permission dialog appears once the manifest has
-been parsed.
-
-## Failure modes
-
-| Exit code | Meaning |
-|-----------|---------|
-| `5` | URL was not HTTPS. |
-| `6` | Redirect chain exceeded 5 hops or included a plain-HTTP hop. |
-| `7` | Content type was not an archive. |
-| `8` | TLS verification failed. |
-| `10` | Signer key unknown to the agent's trust list. |
-| `12` | Manifest invalid or asset hash mismatch. |
-| `14` | Size cap exceeded. |
-
-Each failure prints a single human-readable line plus the structured
-log entry under `journalctl -u ados-supervisor`.
+Once the bytes are on disk, URL install and local file install are the
+same flow. The signature is checked against the agent's trusted key
+list, the manifest is validated, board compatibility is enforced, and
+permissions are gated. A signer the agent does not trust fails the
+install no matter how the archive arrived. The transport adds the host
+allowlist, the size cap, and the optional hash pin on top.
 
 ## What this is not
 
 URL install is not the registry. There is no search, no version
-listing, no install count, no review queue. It is exactly local file
-install with the file fetched over HTTPS first. The signature trust
-chain is the same; only the transport differs.
+listing, no install count, and no review queue. It is local file install
+with the file fetched over HTTPS first, restricted to allowlisted hosts.
 
 ## See also
 
 - [Local file install](/developers/distribution-local-install)
-- [Hosted registry](/developers/distribution-registry)
+- [Hosted registry (planned)](/developers/distribution-registry)
 - [Signing keys](/developers/signing-keys)

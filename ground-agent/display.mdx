@@ -2,7 +2,7 @@
 title: "Display"
 description: "A 480 by 320 touch panel on the ground station. Native dashboard, five-screen status carousel, mesh-pairing overlays. Auto-provisioning across Cubie A7Z, Rock 5C Lite, and Pi 4B."
 icon: "tv"
-lastUpdated: "2026-05-09"
+lastUpdated: "2026-06-18"
 ---
 
 # Display
@@ -29,7 +29,7 @@ The installer takes care of the panel end to end. No `dtoverlay=` editing. No ke
     The overlay source compiles to a device-tree binary. Modules load on every boot through a drop-in. Resolution, rotation, and touch state land in `/etc/ados/display.conf` for the renderer to read at startup.
   </Step>
   <Step title="Bind">
-    First boot brings up the panel. The renderer probes the framebuffer, the touch bridge attaches to the input device, and the GCS Hardware tab populates with live state.
+    First boot brings up the panel. The renderer probes the framebuffer, the touch bridge attaches to the input device, and the ground-station panel in Mission Control populates with live state.
   </Step>
 </Steps>
 
@@ -37,7 +37,7 @@ See [Installation](/ground-agent/installation) for the install command and [Hard
 
 ## Native dashboard
 
-The dashboard is purpose-built for the LCD. Bigger fonts, four stat tiles, each one a tap target.
+The dashboard is purpose-built for the LCD. Bigger fonts, four stat tiles, each one a tap target. The render engine and every page are drawn by the native Rust display binary (`ados-display`, the `ados-oled` unit), so there is no Python imaging stack in the render path.
 
 <Frame caption="Tap a tile to drill into that subsystem. The four tiles always render together so the at-a-glance scan never misses anything to a carousel rotation.">
   <img src="/images/ground-agent/display/dashboard/dashboard.png" alt="Dashboard with radio link, drone, mesh, uplink and cloud tiles" />
@@ -179,11 +179,11 @@ Display profiles live in each board's HAL YAML. Adding a new pair is a YAML chan
 
 ## Mission Control mirror
 
-The Hardware tab in Mission Control mirrors the on-device display state. Type, controller, resolution, rotation, last-touch age, current page, calibration state. Calibrate from the desk before the operator walks out the door.
+The ground-station panel in Mission Control mirrors the on-device display state. Type, controller, resolution, rotation, last-touch age, current page, calibration state. Calibrate from the desk before the operator walks out the door.
 
 <CardGroup cols={2}>
   <Card title="Live mirror">
-    The local-display card appears the moment the panel binds. If the panel goes dark, the card flips to degraded state without taking down the rest of the Hardware tab.
+    The local-display card appears the moment the panel binds. If the panel goes dark, the card flips to degraded state without taking down the rest of the panel.
   </Card>
   <Card title="Calibrate from the desk">
     The five-point calibration wizard runs from Mission Control as well as from a long-press on the panel itself. Calibration data persists across reboots.
@@ -194,7 +194,7 @@ See [Hardware Tab](/ground-agent/hardware-tab) for the full Mission Control surf
 
 ## Graceful degradation
 
-If the LCD is absent, the agent does not complain. The OLED still cycles, the setup webapp still serves status, and the GCS Hardware tab still surfaces every config knob. Nothing in the agent's runtime requires the panel to exist.
+If the LCD is absent, the agent does not complain. The OLED still cycles, the setup webapp still serves status, and the ground-station panel in Mission Control still surfaces every config knob. Nothing in the agent's runtime requires the panel to exist.
 
 ## What's next
 

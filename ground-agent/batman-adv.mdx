@@ -2,6 +2,7 @@
 title: "Local Mesh (batman-adv)"
 description: "What batman-adv does for distributed receive, the carrier choice between 802.11s and IBSS, and the second-dongle hardware story."
 icon: "network-wired"
+lastUpdated: "2026-06-18"
 ---
 
 # Local Mesh (batman-adv)
@@ -29,9 +30,9 @@ batman-adv runs on **a second RTL8812EU adapter**, separate from the primary RTL
 | Adapter | Role | Default channel |
 |---|---|---|
 | Primary RTL8812EU | WFB-ng monitor mode for the drone link | 5 GHz, channel 149 |
-| Mesh carrier RTL8812EU | batman-adv mesh between Ground Agents | 5 GHz, channel 36 |
+| Mesh carrier RTL8812EU | batman-adv mesh between Ground Agents | 2.4 GHz, channel 1 |
 
-The two adapters sit on separated 5 GHz channels so they do not interfere. If you change either channel, plan around it.
+The two adapters sit on separate bands (5 GHz for the drone link, 2.4 GHz for the mesh) so they do not interfere. If you change either channel, plan around it.
 
 Both adapters use the same RTL8812EU chipset. One driver, one antenna ecosystem, one inventory. See the supported-hardware page for the current adapter list.
 
@@ -85,7 +86,7 @@ Any node on the mesh can carry an internet uplink (4G, Ethernet, WiFi client). b
 - `ground_station.cloud_uplink: force_on`
 - OR `cloud_uplink: auto` and `/run/ados/uplink-active` exists (uplink_router has confirmed the node has a working uplink)
 
-The receiver runs `gw client` and picks the highest-TQ gateway. When the active gateway dies, batman-adv evicts it within a few seconds and the next-best gateway takes over. The GCS Hardware tab Mesh sub-view shows the gateway list, their bandwidth class, their TQ, and which one is selected.
+The receiver runs `gw client` and picks the highest-TQ gateway. When the active gateway dies, batman-adv evicts it within a few seconds and the next-best gateway takes over. The Mesh tab in the ground-station panel shows the gateway list, their bandwidth class, their TQ, and which one is selected.
 
 You can pin a specific gateway:
 

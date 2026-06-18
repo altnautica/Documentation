@@ -1,19 +1,24 @@
 ---
-title: "Submitting to the registry"
-description: "Pack, sign, register your publisher key, and submit a plugin."
+title: "Submitting to the registry (planned)"
+description: "Planned submission flow: pack, sign, register your publisher key, and submit a plugin."
+lastUpdated: "2026-06-18"
 ---
 
-The registry is gated by signature, not gated by review for every
-submission. Low-risk, OSS-licensed, signed-by-known-publisher
-plugins auto-publish. High-permission or vendor-binary plugins queue
-for human review. Either way you upload the same archive.
+<Warning>
+The hosted registry is not built yet, so there is no submission API or
+publisher account to register against today. To ship a plugin now, use
+[local file install](/developers/distribution-local-install) or
+[URL install](/developers/distribution-url-install): both take a signed
+`.adosplug` and need no registry account. The flow below is the planned
+submission contract, documented so authors can structure a plugin for it
+in advance.
+</Warning>
 
-<Note>
-The hosted registry is on the roadmap and is not yet live. The
-submission contract on this page is the shape we will ship; the
-local-file-install and URL-install paths are the two channels
-available today, and they do not require a registry account.
-</Note>
+In the planned design, the registry is gated by signature, not gated by
+review for every submission. Low-risk, OSS-licensed,
+signed-by-known-publisher plugins auto-publish. High-permission or
+vendor-binary plugins queue for human review. Either way you upload the
+same archive.
 
 ## Prerequisites
 
@@ -45,8 +50,11 @@ ADOS_SIGNING_KEY_ID=example-2026-A \
 ```
 
 Output: `dist/com.example.foo-1.0.0.signed.adosplug`. The signature
-covers the per-asset SHA-256 list and the root hash. The signer key
-id is stamped into the in-archive `SIGNATURES` file.
+covers the canonical payload hash: a SHA-256 over the sorted list of
+each archive entry's path and SHA-256, so every file is bound, not just
+the manifest. The signer key id and the base64 signature are written
+into an in-archive `SIGNATURE` file (two lines: signer id, then
+signature).
 
 ## Step 3: Register your publisher key
 
@@ -139,8 +147,8 @@ matter at submission time:
 | `agent.permissions` | Drives the risk band. Undeclared `subprocess` calls or network access in the source fail the analyzer. |
 | `gcs.permissions` | Same as above for the GCS half. |
 | `agent.resources` | cgroup limits applied at runtime. |
-| `assets[].sha256` | Verified during signature check. Mismatch rejects the submission. |
-| `signing.signer_key_id` | Must match a registered publisher key on your account. |
+| per-asset hashes | The canonical payload hash binds every entry. A modified file breaks the signature check. |
+| `SIGNATURE` signer id | The signer id in the archive's `SIGNATURE` file must match a registered publisher key on your account. |
 
 ## Categories
 

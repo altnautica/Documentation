@@ -2,7 +2,7 @@
 title: "Configure Optical Flow"
 description: "Picking the camera and rangefinder, setting ArduPilot and PX4 EKF parameters, switching the active EKF source set, and the pre-arm checks for GPS-denied flight."
 icon: "compass"
-lastUpdated: "2026-05-16"
+lastUpdated: "2026-06-18"
 ---
 
 # Configure Optical Flow
@@ -15,28 +15,28 @@ Open the drone detail panel, click **Plugins**, click the plugin row to open its
 
 ### Camera
 
-The Camera section lets you pick the source:
+The Camera section sets which device the agent's vision host captures (the plugin reads the resulting frames from the shared vision bus):
 
-| Mode | Field | Notes |
-|------|-------|-------|
-| USB UVC | `device_path` | A path like `/dev/video0`. The dropdown lists every UVC device the agent enumerated at boot. |
-| CSI | `csi_index` | An index (0 or 1) corresponding to the CSI port. Auto-detection picks the first attached CSI camera. |
-| Auto | (none) | The plugin picks CSI first, then UVC, in that order. |
+| Field | Value | Notes |
+|-------|-------|-------|
+| `device_path` | e.g. `/dev/video0` | The camera device the agent captures. |
+| `kind` | `uvc` or `csi` | Selects the capture path. |
+| `orientation` | `downward`, `forward`, `side`, `auto` | Mount direction. Optical flow needs `downward`. |
 
-The drawer shows a tiny live preview once the camera is selected. Frame rate and resolution under the preview should show 30 fps at 320x240 or higher. If the preview is black, check the camera connection and the permission grant on `hardware.usb.uvc` or `hardware.camera.csi`.
+The drawer shows a tiny live preview once the camera is selected. Frame rate and resolution under the preview should show 30 fps at 320x240 or higher. If the preview is black, check the camera connection and that the agent's vision host has the camera.
 
 ### Rangefinder
 
-The Rangefinder section lets you pick a driver:
+The Rangefinder section lets you pick a topology and driver:
 
-| Driver | Topology | Bus / source |
-|--------|----------|--------------|
-| `tf-luna` | Companion-owned | UART. Pick the UART number from the dropdown. |
-| `lidar-lite-v3` | Companion-owned | I2C. Address defaults to `0x62`. |
-| `vl53l1x` | Companion-owned | I2C. Address defaults to `0x29`. |
-| `mavlink-relay` | FC-relayed | The FC reads the rangefinder and forwards `DISTANCE_SENSOR`. Pick the orientation the FC reports as "down". |
+| Driver | Topology | Notes |
+|--------|----------|-------|
+| `fc_relay` | `fc` | Default and universal. The FC reads the rangefinder and forwards `DISTANCE_SENSOR`; pick the orientation the FC reports as "down". Works for any FC-wired sensor. |
+| `tfluna_uart` | `companion` | Benewake TF-Luna over UART. Pick the serial device path. The implemented companion-direct driver. |
+| `garmin_lidarlite_i2c` | `companion` | Not available yet (returns no reading until the SDK exposes an I2C facade). Wire the sensor to the FC and use `fc_relay`. |
+| `vl53l1x_i2c` | `companion` | Not available yet (same reason). Wire the sensor to the FC and use `fc_relay`. |
 
-The drawer shows the current rangefinder reading once the driver connects. A healthy reading is non-zero, updates at the sensor's native rate, and matches your visual estimate of ground distance. If the reading is stuck at zero or saturates at the sensor's maximum, double-check wiring and the bus address.
+The drawer shows the current rangefinder reading once the driver connects. A healthy reading is non-zero, updates at the sensor's native rate, and matches your visual estimate of ground distance. If the reading is stuck at zero or saturates at the sensor's maximum, double-check wiring and the topology.
 
 ## ArduPilot parameters
 
@@ -152,6 +152,6 @@ All four green means you can arm and take off. Any red shows the corresponding c
 
 ## Next steps
 
-- [Visual Inertial Odometry roadmap](/drone-agent/vision-nav-vio) for what comes after optical flow.
+- [Visual Inertial Odometry](/drone-agent/vision-nav-vio) for full 6-DOF pose estimation.
 - The plugin emits structured logs through the agent's normal log pipe. Tail them with `ados plugin logs com.altnautica.vision-nav` for debugging.
 - [Plugins overview](/drone-agent/plugins) for the underlying plugin host model.

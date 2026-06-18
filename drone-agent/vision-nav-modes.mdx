@@ -2,7 +2,7 @@
 title: "Modes"
 description: "The six estimator modes Vision Navigation can run, what hardware each requires, and the fallback ladder when a sensor goes degraded."
 icon: "list"
-lastUpdated: "2026-05-16"
+lastUpdated: "2026-06-18"
 ---
 
 # Vision Navigation Modes
@@ -58,7 +58,7 @@ no visual nag.
 The default GPS-denied path. A downward camera plus a rangefinder.
 The Lucas-Kanade tracker produces a body-frame angular flow rate; the
 rangefinder gives it scale; the result becomes `OPTICAL_FLOW_RAD` on
-comp 198 at 10 Hz.
+comp 198 at the camera frame rate (around 30 Hz).
 
 Use this mode when:
 

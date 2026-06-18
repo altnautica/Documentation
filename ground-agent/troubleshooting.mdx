@@ -2,6 +2,7 @@
 title: "Troubleshooting"
 description: "Common ground station issues and how to fix them."
 icon: "wrench"
+lastUpdated: "2026-06-18"
 ---
 
 # Troubleshooting
@@ -22,7 +23,7 @@ For mesh-specific failures (relays not pairing, batman-adv not coming up, partit
 | Drone powered off or out of range | OLED Link screen shows RSSI "---" | Power on the drone or move closer |
 | Wrong WFB-ng channel | Drone and ground on different channels | Match channels in the Radio config on both sides |
 | RTL8812EU not plugged in | `lsusb` does not show RTL8812 | Plug in the USB WiFi adapter |
-| DKMS driver not built | `dmesg | grep 8812` shows errors | Reinstall with `install.sh --upgrade` |
+| DKMS driver not built | `dmesg \| grep 8812` shows errors | Reinstall with `install.sh --upgrade` |
 | MediaMTX not running | `systemctl status ados-mediamtx-gs` shows failed | Check logs with `journalctl -u ados-mediamtx-gs -n 50` |
 
 ```bash
@@ -37,7 +38,7 @@ journalctl -u ados-wfb-rx -n 30  # WFB-ng receiver logs
 
 | Possible cause | How to check | Fix |
 |---------------|-------------|-----|
-| AP service not started | `systemctl status ados-wifi-ap` | Check if the ground-station profile was detected. Run `ados status` |
+| AP service not started | `systemctl status ados-hostapd` | Check if the ground-station profile was detected. Run `ados status` |
 | WiFi AP disabled | OLED Net screen shows "AP: off" | Press B2 long-press to toggle AP, or enable via setup webapp |
 | WiFi radio conflict | `iw dev` shows no AP interface | Make sure hostapd is installed. Run `install.sh --upgrade` |
 | 5 GHz selected on Pi 4B | Pi 4B 5 GHz AP mode is unreliable | Switch to 2.4 GHz in the Radio config |
@@ -52,7 +53,7 @@ journalctl -u ados-wfb-rx -n 30  # WFB-ng receiver logs
 
     ```bash
     # On the ground station
-    systemctl status dnsmasq
+    systemctl status ados-dnsmasq-gs
     ```
   </Step>
   <Step title="Check the agent API">

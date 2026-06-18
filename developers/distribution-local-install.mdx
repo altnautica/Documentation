@@ -1,6 +1,7 @@
 ---
 title: "Distribution and local install"
 description: "Pack, sign, and ship a plugin operators can install."
+lastUpdated: "2026-06-18"
 ---
 
 A plugin is just a signed zip. This page covers the build pipeline,
@@ -33,11 +34,14 @@ folder name or a path:
 
 The script:
 
-1. Builds the GCS bundle (skips if absent).
-2. Stages every file the manifest declares.
-3. Computes SHA-256 for each asset.
-4. Rewrites the `<computed-by-pack.sh>` placeholders.
-5. Zips into `dist/<plugin-id>-<version>.adosplug`.
+1. Builds the GCS bundle if a `gcs/` folder is present (skips if absent).
+2. Reads the plugin id and version from `manifest.yaml`.
+3. Stages the plugin contents, excluding build artifacts (`dist`,
+   `node_modules`, `tests`, source under `src`, `package.json`).
+4. Zips into `dist/<plugin-id>-<version>.adosplug`.
+
+Packing produces an unsigned archive. Hashing and signing happen in the
+separate sign step.
 
 ## Sign
 
@@ -50,9 +54,12 @@ ADOS_SIGNING_KEY_ID=my-publisher-2026-A \
 ```
 
 The signed archive lands at
-`dist/com.example.my-plugin-1.0.0.signed.adosplug`. The signature
-covers the canonical manifest body; the signer key id is stamped
-into `signing.signer_key_id` in the manifest.
+`dist/com.example.my-plugin-1.0.0.signed.adosplug`. The signer computes
+the canonical payload hash (a SHA-256 over the sorted list of each
+archive entry's path and SHA-256, so every file is bound, not just the
+manifest), signs that 32-byte digest, and writes a `SIGNATURE` file into
+the archive with two lines: the signer key id, then the base64
+signature.
 
 `ADOS_SIGNING_KEY_INLINE=1` accepts a base64 key in the env var
 itself (used by GitHub Actions secrets):
@@ -100,32 +107,41 @@ declared slots.
 
 ```sh
 ados plugin install ./com.example.my-plugin-1.0.0.signed.adosplug
-ados plugin perms com.example.my-plugin --grant event.publish
 ados plugin enable com.example.my-plugin
-ados plugin logs com.example.my-plugin -f
+ados plugin logs com.example.my-plugin --follow
 ```
 
-The agent CLI follows the same lifecycle: install, grant, enable,
-remove. Logs are journaled under the plugin's systemd unit.
+`ados plugin install` parses the archive, verifies the signature, then
+prints the requested permissions and prompts for approval before the
+install completes. Pass `--yes` to skip the prompt for low and
+medium-risk plugins (it refuses high and critical-risk plugins, which
+must be approved interactively). After install, `enable` starts the
+plugin and `remove` uninstalls it. Logs are written to
+`/var/log/ados/plugins/<id>.log`; `ados plugin logs <id>` tails that
+file.
 
 ## Trust the publisher
 
-A plugin signed by a key the agent does not know is rejected with
-exit code `10`. Add the public key to the agent's trust list:
+A plugin signed by a key the agent does not know is rejected with the
+signature-invalid exit code (`3`). Add the publisher's public key to the
+agent's trust directory, naming the file after the signer id:
 
 ```sh
-ados plugin keys add my-publisher-2026-A ./publisher.pub
+sudo cp my-publisher-2026-A.pem /etc/ados/plugin-keys/my-publisher-2026-A.pem
 ```
 
-Or run the agent in **developer mode** to install unsigned archives
-during local iteration:
+The signer id in the archive's `SIGNATURE` file must match a public-key
+filename in `/etc/ados/plugin-keys/`.
+
+To install an unsigned archive during local iteration, pass
+`--allow-unsigned`:
 
 ```sh
-ados plugin install --dev ./my-plugin.adosplug
+ados plugin install --allow-unsigned ./my-plugin.adosplug
 ```
 
-The GCS shows a red banner whenever a developer-mode plugin is
-loaded.
+Unsigned installs are a developer convenience; a production agent should
+only install signed archives from trusted publishers.
 
 ## Registry
 

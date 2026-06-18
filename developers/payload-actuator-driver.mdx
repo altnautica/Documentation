@@ -1,11 +1,12 @@
 ---
 title: "Payload actuator driver"
 description: "Implement a PayloadActuatorDriver to control a sprayer, dropper, claw, or sampler."
+lastUpdated: "2026-06-18"
 ---
 
 A `PayloadActuatorDriver` controls a non-imaging mission payload:
-sprayer, dropper, claw, sampler, winch, or any other actuator that
-the operator triggers from a panel or a scripted mission step.
+sprayer, dropper, claw, sampler, winch, or any other actuator the
+operator triggers from a panel or a mission action.
 
 ## The interface
 
@@ -90,18 +91,18 @@ call so the GCS sees the failure on the user-action path.
 ```yaml
 agent:
   permissions:
-    - sensor.payload.register
-    - vehicle.payload.actuate    # required to call execute()
-    - serial.read_write          # if the driver speaks raw serial
+    - id: sensor.payload.register   # required, gates registration
+    - id: hardware.uart             # if the driver speaks raw serial
+    - id: hardware.gpio             # if the actuator is driven from a GPIO line
 ```
 
-`vehicle.payload.actuate` is a high-risk capability. The host
-prompts per-action consent the first time a session calls
-`actuate(...)` unless the operator has pre-approved auto-confirm
-in the plugin's permission detail page.
+Registration gates on `sensor.payload.register`, which the operator
+approves when they install the plugin. Once registered, actuation
+flows through the driver's `actuate(...)` method, and the host
+serialises those calls per session.
 
 ## See also
 
 - [Driver layer](/developers/driver-layer) for the contract.
-- [Permissions](/developers/permissions) for the consent model
-  around `vehicle.*` capabilities.
+- [Permissions](/developers/permissions) for the capability model and
+  risk bands.

@@ -2,6 +2,7 @@
 title: "Supported Hardware"
 description: "Which boards, radios, and peripherals work with the ADOS Ground Agent."
 icon: "circuit-board"
+lastUpdated: "2026-06-18"
 ---
 
 # Supported Hardware
@@ -144,7 +145,7 @@ If you plan to deploy this node as a `relay` or `receiver` in a multi-node mesh,
 
 | Item | Default | Notes |
 |---|---|---|
-| Second RTL8812EU USB adapter | Yes | The default mesh carrier. Same chip as the primary for inventory simplicity and matched 29 dBm TX power. Plug into a different USB port from the primary. Runs 802.11s for batman-adv on UNII-1 (channel 36 or 40), ~100 MHz guard band from the primary WFB-ng radio on UNII-3. |
+| Second RTL8812EU USB adapter | Yes | The default mesh carrier. Same chip as the primary for inventory simplicity and matched 29 dBm TX power. Plug into a different USB port from the primary. Runs 802.11s for batman-adv on 2.4 GHz (channel 1 by default), a separate band from the primary WFB-ng radio on 5 GHz UNII-3. |
 | MT7612U USB adapter (e.g. ALFA AWUS036ACM) | Alternative | Mainline `mt76` driver. 20 dBm TX power. Good fit when mainline kernel coverage is preferred on the mesh side. |
 | MT7921AU USB adapter (e.g. Brostrend AX9L) | Alternative | Mainline `mt7921u` driver. WiFi 6. 20-23 dBm TX power. Good fit when mesh scales to 3+ nodes and OFDMA helps. |
 

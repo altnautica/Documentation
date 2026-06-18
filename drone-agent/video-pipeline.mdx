@@ -2,14 +2,14 @@
 title: "Video Pipeline"
 description: "Camera detection, encoding, RTSP streaming, WFB-ng transmission, and cloud relay."
 icon: "video"
-lastUpdated: "2026-05-09"
+lastUpdated: "2026-06-18"
 ---
 
 # Video Pipeline
 
 The video pipeline takes a camera feed, encodes it to H.264 (or H.265), serves it locally via RTSP, and optionally transmits it over WFB-ng for long-range HD video or relays it to the cloud for remote viewing.
 
-The pipeline runs as the `ados-video` systemd service and is enabled on Tier 3+ boards.
+The pipeline runs as the `ados-video` systemd service (a native Rust binary) and is enabled on Tier 3+ boards.
 
 ## Pipeline flow
 
@@ -33,7 +33,7 @@ graph LR
 
 ## Camera detection
 
-The camera manager (`camera_mgr.py`) scans for cameras at startup:
+The camera manager scans for cameras at startup:
 
 1. Checks `/dev/video*` devices (V4L2)
 2. Queries each with `v4l2-ctl` for capabilities
@@ -59,7 +59,7 @@ Set `source: "test"` to generate a test pattern without a physical camera. Usefu
 
 ## Encoding
 
-The encoder (`encoder.py`) builds an ffmpeg command line optimized for low latency:
+The encoder builds an ffmpeg command line optimized for low latency:
 
 ```bash
 ffmpeg -fflags nobuffer -flags low_delay \
@@ -104,7 +104,7 @@ If you switch to H.265, test your GCS player first. ADOS Mission Control's WebRT
 
 ## MediaMTX
 
-[MediaMTX](https://github.com/bluenviern/mediamtx) is a lightweight RTSP/WebRTC server bundled with the agent. The agent manages its lifecycle: starts it on boot, monitors it with a health check, and restarts it if it crashes.
+MediaMTX is a lightweight RTSP/WebRTC server bundled with the agent. The agent manages its lifecycle: starts it on boot, monitors it with a health check, and restarts it if it crashes.
 
 MediaMTX serves two protocols from the same stream:
 
@@ -156,13 +156,7 @@ Recordings are saved as MP4 files with timestamps in the filename. The recorder 
 
 ## Snapshots
 
-Capture a JPEG snapshot from the live feed:
-
-```bash
-ados snap
-```
-
-Or via the REST API:
+Capture a JPEG snapshot from the live feed via the REST API:
 
 ```bash
 curl -X POST http://localhost:8080/api/video/snapshot \
@@ -173,7 +167,7 @@ Snapshots are saved to `/var/ados/recordings/` with a `snap-` prefix.
 
 ## OSD overlay
 
-The OSD module (`osd.py`) can burn telemetry data into the video frame: altitude, speed, battery, GPS coordinates, and flight mode. The overlay uses ffmpeg's drawtext filter and pulls data from the state IPC socket.
+The OSD overlay can burn telemetry data into the video frame: altitude, speed, battery, GPS coordinates, and flight mode. The overlay uses ffmpeg's drawtext filter and pulls data from the state IPC socket.
 
 ## Pipeline health monitoring
 

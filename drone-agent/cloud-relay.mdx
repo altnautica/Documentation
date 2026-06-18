@@ -2,11 +2,12 @@
 title: "Cloud Relay"
 description: "Three-layer cloud connectivity: Convex HTTP, MQTT telemetry, and WebRTC video."
 icon: "cloud"
+lastUpdated: "2026-06-18"
 ---
 
 # Cloud Relay
 
-The cloud relay lets you monitor and control your drone from anywhere. It works behind NAT, through firewalls, and over cellular networks without port forwarding.
+The cloud relay (the native Rust `ados-cloud` service) lets you monitor and control your drone from anywhere. It works behind NAT, through firewalls, and over cellular networks without port forwarding. Cloud relay is the secondary path: on the same LAN, Mission Control reaches the agent directly (see [Pairing](/drone-agent/pairing)).
 
 The relay uses three additive layers. Each adds more real-time capability on top of the last.
 
@@ -48,7 +49,7 @@ For live video, the agent uses peer-to-peer WebRTC signaling relayed through MQT
 The flow:
 
 1. GCS publishes an SDP offer to `ados/{deviceId}/webrtc/offer` via MQTT
-2. Agent's `WebrtcSignalingRelay` service picks up the offer
+2. The agent's cloud relay picks up the offer
 3. Agent forwards it to MediaMTX's WHIP endpoint
 4. MediaMTX generates an SDP answer
 5. Agent publishes the answer to `ados/{deviceId}/webrtc/answer`
@@ -101,7 +102,7 @@ The agent supports three server modes:
   </Tab>
 
   <Tab title="Disabled">
-    No cloud connectivity. The agent works fully locally: MAVLink proxy, video, REST API, scripting all function. Only remote access is off.
+    No cloud connectivity. The agent works fully locally: MAVLink proxy, video, and REST API all function. Only remote access is off.
 
     ```yaml
     server:

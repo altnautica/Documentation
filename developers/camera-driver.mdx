@@ -1,6 +1,7 @@
 ---
 title: "Camera driver"
 description: "Implement a CameraDriver to ship a new imager as a plugin."
+lastUpdated: "2026-06-18"
 ---
 
 A `CameraDriver` pumps frames from a physical or networked imaging
@@ -108,9 +109,10 @@ when feasible. Drivers may attach driver-specific fields under
 ```yaml
 agent:
   permissions:
-    - sensor.camera.register   # required, gates registration
-    - usb.read                 # if the device sits on USB
-    - hal.dev_video            # if the device shows up as /dev/videoN
+    - id: sensor.camera.register   # required, gates registration
+    - id: hardware.usb.uvc         # for a USB UVC camera (the FLIR Lepton reference path)
+    - id: hardware.camera.csi      # for a MIPI CSI camera on the SBC connector
+    - id: hardware.usb             # for a raw USB device behind a vendor SDK
 ```
 
 Without `sensor.camera.register` the host rejects

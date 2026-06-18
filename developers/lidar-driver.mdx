@@ -1,6 +1,7 @@
 ---
 title: "LiDAR driver"
 description: "Implement a LidarDriver to add a new ranging sensor."
+lastUpdated: "2026-06-18"
 ---
 
 A `LidarDriver` yields point-cloud frames from a spinning,
@@ -72,8 +73,9 @@ rather than emit zeros.
 ```yaml
 agent:
   permissions:
-    - sensor.lidar.register
-    - serial.read_write       # most LiDARs are USB-CDC or UART
+    - id: sensor.lidar.register
+    - id: hardware.uart        # most LiDARs are USB-CDC or UART
+    - id: hardware.usb         # for a raw USB device behind a vendor SDK
 ```
 
 ## Single-line vs spinning

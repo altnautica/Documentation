@@ -6,7 +6,7 @@ icon: "gears"
 
 ## The Big Picture
 
-A drone with ADOS has two computers on board. The **flight controller** (FC) handles motor control, stabilization, GPS, and sensors. The **companion computer** (an SBC like a Raspberry Pi) runs the ADOS Drone Agent, which handles everything else: video, telemetry relay, cloud connectivity, scripting, and the REST API.
+A drone with ADOS has two computers on board. The **flight controller** (FC) handles motor control, stabilization, GPS, and sensors. The **companion computer** (an SBC like a Raspberry Pi) runs the ADOS Drone Agent, which handles everything else: video, telemetry relay, cloud connectivity, and the REST API.
 
 On the ground, your browser runs ADOS Mission Control. It talks to the drone either directly (USB, WiFi, or LAN) or through the cloud (MQTT + Convex). If you are using long-range WFB-ng video, a Ground Agent SBC sits between the radio and your laptop.
 
@@ -109,13 +109,14 @@ The agent connects to the FC over a serial UART (typically `/dev/ttyS0` or `/dev
 
 The browser parses MAVLink binary frames directly. The adapter layer (`mavlink-adapter.ts`) handles 83 message types with full CRC validation. It feeds parsed data into Zustand stores that React components subscribe to.
 
-Mission Control supports three firmware families:
+Mission Control supports four firmware families:
 
-| Firmware | Protocol | Config Panels | Status |
-|----------|----------|---------------|--------|
-| ArduPilot | MAVLink v2 | 36+ | Full support, tested on hardware |
-| PX4 | MAVLink v2 | 36+ (shared) + 3 PX4-only | Full support, untested on hardware |
-| Betaflight | MSP v1/v2 | 8 BF-only + 7 adapted | Full support via MSP codec |
+| Firmware | Protocol | Support |
+|----------|----------|---------|
+| ArduPilot | MAVLink v2 | Full |
+| PX4 | MAVLink v2 | Full |
+| Betaflight | MSP v1/v2 | Full |
+| iNav | MSP v1/v2 | Full |
 
 ## The Video Pipeline
 
@@ -195,7 +196,7 @@ Its job is simple: receive the WFB-ng video stream from the drone's radio, and m
 
 ## State Management in Mission Control
 
-Mission Control uses Zustand stores (27 total) with ring buffers for time-series data. Here are the key stores:
+Mission Control uses many Zustand stores (60+) with ring buffers for time-series data. Here are the key stores:
 
 | Store | What It Holds |
 |-------|--------------|

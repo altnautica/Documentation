@@ -2,6 +2,7 @@
 title: "Three Deployment Roles"
 description: "direct, relay, and receiver explained side by side. What each does, what it needs, when to pick which."
 icon: "shapes"
+lastUpdated: "2026-06-18"
 ---
 
 # Three Deployment Roles
@@ -29,7 +30,7 @@ Every Ground Agent runs in one of three roles. The role is a single config key (
 | Needs prior pairing | no | yes (with a receiver) | no |
 | Drone-facing radio runs | `wfb_rx` | `wfb_rx -f` (forwarder) | `wfb_rx -a` (aggregator) |
 | Publishes mDNS `_ados-receiver._tcp` | no | no | yes |
-| GCS Hardware tab "Distributed RX" sub-view | hidden | shown | shown |
+| GCS "Distributed RX" tab | hidden | shown | shown |
 | Default config value | yes | no | no |
 
 ## direct

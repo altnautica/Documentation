@@ -2,6 +2,7 @@
 title: "Installation"
 description: "Install the ADOS Drone Agent on your companion computer in one command."
 icon: "download"
+lastUpdated: "2026-06-18"
 ---
 
 # Installation
@@ -23,7 +24,7 @@ curl -sSL https://raw.githubusercontent.com/altnautica/ADOSDroneAgent/main/scrip
 That is it. The script handles everything from there.
 
 <Note>
-The install script requires root access. It installs to `/opt/ados/`, creates config at `/etc/ados/`, and registers systemd services. On boards without systemd (rare), it sets up a process manager fallback.
+The install script requires root access. It installs to `/opt/ados/`, creates config at `/etc/ados/`, registers systemd services, and fetches the prebuilt Rust service binaries to `/opt/ados/bin/`. systemd is the supported process manager.
 </Note>
 
 ## What the install script does
@@ -38,7 +39,7 @@ The install script requires root access. It installs to `/opt/ados/`, creates co
   </Step>
 
   <Step title="Create the virtual environment">
-    Sets up a Python venv at `/opt/ados/venv/` and installs the `ados-drone-agent` package from PyPI along with all dependencies (pymavlink, FastAPI, uvicorn, paho-mqtt, structlog, Rich, and more).
+    Sets up a Python venv at `/opt/ados/venv/` and installs the `ados-drone-agent` package from PyPI along with its dependencies (pymavlink, FastAPI, uvicorn, paho-mqtt, structlog, Rich, and more). The prebuilt Rust service binaries (supervisor, MAVLink router, control front, cloud relay, video, logging, and others) are fetched and placed in `/opt/ados/bin/`.
   </Step>
 
   <Step title="Generate device identity">
@@ -67,14 +68,6 @@ curl -sSL https://raw.githubusercontent.com/altnautica/ADOSDroneAgent/main/scrip
 ```
 
 This pairs the agent to your cloud account during installation. The drone will appear in your Mission Control dashboard as soon as it connects.
-
-## Install a specific branch
-
-For development or testing a feature branch:
-
-```bash
-curl -sSL https://raw.githubusercontent.com/altnautica/ADOSDroneAgent/main/scripts/install.sh | sudo bash -s -- --branch feature-name
-```
 
 ## Upgrade an existing installation
 
@@ -166,7 +159,7 @@ The CLI auto-detects whether you installed with pip, pipx, or uv and uses the ma
   certs/                    # TLS certificates (if enabled)
 
 /var/ados/                  # Runtime data
-  scripts/                  # User Python scripts
+  logd/                     # Black-box logging store (logs.db)
   recordings/               # Video recordings
   logs/flights/             # Flight log archive
 
@@ -199,6 +192,6 @@ finish onboarding.
 |-------------|---------|-------------|
 | OS | Debian 11+ or Ubuntu 22.04+ (arm64/armv7l) | Debian 12 or Ubuntu 24.04 |
 | Python | 3.11 | 3.11 or 3.12 |
-| RAM | 64 MB (Tier 1) | 2 GB+ (Tier 3/4) |
+| RAM | 512 MB (Tier 2) | 2 GB+ (Tier 3/4) |
 | Storage | 500 MB | 4 GB+ |
 | Network | Serial UART to FC | + WiFi/Ethernet/4G |

@@ -1,21 +1,24 @@
 ---
-title: "The hosted registry"
-description: "Browse, search, and install plugins from registry.ados.altnautica.com."
-lastUpdated: "2026-05-09"
+title: "The hosted registry (planned)"
+description: "Planned discovery layer for plugins on top of local file install and URL install."
+lastUpdated: "2026-06-18"
 ---
 
-The hosted registry adds discovery on top of local file install and
-URL install. It is a catalog plus a CDN plus a revocation feed. The
-trust chain (signed `.adosplug`, Ed25519, trusted key list) does not
-change.
+<Warning>
+The hosted registry is not built yet. There is no live registry host,
+no `ados plugin search`, no Browse tab, and no registry REST API today.
+The two shipping distribution channels are
+[local file install](/developers/distribution-local-install) (a signed
+`.adosplug` from disk) and [URL install](/developers/distribution-url-install)
+(a signed `.adosplug` fetched over HTTPS). Everything below describes the
+planned design so plugin authors can build against a stable contract; the
+commands and endpoints on this page do not work yet.
+</Warning>
 
-<Note>
-The hosted registry is not yet live. Local file install and URL
-install are the two shipping channels today. This page describes
-the shape of the hosted registry so plugin authors and integrators
-can plan against the same contract self-hosted registries already
-implement.
-</Note>
+The planned hosted registry would add discovery on top of local file
+install and URL install. It is a catalog plus a CDN plus a revocation
+feed. The trust chain (signed `.adosplug`, Ed25519, trusted key list)
+does not change.
 
 ## What the registry provides
 
@@ -32,14 +35,18 @@ The default registry endpoint is `registry.ados.altnautica.com`.
 Closed deployments can point at their own host; see the self-host
 section below.
 
-## CLI
+## Planned CLI
+
+These commands are part of the registry design and are not implemented
+today. Installing by id, searching, and update-against-registry land
+with the registry itself.
 
 ### Search
 
 ```sh
 ados plugin search thermal
 ados plugin search --category drivers
-ados plugin search --board rk3582-rock-5c-lite
+ados plugin search --board rock-5c-lite
 ados plugin search --license GPL-3.0-or-later
 ```
 
@@ -81,9 +88,10 @@ ados plugin outdated
 
 Prints every installed plugin that has a newer version available.
 
-## Mission Control Browse tab
+## Planned Mission Control Browse tab
 
-Mission Control gets a Browse tab under Settings, Plugins. Cards
+In the registry design, Mission Control gets a Browse tab under
+Settings, Plugins. Cards
 show icon, name, author with verification badge, install count,
 short description. Filters mirror the CLI: category, board
 compatibility (auto-suggested from the connected drone), license,
@@ -94,7 +102,7 @@ permission set, the static-analyzer report, and the Install button.
 Clicking Install runs the same permission dialog as local file
 install.
 
-## REST surface
+## Planned REST surface
 
 ```
 GET  /v1/plugins
@@ -110,7 +118,7 @@ Filters on the list endpoint:
 
 ```
 ?category=drivers
-?board=rk3582-rock-5c-lite
+?board=rock-5c-lite
 ?license=GPL-3.0-or-later
 ?signed_only=true
 ?verified_only=true

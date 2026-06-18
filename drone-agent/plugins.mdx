@@ -1,13 +1,13 @@
 ---
 title: "Plugins"
-description: "How the agent runs signed Python plugins, the ados plugin CLI, the permission model, and the three built-ins."
+description: "How the agent runs signed plugins, the ados plugin CLI, the permission model, and the three built-ins."
 icon: "puzzle-piece"
-lastUpdated: "2026-05-09"
+lastUpdated: "2026-06-18"
 ---
 
 # Plugins
 
-The agent ships with a plugin host that runs signed Python modules in their own subprocesses with capability-gated access to agent state. This page is for operators and OEMs who install and manage plugins on a fleet. If you want to write a plugin, head to [Your first plugin](/developers/your-first-plugin) and the [Agent plugin deep dive](/developers/agent-plugin-deep-dive).
+The agent ships with a plugin host (`ados-plugin-host`) that runs signed plugins in their own subprocesses with capability-gated access to agent state. Most plugins are Python modules run through the plugin runtime; a plugin can also ship a compiled binary entrypoint (the Vision Navigation extension is a Rust binary). This page is for operators and OEMs who install and manage plugins on a fleet. If you want to write a plugin, head to [Your first plugin](/developers/your-first-plugin) and the [Agent plugin deep dive](/developers/agent-plugin-deep-dive).
 
 <Note>
 Plugins are an opt-in surface. A fresh install runs without any plugins. The host service is dormant until at least one plugin is installed.
@@ -37,7 +37,10 @@ Each plugin runs as a separate subprocess under a systemd slice. CPU and memory 
 | `ados plugin perms <id>` | Show the permission grants on a plugin. Add `--revoke <perm>` to drop one (interactive confirm by default). |
 | `ados plugin logs <id>` | Tail the plugin's structured logs (journald-formatted). |
 | `ados plugin lint <archive>` | Static-analyze an archive: signature, manifest schema, banned imports, permission shape. |
-| `ados plugin test <plugin_dir>` | Run the plugin's pytest suite against the test harness. Useful for OEMs verifying a build before signing. |
+| `ados plugin test <plugin_dir>` | Run the plugin's test suite against the test harness. Useful for OEMs verifying a build before signing. |
+| `ados plugin pin <id> <version>` / `ados plugin unpin <id>` | Pin a plugin to a version (or release the pin) so updates do not move it. |
+| `ados plugin auto-update <id> <on\|off>` / `ados plugin check-updates` | Toggle per-plugin auto-update, or check for newer published versions. |
+| `ados plugin sign <archive>` / `ados plugin keygen` | Sign an archive with a local Ed25519 key, or generate a signing keypair. For OEMs shipping their own plugins. |
 
 `install`, `enable`, `disable`, `remove`, and `perms --revoke` prompt for confirmation by default. Pass `--yes` to skip prompts in scripts.
 
@@ -69,14 +72,14 @@ Every plugin declares the capabilities it needs in `manifest.yaml`:
 ```yaml
 agent:
   permissions:
-    - vehicle.state.read
-    - mavlink.command.send
-    - peripheral.camera.frame.read
+    - telemetry.read
+    - vehicle.command
+    - sensor.camera.register
 ```
 
-The agent's IPC dispatcher gates each capability at request time. A plugin that calls `mavlink.command.send` without the matching grant gets `capability_denied` back from the dispatcher and never reaches the handler.
+The agent's IPC dispatcher gates each capability at request time. A plugin that calls a `vehicle.command` operation without the matching grant gets `capability_denied` back from the dispatcher and never reaches the handler.
 
-There are 29 named capabilities in the catalog at module-load time. They cover vehicle state reads, MAVLink command sends, mission read and write, recording control, plugin-to-plugin messaging, and the GCS UI slot taxonomy on the Mission Control side. The full table lives next to the SDK in the [agent plugin deep dive](/developers/agent-plugin-deep-dive#capability-catalog).
+There are more than 40 named agent capabilities in the catalog. They cover telemetry reads and extension, MAVLink read and write plus the component IDs (`mavlink.component.*`), mission read and write, sensor registration, hardware bus access (`hardware.uart` / `i2c` / `spi` / `gpio` / `usb`), recording, vision frames and detections, estimator pose injection, and process spawn. The GCS half has its own UI slot capabilities on the Mission Control side. The full table lives next to the SDK in the [agent plugin deep dive](/developers/agent-plugin-deep-dive#capability-catalog).
 
 Risk badges roll up the requested capabilities into one of four levels (informational, low, medium, high) so operators can decide at a glance whether a plugin matches their threat tolerance.
 

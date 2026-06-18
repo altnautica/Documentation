@@ -2,6 +2,7 @@
 title: "Installation"
 description: "Install and run ADOS Mission Control on your machine."
 icon: "download"
+lastUpdated: "2026-06-18"
 ---
 
 Mission Control is a Next.js 16 application. You can run it in your browser during development, or build a standalone Electron desktop app.
@@ -49,7 +50,7 @@ WebSerial (USB connections) only works in Chromium-based browsers. Safari and Fi
 | Command | Description |
 |---------|-------------|
 | `npm run dev` | Development server on port 4000 (Turbopack). No demo data. |
-| `npm run demo` | Development server with 5 simulated drones. Great for exploring the UI. |
+| `npm run demo` | Development server with the simulated demo fleet. Great for exploring the UI. |
 | `npm run build` | Production build. |
 | `npm run start` | Start the production server on port 4000. |
 | `npm run lint` | Run ESLint. |
@@ -65,7 +66,7 @@ Demo mode is the fastest way to explore Mission Control without hardware.
 npm run demo
 ```
 
-This sets `NEXT_PUBLIC_DEMO_MODE=true` and starts the dev server. Five simulated drones appear on the dashboard with realistic telemetry, GPS tracks, and flight modes. All configuration panels work with mock parameters.
+This sets `NEXT_PUBLIC_DEMO_MODE=true` and starts the dev server. Seven simulated drones (ArduPilot, PX4, and iNav) appear on the dashboard with realistic telemetry, GPS tracks, and flight modes. All configuration panels work with mock parameters.
 
 You can also activate demo mode by adding `?demo=true` to any URL:
 

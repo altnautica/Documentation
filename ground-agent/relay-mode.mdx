@@ -2,6 +2,7 @@
 title: "Relay Mode"
 description: "Set up a Ground Agent as a relay node. Hardware, install, role transition, and what runs on the box once it joins a mesh."
 icon: "arrow-right-arrow-left"
+lastUpdated: "2026-06-18"
 ---
 
 # Relay Mode
@@ -17,7 +18,7 @@ This page walks you through bringing up a relay end to end.
 | Ground Agent SBC | Pi 4B is the bench reference |
 | RTL8812EU USB WiFi adapter (primary) | Drone-facing radio. Same as a single-node setup. |
 | Second RTL8812EU USB adapter (default mesh carrier) | Same chip as the primary for inventory simplicity and matched 29 dBm TX power. Any 802.11s-capable USB WiFi dongle also works; MT7612U and MT7921AU are common alternatives when mainline kernel coverage is preferred on the mesh side. |
-| Antennas | 5 GHz omni on each radio. Primary on UNII-3 (channel 149 or 153), mesh on UNII-1 (channel 36 or 40). Keep 30 cm minimum between antennas on the same chassis. |
+| Antennas | Primary 5 GHz omni on UNII-3 (channel 149 or 153) for the drone link, 2.4 GHz omni on the mesh radio (channel 1 by default). Keep 30 cm minimum between antennas on the same chassis. |
 | OLED + 4 buttons | Field pairing without a laptop needs the front-panel UI |
 | Power, case, cabling | Same as a direct-mode Ground Agent |
 
@@ -115,7 +116,7 @@ The original direct-mode `ados-wfb-rx.service` is now masked. The supervisor ref
 ## Where to monitor
 
 - **OLED:** the status header shows `Rly` as the role badge. The Mesh -> Joined Status screen shows the receiver's mDNS name and current fragment count.
-- **GCS Mission Control:** Hardware tab -> Distributed RX shows a `ReceiverCard` with the relay's view of the receiver: mDNS name, `bat0` IP, fragment counters, last-seen age.
+- **GCS Mission Control:** the Distributed RX tab shows a `ReceiverCard` with the relay's view of the receiver: mDNS name, `bat0` IP, fragment counters, last-seen age.
 - **Setup webapp:** Ground Station -> Mesh and Relay status.
 - **REST API:** `/api/v1/ground-station/wfb/relay/status`.
 

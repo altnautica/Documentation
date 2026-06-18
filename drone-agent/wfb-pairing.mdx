@@ -2,7 +2,7 @@
 title: "WFB Pairing"
 description: "Local-first auto-bind on first boot. wfb_keygen keys, role-aware handling, and the auto-pair supervisor. Cloud relay is the secondary path."
 icon: "link"
-lastUpdated: "2026-05-09"
+lastUpdated: "2026-06-18"
 ---
 
 # WFB Pairing
@@ -23,13 +23,13 @@ A fresh drone agent and a fresh ground agent that come online on overlapping cha
 
 <Steps>
   <Step title="Key generation">
-    The first node to come up runs `wfb_keygen` and produces a 64-byte libsodium key. The key is written to the local pair store (`/etc/ados/wfb/pair.key`, mode `0600`).
+    The first node to come up runs `wfb_keygen` and produces a libsodium keypair. The keys are written to the local pair store under `/etc/ados/wfb/` (mode `0600`): the drone keeps `tx.key`, the ground station keeps `rx.key`.
   </Step>
   <Step title="Local advertisement">
     The node advertises a pair offer over the configured WFB channel. The advertisement carries the key and a role tag (drone or ground station).
   </Step>
   <Step title="Adoption">
-    An unpaired peer that sees the advertisement and matches the complementary role adopts the key. It writes the same `pair.key` locally and confirms back over the radio.
+    An unpaired peer that sees the advertisement and matches the complementary role adopts the matching key. It writes its half into `/etc/ados/wfb/` locally and confirms back over the radio.
   </Step>
   <Step title="Bind complete">
     Both nodes flip from `unpaired` to `paired` in their state. WFB-ng RX and TX start with the shared key. Video and MAVLink flow.
@@ -40,7 +40,7 @@ The whole sequence runs in seconds on hardware that's already up. From the opera
 
 ## The auto-pair supervisor
 
-Auto-bind is driven by the `auto_pair` supervisor inside the `ados-cloud` service. The supervisor lives in `ados-cloud` rather than `ados-wfb` on purpose: the radio service must not be the thing that restarts the radio, otherwise a pairing-driven service restart would tear down the very channel it's trying to bind. The cloud service has no such constraint; it sits above the radio and orchestrates without owning the link.
+Auto-bind is driven by an auto-pair routine inside the Rust `ados-supervisor`. The supervisor owns the bind orchestrator and always runs, which makes it the right host: the radio service must not be the thing that restarts the radio, otherwise a pairing-driven service restart would tear down the very channel it is trying to bind. The supervisor sits above the radio and orchestrates the bind without owning the link. It is armed by default (`video.wfb.auto_pair_enabled`).
 
 The supervisor watches:
 
@@ -104,11 +104,9 @@ All routes carry the `X-ADOS-Key` header. The pair-state route is read-only and 
 # What state is the pair store in?
 ados radio pair status
 
-# When did the supervisor last attempt to bind?
-journalctl -u ados-cloud -g auto_pair -n 50 --no-pager
-
-# Did the radio see the pair offer?
-journalctl -u ados-wfb -g pair_offer -n 50 --no-pager
+# When did the supervisor last attempt to bind, and did the radio see the offer?
+ados logs query --source ados-supervisor --text bind
+ados logs query --source ados-wfb --text pair
 ```
 
 A quick smoke test for the fresh-pair path: factory-reset both nodes, power them on within ten seconds, watch the panel transition from "waiting for pair" to "linked" without touching a webapp.

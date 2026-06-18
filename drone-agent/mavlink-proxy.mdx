@@ -2,11 +2,12 @@
 title: "MAVLink Proxy"
 description: "How the agent connects to your flight controller and distributes MAVLink data."
 icon: "satellite-dish"
+lastUpdated: "2026-06-18"
 ---
 
 # MAVLink Proxy
 
-The MAVLink proxy is the agent's core service. It connects to the flight controller over serial UART, parses MAVLink frames, and distributes them to every other part of the system: the GCS over WebSocket, scripts via the IPC socket, the cloud relay, and the TUI.
+The MAVLink proxy is the agent's core service, a native Rust router (`ados-mavlink-router`). It connects to the flight controller over serial UART, parses MAVLink frames, and distributes them to every other part of the system: the GCS over WebSocket, other services via the IPC socket, the cloud relay, and the terminal status page.
 
 The proxy runs as the `ados-mavlink` systemd service.
 
@@ -67,7 +68,7 @@ Two Unix domain sockets carry data between services:
 
 ### WebSocket endpoint
 
-The proxy exposes a WebSocket endpoint at port 8765 (configurable via `mavlink.endpoints`). This is the primary way ADOS Mission Control and other browser-based GCS tools connect to the drone.
+The proxy exposes a WebSocket endpoint at port 8765 (configurable via `mavlink.endpoints`). This is the primary way ADOS Mission Control and other browser-based GCS tools connect to the drone. The endpoint authenticates clients with a short-lived HMAC ticket, minted by the agent and presented as a WebSocket subprotocol on connect.
 
 The WebSocket carries raw binary MAVLink frames, wire-compatible with the SITL bridge tool. No encoding changes, no JSON wrapping. The GCS decodes MAVLink in the browser using the same CRC and payload tables as pymavlink.
 

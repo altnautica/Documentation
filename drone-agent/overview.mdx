@@ -2,14 +2,14 @@
 title: "Overview"
 description: "What the ADOS Drone Agent is and what it does on your companion computer."
 icon: "microchip"
-lastUpdated: "2026-05-09"
+lastUpdated: "2026-06-18"
 ---
 
 # ADOS Drone Agent
 
-The ADOS Drone Agent is the software that runs on the companion computer inside your drone. It sits between the flight controller (ArduPilot, PX4, Betaflight, or iNav) and everything else: your ground station, your phone, the cloud, and any scripts you write.
+The ADOS Drone Agent is the software that runs on the companion computer inside your drone. It sits between the flight controller (ArduPilot, PX4, Betaflight, or iNav) and everything else: your ground station, your phone, and the cloud.
 
-It is a hybrid system. The core long-running services — the supervisor, MAVLink router, cloud relay, and video pipeline — are native Rust binaries, while Python handles the FastAPI REST and web layer, AI and vision, the scripting engine, hardware detection, device drivers, and shared libraries. It is licensed under GPLv3 and designed to run on ARM single-board computers from Raspberry Pi to Rockchip to NVIDIA Jetson.
+It is a hybrid system. The core long-running services (the supervisor, MAVLink router, HTTP front, cloud relay, logging daemon, and video pipeline) are native Rust binaries. Python handles AI and vision inference, hardware detection and first-boot bootstrap, the plugin runtime, and the setup and update webapp, all served behind the Rust front. It is licensed under GPLv3 and runs on ARM single-board computers from Raspberry Pi to Rockchip to NVIDIA Jetson.
 
 <Frame caption="The local setup webapp showing agent setup and access URLs">
   <img src="/images/placeholder-setup-webapp.png" alt="ADOS setup webapp showing setup status and access URLs" />
@@ -17,48 +17,48 @@ It is a hybrid system. The core long-running services — the supervisor, MAVLin
 
 ## What it does
 
-The agent handles five core jobs:
+The agent handles four core jobs:
 
-1. **MAVLink proxy** connects to your flight controller over serial UART, then forwards telemetry to WebSocket and TCP clients. Your GCS, your scripts, and the cloud all get MAVLink data without fighting for the serial port.
+1. **MAVLink proxy** connects to your flight controller over serial UART, then forwards telemetry to WebSocket and TCP clients. Your GCS and the cloud all get MAVLink data without fighting for the serial port.
 
 2. **Video pipeline** detects your camera (CSI or USB), encodes H.264 via hardware or software, pushes it to a local RTSP server (MediaMTX), and optionally transmits over WFB-ng for long-range HD video.
 
 3. **Cloud relay** sends telemetry and receives commands through three layers (Convex HTTP polling, MQTT at 2 Hz, and WebRTC peer-to-peer signaling) so your drone is reachable from anywhere.
 
-4. **Scripting engine** lets you control the drone with Python scripts, text commands (Tello-style), or the REST API.
-
-5. **Service supervisor** manages all of the above as individual systemd services with automatic restart, resource limits, and health monitoring.
+4. **Service supervisor** manages all of the above as individual systemd services with automatic restart, resource limits, and health monitoring.
 
 ## Key numbers
 
 | Metric | Value |
 |--------|-------|
-| Current version | 0.49.26 |
+| Current version | 0.89+ |
 | Language | Rust + Python 3.11+ |
 | License | GPLv3 |
 | Supported boards | 17 board profiles |
-| Systemd services | 28 units (air + ground) |
-| REST API port | 8080 |
+| Systemd services | Air + ground (the active set varies by profile) |
+| REST API port | 8080 (native Rust front) |
 | IPC sockets | `/run/ados/mavlink.sock`, `/run/ados/state.sock` |
 | Config file | `/etc/ados/config.yaml` |
-| Install method | Mission Control [Flash Tool](/mission-control/flash-tool) (browser flash or `curl \| bash`) |
+| Install method | Mission Control [Flash Tool](/mission-control/flash-tool) install command (`curl \| bash`) |
 
 ## Architecture at a glance
 
-The agent uses a multi-process architecture managed by systemd. Each service runs in its own process with its own cgroup resource limits. The supervisor service (`ados-supervisor`) starts and monitors child services.
+The agent uses a multi-process architecture managed by systemd. Each service runs in its own process with its own cgroup resource limits. The supervisor service (`ados-supervisor`) is a Rust orchestrator that starts and monitors child services through `systemctl`. Most units now run a native Rust binary; a few stay Python by design (see the table below).
 
 ```
-ados-supervisor
-  ├── ados-mavlink        # FC serial <-> MAVLink proxy
-  ├── ados-api            # FastAPI REST server on :8080
-  ├── ados-cloud          # MQTT + Convex cloud relay
-  ├── ados-health         # CPU, RAM, temp, disk monitoring
-  ├── ados-video          # Camera + encoder + MediaMTX
-  ├── ados-wfb            # WFB-ng video transmitter
-  ├── ados-scripting      # Python script executor
-  ├── ados-peripherals    # USB hot-plug, sensor manager
-  ├── ados-ota            # GitHub release polling + upgrade
-  └── ados-discovery      # mDNS advertisement
+ados-supervisor             # Rust: orchestrator (drives systemd)
+  ├── ados-mavlink          # Rust: FC serial <-> MAVLink router (WS :8765)
+  ├── ados-control          # Rust: HTTP front on :8080 (proxies the residual API)
+  ├── ados-api              # Python: residual FastAPI on an internal socket
+  ├── ados-cloud            # Rust: MQTT + Convex cloud relay
+  ├── ados-logd             # Rust: black-box logging (WAL SQLite)
+  ├── ados-health           # Python: CPU, RAM, temp, disk monitoring
+  ├── ados-video            # Rust: camera + encoder + MediaMTX
+  ├── ados-wfb              # Rust: WFB-ng video transmitter
+  ├── ados-vision           # Rust: vision host
+  ├── ados-plugin-host      # Rust: plugin subprocess supervisor
+  ├── ados-ota              # Python: release polling + upgrade
+  └── ados-discovery        # mDNS advertisement
 ```
 
 Services communicate through two Unix domain sockets:
@@ -76,7 +76,7 @@ The tier determines which features are enabled:
 |------|-----|----------|
 | 1 | 64-128 MB | MAVLink proxy only |
 | 2 | 256-512 MB | + REST API, basic telemetry |
-| 3 | 1-2 GB | + video pipeline, scripting, cloud |
+| 3 | 1-2 GB | + video pipeline, cloud relay |
 | 4 | 4 GB+ | Full autonomy, vision engine, plugin sandbox |
 
 <Tip>
@@ -97,8 +97,8 @@ The profile is detected automatically at boot based on hardware fingerprinting. 
 You can interact with the agent in four ways:
 
 1. **Setup webapp** (port 8080): first-run identity, MAVLink, video, network, remote access, ground-station setup, logs, and advanced recovery.
-2. **CLI** (`ados` command): terminal status page, scriptable status, update, and uninstall. Works over SSH.
-3. **REST API** (port 8080): FastAPI server with setup, telemetry, video, MAVLink, and command endpoints. Authenticated endpoints use `X-ADOS-Key`.
+2. **CLI** (`ados` command): terminal status page, scriptable status, update, uninstall, plus subcommands for hardware, logs, network, plugins, profile, radio, and runtime mode. Works over SSH.
+3. **REST API** (port 8080): the native Rust front (`ados-control`) serves the REST API and reverse-proxies un-migrated routes to an internal FastAPI. Setup, telemetry, video, MAVLink, and command endpoints are available. Authenticated endpoints use `X-ADOS-Key`.
 4. **ADOS Mission Control** (GCS): the companion web app for maps, video, mission planning, hardware management, and fleet operations.
 
 ## What's next

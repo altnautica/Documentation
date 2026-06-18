@@ -2,7 +2,7 @@
 title: "Install on a drone"
 description: "Installing the Vision Navigation plugin on a single drone via Mission Control's per-drone Plugins tab. Six-stage install progress, permissions, local-first transport."
 icon: "download"
-lastUpdated: "2026-05-16"
+lastUpdated: "2026-06-18"
 ---
 
 # Install on a drone
@@ -11,6 +11,10 @@ Vision Navigation is a first-party plugin. You install it on one drone at a time
 
 <Note>
 The per-drone install model means a fleet running ten drones can have the plugin on three of them without affecting the other seven. Each drone's Mission Control tab list reflects its own installs.
+</Note>
+
+<Note>
+The plugin's agent half is a compiled Rust binary. Install and operation are unchanged and transparent to operators; the plugin host execs the binary the same way it runs any other plugin.
 </Note>
 
 ## Before you start
@@ -48,7 +52,7 @@ The dialog shows what's about to install:
 - Plugin id, version, and a one-line description.
 - The signer's key id and a friendly signer name (Altnautica for first-party plugins).
 - The risk badge derived from the highest-risk capability the plugin requests. Vision Navigation is **HIGH** because it injects pose estimates into the FC's state estimator.
-- A short list of vendor binaries shipped inside the archive, if any. Vision Navigation ships with optical flow fully working and the VIO Python plumbing, GCS surfaces, and auto-detect probe today, so it reports "No vendor binaries." The OpenVINS and VINS-Fusion vendor binaries for VIO arrive in a follow-up release once validated end-to-end on target hardware, and will surface here.
+- A short list of vendor binaries shipped inside the archive, if any. Vision Navigation bundles the two VIO engines (OpenVINS and VINS-Fusion), so it surfaces their vendor-attribution blocks here. The binaries stay on disk and never run unless a VIO mode is selected.
 
 Read the summary, then click **Continue to permissions**.
 
@@ -58,14 +62,15 @@ Every capability the plugin requests is shown grouped by domain. Vision Navigati
 
 | Domain | Capability | Why |
 |--------|-----------|-----|
-| Hardware | `hardware.usb.uvc`, `hardware.camera.csi` | Read frames from the downward camera. |
+| Vision | `vision.frame.read` | Read normalized frames from the agent's shared vision bus. |
 | Hardware | `hardware.uart`, `hardware.i2c` | Talk to the rangefinder when the companion owns it. |
-| Sensors | `sensor.camera.register`, `sensor.depth.register` | Register the camera and rangefinder as first-class peripherals. |
 | Events | `event.publish`, `event.subscribe` | Emit health and flow events on the agent bus. |
-| MAVLink | `mavlink.read`, `mavlink.write` | Receive FC telemetry; emit `OPTICAL_FLOW_RAD`. |
-| MAVLink | `mavlink.component.vio` | Register MAVLink component 198 (optical flow). |
-| Estimator | `estimator.pose.inject` | Submit velocity estimates to the FC's state estimator. **CRITICAL.** |
-| Telemetry | `telemetry.extend` | Add `vision.flowQuality`, `vision.rangefinderHealth` to the heartbeat. |
+| MAVLink | `mavlink.read`, `mavlink.write` | Receive FC telemetry; emit `OPTICAL_FLOW_RAD` and `DISTANCE_SENSOR`. |
+| MAVLink | `mavlink.component.peripheral` | Register MAVLink component 198 (optical flow + rangefinder). |
+| MAVLink | `mavlink.component.vio` | Register MAVLink component 197 (VIO pose). |
+| Estimator | `estimator.pose.inject` | Submit pose and velocity estimates to the FC's state estimator. **CRITICAL.** |
+| Telemetry | `telemetry.extend` | Add the `navigation` block (flow quality, sync offset, estimator state) to the heartbeat. |
+| Process | `process.spawn` | Run the signed VIO vendor binaries when a VIO mode is active. |
 
 CRITICAL-risk capabilities get a 5-second cool-off button before approval lands; the install button stays disabled while the cool-off counts down. This is deliberate. `estimator.pose.inject` lets the plugin tell the flight controller where the drone is; granting it carelessly is the kind of mistake you only make once.
 
@@ -97,8 +102,8 @@ A successful install leaves the plugin in the **Disabled** state. This is so you
 
 ## What you have now
 
-- The plugin's subprocess is running under the agent's supervisor with its declared resource limits (256 MB RAM, 60 percent of one CPU core, 16 PIDs).
-- The plugin is publishing `OPTICAL_FLOW_RAD` to the FC at 10 Hz once a healthy camera frame and a healthy rangefinder reading are available.
+- The plugin's subprocess is running under the agent's supervisor with its declared resource limits (512 MB RAM, 80 percent of one CPU core, 24 PIDs).
+- The plugin is publishing `OPTICAL_FLOW_RAD` to the FC at the camera frame rate (around 30 Hz) once a healthy camera frame and a healthy rangefinder reading are available.
 - The Navigation tab on this drone's detail panel shows flow rate, flow quality, rangefinder reading, EKF source set, and an arm-readiness card.
 - The fleet view at **Settings → Plugins** shows the install grouped under the plugin id with a "Apply to all drones" button that's disabled in this release.
 
@@ -116,4 +121,4 @@ The Plugins tab has an **Uninstall** action per plugin. It stops the subprocess,
 ## Next steps
 
 - [Configure optical flow](/drone-agent/vision-nav-optical-flow) for the FC parameters and EKF source set.
-- [Visual Inertial Odometry roadmap](/drone-agent/vision-nav-vio).
+- [Visual Inertial Odometry](/drone-agent/vision-nav-vio) for the VIO modes and engines.

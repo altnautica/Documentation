@@ -1,6 +1,7 @@
 ---
 title: "Legal and licensing"
 description: "Plugin authors keep their rights. Pick any license, monetize freely, and ship through the channel that fits your terms."
+lastUpdated: "2026-06-18"
 ---
 
 You wrote it; you keep the rights. The plugin system is designed
@@ -121,39 +122,35 @@ review involved.
 ## Vendored binaries
 
 Some plugins must ship vendor SDKs (camera firmware, gimbal control
-libraries, RKNN model files with their own license). Declare every
-vendored binary in the manifest:
+libraries, model files with their own license). Declare the inclusion on
+the agent half with `contains_vendor_binary` plus `vendor_attribution`:
 
 ```yaml
-assets:
-  - path: "vendor/example-sdk/libexample.so"
-    role: "vendor-binary"
-    sha256: "<computed-by-pack.sh>"
-    license: "Proprietary"
-    license_file: "vendor/example-sdk/LICENSE.txt"
-    vendor_name: "Example Vendor"
-    vendor_url: "https://example-vendor.example.com"
-  - path: "vendor/example-sdk/LICENSE.txt"
-    role: "license-text"
-    sha256: "<computed-by-pack.sh>"
+agent:
+  contains_vendor_binary: true
+  vendor_attribution:
+    - name: "Example Vendor"
+      license: "Proprietary"
+      source_url: "https://example-vendor.example.com/sdk"
+      upstream_version: "2.4.1"
+      notice: "Decodes radiometric frames into Celsius."
 ```
 
 Rules for vendored binaries:
 
-- Each vendored binary must declare its own license and ship the
-  full license text inside the archive at `vendor/<name>/LICENSE`.
-- The plugin's overall `plugin.license` is independent. A
-  GPL-3.0-or-later wrapper around an Apache-2.0 vendor SDK is fine.
-  A GPL-3.0-or-later wrapper around a proprietary SDK is fine
-  provided the proprietary terms allow distribution.
-- The manifest's `vendor-binary` flag triggers mandatory subprocess
-  isolation (no `inprocess`) and a bumped risk band on the install
+- Each declared vendor binary carries its own `license` (required). Ship
+  the full license text inside the archive too.
+- The plugin's overall `license` is independent. A GPL-3.0-or-later
+  wrapper around an Apache-2.0 vendor SDK is fine. A GPL-3.0-or-later
+  wrapper around a proprietary SDK is fine provided the proprietary terms
+  allow distribution.
+- Third-party plugins already run subprocess isolation; setting
+  `contains_vendor_binary` adds the vendor-binary signal to the install
   dialog.
-- The static analyzer never inspects vendor binaries; the publisher
-  is on the hook for what they ship.
-- Operators see the vendor name on the install dialog and on the
-  plugin detail page, with a link to the vendor URL and the bundled
-  license text.
+- The `ados plugin lint` static analyzer never inspects vendor binaries;
+  the publisher is on the hook for what they ship.
+- Operators see the vendor attribution on the install dialog and on the
+  plugin detail page.
 
 If a vendor SDK forbids redistribution, the plugin cannot be hosted
 on the registry. URL install from the vendor's own server is the
@@ -179,10 +176,9 @@ The file should cover:
 4. The current major versions you support with security fixes.
 5. Whether you publish post-mortems.
 
-The static analyzer reads the linked source repo at submit time. A
-present `SECURITY.md` is a soft signal that nudges a borderline
-submission toward auto-publish. A missing `SECURITY.md` does not
-block submission.
+A `SECURITY.md` is recommended for any plugin you distribute. When the
+hosted registry is live it will factor into submission review; today it
+is good practice that helps reporters reach you.
 
 ## Trademark policy
 
