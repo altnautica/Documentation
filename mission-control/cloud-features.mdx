@@ -43,6 +43,10 @@ The cloud backend is built on [Convex](https://convex.dev), a reactive backend p
 
 When the GCS runs on HTTPS, it auto-activates cloud mode. This enables connecting to remote drones through the Convex backend.
 
+<Note>
+Cloud relay is the secondary, remote-access path, not a requirement. For a drone on the same network as Mission Control, serve the GCS over plain HTTP (`http://localhost:4000` or `http://<lan-ip>:4000`) and pair the agent by IP. That talks to the agent directly over the LAN with no Convex account and no HTTPS. The agent itself always serves plain HTTP on port `8080`. Reach for cloud relay only to connect a drone on a different network.
+</Note>
+
 The cloud relay has three layers:
 
 <Tabs>
@@ -106,11 +110,40 @@ You can deploy your own Convex backend and run the full cloud stack independentl
     ```
     This starts a local Convex development backend and pushes your schema and functions.
   </Step>
-  <Step title="Set the URL">
-    Copy the Convex URL from the terminal output and set it in your `.env`:
+  <Step title="Generate auth keys">
+    Convex Auth (the password provider) signs and verifies session tokens with RS256. Generate the keypair with the bundled script:
+
     ```bash
-    NEXT_PUBLIC_CONVEX_URL=https://your-deployment.convex.cloud
+    node scripts/generate-auth-keys.mjs
     ```
+
+    It prints `JWT_PRIVATE_KEY` (PKCS#8 PEM with newlines collapsed to spaces), `JWKS` (the public key as a JSON Web Key Set), and a `SITE_URL` reminder, in the exact format the auth runtime expects.
+
+    Set all three on your Convex backend:
+
+    ```bash
+    npx convex env set JWT_PRIVATE_KEY "$JWT_PRIVATE_KEY"
+    npx convex env set JWKS "$JWKS"
+    npx convex env set SITE_URL "http://localhost:4000"
+    ```
+
+    <Warning>
+    On a **self-hosted** Convex backend, the CLI must target your own deployment, or the keys land on the wrong backend and password sign-in fails with no visible error. Pass `--url` (your backend's client-API origin, port `3210`) and `--admin-key`:
+
+    ```bash
+    npx convex env set JWT_PRIVATE_KEY "$JWT_PRIVATE_KEY" \
+      --url http://localhost:3210 --admin-key <your-admin-key>
+    ```
+
+    Set `SITE_URL` to the public origin you serve the GCS from (for example `http://localhost:4000` on the LAN, or your HTTPS domain in production).
+    </Warning>
+  </Step>
+  <Step title="Set the URL">
+    Copy the Convex client URL and set it in your `.env`:
+    ```bash
+    NEXT_PUBLIC_CONVEX_URL=http://localhost:3210
+    ```
+    Use the **client-API** origin here (port `3210` on a self-hosted backend, or your `*.convex.cloud` URL on Convex Cloud).
   </Step>
   <Step title="Start the GCS">
     ```bash

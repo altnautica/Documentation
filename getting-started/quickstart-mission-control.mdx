@@ -173,8 +173,36 @@ If you have an ArduPilot, PX4, Betaflight, or iNav flight controller on your des
 </Steps>
 
 <Warning>
-WebSerial requires a secure context. If you are running locally on `http://localhost:4000`, it works. If you are accessing the GCS over a network, you need HTTPS. The hosted version at `command.altnautica.com` uses HTTPS.
+This applies to the **direct USB** path only. WebSerial, WebUSB, and Web Bluetooth need a secure context. On `http://localhost:4000` they work. To use these browser features from another machine over the network, you need HTTPS (or the [desktop app](#running-as-a-desktop-app), which has native serial access with no browser restriction). The hosted version at `command.altnautica.com` uses HTTPS.
+
+This does **not** apply to connecting over the network to the ADOS Drone Agent or a MAVLink router. Those go over a WebSocket and need no secure context. See the plain-HTTP LAN self-host path below.
 </Warning>
+
+## Self-Hosting on the LAN over Plain HTTP
+
+You do not need HTTPS, the cloud, or a Convex account to run Mission Control against a real drone on your own network. The ADOS Drone Agent serves plain HTTP on port `8080`, and the GCS connects to it directly.
+
+<Steps>
+  <Step title="Run the GCS over plain HTTP">
+    Start the GCS on your own machine and open it over plain HTTP:
+
+    ```bash
+    npm run dev
+    ```
+
+    Open `http://localhost:4000`, or reach it from another device on the LAN at `http://<your-lan-ip>:4000`.
+
+    <Note>
+    Keep the GCS on `http://` for LAN self-hosting. When the page is served over `https://`, the browser blocks it from fetching a plain-HTTP agent (mixed content), and the GCS falls back to the cloud relay. Plain HTTP keeps the connection local and direct.
+    </Note>
+  </Step>
+  <Step title="Add the agent by IP">
+    In the fleet sidebar, use the Add-a-Node card and enter the agent's hostname or IP (for example `drone.local` or `192.168.1.50`). The GCS pairs with the agent directly over the LAN, stores the key locally, and contacts no cloud service.
+  </Step>
+  <Step title="Fly">
+    Telemetry, video, and control flow over the LAN with no internet dependency. This is the default, local-first path; the cloud relay is only for reaching a drone on a different network.
+  </Step>
+</Steps>
 
 ## Running with SITL
 

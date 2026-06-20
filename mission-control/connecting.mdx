@@ -70,6 +70,10 @@ Mission Control supports three connection methods. Choose the one that fits your
     <Tip>
     The bundled SITL tool at `tools/sitl/` launches ArduPilot SITL and bridges TCP to WebSocket automatically. See the [SITL Testing](/mission-control/sitl-testing) page for setup.
     </Tip>
+
+    <Note>
+    The WebSocket path needs no HTTPS. Serve the GCS over plain HTTP (`http://localhost:4000` or `http://<lan-ip>:4000`) and connect to an agent or router on the LAN directly. HTTPS is only required for the USB/serial/Bluetooth browser features (which need a secure context) and for the cloud relay path.
+    </Note>
   </Tab>
   <Tab title="Cloud Relay">
     Connect to a remote drone through the cloud. The drone agent publishes status to a Convex backend, and the GCS subscribes to reactive updates.
@@ -145,6 +149,9 @@ Once connected, the top bar shows connection health:
     Confirm the target service is running and the URL is correct. For SITL, make sure the bridge is started (see [SITL Testing](/mission-control/sitl-testing)). Firewalls may block WebSocket connections on non-standard ports.
   </Accordion>
   <Accordion title="Cloud mode not activating">
-    Cloud mode auto-activates when the page is served over HTTPS. On `http://localhost`, the GCS uses direct connections. To test cloud mode locally, use a tunneling service or deploy to a domain with TLS.
+    Cloud mode auto-activates when the page is served over HTTPS. On plain HTTP (`http://localhost:4000` or `http://<lan-ip>:4000`), the GCS uses direct LAN connections instead, which is the right path for self-hosting against an agent on your own network. To exercise cloud mode locally, use a tunneling service or deploy to a domain with TLS.
+  </Accordion>
+  <Accordion title="GCS reaches for the cloud instead of my LAN agent">
+    The browser blocks an HTTPS page from fetching a plain-HTTP agent (mixed content), so a GCS served over HTTPS cannot talk to a LAN agent directly and falls back to the cloud relay. For LAN self-hosting, serve the GCS over plain HTTP (`http://localhost:4000` or `http://<lan-ip>:4000`) and pair the agent by IP via the Add-a-Node card. No cloud account or HTTPS is needed.
   </Accordion>
 </AccordionGroup>

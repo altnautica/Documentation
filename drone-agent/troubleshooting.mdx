@@ -267,6 +267,27 @@ for support tickets and scripts.
   </Accordion>
 </AccordionGroup>
 
+## High control latency
+
+**Symptoms:** Manual control feels laggy. Mission Control shows a high or
+climbing `controlRttMs` on the drone card.
+
+<AccordionGroup>
+  <Accordion title="Check which path the GCS is using">
+    `controlRttMs` is the round-trip time of the control link, measured against the agent's `GET /api/ping` echo. A few tens of milliseconds is a healthy LAN link. Hundreds of milliseconds points to the MQTT relay or a busy network. Seconds means the GCS is on the cloud command-queue poll path, which is fine for monitoring but too slow for hands-on flying.
+
+    For low-latency manual control, connect over the LAN: serve the GCS on plain HTTP (`http://localhost:4000` or `http://<lan-ip>:4000`) and pair the agent by IP, so the GCS uses the direct WebSocket path instead of the cloud poll.
+  </Accordion>
+
+  <Accordion title="Confirm the agent is reachable directly">
+    From the GCS machine, check the agent responds quickly:
+    ```bash
+    curl -s -o /dev/null -w "%{time_total}\n" http://<agent-ip>:8080/api/ping
+    ```
+    A small number (well under a second) confirms a healthy direct link. If this is slow or times out while the cloud path works, the GCS is correctly falling back to the relay; fix the LAN reachability to get the fast path back.
+  </Accordion>
+</AccordionGroup>
+
 ## Getting help
 
 If the troubleshooting steps above do not solve your problem:

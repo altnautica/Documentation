@@ -23,6 +23,28 @@ CPU usage, core count, memory total / used / percent, disk total / used
 
 The page polls `/api/system` every five seconds.
 
+## Control-plane latency
+
+Mission Control measures the round-trip time of its control link to the agent
+and shows it as `controlRttMs` on the drone card and the agent status card. It
+is the time for a request to reach the agent and a response to come back, so it
+reflects the path the GCS is actually using (LAN WebSocket, MQTT relay, or the
+cloud poll), independent of the flight controller.
+
+The agent answers a lightweight `GET /api/ping` echo for this measurement, and
+the GCS also derives a value from its regular status poll, so a number shows up
+without any extra configuration.
+
+| Reading | What it means |
+|---|---|
+| Tens of milliseconds | Direct LAN connection, healthy. |
+| 100-300 ms | MQTT relay or a busy network. |
+| Seconds | Cloud command-queue poll, or a degraded link. Manual control will feel laggy. Prefer a LAN connection for hands-on flying. |
+
+A missing or steadily climbing value means the control path is unhealthy. Check
+the connection method (LAN versus cloud) and the network between the GCS and the
+agent.
+
 ## Services panel
 
 Every systemd unit in the agent's set. Each row shows unit name,
@@ -52,6 +74,7 @@ Shared route, visible on both profiles.
 |---|---|---|
 | GET | `/api/system` | CPU / memory / disk / temps |
 | GET | `/api/services` | Unit list |
+| GET | `/api/ping` | Lightweight echo for control-plane round-trip timing |
 | POST | `/api/services/{name}/restart` | Restart a unit |
 | POST | `/api/v1/setup/reboot` | Reboot the node |
 

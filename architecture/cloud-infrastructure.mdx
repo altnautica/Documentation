@@ -112,9 +112,10 @@ All cloud services are co-located on a single Linux server:
 
 | Service | Port | Access |
 |---------|------|--------|
-| Convex backend | 3210 | `convex.altnautica.com` via Cloudflare Tunnel |
+| Convex backend (client API) | 3210 | Used by the GCS browser client (`NEXT_PUBLIC_CONVEX_URL`) |
+| Convex backend (site / HTTP actions) | 3211 | Used by the agent heartbeat and the MQTT bridge (`/agent/status`) |
 | Mosquitto MQTT | 1883 (TCP), 9001 (WebSocket) | `mqtt.altnautica.com` via Cloudflare Tunnel |
-| MQTT-to-Convex bridge | Internal | Subscribes to Mosquitto, POSTs to Convex |
+| MQTT-to-Convex bridge | Internal | Subscribes to Mosquitto, POSTs to the Convex site origin (`:3211`) |
 
 Everything routes through Cloudflare Tunnels. No inbound ports are open on the server. The Tunnel client (`cloudflared`) maintains outbound connections to Cloudflare's edge.
 
@@ -145,15 +146,39 @@ This starts Mosquitto with WebSocket support and the MQTT-to-Convex bridge. Edit
 
 ### Agent configuration
 
-Point your agent at your own cloud:
+Point your agent at your own cloud. The agent reads its cloud posture from `server.mode` and a matching block. For a self-hosted backend, set `mode: self_hosted` and fill in `server.self_hosted`:
 
 ```yaml
 # /etc/ados/config.yaml
-cloud:
-  convex_url: "https://your-convex-instance.com"
-  mqtt_broker: "mqtt://your-broker.example.com:1883"
-  mqtt_ws_url: "wss://your-broker.example.com:9001"
+server:
+  mode: self_hosted          # local | cloud | self_hosted
+  self_hosted:
+    url: "https://your-convex-instance:3211"   # Convex SITE origin (HTTP actions)
+    mqtt_broker: "your-broker.example.com"
+    mqtt_port: 8883
+    api_key: ""              # if your broker requires one
+pairing:
+  convex_url: "https://your-convex-instance:3211"   # Convex SITE origin (HTTP actions)
 ```
+
+<Warning>
+Set BOTH `server.self_hosted.url` AND `pairing.convex_url` to your Convex **site** origin (the HTTP-actions origin, port `:3211` on a self-hosted backend), not the client-API origin (`:3210`). The status heartbeat resolves its URL from `pairing.convex_url`, while the Python pairing register reads `server.self_hosted.url`. If only one is set, the agent can pair but never beacon (or beacon but never register), and the drone never appears in Mission Control. The agent falls back from one to the other when a value is missing, but setting both explicitly is the safest configuration.
+</Warning>
+
+The full set of `server` keys (defaults shown):
+
+| Key | Default | Purpose |
+|-----|---------|---------|
+| `server.mode` | `local` | `local` disables the cloud relay; `cloud` uses the managed backend; `self_hosted` points at your own deployment |
+| `server.self_hosted.url` | `""` | Convex site origin for status POSTs (self-hosted mode) |
+| `server.self_hosted.mqtt_broker` | `""` | Your MQTT broker host |
+| `server.self_hosted.mqtt_port` | `8883` | MQTT port (TLS) |
+| `server.self_hosted.api_key` | `""` | Optional broker credential |
+| `server.mqtt_transport` | `websockets` | `tcp` or `websockets` |
+| `server.mqtt_username` | `ados` | MQTT username |
+| `pairing.convex_url` | managed site origin | Convex site origin the heartbeat POSTs to |
+
+There is no `cloud:` top-level section. Keys like `convex_url` or `mqtt_ws_url` do not exist; use the schema above.
 
 ## Cloudflare Tunnel setup
 
