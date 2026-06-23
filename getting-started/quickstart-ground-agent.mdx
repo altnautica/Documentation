@@ -259,7 +259,7 @@ The Ground Agent can connect to the internet through multiple paths simultaneous
 | USB tether | Laptop shares internet | Piggyback on laptop's connection |
 | 4G LTE | SIM7600G-H modem (optional) | Remote field deployments |
 
-Multiple uplinks can be active at the same time. The agent uses priority-based failover and health checks against `convex.altnautica.com` to pick the best route. If 4G is enabled, a configurable data cap (default 5GB/month) prevents runaway usage.
+Multiple uplinks can be active at the same time. The agent uses priority-based failover and health checks against the configured cloud endpoint to pick the best route. If 4G is enabled, a configurable data cap (default 5GB/month) prevents runaway usage.
 
 ## Troubleshooting
 

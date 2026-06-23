@@ -1,21 +1,30 @@
 ---
 title: "Hardware testing"
 description: "SITL, hardware-in-loop, and bench-rig patterns for plugin development."
-lastUpdated: "2026-06-18"
+lastUpdated: "2026-06-23"
 ---
 
 A plugin's tests have to run somewhere. This page covers the four
 test surfaces ADOS plugin authors use, in order of cost and
-fidelity.
+fidelity. All three SDKs ship a test harness: the Python
+`ados.sdk.testing` harness, the Rust `ados-sdk::testing` harness,
+and the TypeScript `@altnautica/plugin-sdk/harness`. Pick the one
+that matches your plugin half and runtime.
 
-## 1. Pure-Python unit tests with a mock backend
+## 1. Agent-side unit tests with a mock backend
 
 The cheapest pass. Most driver plugins ship their own mock backend
 fixture (the thermal-camera reference plugin ships `MockUvcBackend`; the
 gimbal reference plugin ships a mock router) that the driver constructor
-accepts in place of the real device. The agent SDK testing surface
-(`ados.sdk`) adds `PluginTestHarness`, `FakeVisionEngine`,
-and `load_fixture` for plugin-level tests.
+accepts in place of the real device.
+
+For a Python agent half, the SDK testing surface
+(`ados.sdk.testing`, also re-exported from `ados.sdk`) adds
+`PluginTestHarness`, `FakeVisionEngine`, and `load_fixture` for
+plugin-level tests. `PluginTestHarness` wires an in-process plugin
+context to fake IPC so you can run lifecycle hooks under `pytest`
+without the supervisor, sockets, or subprocesses. Grant
+capabilities explicitly and assert against captured events.
 
 ```python
 def test_open_yields_correct_capabilities():
@@ -30,6 +39,30 @@ def test_open_yields_correct_capabilities():
 
 This catches the bulk of bugs and runs in milliseconds. Every
 first-party reference plugin uses this pattern.
+
+For a Rust agent half, `ados-sdk::testing` mirrors the same
+ergonomics. `FakeVisionEngine` emits synthetic frames (from an
+in-memory list or a directory of raw frame files) through the same
+frame callback a plugin registers with `ctx.vision.subscribe_frames`,
+builds a real frame ring under the hood, and captures the detections
+the plugin publishes so a test can assert on them. No host, no
+shared memory, no socket.
+
+```rust
+use ados_sdk::testing::FakeVisionEngine;
+use ados_protocol::framebus::FrameFormat;
+
+#[tokio::test]
+async fn detects_a_solid_frame() {
+    let mut engine = FakeVisionEngine::new("uvc-0", 64, 48, FrameFormat::Rgb24);
+    engine.push_solid(0x80);
+    engine.deliver_all();
+    // assert against the captured detection sink
+}
+```
+
+The `object-detector-rs` reference plugin tests this way in its
+`#[cfg(test)]` module.
 
 ## 2. The plugin harness, GCS side
 
@@ -106,7 +139,9 @@ cut.
 
 ## See also
 
-- [SDK TypeScript](/developers/sdk-typescript) for the harness
-  reference.
+- [SDK Python](/developers/sdk-python) for the `ados.sdk.testing`
+  harness reference.
+- [SDK TypeScript](/developers/sdk-typescript) for the
+  `@altnautica/plugin-sdk/harness` reference.
 - [Driver layer](/developers/driver-layer) for the driver
   base-class contract.

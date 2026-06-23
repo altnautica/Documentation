@@ -1,7 +1,7 @@
 ---
 title: "Your first plugin"
 description: "Walk through the Battery Health Panel from manifest to packed archive, line by line."
-lastUpdated: "2026-06-18"
+lastUpdated: "2026-06-23"
 ---
 
 The Battery Health Panel is the first first-party extension on the
@@ -21,6 +21,7 @@ name: "ADOS Battery Health Panel"
 version: "1.0.2"
 description: "Cell-level battery diagnostics, predictive time-to-min, and anomaly alerts."
 author: "Altnautica"
+homepage: "https://github.com/altnautica/ADOSExtensions/tree/main/extensions/battery-health-panel"
 license: "GPL-3.0-or-later"
 risk: low
 
@@ -57,8 +58,10 @@ gcs:
 Manifest fields are flat at the root (`id`, `name`, `version`,
 `compatibility`, then the `gcs` half). Permissions are a list of
 `- id: <capability>` entries. Six permissions, two contributes blocks
-(panels and notifications), no agent half. Risk band: `low` (no
-`vehicle.command`, no host file system, no network).
+(panels and notifications), no agent half. See the
+[permissions](/developers/permissions) reference for the full set of
+GCS slot ids. Risk band: `low` (no `vehicle.command`, no host file
+system, no network).
 
 ## Entry point
 
@@ -150,13 +153,31 @@ without spinning up Mission Control or a real drone.
 
 ```sh
 pnpm test
-pnpm build
-./scripts/pack.sh battery-health-panel
+scripts/pack.sh battery-health-panel
 ```
 
-Drag `dist/com.altnautica.battery-health-panel-1.0.0.adosplug` into
-**Mission Control -> Settings -> Plugins -> Install plugin**. Approve
-the six declared permissions. The panel mounts under the FC tab.
+`pack.sh` builds the GCS bundle (esbuild into `plugin.bundle.js`),
+computes SHA-256 hashes for every asset, and zips the result into
+`extensions/battery-health-panel/dist/<id>-<version>.adosplug`. The
+version comes from the manifest, so the archive is named
+`com.altnautica.battery-health-panel-1.0.2.adosplug`.
+
+Signing is a separate step. With a publisher Ed25519 key in
+`ADOS_SIGNING_KEY`, sign the packed archive:
+
+```sh
+ADOS_SIGNING_KEY=/path/to/key.ed25519 \
+  scripts/sign.sh dist/com.altnautica.battery-health-panel-1.0.2.adosplug
+```
+
+That writes a `*.signed.adosplug` carrying a `SIGNATURE` file (signer
+id plus the base64 Ed25519 signature over the canonical payload hash).
+The signer id defaults to `altnautica-2026-A`; override it with
+`ADOS_SIGNING_KEY_ID`.
+
+Drag the archive into **Mission Control -> Settings -> Plugins ->
+Install plugin**. Approve the six declared permissions. The panel
+mounts under the FC tab.
 
 ## What is next
 

@@ -2,7 +2,7 @@
 title: "Cloud Relay"
 description: "Three-layer cloud connectivity: Convex HTTP, MQTT telemetry, and WebRTC video."
 icon: "cloud"
-lastUpdated: "2026-06-18"
+lastUpdated: "2026-06-23"
 ---
 
 # Cloud Relay
@@ -71,14 +71,14 @@ The agent supports three server modes:
 
 <Tabs>
   <Tab title="Cloud (default)">
-    Connects to the ADOS cloud backend. MQTT goes through `mqtt.altnautica.com` via Cloudflare. Convex HTTP goes to `convex-site.altnautica.com`.
+    Connects to a hosted cloud backend. MQTT goes through the broker over WebSocket on port 443 via Cloudflare. Convex HTTP goes to the Convex site endpoint (port 3211, HTTP actions).
 
     ```yaml
     server:
       mode: "cloud"
       cloud:
-        url: "https://convex-site.altnautica.com"
-        mqtt_broker: "mqtt.altnautica.com"
+        url: "https://your-convex.example.com:3211"
+        mqtt_broker: "your-mqtt.example.com"
         mqtt_port: 443
     ```
 
@@ -92,8 +92,8 @@ The agent supports three server modes:
     server:
       mode: "self_hosted"
       self_hosted:
-        url: "https://your-convex-instance.com"
-        mqtt_broker: "your-mqtt-broker.com"
+        url: "https://your-convex.example.com:3211"
+        mqtt_broker: "your-mqtt.example.com"
         mqtt_port: 8883
         api_key: "your-api-key"
     ```

@@ -1,13 +1,17 @@
 ---
 title: "GCS plugin deep dive"
 description: "iframe sandbox, postMessage RPC, capability tokens, the named UI slots, slot orchestrator, CSP rules."
-lastUpdated: "2026-06-18"
+lastUpdated: "2026-06-23"
 ---
 
 The GCS half of a plugin runs inside a sandboxed iframe served by
 Mission Control. Same envelope shape as the agent half, different
 transport (postMessage instead of msgpack-over-Unix-socket), same
 capability re-resolution.
+
+One slot is the exception: `flight.skill` registers a cockpit Skill
+into the Skill Bar registry rather than mounting an iframe. Every
+other slot in this page is iframe-backed.
 
 ## Iframe sandbox
 
@@ -19,8 +23,7 @@ JavaScript and lazy-load:
 <iframe
   src="/plugins/com.example.battery/index.html"
   sandbox="allow-scripts"
-  loading="lazy"
-  referrerpolicy="no-referrer"
+  title="Battery Health"
 ></iframe>
 ```
 
@@ -72,15 +75,22 @@ Same shape as the agent IPC envelope, just delivered via
 
 ```ts
 interface RpcEnvelope {
-  id: string;                  // ULID, plugin-generated
+  id: string;                  // correlates request with response
   type: "request" | "response" | "event";
   method: string;
-  capability: string;
+  capability: string;          // the capability the caller claims
   args: unknown;
   version: 1;
   error?: { code: string; message: string };
+  token?: string;              // per-RPC capability token, see below
 }
 ```
+
+The `token` field carries a per-RPC capability token (base64-encoded
+JSON claims) when the host bridge runs with a token validator. The
+validator checks expiry, plugin id, agent id, capability membership,
+and signature before the call dispatches. When the bridge runs without
+a validator (legacy hosts and unit tests), the field is optional.
 
 The plugin posts to `window.parent` with `targetOrigin` set to the
 host origin. The host posts back to the iframe's `contentWindow`
@@ -103,35 +113,55 @@ error envelopes. For methods without a high-level facade, drop down to
 
 Every privileged RPC carries `capability` in the envelope. The
 host bridge (running on the parent page) re-resolves the required
-capability from `method` and `args`, then checks the granted set
-for that plugin. The plugin cannot lie its way past a missing
-grant; the host ignores the envelope's `capability` field for
-authorization.
+capability from `method` and `args` via `resolveRequiredCapability`,
+then checks the granted set for that plugin. The plugin cannot lie
+its way past a missing grant; the host ignores the envelope's
+`capability` field for authorization.
+
+When a token is present, its `grantedCapabilities` claim is the
+authoritative set, and the in-memory granted set must include the
+capability too, so a revocation applied in the GCS store takes effect
+before a fresh token is minted. A required capability outside the
+token claim returns `capability_denied`; one outside the in-memory
+set returns `permission_denied`.
 
 The bridge mirrors the agent-side logic exactly so plugin authors
 debug one model, not two.
 
 ## The named UI slots
 
-| Slot id | Where it renders |
-|---------|------------------|
-| `fc.tab` | Tab inside the flight controller view. |
-| `command.tab` | Tab in the Command area for fleet-wide tools. |
-| `hardware.tab` | Tab on the Hardware page. |
-| `suite.widget` | Widget inside a mission suite layout. |
-| `mission.template` | Entry in the mission template picker. |
-| `map.overlay` | Geometry drawn on the map view. |
-| `video.overlay` | Layer on top of the live video pane. |
-| `notification.channel` | Channel in the GCS notification center. |
-| `smart-function` | Entry in the Smart Functions list. |
-| `settings.section` | Section on the Settings page. |
-| `connection.protocol` | Custom protocol in the Connect dialog. |
-| `recording.processor` | Post-flight processing step over recordings. |
-| `drone.detail.tab` | Per-drone tab inside the drone detail panel. |
+There are 14 slots. The first 12 are fleet-scoped. The last two
+(`drone.detail.tab` and `flight.skill`) are per-drone scoped: their
+contribution is bound to the currently-selected drone and is torn
+down and re-mounted when the operator switches drones. A per-drone
+contribution receives a capability token whose `agentId` claim matches
+the selected drone, so cross-drone RPCs are rejected at the bridge.
 
-Each slot has a contract: required props the host injects, the
-size and layout it lives in, the events it can hand back to its
-parent. Slot contracts live in
+| Slot id | Scope | Where it renders |
+|---------|-------|------------------|
+| `fc.tab` | Fleet | Tab inside the flight controller view. |
+| `command.tab` | Fleet | Tab in the Command area for fleet-wide tools. |
+| `hardware.tab` | Fleet | Tab on the Hardware page. |
+| `suite.widget` | Fleet | Widget inside a mission suite layout. |
+| `mission.template` | Fleet | Entry in the mission template picker. |
+| `map.overlay` | Fleet | Geometry drawn on the map view. |
+| `video.overlay` | Fleet | Layer on top of the live video pane. |
+| `notification.channel` | Fleet | Channel in the GCS notification center. |
+| `smart-function` | Fleet | Entry in the Smart Functions list. |
+| `settings.section` | Fleet | Section on the Settings page. |
+| `connection.protocol` | Fleet | Custom protocol in the Connect dialog. |
+| `recording.processor` | Fleet | Post-flight processing step over recordings. |
+| `drone.detail.tab` | Per-drone | Per-drone tab inside the drone detail panel. |
+| `flight.skill` | Per-drone | A Skill registered into the cockpit Skill Bar, bindable to a hotkey or gamepad button. |
+
+`flight.skill` is the one slot that does not mount an iframe. The
+plugin registers a Skill keyed to the active drone; the cockpit's arm
+and confirmation gates still apply on activation. Every other slot
+renders an iframe.
+
+Each iframe-backed slot has a contract: required props the host
+injects, the size and layout it lives in, the events it can hand back
+to its parent. Slot contracts live in
 [`@altnautica/plugin-sdk`'s slot types](/developers/sdk-typescript).
 
 A plugin contributes to a slot by declaring a `panels[]` entry in
@@ -148,8 +178,8 @@ gcs:
         order: 30
 ```
 
-Multiple plugins can target the same slot. Order is by the
-manifest's `order` field, ties broken by install order.
+Multiple plugins can target the same slot. The `order` field is a hint
+the host carries for sorting where a slot chooses to apply it.
 
 ## Slot orchestrator
 
@@ -157,6 +187,13 @@ The host runs a slot orchestrator. It reads the enabled plugins from the
 install set, looks at each plugin's `contributes.panels` list, and mounts
 the plugin's bundle into the matching slot. Which panel renders in which
 slot is declared in the manifest, not chosen at runtime by the plugin.
+
+Before a contribution mounts, the slot applies a capability gate: a
+contribution only renders when its granted capabilities include the
+slot's matching `ui.slot.<id>` capability. A contribution missing that
+grant is dropped, the operator gets a one-shot warning toast, and the
+denial is logged. The grant is fixed at install time, so the install
+record is the source of truth.
 
 The bundle's single entry point is `definePlugin`. The SDK arranges the
 `mount` call once the iframe document is ready, handing your code a
@@ -171,7 +208,8 @@ definePlugin({
   version: "0.1.0",
   mount(ctx, info) {
     // ctx exposes telemetry, command, notifications, recording,
-    // mission, config, theme, and i18n. info carries id + version.
+    // mission, config, events, theme, and i18n. info carries id
+    // and version.
     mountUI(ctx);
   },
   unmount(ctx) {

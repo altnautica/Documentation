@@ -1,0 +1,183 @@
+---
+title: "Video relay"
+description: "Run the RTSP-to-WebSocket video relay so a browser can play the drone's live stream as fragmented MP4, with no transcoding."
+lastUpdated: "2026-06-23"
+---
+
+The video relay takes an RTSP stream (from a camera or from mediamtx
+running on the agent) and re-wraps it into fragmented MP4 (fMP4)
+delivered over a WebSocket. A browser plays that stream through the
+Media Source Extensions (MSE) API. The video bytes are never
+re-encoded: ffmpeg copies the H.264 stream (`-c:v copy`) and only
+changes the container, so the relay stays light and adds little latency.
+
+It lives in
+[github.com/altnautica/ADOSMissionControl](https://github.com/altnautica/ADOSMissionControl)
+under `tools/video-relay/`, GPL-3.0.
+
+## How it works
+
+```
+RTSP source (camera / mediamtx on the agent)
+  |
+  v
+ffmpeg -c:v copy -f mp4 -movflags frag_keyframe+empty_moov+default_base_moof pipe:1
+  |
+  v
+WebSocket binary frames  ->  browser MSE SourceBuffer
+```
+
+Each device stream gets its own ffmpeg process. The relay spawns it on
+the first viewer connect and tears it down when the last viewer
+disconnects, so an idle relay holds no ffmpeg processes.
+
+<Note>
+The browser side of this is the GCS MSE player
+(`src/lib/video/mse-player.ts`). It expects an H.264 stream and uses
+the codec string `video/mp4; codecs="avc1.640029"`. If you change the
+relay's input codec, that codec string has to change to match.
+</Note>
+
+## Quick start (local)
+
+```bash
+cd tools/video-relay
+npm install
+npm run dev
+```
+
+The relay listens on port `3001` by default. Connect a WebSocket client
+to `ws://localhost:3001/ws/stream/{deviceId}`, where `{deviceId}` is the
+RTSP stream name. The device id must match `[a-zA-Z0-9_-]+`; anything
+else is rejected with a `400` on the upgrade.
+
+### Health check
+
+A plain `GET` to the relay returns a small JSON status with the active
+session count and a per-device viewer count:
+
+```bash
+curl http://localhost:3001/
+```
+
+```json
+{
+  "status": "ok",
+  "activeSessions": 1,
+  "sessions": { "drone1": 2 }
+}
+```
+
+`activeSessions` is the number of live ffmpeg sessions. The `sessions`
+map gives the viewer count per device id.
+
+## Configuration
+
+The relay reads two environment variables.
+
+<ParamField path="PORT" type="number" default="3001">
+  The HTTP and WebSocket listen port.
+</ParamField>
+
+<ParamField path="RTSP_URL_PATTERN" type="string" default="rtsp://localhost:8554/{deviceId}">
+  The RTSP source URL template. The relay replaces `{deviceId}` with
+  the stream name taken from the WebSocket path. The default points at
+  `localhost:8554`, which works when mediamtx runs on the same host as
+  the relay.
+</ParamField>
+
+The relay expects an RTSP server (mediamtx is the usual one) serving
+H.264. When the relay runs in Docker on a different host than the RTSP
+source, set `RTSP_URL_PATTERN` to reach that source. The compose file
+defaults to `host.docker.internal` so a relay container can reach an
+RTSP server on the Docker host.
+
+## Deploy with Docker
+
+The relay ships its own compose file under `tools/video-relay/deploy/`.
+
+<Steps>
+  <Step title="Copy the env template">
+    ```bash
+    cd tools/video-relay/deploy
+    cp .env.example .env
+    ```
+  </Step>
+  <Step title="Fill in the env file">
+    Set the RTSP source and, if you expose the relay through a tunnel,
+    the tunnel token.
+
+    ```bash
+    RTSP_URL_PATTERN=rtsp://host.docker.internal:8554/{deviceId}
+    PORT=3001
+    CLOUDFLARE_TUNNEL_TOKEN=your-tunnel-token-here
+    ```
+  </Step>
+  <Step title="Bring it up">
+    ```bash
+    docker compose up -d
+    ```
+  </Step>
+</Steps>
+
+The compose file runs two containers:
+
+1. **video-relay**: the Node.js relay plus ffmpeg, published on port
+   `3001`.
+2. **cloudflared**: an optional tunnel that exposes the relay to a
+   public hostname. WebSocket connections are ordinary HTTP upgrades, so
+   they pass through a tunnel with no special configuration.
+
+<Tip>
+If you serve the GCS over HTTPS, the relay needs to be reachable over
+`wss://`. Point the GCS video URL at your relay's public hostname, for
+example `wss://your-video.example.com/ws/stream/{deviceId}`. The tunnel
+container above is one way to get that hostname; any HTTPS reverse proxy
+that forwards WebSocket upgrades works too.
+</Tip>
+
+## Browser client
+
+A minimal MSE viewer: open a WebSocket, create a `MediaSource`, and feed
+each binary frame into a `SourceBuffer`.
+
+```js
+const ws = new WebSocket("wss://your-video.example.com/ws/stream/drone1");
+const mediaSource = new MediaSource();
+const video = document.querySelector("video");
+video.src = URL.createObjectURL(mediaSource);
+
+mediaSource.addEventListener("sourceopen", () => {
+  const buf = mediaSource.addSourceBuffer('video/mp4; codecs="avc1.640029"');
+  ws.binaryType = "arraybuffer";
+  ws.onmessage = (e) => {
+    if (!buf.updating) {
+      buf.appendBuffer(e.data);
+    }
+  };
+});
+```
+
+In production, queue incoming frames and append them only when the
+buffer is idle (`!buf.updating`), and prune the buffer as it grows. The
+GCS player at `src/lib/video/mse-player.ts` is a full reference
+implementation with queueing, reconnect, and buffer management.
+
+## Where this fits
+
+The video relay is the streaming layer of the cloud relay. It is
+optional and independent of the other layers: you run it only when you
+want live video in the browser across a network, on top of a
+[self-hosted Convex backend](/developers/self-hosting/mission-control-and-convex)
+and the [MQTT bridge](/developers/self-hosting/mqtt-bridge). For a single
+host that brings up everything at once, see the
+[all-in-one stack](/developers/self-hosting/all-in-one).
+
+<CardGroup cols={2}>
+  <Card title="MQTT bridge" icon="tower-broadcast" href="/developers/self-hosting/mqtt-bridge">
+    Forward live telemetry to Convex over Mosquitto.
+  </Card>
+  <Card title="All-in-one stack" icon="boxes-stacked" href="/developers/self-hosting/all-in-one">
+    One Docker Compose for the whole self-hosted stack.
+  </Card>
+</CardGroup>

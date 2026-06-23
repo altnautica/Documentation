@@ -1,7 +1,7 @@
 ---
 title: "Vendor binaries"
 description: "Ship a closed-source .so or vendor SDK alongside an open plugin."
-lastUpdated: "2026-06-18"
+lastUpdated: "2026-06-23"
 ---
 
 Hardware drivers sometimes need a closed-source shared library to talk to
@@ -13,30 +13,44 @@ the inclusion so operators see the trust signal in the install dialog.
 
 The agent half sets `contains_vendor_binary: true` and provides
 `vendor_attribution`. The two go together: the schema rejects one without
-the other.
+the other (set the flag with no attribution and the manifest fails to
+load; set attribution with the flag false and it also fails). Both fields
+are schema version 2, so the manifest must set `schema_version: 2`.
+
+`vendor_attribution` is a list, so a plugin can attribute more than one
+upstream. The `vision-nav` extension ships two VIO backends and declares
+both:
 
 ```yaml
+schema_version: 2
 agent:
-  entrypoint: "agent/plugin.py"
+  runtime: rust
+  entrypoint: "bin/vision-nav"
   isolation: subprocess
   contains_vendor_binary: true
   vendor_attribution:
-    - name: "Example Vendor"
-      license: "Proprietary"
-      source_url: "https://example-vendor.example.com/sdk"
-      upstream_repo: "https://example-vendor.example.com/repo"
-      upstream_version: "2.4.1"
-      notice: "Decodes radiometric frames into Celsius."
-  permissions:
-    - id: hardware.usb.uvc
+    - name: "OpenVINS"
+      license: "GPL-3.0-only"
+      source_url: "https://github.com/rpng/open_vins"
+      upstream_version: "v2.7"
+      notice: "VIO mode vio_openvins uses the OpenVINS estimator."
+    - name: "VINS-Fusion"
+      license: "GPL-3.0-only"
+      source_url: "https://github.com/HKUST-Aerial-Robotics/VINS-Fusion"
+      upstream_version: "be55a937a57436548ddfb1bd324bc1e9a9e828e0"
+      notice: "VIO mode vio_vins_fusion uses the VINS-Fusion estimator."
 ```
 
 There is no per-binary `path` or `sha256` field in the manifest. The
 archive's single `SIGNATURE` file covers every entry's hash, so the
 vendor binary is protected by the same signature as the rest of the
-archive. `license` is the only required attribution field; the rest are
-optional provenance (`name`, `source_url`, `source_offer_url`,
-`upstream_repo`, `upstream_version`, `commit_sha`, `notice`).
+archive. `license` is the only required attribution field (it must be a
+non-empty string); the rest are optional provenance (`name`,
+`source_url`, `source_offer_url`, `upstream_repo`, `upstream_version`,
+`commit_sha`, `notice`). For a GPL-compatible upstream, set at least one
+of `source_url` or `source_offer_url` plus a version pin
+(`upstream_version` or `commit_sha`) so the install dialog can render a
+real source offer.
 
 ## Trust signal in the install dialog
 
@@ -63,9 +77,32 @@ class FooDriver:
 The plugin runs inside its sandbox, so the binary cannot escape the
 plugin's permission set. A vendor `.so` that opens a USB camera still
 requires the plugin to declare the matching capability (here
-`hardware.usb.uvc`). If the vendor code must run as its own process
-rather than load in-process, the plugin needs `process.spawn` plus a
-`subprocess_spawn` allowlist entry naming the binary.
+`hardware.usb.uvc`).
+
+### Running the vendor code as a separate process
+
+If the vendor code must run as its own process rather than load
+in-process, the plugin needs the `process.spawn` capability plus a
+`subprocess_spawn` allowlist. Entries are binary basenames, not paths.
+The plugin host rejects any `ctx.process.spawn(...)` whose basename is
+not on the list, and the manifest validator refuses to load if
+`subprocess_spawn` is set but `process.spawn` is missing from
+`permissions`.
+
+```yaml
+agent:
+  permissions:
+    - id: process.spawn
+  subprocess_spawn:
+    - ados_openvins_shim
+    - ados_vins_fusion_shim
+```
+
+Each basename resolves to `<install_dir>/vendor/<basename>`, so ship the
+binaries under `agent/vendor/` in your archive and the extractor lays
+them out at `/var/ados/plugins/<plugin-id>/vendor/<basename>` after
+install. The host rejects shell metacharacters and any path-traversal
+attempt in a basename.
 
 ## License note
 
@@ -98,6 +135,14 @@ from pathlib import Path
 arch = platform.machine()
 sdk_path = Path(__file__).parent / "vendor" / arch / "libfoo.so"
 ```
+
+<Note>
+Arch subfolders work for an in-process `.so` you load yourself with
+`ctypes`. A `subprocess_spawn` binary is different: the host resolves it
+at the flat path `<install_dir>/vendor/<basename>`, so per-arch spawned
+binaries need a wrapper script on the allowlist that picks the right
+arch, not a subfolder.
+</Note>
 
 ## See also
 

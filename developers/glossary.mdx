@@ -1,7 +1,7 @@
 ---
 title: "Glossary"
 description: "The vocabulary the plugin system uses, in one page."
-lastUpdated: "2026-06-18"
+lastUpdated: "2026-06-23"
 ---
 
 | Term | Meaning |
@@ -9,20 +9,23 @@ lastUpdated: "2026-06-18"
 | **Plugin** | A signed `.adosplug` archive that adds code or UI to ADOS. Has up to two halves (agent and GCS). |
 | **Extension** | An Altnautica-published plugin shipped from the public `ADOSExtensions` repo. Same on-disk format as a third-party plugin. |
 | **Manifest** | The `manifest.yaml` at the root of the archive. Declares id, version, permissions, and contributes. It carries no asset-hash list; integrity comes from the separate `SIGNATURE` file's canonical payload hash. |
-| **Half** | The portion of a plugin that runs on one side of the system. `agent` half runs on the drone; `gcs` half runs in Mission Control. |
-| **Slot** | A named mount point in the Mission Control UI. There are 13 slots (e.g. `fc.tab`, `video.overlay`, `notification.channel`, `command.tab`, `drone.detail.tab`). The plugin manifest declares which slots its panels target. |
+| **Half** | The portion of a plugin that runs on one side of the system. The `agent` half runs on the drone and is written in Python or Rust (set by `agent.runtime`); the `gcs` half runs in Mission Control and is written in TypeScript. A plugin can ship one half or both. |
+| **Slot** | A named mount point in the Mission Control UI. There are 14 slots (e.g. `fc.tab`, `video.overlay`, `notification.channel`, `command.tab`, `drone.detail.tab`, `flight.skill`). The plugin manifest declares which slots its panels target. |
 | **Capability** | A runtime grant derived from a manifest permission. Held by the plugin for the duration of a session. Required for every privileged call. |
 | **Capability token** | The signed string that represents a capability on the wire. HMAC-SHA256 with a host key. Short TTL. |
 | **Risk band** | One of `low`, `medium`, `high`, `critical`. Computed from the most-privileged permission the plugin requests. Surfaced in the install dialog. |
 | **Sandbox** | The isolation boundary the plugin runs inside. Subprocess + cgroup on the agent; iframe + postMessage on the GCS. |
 | **Bridge** | The host code that mediates between a sandbox and the rest of the application. Validates schema, origin, capability, then routes to a registered handler. |
 | **Bundle** | The built JS asset for the GCS half. Single ESM file, loaded via `blob:` URL into the iframe. |
-| **Entrypoint** | The Python module the agent half launches. Declared by `agent.entrypoint` in the manifest. |
+| **Entrypoint** | What the agent half launches, declared by `agent.entrypoint`. A `python` runtime points at a module (`module:Class`); a `rust` runtime points at the cross-compiled binary (`bin/<name>`). |
+| **Vendor binary** | A third-party executable or library bundled inside the agent half (for example a model runtime). When `agent.contains_vendor_binary` is true the manifest must list at least one `agent.vendor_attribution` entry (name, license, source URL) or the manifest fails validation. |
+| **Per-drone plugin** | A plugin whose agent half is installed per connected drone, each with its own `ctx.agent_id` and its own settings. Enabled by `agent.per_drone_config: true`, surfaced through the `drone.detail.tab` slot. The default is fleet-wide. |
 | **Permission** | A request the plugin makes for one slice of authority. Declared in the manifest, granted by the operator at install. |
 | **Operator** | The human running ADOS. Approves permissions, grants and revokes them through the Settings -> Plugins UI. |
 | **Publisher** | The Ed25519 keypair the plugin is signed with. Pre-trusted publishers (Altnautica's keys) get a verified-publisher badge. |
-| **Trust list** | The agent's local file of accepted publisher key ids, stored as PEM files under `/etc/ados/plugin-keys/`. Edited explicitly; new publisher keypairs are created with `ados plugin keygen`. |
-| **Revocation list** | A list of plugin ids the host refuses to load. Distributed with the registry once it lands. |
+| **Signer id** | The name that identifies a publisher key. It is the filename stem of the public key on the agent (`<signer-id>.pem`) and is written into the archive's `SIGNATURE` file. The first-party Altnautica signer is `altnautica-2026-A`. Pass it with `ados plugin sign --signer-id` and create a new one with `ados plugin keygen <signer_id>`. |
+| **Trust list** | The agent's local set of accepted publisher keys, stored as PEM files under `/etc/ados/plugin-keys/`, keyed by signer id. Edited explicitly; new publisher keypairs are created with `ados plugin keygen`. |
+| **Revocation list** | The JSON file at `/etc/ados/plugin-revocations.json` listing signer ids the host refuses to trust. A plugin signed by a revoked signer fails verification. Distributed with the registry once it lands. |
 | **Two-stage install** | The install dialog flow: `parse` returns a manifest preview without committing, `install` commits only after operator consent on permissions. |
 | **`.adosplug`** | The file extension for a plugin archive. A zip with `manifest.yaml` at the root. |
 | **PluginContext** | The high-level object the SDK exposes to plugin code. Provides `telemetry`, `command`, `notifications`, `recording`, `mission`, `config`, `theme`, and `i18n` helpers. |

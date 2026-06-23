@@ -1,0 +1,114 @@
+---
+title: "Self-hosting the agent"
+description: "Install the ADOS Drone Agent and point it at your own Convex and MQTT backend instead of the managed cloud."
+lastUpdated: "2026-06-23"
+---
+
+The ADOS Drone Agent runs on the companion computer of a drone or ground station. By default a fresh install is **local**: it talks to Mission Control directly over the LAN and never reaches out to any cloud. Self-hosting changes one thing. You point the agent at your own Convex deployment and MQTT broker so a Mission Control reached from any network can find and command the drone through your own relay.
+
+This page covers installing the agent and switching it from local mode to `self_hosted`. It assumes you have already stood up your own Convex backend and MQTT bridge (see [Mission Control and Convex](/developers/self-hosting/mission-control-and-convex) and [MQTT bridge](/developers/self-hosting/mqtt-bridge)).
+
+## 1. Install the agent
+
+The agent installs with a single command on the companion computer. The install script fetches and verifies a prebuilt installer, then provisions every service.
+
+```bash
+curl -sSL https://raw.githubusercontent.com/altnautica/ADOSDroneAgent/main/scripts/install.sh | sudo bash
+```
+
+The installer detects the board, sets board-specific overrides, builds the radio stack, and brings up the services. No follow-up commands are required for a working local agent.
+
+To install and pair to a self-hosted Mission Control in one step, pass a pairing code:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/altnautica/ADOSDroneAgent/main/scripts/install.sh | sudo bash -s -- --pair YOUR_CODE
+```
+
+<Note>
+A paired-by-code flow only works once the agent already knows where your backend lives. If you are self-hosting, set the server mode first (next section), or pair locally over the LAN from the Add-a-Node card in Mission Control, which needs no cloud at all.
+</Note>
+
+## 2. Switch the agent to self-hosted mode
+
+The agent reads its configuration from `/etc/ados/config.yaml`. To use your own backend, set `server.mode` to `self_hosted`, fill in `server.self_hosted`, and mirror the backend URL onto `pairing.convex_url`.
+
+```yaml
+server:
+  mode: "self_hosted"          # cloud | self_hosted | local
+  self_hosted:
+    url: "https://your-convex.example.com:3211"
+    mqtt_broker: "your-mqtt.example.com"
+    mqtt_port: 8883
+    api_key: ""                # optional, used to authenticate to your relay
+  telemetry_rate: 2            # Hz, MQTT publish rate
+  heartbeat_interval: 5        # seconds
+
+pairing:
+  convex_url: "https://your-convex.example.com:3211"
+  beacon_interval: 30
+  heartbeat_interval: 60
+  code_ttl: 900
+```
+
+<Warning>
+You must set **both** `server.self_hosted.url` and `pairing.convex_url`. The cloud beacon and heartbeat read `pairing.convex_url` only. If you set the server block but leave `pairing.convex_url` empty, the agent will appear to pair but never beacon to your backend. The setup webapp mirrors the two for you automatically; a manual edit must set both.
+</Warning>
+
+### The :3210 vs :3211 rule
+
+This is the most common self-host mistake, so it gets its own callout.
+
+A self-hosted Convex deployment serves two origins on the same host but different ports:
+
+| Port  | Origin              | Serves                                                              |
+|-------|---------------------|--------------------------------------------------------------------|
+| `3210` | client API (backend) | Browser client functions. This is what `NEXT_PUBLIC_CONVEX_URL` points at for Mission Control. |
+| `3211` | site (HTTP actions)  | The agent's pairing register, heartbeat, and command endpoints.    |
+
+The agent talks to the **site origin on `:3211`**. Its pairing register call (`/pairing/register`), status heartbeat (`/agent/status`), and command poll (`/agent/commands`) are all HTTP actions, which Convex serves on the site origin, not the client API.
+
+<Warning>
+Point the agent at port **`:3211`**, not `:3210`. If you paste the `:3210` backend URL into `server.self_hosted.url` or `pairing.convex_url`, the register call lands on the wrong origin and returns a 404. The agent normalizes a known `:3210` URL to `:3211` for you as a safety net, but set `:3211` explicitly so the intent is clear and so a non-standard backend coordinate still resolves correctly.
+</Warning>
+
+So for a backend at `https://your-convex.example.com`, the agent points at:
+
+```
+https://your-convex.example.com:3211
+```
+
+## 3. Apply the change
+
+After editing `/etc/ados/config.yaml`, restart the supervisor so the new server mode takes effect.
+
+```bash
+sudo systemctl restart ados-supervisor
+```
+
+Confirm the agent picked up the mode and is reaching your backend:
+
+```bash
+ados status
+```
+
+<Tip>
+For root-cause analysis on a live agent, prefer `ados logs query` over scraping the journal. The agent's logging store survives restarts and is reachable when the network is down. A pairing call that lands on the wrong origin leaves a durable log line you can find with `ados logs query`.
+</Tip>
+
+## Server modes at a glance
+
+| Mode          | Behavior                                                                                                  |
+|---------------|-----------------------------------------------------------------------------------------------------------|
+| `local`       | Default on a fresh install. No cloud. Mission Control reaches the agent directly over the LAN, hotspot, or USB tether. |
+| `self_hosted` | Points at your own Convex deployment and MQTT broker. This page.                                          |
+| `cloud`       | Uses the Altnautica-managed backend.                                                                      |
+
+<Note>
+Local mode is correct, not a misconfiguration. If you are running a single LAN bench or field setup, you do not need self-hosting at all. Pair the drone over the LAN by hostname or IP from the Add-a-Node card. Self-hosting is for remote and cross-network access, where the agent and the GCS are on different networks and need a relay in between.
+</Note>
+
+## MQTT and the rest of the stack
+
+The `server.self_hosted.mqtt_broker` and `mqtt_port` point the agent at your MQTT bridge. The default self-hosted MQTT port is `8883` (TLS). Telemetry and status publish on `ados/{deviceId}/telemetry` and `ados/{deviceId}/status`. See the [MQTT bridge](/developers/self-hosting/mqtt-bridge) page to stand up the broker, and the [video relay](/developers/self-hosting/video-relay) page for the video path.
+
+For ports and a checklist when something does not connect, see [Troubleshooting and ports](/developers/self-hosting/troubleshooting-and-ports).

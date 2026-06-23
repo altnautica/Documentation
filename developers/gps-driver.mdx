@@ -1,7 +1,7 @@
 ---
 title: "GPS driver"
 description: "Implement a GpsDriver to add a new GNSS receiver."
-lastUpdated: "2026-06-18"
+lastUpdated: "2026-06-23"
 ---
 
 A `GpsDriver` decodes a position-fix stream from a u-blox, NMEA,
@@ -42,6 +42,57 @@ class MyGpsDriver(GpsDriver):
 ```
 
 `inject_rtcm` is a no-op for non-RTK drivers.
+
+## Rust
+
+The same driver exists in the Rust SDK as the `ados-sdk::drivers::GpsDriver`
+trait. It mirrors the Python base class method for method, with an associated
+`Session` type in place of the opaque `GpsSession` and a `SampleStream<GpsFix>`
+(a boxed async stream) in place of the Python async generator.
+
+```rust
+use std::collections::BTreeMap;
+use async_trait::async_trait;
+use rmpv::Value;
+use ados_sdk::drivers::{
+    Bus, DriverResult, GpsCandidate, GpsCapabilities, GpsDriver, GpsFix, SampleStream,
+};
+
+struct MyGpsDriver;
+
+#[async_trait]
+impl GpsDriver for MyGpsDriver {
+    type Session = MySession;
+
+    async fn discover(&self) -> DriverResult<Vec<GpsCandidate>> { todo!() }
+
+    async fn open(
+        &self,
+        candidate: &GpsCandidate,
+        config: &BTreeMap<String, Value>,
+    ) -> DriverResult<Self::Session> { todo!() }
+
+    async fn close(&self, session: Self::Session) -> DriverResult<()> { todo!() }
+
+    fn capabilities(&self, session: &Self::Session) -> GpsCapabilities { todo!() }
+
+    async fn fix_iterator(
+        &self,
+        session: &Self::Session,
+    ) -> DriverResult<SampleStream<GpsFix>> { todo!() }
+
+    async fn inject_rtcm(
+        &self,
+        session: &Self::Session,
+        payload: &[u8],
+    ) -> DriverResult<()> { todo!() }
+}
+```
+
+A Rust GPS driver returns `Err(DriverError::NotSupported(...))` from
+`inject_rtcm` when the receiver has no RTK support, where the Python driver
+raises `NotImplementedError`. The `GpsFix` and `GpsCapabilities` fields are
+identical to the Python ones below.
 
 ## Capabilities
 

@@ -1,0 +1,141 @@
+---
+title: "Self-hosting overview"
+description: "Run ADOS on your own infrastructure: the drone agent, the Mission Control GCS, a self-hosted Convex backend, the MQTT bridge, and the video relay."
+lastUpdated: "2026-06-23"
+---
+
+ADOS is open source end to end. You can run the whole stack on hardware
+you own, with no dependency on any hosted service. This page maps out
+what is self-hostable, how the pieces connect, and the two routes to
+bringing the cloud relay up.
+
+## What you can self-host
+
+<CardGroup cols={2}>
+  <Card title="Drone agent" icon="microchip" href="/developers/self-hosting/agent">
+    The agent that runs on your SBC. Installs with one command and pairs
+    over the LAN by default.
+  </Card>
+  <Card title="Mission Control + Convex" icon="window" href="/developers/self-hosting/mission-control-and-convex">
+    The web GCS plus a self-hosted Convex backend for auth, fleet data,
+    and cloud commands.
+  </Card>
+  <Card title="MQTT bridge" icon="tower-broadcast" href="/developers/self-hosting/mqtt-bridge">
+    Mosquitto plus the bridge that forwards live telemetry to Convex.
+  </Card>
+  <Card title="Video relay" icon="video" href="/developers/self-hosting/video-relay">
+    RTSP-to-WebSocket video so a browser can play the drone's stream.
+  </Card>
+</CardGroup>
+
+Each piece is open source under GPL-3.0. The agent lives in
+[github.com/altnautica/ADOSDroneAgent](https://github.com/altnautica/ADOSDroneAgent);
+the GCS, the MQTT bridge, and the video relay live in
+[github.com/altnautica/ADOSMissionControl](https://github.com/altnautica/ADOSMissionControl).
+
+## Local-first by default
+
+You do not need any cloud infrastructure to fly. The default path is
+local, over your LAN:
+
+- The drone-to-ground data link is the WFB radio, which binds on first
+  boot with no manual setup.
+- Mission Control reaches an agent directly by hostname or IP. Paste the
+  agent's address into the Add-a-Node card and the GCS pairs with it
+  over the LAN. The pairing key is stored in the browser. No Convex
+  round-trip is involved.
+
+An agent in local mode (cloud relay disabled) is the normal, correct
+setup for a single-LAN bench or field deployment. Set the agent's
+`server.mode` to `local` and nothing reaches out to a backend.
+
+<Note>
+On the LAN, Mission Control connects straight to the agent over plain
+HTTP. Cloud relay only activates when the GCS is served over HTTPS. See
+[configuration](/drone-agent/configuration) for the agent's
+`server` block.
+</Note>
+
+## When you want the cloud relay
+
+The cloud relay is the opt-in path for reaching a drone across networks
+(remote sites, mobile data, anywhere the GCS and the agent are not on
+the same LAN). It is additive: each layer is optional and you only run
+what you need.
+
+| Layer | What it adds | Update rate |
+|---|---|---|
+| Convex backend | Auth, fleet management, cloud commands | 5s poll baseline |
+| MQTT relay | Real-time telemetry through Mosquitto | 2Hz and up |
+| Video relay | Live video in the browser | streaming |
+
+The MQTT bridge subscribes to the drone's telemetry topics
+(`ados/{deviceId}/status`, `ados/{deviceId}/telemetry`) and forwards
+them to Convex so the GCS can display them. The video relay remuxes the
+agent's RTSP stream into fragmented MP4 over WebSocket for browser
+playback, with no transcoding.
+
+To put an agent on a self-hosted backend, set its `server.mode` to
+`self_hosted` and point `server.self_hosted.url` at your Convex site
+origin. The agent heartbeat and pairing both target that origin.
+
+## Two routes to deploy
+
+<CardGroup cols={2}>
+  <Card title="All-in-one stack" icon="boxes-stacked" href="/developers/self-hosting/all-in-one">
+    One Docker Compose at `tools/selfhost/` brings up the Convex backend
+    and dashboard, the web GCS, Mosquitto, the MQTT bridge, and the
+    video relay on a single host. Start here if you want everything.
+  </Card>
+  <Card title="Per-tool compose" icon="puzzle-piece">
+    Run just the layers you need. The MQTT bridge and the video relay
+    each ship their own compose file under
+    `tools/mqtt-bridge/deploy/` and `tools/video-relay/deploy/`, so you
+    can add a relay layer behind an existing Convex deployment.
+  </Card>
+</CardGroup>
+
+## Convex has two origins
+
+Whichever route you take, the one wiring detail that trips people up is
+that a self-hosted Convex backend exposes two origins that are not
+interchangeable:
+
+- **`:3210`** is the client API. The GCS browser bundle talks to this
+  (`NEXT_PUBLIC_CONVEX_URL`), and `convex deploy` pushes functions here.
+- **`:3211`** is the site and HTTP-actions origin. The drone agent
+  heartbeat and the MQTT bridge POST here
+  (`CONVEX_URL` resolves to `${CONVEX_URL}/agent/status`). The agent's
+  `server.self_hosted.url` and `pairing.convex_url` point here too.
+
+Cross the two and the GCS will load but no drone ever appears, or
+sign-in works while commands never reach the agent. The
+[all-in-one](/developers/self-hosting/all-in-one) and
+[troubleshooting and ports](/developers/self-hosting/troubleshooting-and-ports)
+pages carry the full port table.
+
+## Resource footprint
+
+A small deployment of one to five drones runs comfortably on a single
+4-core / 8 GB Linux box that hosts Convex, Mosquitto, the bridge, and
+the relay together. The Convex backend wants the most headroom (its
+SQLite store grows with your data); the MQTT layers are light; the video
+relay scales with the number of concurrent streams (roughly one CPU core
+per stream).
+
+## Where to go next
+
+<CardGroup cols={2}>
+  <Card title="Drone agent" icon="microchip" href="/developers/self-hosting/agent">
+    Install the agent and point it at your backend.
+  </Card>
+  <Card title="Mission Control + Convex" icon="window" href="/developers/self-hosting/mission-control-and-convex">
+    Stand up the GCS and the backend it talks to.
+  </Card>
+  <Card title="All-in-one stack" icon="boxes-stacked" href="/developers/self-hosting/all-in-one">
+    The one-host Docker Compose runbook.
+  </Card>
+  <Card title="Troubleshooting and ports" icon="wrench" href="/developers/self-hosting/troubleshooting-and-ports">
+    The port table and the common failure modes.
+  </Card>
+</CardGroup>

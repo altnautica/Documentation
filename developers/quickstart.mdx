@@ -1,7 +1,7 @@
 ---
 title: "Quickstart"
 description: "Scaffold and install your first plugin in five minutes."
-lastUpdated: "2026-06-18"
+lastUpdated: "2026-06-23"
 ---
 
 This page takes you from an empty folder to a working plugin
@@ -15,7 +15,10 @@ installed in Mission Control. No prior ADOS experience required.
   mode, so it is optional here.
 - A working Mission Control install.
 - A working ADOS Drone Agent if you plan to ship the agent half; the
-  rest of this page only needs the GCS half.
+  rest of this page only needs the GCS half. The agent half can be
+  written in Python (`runtime: python`, the scaffolder default) or
+  Rust (`runtime: rust`), set in `manifest.yaml`. The GCS half is
+  always TypeScript.
 
 ## 1. Get the SDK and templates
 

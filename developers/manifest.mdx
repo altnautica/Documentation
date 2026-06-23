@@ -1,7 +1,7 @@
 ---
 title: "Manifest reference"
 description: "Every field of plugin manifest.yaml, in dependency order."
-lastUpdated: "2026-06-18"
+lastUpdated: "2026-06-23"
 ---
 
 The manifest is the entire contract between a plugin and the host.
@@ -63,8 +63,8 @@ not interpret any of them.
 |-------|-------|
 | `ados_version` | Required. Semver range. The agent half compares against setup status or `/api/version`. |
 | `gcs_version` | Optional. Semver range matched against the running Mission Control build. |
-| `supported_boards` | Array. `["*"]` or specific board ids the plugin needs. |
-| `min_tier` | Optional integer 1 to 4. Minimum vehicle integration tier. |
+| `supported_boards` | Array of board ids, exact match. An empty list (the default) means any board passes; a non-empty list is checked by exact membership, so the supervisor refuses install or enable on a board id not in the list. |
+| `min_tier` | Optional integer 1 to 4. Minimum compute-class tier the plugin needs. The supervisor refuses install or enable on a board whose detected tier is below this; a board with an unknown tier is never blocked. |
 
 Node profiles are declared on the agent half (`agent.target_profiles`),
 not here.
@@ -98,10 +98,99 @@ plugins may declare. `inprocess` is reserved for first-party plugins
 that import into the supervisor. `runtime: rust` runs the entrypoint as
 its own binary (rust always runs subprocess).
 
-Optional v2 agent fields: `mavlink_components`, `contains_vendor_binary`
-plus `vendor_attribution` (see [Vendor binaries](/developers/vendor-binaries)),
-`subprocess_spawn` (the `process.spawn` allowlist), `per_drone_config`,
-and `test_fixtures`.
+### Agent field reference
+
+| Field | Type | Default | Notes |
+|-------|------|---------|-------|
+| `entrypoint` | string | required | A `module:Class` id (built-in plugins) or a relative path to the half's entrypoint inside the archive. No `..`, no absolute path. For a Rust plugin this is the binary path, e.g. `bin/<name>`. |
+| `isolation` | enum | `subprocess` | `subprocess` is the only mode third-party plugins may declare. `inprocess` is first-party-only and rejected for `runtime: rust`. |
+| `runtime` | enum | `python` | `python` runs the entrypoint under the shared Python runner; `rust` execs the plugin's own cross-compiled binary directly under systemd. Older manifests without the field load as `python`. |
+| `permissions` | list | `[]` | Capability requests. See [permission shape](#permission-shape). |
+| `resources` | object | see below | Hard limits the supervisor enforces. |
+| `contributes` | object | `{}` | Agent-side contributions: `services`, `drivers`, `vision`. |
+| `mavlink_components` | list | `[]` | MAVLink components the plugin registers. |
+| `target_profiles` | list | `["drone"]` | Subset of `drone`, `ground-station`. Must list at least one. |
+| `contains_vendor_binary` | bool | `false` | Set true when the archive ships a pre-compiled vendor binary; requires `vendor_attribution`. Schema v2. |
+| `vendor_attribution` | list | `[]` | Source-offer records. Required (non-empty) when `contains_vendor_binary` is true. Schema v2. |
+| `subprocess_spawn` | list | absent | Allowlist of binary basenames the plugin may exec via `ctx.process.spawn`. Requires the `process.spawn` permission. Schema v2. |
+| `per_drone_config` | bool | `false` | Run one process instance per connected drone with a distinct `ctx.agent_id` and a per-drone config file. Schema v2. |
+| `test_fixtures` | map | `{}` | Map of friendly name to fixture YAML path, replayed by the SDK test harness. |
+
+#### `agent.resources`
+
+| Field | Default | Range |
+|-------|---------|-------|
+| `max_ram_mb` | `96` | 8 to 4096 |
+| `max_cpu_percent` | `25` | 1 to 100 |
+| `max_pids` | `12` | 1 to 256 |
+
+#### `agent.mavlink_components`
+
+Each entry registers a MAVLink component so the router claims its id and
+answers component-info on the plugin's behalf.
+
+```yaml
+mavlink_components:
+  - component_id: 100        # 0 to 255
+    component_kind: camera   # camera | gimbal | payload | peripheral | generic | vio
+    sub_id: 1                # optional, 0 to 255
+```
+
+#### Permission shape
+
+A permission entry is either a bare string (which means required) or an
+object with `id`, `required`, and an optional `degraded_behavior`:
+
+```yaml
+permissions:
+  - id: mavlink.read                 # required (bare string also works: "mavlink.read")
+  - id: hardware.i2c
+    required: false                  # optional; the plugin degrades gracefully without it
+    degraded_behavior: "Falls back to MAVLink-only telemetry"
+```
+
+Unknown permission ids load with a warning rather than a hard failure,
+so an experimental manifest still parses. See the
+[Permissions reference](/developers/permissions).
+
+#### Schema-2 agent fields
+
+`contains_vendor_binary`, `vendor_attribution`, `subprocess_spawn`, and
+`per_drone_config` are schema-2 fields. A v1 manifest gets the defaults.
+
+- **`per_drone_config: true`** runs one process per connected drone, each
+  with its own `ctx.agent_id` and config at
+  `/var/lib/ados/plugins/<plugin_id>/config/<agent_id>.yaml`.
+- **`subprocess_spawn`** is an allowlist of binary basenames the plugin
+  may exec. The plugin host rejects any spawn whose basename is not on
+  the list, and the manifest validator requires the `process.spawn`
+  permission whenever the list is non-empty.
+- **`contains_vendor_binary` plus `vendor_attribution`** travel together:
+  the flag must be set when (and only when) at least one attribution
+  record is present. Each `vendor_attribution` entry takes `license`
+  (required) plus optional `name`, `source_url`, `source_offer_url`,
+  `upstream_repo`, `upstream_version`, `commit_sha`, and `notice`. See
+  [Vendor binaries](/developers/vendor-binaries).
+
+```yaml
+agent:
+  runtime: rust
+  entrypoint: "bin/vision-nav"
+  isolation: subprocess
+  per_drone_config: true
+  contains_vendor_binary: true
+  vendor_attribution:
+    - name: "OpenVINS"
+      license: "GPL-3.0-only"
+      source_url: "https://github.com/rpng/open_vins"
+      upstream_version: "v2.7"
+      notice: "Used by the VIO mode."
+  permissions:
+    - id: vision.frame.read
+    - id: process.spawn
+  subprocess_spawn:
+    - ados_openvins_shim
+```
 
 ## `gcs`
 
@@ -127,13 +216,27 @@ gcs:
     - "en"
 ```
 
-`contributes` carries `panels`, `overlays`, `notifications`, and
-`smart_functions`. The `slot` value in `contributes.panels[].slot` comes
-from the slot taxonomy (`fc.tab`, `command.tab`, `video.overlay`, and
-the rest; see the [glossary](/developers/glossary)). Mounting in a slot
-also requires the matching `ui.slot.*` permission listed under
-`gcs.permissions`. Locales are listed under `gcs.locales`, a sibling of
-`contributes`.
+`contributes` carries `panels`, `overlays`, `notifications`,
+`smart_functions`, and `skills`. The `slot` value in
+`contributes.panels[].slot` comes from the slot taxonomy (`fc.tab`,
+`command.tab`, `video.overlay`, and the rest; see the
+[glossary](/developers/glossary)). Mounting in a slot also requires the
+matching `ui.slot.*` permission listed under `gcs.permissions`. Locales
+are listed under `gcs.locales`, a sibling of `contributes`.
+
+`skills` declares flight Skills that surface in the cockpit Skill Bar
+(toggle, hotkey or gamepad binding, activation through per-drone config,
+read-back over an event topic). Each skill entry needs the
+`ui.slot.flight-skill` permission. The agent does not interpret skill
+entries; the GCS skill registry reads them.
+
+| `contributes` key | Mounts |
+|-------------------|--------|
+| `panels` | A tab or panel in a UI slot (`fc.tab`, `command.tab`, `drone.detail.tab`, `hardware.tab`, `settings.section`). |
+| `overlays` | A map or video overlay (`map.overlay`, `video.overlay`). |
+| `notifications` | A notification channel. |
+| `smart_functions` | A smart-function entry. |
+| `skills` | A flight Skill in the cockpit Skill Bar. |
 
 ## Signing and the archive
 

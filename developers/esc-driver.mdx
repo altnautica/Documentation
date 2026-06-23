@@ -1,7 +1,7 @@
 ---
 title: "ESC driver"
 description: "Implement an EscDriver to read motor telemetry."
-lastUpdated: "2026-06-18"
+lastUpdated: "2026-06-23"
 ---
 
 An `EscDriver` reads per-motor telemetry from electronic speed
@@ -40,6 +40,18 @@ class MyEscDriver(EscDriver):
         # async generator yielding EscTelemetry, one per motor per update
         ...
 ```
+
+<Note>
+  Writing the agent half in Rust? The trait equivalent is
+  `ados_sdk::drivers::EscDriver` (re-exported from the `drivers`
+  module of the `ados-sdk` crate). It carries the same five methods
+  (`discover`, `open`, `close`, `capabilities`, `telemetry_iterator`)
+  over an `async-trait`, with `EscCandidate`, `EscCapabilities`, and
+  `EscTelemetry` as the matching types. The Python `EscSession` base
+  class becomes a `Session` associated type the host treats as an
+  opaque token. Set `runtime: rust` in the manifest and the host
+  treats the driver the same way it treats the Python one.
+</Note>
 
 ## Capabilities
 

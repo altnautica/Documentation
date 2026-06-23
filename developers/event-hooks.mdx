@@ -1,7 +1,7 @@
 ---
 title: "Event hooks"
 description: "The events the host pushes to a GCS plugin and the requests the plugin can send."
-lastUpdated: "2026-06-18"
+lastUpdated: "2026-06-23"
 ---
 
 On the GCS half the host runs the bridge; the plugin consumes two flavors
@@ -24,7 +24,11 @@ unsolicited requests.
 
 Subscribe via `ctx.client.on("config.changed", handler)` or the typed
 wrappers `ctx.config.onChange`, `ctx.theme.onChange`, and
-`ctx.telemetry.subscribe`.
+`ctx.telemetry.subscribe`. For any other host-pushed topic (for example
+the `video.overlay` host props the host forwards to a video overlay
+iframe, or an agent plugin's state read-back), use the generic
+`ctx.events.subscribe(topic, handler)`, which returns an unsubscribe
+function and does no request/response round-trip.
 
 ## Requests the plugin can send
 
@@ -36,10 +40,15 @@ args)` for anything else.
 |---------|--------|-----------|---------|
 | `ctx.telemetry.subscribe(topic, handler)` | `telemetry.subscribe` | `telemetry.subscribe.<topic>` | unsubscribe function |
 | `ctx.command.send(command, args)` | `command.send` | `command.send` | host-defined |
-| `ctx.notifications.publish(payload)` | `notification.publish` | `ui.slot.notification` | host-defined |
-| `ctx.recording.mark(payload)` | `recording.mark` | `recording.write` | host-defined |
 | `ctx.mission.read(missionId)` | `mission.read` | `mission.read` | mission body |
 | `ctx.mission.write(update)` | `mission.write` | `mission.write` | host-defined |
+
+The host registry also recognizes `telemetry.unsubscribe`, `recording.start`
+and `recording.stop` (capability `recording.write`), `events.subscribe` and
+`events.publish` (`event.subscribe` / `event.publish`, both require a
+`topic` arg), `cloud.read` and `cloud.write`, plus three always-allowed
+methods that need no capability: `ping`, `notify`, and `i18n.t`. A method
+that is not in the registry is rejected with `method_unknown`.
 
 The host re-resolves the required capability from the method (and, for
 telemetry, from the topic) and checks the granted set. The plugin never
@@ -72,12 +81,20 @@ field carries the machine-readable code:
 | Code | Meaning |
 |------|---------|
 | `permission_denied` | The required capability is not in the granted set. |
+| `capability_denied` | The per-request capability token failed validation, or its claimed capability set does not cover the request. The message carries the reason after a colon (e.g. `capability_denied:token_expired`). |
 | `method_unknown` | The method is not in the host's registry. |
 | `schema_invalid` | Args failed schema validation. |
 | `handler_unset` | The host knows the method but no handler is wired. |
 | `handler_error` | The host's handler threw; the message carries the cause. |
 
 Branch on `code`, not on `message`. Messages are for log lines.
+
+<Note>
+There is also an `origin_mismatch` error, but the host never sends it to
+the plugin. When a message arrives from a window that is not the trusted
+iframe, the bridge drops it and records a security event host-side rather
+than replying. A plugin will never see it on the wire.
+</Note>
 
 ## Theming
 

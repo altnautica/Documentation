@@ -1,7 +1,7 @@
 ---
 title: "The hosted registry (planned)"
 description: "Planned discovery layer for plugins on top of local file install and URL install."
-lastUpdated: "2026-06-18"
+lastUpdated: "2026-06-23"
 ---
 
 <Warning>
@@ -31,9 +31,9 @@ does not change.
 | Revocation | A daily-polled JSON feed of revoked keys and revoked plugin/version pairs. |
 | Author profile | Verification badge for publishers who proved domain ownership. |
 
-The default registry endpoint is `registry.ados.altnautica.com`.
-Closed deployments can point at their own host; see the self-host
-section below.
+The default registry endpoint would be a host like
+`registry.example.com`. Closed deployments can point at their own
+host; see the self-host section below.
 
 ## Planned CLI
 
@@ -149,7 +149,7 @@ available and caches the result under `/var/cache/ados/revocations/`.
 
 ## Pointing at a self-hosted registry
 
-Edit `/etc/ados/agent.conf`:
+Edit `/etc/ados/config.yaml`:
 
 ```yaml
 registry:
@@ -164,7 +164,7 @@ Then restart the supervisor:
 sudo systemctl restart ados-supervisor
 ```
 
-You can configure two registries (Altnautica's plus your own) for
+You can configure two registries (the default plus your own) for
 federation. The Browse tab shows results from both, badged with the
 source.
 
@@ -173,8 +173,8 @@ registry:
   endpoints:
     - url: "https://registry.internal.example.com"
       label: "Internal"
-    - url: "https://registry.ados.altnautica.com"
-      label: "Altnautica"
+    - url: "https://registry.example.com"
+      label: "Default"
 ```
 
 ## Offline operation
@@ -189,9 +189,9 @@ The agent never blocks on the registry. If the network is down:
 
 Operators on disconnected networks can run an internal mirror that
 periodically syncs the catalog and archives over an isolated
-transfer channel. See the spec at
-`product/specs/ados-plugin-system/14-distribution-and-registry.md`
-in the internal monorepo for the mirror sync layout (internal only).
+transfer channel. The mirror serves the same REST surface and signed
+archives, so clients point at it the same way they would the default
+registry.
 
 ## What the registry does not do
 

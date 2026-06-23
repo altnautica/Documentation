@@ -1,0 +1,275 @@
+---
+title: "Troubleshooting and ports"
+description: "The full port table for a self-hosted ADOS stack, the failure modes that come from crossed wiring, and how to harden the services you expose."
+lastUpdated: "2026-06-23"
+---
+
+Most self-host problems are a wiring mistake, not a bug: a service POSTing
+to the wrong Convex origin, a browser dialing the wrong MQTT transport, or
+a relay pointed at an RTSP source that is not there. This page collects the
+port table, the common failures and their fixes, and a short hardening
+checklist for the day you expose any of these services beyond your LAN.
+
+## The port table
+
+Every default port in the stack, what binds it, and who connects to it.
+
+| Port | Service | Transport | Who connects |
+|---|---|---|---|
+| `3210` | Convex backend, client API | HTTP / WS | The GCS browser bundle (`NEXT_PUBLIC_CONVEX_URL`) and `convex deploy`. |
+| `3211` | Convex backend, site / HTTP actions | HTTP | The drone agent heartbeat and the MQTT bridge (`${CONVEX_URL}/agent/status`); the agent's `server.self_hosted.url` and `pairing.convex_url`. |
+| `1883` | Mosquitto, MQTT over TCP | TCP | The drone agent and the MQTT bridge (native MQTT). |
+| `9001` | Mosquitto, MQTT over WebSocket | WS | The Mission Control browser (a browser cannot open a raw TCP socket). |
+| `3001` | Video relay | HTTP / WS | The browser, at `/ws/stream/{deviceId}`; a plain `GET /` is the health check. |
+| `4000` | Mission Control GCS container | HTTP | The browser. The container sets `PORT=4000` and binds all interfaces. |
+| `8080` | Drone agent REST | HTTP | The GCS over the LAN (pairing, status, command), and `ados` CLI on the box. |
+
+<Note>
+`3210` and `3211` are two origins on the **same** Convex host, not two
+hosts. The split is the single most common source of self-host trouble, so
+it has its own callout on the
+[Mission Control and Convex](/developers/self-hosting/mission-control-and-convex)
+page. Browser and `convex deploy` use `:3210`; the agent and the bridge use
+`:3211`.
+</Note>
+
+The agent's own self-hosted MQTT port is separate from the reference
+broker. The broker compose listens on `1883` (TCP) and `9001` (WebSocket),
+while an agent configured for `self_hosted` defaults
+`server.self_hosted.mqtt_port` to `8883` for a TLS broker. If you run the
+reference Mosquitto compose unchanged, point the agent at `1883` (or put TLS
+in front and keep `8883`). See [Self-hosting the agent](/developers/self-hosting/agent).
+
+## Common failures
+
+<AccordionGroup>
+  <Accordion title="The GCS loads but no drone ever appears" icon="ghost">
+    The drone's heartbeat is not reaching the backend. The usual cause is a
+    crossed Convex origin: the agent's `server.self_hosted.url` or
+    `pairing.convex_url` points at the client API origin (`:3210`) instead
+    of the site origin (`:3211`), so the register and heartbeat calls land
+    on the wrong origin and 404.
+
+    - Confirm both agent keys end in `:3211`, not `:3210`.
+    - Confirm the MQTT bridge `CONVEX_URL` also ends in `:3211`; it POSTs to
+      `${CONVEX_URL}/agent/status`.
+    - On the agent, `ados logs query` surfaces the failed register or
+      heartbeat call with the origin it tried, which survives a restart and
+      works when the network is down.
+  </Accordion>
+
+  <Accordion title="Sign-in works but commands never reach the agent" icon="link-slash">
+    Auth is wired (so `:3210` is correct for the browser) but the cloud
+    command path is broken. Two things to check:
+
+    - The agent is not beaconing to the site origin. Re-confirm
+      `pairing.convex_url` is `:3211`; the cloud beacon and heartbeat read
+      that key only, so a server block without it leaves the agent looking
+      paired while it never beacons.
+    - The GCS was built against the wrong Convex origin. `NEXT_PUBLIC_*`
+      values are inlined at build time, so a wrong `NEXT_PUBLIC_CONVEX_URL`
+      build argument cannot be fixed by an env change at run time. Rebuild
+      the image with the right `:3210` origin.
+  </Accordion>
+
+  <Accordion title="The GCS connects locally but not across networks" icon="wifi">
+    Cloud relay only activates when Mission Control is served over HTTPS. On
+    `http://localhost` the GCS connects straight to the agent over the LAN
+    and does not use Convex, MQTT, or the video relay. To reach a drone on a
+    different network, put the GCS container behind a TLS-terminating proxy
+    (a reverse proxy or a tunnel) so it is served over `https://`.
+  </Accordion>
+
+  <Accordion title="No live telemetry, only the slow 5-second poll" icon="gauge">
+    Convex carries fleet state at a 5-second poll baseline. Faster telemetry
+    comes from the MQTT layer, and a missing or misrouted broker is the usual
+    gap.
+
+    - The browser must reach Mosquitto over **WebSocket** (`9001`), not TCP
+      (`1883`). A browser cannot open a raw TCP socket, so a GCS pointed at
+      `1883` silently fails to subscribe. The agent and the bridge, by
+      contrast, use TCP `1883`.
+    - The GCS reads the broker URL from a Convex environment variable at run
+      time. If `MQTT_BROKER_URL` is unset on your backend, the GCS falls back
+      to a broker it cannot reach. Set it to your own `wss://` host.
+    - Over HTTPS the browser needs `wss://`, so the `9001` listener must sit
+      behind TLS (a tunnel or a reverse proxy that forwards WebSocket
+      upgrades).
+    - The broker denies anonymous access by default. An agent or viewer
+      missing from the password file will not connect. See the
+      [MQTT bridge](/developers/self-hosting/mqtt-bridge) page for the
+      `passwd` and ACL setup.
+  </Accordion>
+
+  <Accordion title="The video pane stays black" icon="circle-play">
+    The relay spawns an ffmpeg process per stream on the first viewer
+    connect, and that process needs a live RTSP source.
+
+    - Confirm the relay's `RTSP_URL_PATTERN` resolves to a reachable RTSP
+      server. The default is `rtsp://localhost:8554/{deviceId}`; when the
+      relay runs in Docker on a different host than the source, set it to
+      reach that host (the compose default uses `host.docker.internal`).
+    - Confirm the drone is actually serving RTSP at that stream name. The
+      `{deviceId}` placeholder is replaced with the WebSocket path segment,
+      and the device id must match `[a-zA-Z0-9_-]+` or the upgrade is
+      rejected with a `400`.
+    - `curl http://localhost:3001/` returns a JSON status with
+      `activeSessions` and a per-device viewer count. A session that never
+      appears means no viewer reached the relay; a session that appears then
+      vanishes means ffmpeg could not pull the RTSP source.
+    - Over HTTPS the relay must be reachable over `wss://`, so the `3001`
+      listener needs TLS in front of it, the same as the MQTT WebSocket
+      listener.
+  </Accordion>
+
+  <Accordion title="The agent does not respond on the LAN" icon="microchip">
+    Local pairing and direct status go to the agent REST surface on `8080`.
+
+    - From a machine on the same LAN, `curl http://<agent-host>:8080/api/config`
+      should return the agent config. A connection refused means the agent
+      service is not up; check `ados status` on the box.
+    - The GCS reaches `8080` through its own LAN-pair proxy so it can resolve
+      `.local` names server-side and avoid mixed-content blocking. If
+      Add-a-Node pairing fails, confirm the agent host or IP is reachable
+      from the machine running the GCS, not just from your laptop.
+  </Accordion>
+</AccordionGroup>
+
+## A quick connectivity checklist
+
+When something does not connect, walk the path one hop at a time:
+
+<Steps>
+  <Step title="Backend reachable">
+    ```bash
+    curl https://your-convex.example.com:3210/
+    ```
+    A response means the client API origin is up. The browser and
+    `convex deploy` use this origin.
+  </Step>
+  <Step title="Agent heartbeat origin reachable">
+    ```bash
+    curl https://your-convex.example.com:3211/
+    ```
+    The agent and the MQTT bridge POST to this origin. If `:3210` answers and
+    `:3211` does not, your proxy or tunnel is only forwarding one origin.
+  </Step>
+  <Step title="Broker subscribe over WebSocket">
+    From the broker host, confirm a WebSocket subscribe works on `9001`:
+    ```bash
+    npx mqtt sub -t 'ados/+/status' \
+      -h your-mqtt.example.com -p 9001 -l ws \
+      -u ados -P <MQTT_PASSWORD> -C 1 -W 5
+    ```
+    Prints one status message or times out cleanly. A connection error here
+    is the browser's exact failure.
+  </Step>
+  <Step title="Video relay health">
+    ```bash
+    curl http://localhost:3001/
+    ```
+    Returns `{"status":"ok",...}`. A non-200 means the relay process is not
+    up.
+  </Step>
+  <Step title="Agent REST on the LAN">
+    ```bash
+    curl http://<agent-host>:8080/api/config
+    ```
+    Returns the agent config when the agent is reachable on the LAN.
+  </Step>
+</Steps>
+
+## Security hardening
+
+Self-hosting puts you in charge of who can reach each service. The defaults
+are tuned for a private LAN. Before you expose anything beyond it, work
+through this list.
+
+### Exposing services is your choice
+
+None of these services has to be public. On a single LAN you expose
+nothing, and the agent pairs over the local network. When you do need
+cross-network access, how you expose a service is up to you: a tunnel keeps
+inbound ports closed and terminates TLS for you, while classic
+port-forwarding opens a port on your router and you terminate TLS yourself
+(with a reverse proxy such as nginx or caddy). Both work. Pick one per
+service and keep the rest LAN-only.
+
+### TLS on every public origin
+
+Browsers will not load mixed content, so an HTTPS GCS needs every service it
+talks to over TLS too:
+
+- Convex behind `https://` on both origins (`:3210` and `:3211`). Forward
+  both if you front Convex with a proxy or tunnel; forwarding only one is a
+  common cause of the no-drone-appears failure above.
+- Mosquitto's `9001` WebSocket listener behind `wss://`.
+- The video relay's `3001` listener behind `wss://`.
+
+A tunnel terminates TLS for you. With port-forwarding, terminate TLS at a
+reverse proxy in front of each service.
+
+### MQTT authentication beyond the defaults
+
+The reference `mosquitto.conf` ships with `allow_anonymous false`, a
+password file, and a deny-by-default topic ACL, so it is not open out of the
+box. Going to production, tighten it further:
+
+- Keep `allow_anonymous false`. The commented bench block that turns
+  anonymous on is for a local bench or CI only. Never run an internet-facing
+  broker with `allow_anonymous true`.
+- Give each device its own credential: the username is its `deviceId` and
+  the password is its `apiKey`. The ACL then scopes a device to its own
+  subtree (`ados/<deviceId>/#`). Do not share one broker account across
+  devices.
+- Rotate a device's `passwd` entry when you re-pair it, before the agent
+  reconnects with the new `apiKey`.
+- Put the WebSocket listener behind TLS so credentials never cross a network
+  in the clear.
+
+### Firewall rules
+
+Open only the ports a remote client actually needs, and keep the internal
+ones on the LAN or the Docker network:
+
+- The MQTT bridge reaches Mosquitto on `1883` over the internal Docker
+  network. Do not publish `1883` to the public internet; browsers use the
+  `9001` WebSocket listener, not TCP.
+- The agent REST surface on `8080` is a LAN surface. It does not need to be
+  reachable from the public internet; cross-network access goes through the
+  cloud relay, not a forwarded `8080`.
+- Publish only the origins a remote browser or agent needs: the Convex
+  origins, the MQTT WebSocket listener, the video relay, and the GCS.
+  Everything else stays behind the firewall.
+
+### Rotate the keys you generate
+
+The self-hosted backend has its own secrets. Treat them like any production
+credential:
+
+- The Convex admin key prints once on first boot. Store it in a secrets
+  manager, never in a committed file, and use it only from a machine you
+  control.
+- The auth signing keys (`JWT_PRIVATE_KEY` and `JWKS`) are generated by
+  `scripts/generate-auth-keys.mjs` and set on the backend. Keep the private
+  key off shared hosts.
+- A leaked device `apiKey` is both its broker password and its HTTP
+  credential, so rotate it by re-pairing the device and updating its broker
+  `passwd` entry.
+
+## Where to go next
+
+<CardGroup cols={2}>
+  <Card title="Mission Control and Convex" icon="window" href="/developers/self-hosting/mission-control-and-convex">
+    The two Convex origins and how to wire the GCS to them.
+  </Card>
+  <Card title="MQTT bridge" icon="tower-broadcast" href="/developers/self-hosting/mqtt-bridge">
+    The broker, the ACL, and the password-file setup.
+  </Card>
+  <Card title="Video relay" icon="video" href="/developers/self-hosting/video-relay">
+    The RTSP source, the WebSocket path, and the health check.
+  </Card>
+  <Card title="All-in-one stack" icon="boxes-stacked" href="/developers/self-hosting/all-in-one">
+    Bring the whole stack up on one host.
+  </Card>
+</CardGroup>

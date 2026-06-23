@@ -1,7 +1,7 @@
 ---
 title: "Lifecycle"
 description: "Install, parse, enable, disable, remove. The states a plugin moves through and the operator actions that drive them."
-lastUpdated: "2026-06-18"
+lastUpdated: "2026-06-23"
 ---
 
 A plugin moves through a small set of recorded states. The host is the
@@ -60,17 +60,27 @@ investigate. Auto-recovery would mask the underlying bug.
 
 ## Lifecycle hooks (agent half)
 
-The runner calls these hooks on the plugin class, each optional. It
-awaits the ones that return a coroutine:
+Every hook is optional. The runner looks each one up on your plugin
+instance at the right point in the process lifecycle and awaits it if it
+returns a coroutine; a hook you do not define is simply skipped.
 
-| Hook | When |
-|------|------|
-| `on_install` | Once, the first time the runner starts after install. |
-| `on_enable` | When the plugin is enabled. |
-| `on_configure(ctx, config)` | At start and on a configuration change. |
-| `on_start(ctx)` | Every time the process starts. |
-| `on_stop(ctx)` | On shutdown, before the process exits. |
-| `on_disable(ctx)` | When the plugin is disabled. |
+The runner is one process per plugin. Each time the unit starts, the
+runner calls the startup hooks in a fixed order, waits for the shutdown
+signal, then calls the teardown hooks. It does not persist a marker
+across restarts, so the full sequence runs on every process start.
+
+| Hook | When the runner calls it |
+|------|--------------------------|
+| `on_install(ctx)` | First, on every process start. Treat the body as idempotent. |
+| `on_enable(ctx)` | Second, on every process start, after `on_install`. |
+| `on_configure(ctx, config)` | Third, on every process start, with the loaded config (an empty dict when none is on disk). |
+| `on_start(ctx)` | Fourth, on every process start. The usual place to subscribe to events and begin work. |
+| `on_stop(ctx)` | On shutdown (SIGTERM or SIGINT), before the process exits. |
+| `on_disable(ctx)` | On shutdown, immediately after `on_stop`. |
+
+Most plugins only need `on_start` and `on_stop`. The runner keeps the
+process alive between `on_start` and `on_stop` until the supervisor
+stops the unit.
 
 A built-in agent plugin is a plain class (no base class to subclass)
 named by the `module:Class` entrypoint; a file-path entrypoint loads a
@@ -125,9 +135,15 @@ remove, so a reinstall can pick up where it left off.
 
 ## Configuration changes
 
-A configuration edit re-runs `on_configure` with the new config; the
-plugin stays running. On the GCS side the host pushes a `config.changed`
-event the plugin subscribes to with `ctx.config.onChange`.
+On the agent side, the config you receive is loaded once when the
+process starts. The runner reads it from disk and passes it to
+`on_configure(ctx, config)` during startup. To pick up a later edit
+without a restart, read live values through `ctx.config` at the point of
+use rather than caching the dict from `on_configure`.
+
+On the GCS side the host emits a `config.changed` event that your plugin
+subscribes to with `ctx.config.onChange`, so the iframe can react to an
+edit while it stays mounted.
 
 ## State observability
 

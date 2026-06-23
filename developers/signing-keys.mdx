@@ -1,7 +1,7 @@
 ---
 title: "Signing keys"
 description: "Generate, sign, trust, and revoke Ed25519 publisher keys."
-lastUpdated: "2026-06-18"
+lastUpdated: "2026-06-23"
 ---
 
 Every plugin the agent installs by default must be signed by an Ed25519
@@ -17,17 +17,46 @@ exists and is well-tested.
 
 ## Generate a key pair
 
+The agent CLI mints a keypair in one step:
+
 ```sh
-mkdir -p keys
-openssl genpkey -algorithm ed25519 -out keys/publisher.pem
-openssl pkey -in keys/publisher.pem -pubout -out keys/publisher.pub.pem
+ados plugin keygen acme-2026-A --output-dir keys
 ```
 
-`publisher.pem` is the private key the signer reads. `publisher.pub.pem`
-is the public key operators add to their trust list (renamed to
-`<signer-id>.pem`). Keep the private key out of git. The reference repo
-template at `altnautica/ADOSExtensions` carries a `.gitignore` that
-covers `keys/*.pem`.
+This writes two files under `keys/`:
+
+- `acme-2026-A.pem` is the public key (mode 0644). This is what operators
+  install at `/etc/ados/plugin-keys/<signer-id>.pem`.
+- `acme-2026-A.priv.pem` is the private key (mode 0600). The signing rig
+  keeps this. Never check it in, never copy it across hosts without an
+  encrypted transport.
+
+The first positional argument is the signer id. Pass `--force` to
+overwrite existing files at the target paths. `keygen` prints a SHA-256
+fingerprint of the public key so an operator can cross-check the
+installed key against what you generated.
+
+<Warning>
+`keygen` is a developer aid. Production publisher keys deserve a
+hardware-token or air-gapped workflow, not a one-liner. See
+[Key storage](#key-storage).
+</Warning>
+
+The reference repo template at `altnautica/ADOSExtensions` carries a
+`.gitignore` that covers `keys/*.pem`.
+
+### Alternative: openssl
+
+`openssl` produces an equivalent PEM keypair:
+
+```sh
+mkdir -p keys
+openssl genpkey -algorithm ed25519 -out keys/acme-2026-A.priv.pem
+openssl pkey -in keys/acme-2026-A.priv.pem -pubout -out keys/acme-2026-A.pem
+```
+
+The public PEM (`acme-2026-A.pem`) is what operators add to their trust
+list; its basename is the signer id. Keep the private key out of git.
 
 ## Pick a signer key id
 
@@ -40,7 +69,31 @@ The id is not a secret. It is a stable identifier for trust management.
 
 ## Pack and sign
 
-Two steps. `pack.sh` builds the GCS bundle and zips the archive;
+`ados plugin sign` packs a plugin directory and signs it in one command:
+
+```sh
+ados plugin sign ./my-extension \
+  --key keys/acme-2026-A.priv.pem \
+  --signer-id acme-2026-A \
+  --output dist/com.example.foo-1.0.0.adosplug
+```
+
+All four are required: the plugin directory (it must contain a
+`manifest.yaml`), `--key` (the Ed25519 private key in PEM), `--signer-id`
+(written to the `SIGNATURE` file, and it must match the public-key
+filename on the agent), and `--output` (the path for the signed archive).
+
+The command computes the canonical payload hash (SHA-256 over the sorted
+`<path>\n<sha256-hex>\n` lines of every entry except `SIGNATURE`), signs
+that 32-byte digest with the Ed25519 private key, and writes a
+`SIGNATURE` file (the signer id on the first line, then the base64
+signature) into the archive. Because the hash covers every entry, the
+signature protects the manifest and every asset at once.
+
+### Alternative: pack.sh and sign.sh (monorepo CI)
+
+The `altnautica/ADOSExtensions` repo ships two scripts for its tagged
+release pipeline. `pack.sh` builds the GCS bundle and zips the archive;
 `sign.sh` adds the signature.
 
 ```sh
@@ -48,21 +101,16 @@ Two steps. `pack.sh` builds the GCS bundle and zips the archive;
 scripts/pack.sh my-extension
 
 # 2. sign it -> dist/<id>-<version>.signed.adosplug
-ADOS_SIGNING_KEY=keys/publisher.pem \
+ADOS_SIGNING_KEY=keys/acme-2026-A.priv.pem \
 ADOS_SIGNING_KEY_ID=acme-2026-A \
   scripts/sign.sh dist/com.example.foo-1.0.0.adosplug
 ```
 
-`sign.sh` computes the canonical payload hash (SHA-256 over the sorted
-`<path>\n<sha256-hex>\n` lines of every entry except `SIGNATURE`), signs
-that 32-byte digest with the Ed25519 private key, and writes a
-`SIGNATURE` file (signer key id, then the base64 signature) into a
-`*.signed.adosplug` archive. Because the hash covers every entry, the
-signature protects the manifest and every asset at once.
-
+`sign.sh` writes a `*.signed.adosplug` archive next to the input.
 `ADOS_SIGNING_KEY` is a path to the private key (PEM or raw 32-byte). The
-key id defaults to `altnautica-2026-A` when `ADOS_SIGNING_KEY_ID` is
-unset.
+signer id defaults to `altnautica-2026-A` when `ADOS_SIGNING_KEY_ID` is
+unset. The payload hash and `SIGNATURE` format are identical to the CLI,
+so an archive from either path verifies the same way on the agent.
 
 ## Trust list on the agent
 
@@ -134,7 +182,7 @@ For developer iteration, a file on disk is fine. Pin tight permissions
 and never commit it:
 
 ```sh
-chmod 0400 keys/publisher.pem
+chmod 0400 keys/acme-2026-A.priv.pem
 ```
 
 For production keys, keep the private key off general-purpose disks. A
@@ -154,7 +202,7 @@ end without Altnautica involvement:
    agent and restart the supervisor.
 3. Sign your plugins with the matching private key.
 4. Distribute via internal HTTPS, USB, or your existing fleet channel,
-   then `ados plugin install <path-or-url>`.
+   then `ados plugin install <path>` against the local archive file.
 
 No outbound calls, no external trust dependency. The trust chain is
 operator-end-to-end.

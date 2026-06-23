@@ -1,7 +1,7 @@
 ---
 title: "Camera driver"
 description: "Implement a CameraDriver to ship a new imager as a plugin."
-lastUpdated: "2026-06-18"
+lastUpdated: "2026-06-23"
 ---
 
 A `CameraDriver` pumps frames from a physical or networked imaging
@@ -42,6 +42,17 @@ class MyCameraDriver(CameraDriver):
     async def set_param(self, session, param, value) -> None:
         ...
 ```
+
+<Note>
+  Writing the agent half in Rust? The trait equivalent is
+  `ados_sdk::drivers::CameraDriver` (re-exported from the `drivers`
+  module of the `ados-sdk` crate). It carries the same six methods
+  (`discover`, `open`, `close`, `capabilities`, `frame_iterator`,
+  `set_param`) over an `async-trait`, with `CameraCandidate`,
+  `CameraCapabilities`, and `FrameBuffer` as the matching types. Set
+  `runtime: rust` in the manifest and the host treats the driver the
+  same way it treats the Python one.
+</Note>
 
 ## Candidates
 

@@ -1,10 +1,19 @@
 ---
 title: "Python SDK"
-description: "ados.sdk reference. The driver, vision, and testing surface every agent-side plugin uses."
-lastUpdated: "2026-06-18"
+description: "ados.sdk reference. The driver, vision, and testing surface every agent-side Python plugin uses."
+lastUpdated: "2026-06-23"
 ---
 
-The agent half of a plugin runs as a Python subprocess under
+A plugin's agent half can be written in two languages. This page covers
+the Python SDK, `ados.sdk`. The other agent-half language is Rust, with
+the [`ados-sdk` crate](/developers/sdk-rust); both speak the same
+length-prefixed msgpack wire and capability-token handshake to the
+plugin host, so the choice is per plugin. Python is the right pick when
+the plugin leans on the Python ecosystem (machine-learning inference,
+scripting, fast hardware bring-up); Rust is the right pick for a tight,
+low-overhead, long-running service.
+
+A Python plugin's agent half runs as a subprocess under
 `ados-supervisor`. The public author surface is the `ados.sdk`
 package: the typed driver base classes, the vision-engine client
 types, and an in-process test harness. Import from `ados.sdk`, not
@@ -14,10 +23,13 @@ from internal agent modules.
 The plugin lifecycle context (the `ctx` object passed to a plugin's
 hooks) is **not yet re-exported from `ados.sdk`**. The SDK's own
 docstring says the context, event, and MAVLink-component helpers
-"land here as the host APIs stabilise." For now, plugins consume the
-context the runtime hands them and follow the reference extensions.
-This page documents the real, current surface and does not invent an
-API that does not exist yet.
+"land here as the host APIs stabilise." The runtime hands `ctx` to the
+plugin at call time and the plugin uses it duck-typed: there is no
+imported context class to construct or subclass. A plugin that wants
+static typing declares a local `Protocol` for the parts of `ctx` it
+touches, the way the reference extensions do. This page documents the
+real, current surface and does not invent an API that does not exist
+yet.
 </Warning>
 
 ## Install
@@ -68,17 +80,18 @@ Three groups:
 
 ## The agent-half plugin shape
 
-A plugin's agent half is a plain Python class. The manifest's
-`agent.entrypoint` points the runner at it, in one of two forms:
+A plugin's agent half is a plain Python class. There is no base class
+to import or subclass. The manifest's `agent.entrypoint` points the
+runner at it, in one of two forms:
 
 - `module:Class`, for code packaged as an importable module
-  (`altnautica_thermal_camera.plugin:ThermalUsbPlugin`).
+  (`follow_me:FollowMePlugin`).
 - A path inside the archive (`agent/plugin.py`), in which case the
   class must be named `Plugin`.
 
 The runner constructs the class with no arguments, then calls the
 lifecycle hooks it finds. Every hook is optional and may be sync or
-async:
+async, and `ctx` is duck-typed (see the warning above):
 
 ```python
 class Plugin:
@@ -89,6 +102,10 @@ class Plugin:
     async def on_stop(self, ctx):
         # Release anything on_start acquired.
         ...
+
+    async def on_disable(self, ctx):
+        # Optional. Tear down when the plugin is disabled.
+        ...
 ```
 
 The full hook order the runner walks is `on_install`, `on_enable`,
@@ -97,13 +114,76 @@ The full hook order the runner walks is `on_install`, `on_enable`,
 only `on_start` and `on_stop`.
 
 `ctx` is the runtime-provided plugin context. It exposes the host
-service helpers a plugin needs, including
+service helpers a plugin needs, including `ctx.mavlink.subscribe(...)`
+and `ctx.mavlink.send(...)`, `ctx.events.subscribe(...)` and
+`ctx.events.publish(...)`, `ctx.vision.subscribe_detections(...)` and
+`ctx.vision.designate_track(...)`,
 `ctx.peripheral_manager.register_*_driver(...)`, `ctx.config`, and
-`ctx.process.spawn`. Because the context type is not yet published in
-`ados.sdk`, the reference extensions declare a local `Protocol` for
-the parts they use. Read the
+`ctx.process.spawn`. Each call is gated on a manifest permission;
+calling a method whose capability was not granted is rejected. Because
+the context type is not yet published in `ados.sdk`, the reference
+extensions declare a local `Protocol` for the parts they use. Read the
 [thermal camera](/developers/camera-driver) and
 [gimbal](/developers/gimbal-driver) extensions for the current shape.
+
+### A real skeleton
+
+This is the Follow-Me reference plugin, trimmed to its lifecycle shape.
+It is a plain class the runner instantiates with no arguments. `on_start`
+opens the subscriptions the plugin needs (FC pose over MAVLink, the
+operator's designate clicks over the event bus, the detection stream
+from the vision engine) and launches a control loop; `on_stop` and
+`on_disable` tear it down. Each subscription matches a manifest
+permission (`mavlink.read`, `event.subscribe`,
+`vision.detection.subscribe`, `vision.track.designate`).
+
+```python
+import asyncio
+from typing import Any
+
+from ados.sdk.vision import BoundingBox, DetectionBatch
+
+
+class FollowMePlugin:
+    """Lifecycle-hook plugin class the runner instantiates with no args."""
+
+    def __init__(self) -> None:
+        self._ctx: Any = None
+        self._loop_task: asyncio.Task | None = None
+        self._locked_id: int | None = None
+
+    async def on_start(self, ctx: Any) -> None:
+        self._ctx = ctx
+
+        # FC pose over MAVLink.
+        await ctx.mavlink.subscribe("ATTITUDE", self._on_attitude)
+        await ctx.mavlink.subscribe(
+            "GLOBAL_POSITION_INT", self._on_global_position
+        )
+
+        # The operator's designate click on the event bus.
+        await ctx.events.subscribe("follow.designate", self._on_designate)
+
+        # Detection stream from the configured camera.
+        await ctx.vision.subscribe_detections(self._on_batch)
+
+        self._loop_task = asyncio.create_task(self._follow_loop())
+        ctx.log.info("follow_me_started")
+
+    async def on_stop(self, ctx: Any) -> None:
+        if self._loop_task is not None:
+            self._loop_task.cancel()
+        ctx.log.info("follow_me_stopped")
+
+    async def on_disable(self, ctx: Any) -> None:
+        if self._loop_task is not None:
+            self._loop_task.cancel()
+```
+
+The complete plugin (image-to-world projection, the standoff-follow
+loop, the lock-state safety gate) lives in
+[`altnautica/ADOSExtensions`](https://github.com/altnautica/ADOSExtensions)
+under `extensions/follow-me/`.
 
 ## IPC
 

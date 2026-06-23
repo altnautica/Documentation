@@ -1,7 +1,7 @@
 ---
 title: "Versioning and updates"
 description: "Semver discipline, compatibility ranges, additive vs breaking permission changes."
-lastUpdated: "2026-06-18"
+lastUpdated: "2026-06-23"
 ---
 
 A plugin lives across many host versions and many of its own versions.
@@ -28,35 +28,51 @@ The manifest declares which host versions it supports:
 
 ```yaml
 compatibility:
-  ados_version: ">=0.10.0 <1.0.0"
-  gcs_version: ">=0.5.0 <1.0.0"
-  supported_boards: ["*"]
+  ados_version: ">=0.10.0,<1.0.0"
+  gcs_version: ">=0.5.0,<1.0.0"
+  supported_boards: []
 ```
 
-The host parses these as semver ranges:
+The host parses each range as comma-separated atoms, where every atom is
+an operator followed by a semver. The supported operators:
 
 | Operator | Meaning |
 |---------|---------|
-| `=1.2.3` | Exact match. |
+| `=1.2.3` or `==1.2.3` | Exact match. |
 | `>=1.2.3` | At least 1.2.3. |
+| `<=1.2.3` | At most 1.2.3. |
+| `>1.2.3` | Strictly above 1.2.3. |
 | `<2.0.0` | Strictly below 2.0.0. |
-| `~1.2.3` | At least 1.2.3 and below 1.3.0. |
-| `^1.2.3` | At least 1.2.3 and below 2.0.0. |
 
-Combine with whitespace (logical AND): `">=0.10.0 <1.0.0"`.
+Combine atoms with a comma (logical AND): `">=0.10.0,<1.0.0"`. A bare
+semver with no operator means exact match. The pre-release and build
+suffixes are stripped before comparison, so `1.2.3-rc.1` compares as
+`1.2.3`. Caret (`^`) and tilde (`~`) shorthand are not supported; write
+the bounds out explicitly.
 
-The check runs at install and at every enable. A host upgrade that pushes
-the running version out of range moves the plugin to the `incompatible`
-state; it will not start until the range matches again.
+`supported_boards` is matched as an exact board-id list. The default is
+an empty list, which means any board. To restrict the plugin, list the
+exact board ids it runs on; there is no wildcard, so an empty list (or
+omitting the field) is the way to mean "any board".
+
+The compatibility check runs at install time. If the running agent
+version is outside `ados_version`, the install (or the install of a newer
+archive over an existing plugin) is rejected. A `gcs_version` range is
+checked on the Mission Control side against the running build.
 
 ## `ados_version` vs `gcs_version`
 
 `ados_version` matches the running ADOS Drone Agent version (reported by
 setup status or `/api/version`). `gcs_version` matches the running
 Mission Control build. They move independently, so a plugin can support a
-wide agent range and a narrow GCS range or vice versa. If the plugin is
-GCS-only, omit `ados_version`; if agent-only, omit `gcs_version`. The
-host only enforces what is declared.
+wide agent range and a narrow GCS range or vice versa.
+
+The `compatibility` block and its `ados_version` field are both required
+on every manifest, even for a GCS-only plugin. Set `ados_version` to the
+agent range the plugin needs (or a wide range if it does not depend on a
+specific agent). `gcs_version` is optional; omit it for an agent-only
+plugin. The agent host enforces `ados_version` at install; Mission
+Control enforces `gcs_version` against its own build.
 
 ## Update flow
 
@@ -71,9 +87,12 @@ host only enforces what is declared.
    - **Added required permissions**: shown with emphasis; the operator
      must approve.
 4. The operator clicks Install. The host stops the running plugin,
-   unpacks the new archive, regenerates the unit, and starts it.
-5. The plugin's `on_configure` runs with the existing config. The plugin
-   migrates its own data directory if needed.
+   removes the old install directory, unpacks the new archive,
+   regenerates the systemd unit, and re-runs the permission grants.
+5. On the next start the plugin's lifecycle hooks run in order
+   (`on_install`, `on_enable`, `on_configure`, `on_start`). Read your
+   live config through `ctx.config_kv` and migrate your data directory if
+   needed.
 
 The whole flow is one click for additive updates, plus a confirmation
 when a new required permission is involved.

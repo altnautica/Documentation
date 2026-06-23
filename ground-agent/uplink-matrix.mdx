@@ -2,7 +2,7 @@
 title: "Uplink Matrix"
 description: "Five connectivity options for reaching the cloud, with automatic failover and data caps."
 icon: "arrows-up-to-line"
-lastUpdated: "2026-06-18"
+lastUpdated: "2026-06-23"
 ---
 
 # Uplink Matrix
@@ -46,7 +46,7 @@ WiFi AP does not appear in the priority list because it provides client access, 
 
 ### Health checks
 
-Every 15 seconds, the agent sends an HTTPS HEAD request to `convex.altnautica.com` on the current uplink. If three consecutive checks fail, the agent switches to the next available uplink.
+Every 15 seconds, the agent sends an HTTPS HEAD request to the configured cloud endpoint (`your-convex.example.com`) on the current uplink. If three consecutive checks fail, the agent switches to the next available uplink.
 
 Recovery checks run every 60 seconds on lower-priority uplinks. If a higher-priority uplink recovers (three consecutive successes), the agent switches back.
 

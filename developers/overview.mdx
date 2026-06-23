@@ -1,7 +1,7 @@
 ---
 title: "Developers"
 description: "Build plugins and extensions for ADOS Mission Control and the ADOS Drone Agent."
-lastUpdated: "2026-06-18"
+lastUpdated: "2026-06-23"
 ---
 
 A plugin lets you add code, hardware drivers, UI panels, and behaviors
@@ -11,18 +11,52 @@ isolation with explicit capability grants.
 
 ## Two halves, one plugin
 
-A single `manifest.yaml` declares both halves. Either half is optional.
+A single `manifest.yaml` declares up to two halves. Either half is
+optional, so a plugin can ship agent-only, GCS-only, or both.
 
-- **Agent half** (Python): runs as a supervised subprocess on the
-  drone. cgroup-enforced CPU, RAM, and PID limits. Talks to the host
-  over a Unix domain socket using msgpack.
-- **GCS half** (TypeScript): runs in a sandboxed iframe inside Mission
-  Control. `sandbox="allow-scripts"`, no same-origin, no top-navigation.
-  Talks to the host over postMessage with HMAC-signed capability tokens.
+- **Agent half** runs as a supervised subprocess on the drone or ground
+  station, with cgroup-enforced CPU, RAM, and PID limits. It talks to
+  the host over a Unix domain socket using length-prefixed msgpack
+  frames, gated by an HMAC capability token. You write the agent half
+  in **Python** (`runtime: python`) or **Rust** (`runtime: rust`). Both
+  speak the same wire to the same host.
+- **GCS half** runs in a sandboxed iframe inside Mission Control:
+  `sandbox="allow-scripts"`, no same-origin, no top-navigation. It
+  talks to the host over postMessage with HMAC-signed capability
+  tokens. You write the GCS half in **TypeScript**.
 
 The host gates every privileged call against the manifest. A plugin
 that did not declare `vehicle.command` cannot send vehicle commands,
 and the operator must approve each declared permission at install time.
+
+## Pick your SDK
+
+Three SDKs cover the two halves and three languages. Each speaks the
+same capability-token wire to the same host, so the choice is about the
+language you want to write in, not a different runtime contract.
+
+<CardGroup cols={3}>
+  <Card title="Python (agent)" icon="python" href="/developers/sdk-python">
+    `ados.sdk`. Driver traits, vision client, and the test harness for
+    an agent half written in Python.
+  </Card>
+  <Card title="Rust (agent)" icon="rust" href="/developers/sdk-rust">
+    The `ados-sdk` crate. The same agent surface in Rust, compiled to a
+    native binary that runs directly under systemd.
+  </Card>
+  <Card title="TypeScript (GCS)" icon="js" href="/developers/sdk-typescript">
+    `@altnautica/plugin-sdk`. The browser-side SDK for a GCS half that
+    mounts UI panels in Mission Control.
+  </Card>
+</CardGroup>
+
+## The four primitives
+
+Every plugin is described by four things: a **manifest** (what it is and
+what it asks for), a **signature** (who built it, verified before
+install), a **sandbox** (the isolation it runs inside), and a set of
+**capability tokens** (the only privileges it gets at runtime). Read
+[concepts](/developers/concepts) for how the four fit together.
 
 ## Where to start
 

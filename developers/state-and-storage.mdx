@@ -1,7 +1,7 @@
 ---
 title: "State and storage"
 description: "Where a plugin keeps state: in-memory and per-plugin disk. Paths, atomicity, cleanup on uninstall."
-lastUpdated: "2026-06-18"
+lastUpdated: "2026-06-23"
 ---
 
 An agent plugin has two durable places to keep state today: process
@@ -40,10 +40,12 @@ async def on_start(self, ctx) -> None:
     sample_log = data_dir / "samples.jsonl"
 ```
 
-The context also carries `ctx.config_dir` (under the same data tree) and
-`ctx.temp_dir` (`/run/ados/plugins/<id>`). When the plugin is bound to a
-specific drone, `ctx.data_dir` is scoped per drone
-(`/var/ados/plugin-data/<id>/drones/<agent-id>/`).
+The context also carries `ctx.config_dir`
+(`/var/ados/plugin-data/<id>/config/`) and `ctx.temp_dir`
+(`/run/ados/plugins/<id>`). When the plugin is bound to a specific drone,
+`ctx.data_dir` is scoped per drone
+(`/var/ados/plugin-data/<id>/drones/<agent-id>/`), while `ctx.config_dir`
+stays shared and `ctx.agent_id` carries the drone's id.
 
 The systemd unit grants write access only to `/var/ados/plugin-data`,
 `/var/log/ados/plugins`, and `/run/ados/plugins`. Writes elsewhere fail
@@ -70,16 +72,58 @@ asyncio tasks. Add a lock if you fan out writes.
 ## Configuration
 
 The agent context exposes config two ways. `ctx.config` is the static
-config dict the host delivered at start. `ctx.config_kv` is the live
-key-value facade with per-drone or global scope:
+config dict the host delivered at start (read from
+`/var/ados/plugin-data/<id>/config.yaml`, or
+`config/<agent-id>.yaml` when the plugin is bound to a drone).
+`ctx.config_kv` is the live key-value facade. Its read order is drone
+scope when bound, then global, then your default:
 
 ```python
+# Live read and write (async).
 value = await ctx.config_kv.get("threshold_v", default=3.5)
 await ctx.config_kv.set("threshold_v", 3.4, scope="drone")
+
+# Synchronous read of the static dict the host delivered at start.
+limit = ctx.config_kv.static("threshold_v", 3.5)
 ```
 
-On the GCS half, the host pushes a `config.changed` event the plugin
-subscribes to with `ctx.config.onChange`.
+`set` defaults to `scope="drone"`; pass `scope="global"` to write the
+fleet-wide value. On the GCS half, the host pushes a `config.changed`
+event the plugin subscribes to with `ctx.config.onChange`.
+
+### Per-drone plugins
+
+Set `per_drone_config: true` in the `agent:` block of `manifest.yaml`
+(schema v2) and the supervisor runs one process instance per connected
+drone, each with its own `ctx.agent_id` and its own scoped `ctx.data_dir`.
+Read each drone's live settings through `ctx.config_kv` and fall back to
+the static dict for unset keys:
+
+```yaml
+# manifest.yaml (excerpt)
+agent:
+  runtime: python
+  entrypoint: "follow_me:FollowMePlugin"
+  isolation: subprocess
+  per_drone_config: true
+```
+
+```python
+async def on_start(self, ctx) -> None:
+    # ctx.agent_id is the bound drone; ctx.data_dir is scoped to it.
+    live = {}
+    for key in ("follow_distance_m", "follow_height_m"):
+        value = await ctx.config_kv.get(key, None)
+        if value is not None:
+            live[key] = value
+    static = dict(getattr(ctx, "config", {}) or {})
+    self._config = {**static, **live}
+```
+
+The shipped Follow-Me extension uses this pattern: live per-drone keys
+override the static defaults each control loop. A write with the default
+`scope="drone"` updates only the bound drone; `scope="global"` updates
+the fleet-wide default the other instances fall back to.
 
 ## Cloud-visible state
 
@@ -94,16 +138,19 @@ operator through telemetry and notifications.
 
 `ados plugin remove <id>` does the following:
 
-1. Stop the unit if running.
+1. Disable the plugin if it is running or enabled. This stops the unit.
 2. Delete the unit file (and any declared extra-service units). Reload
    the daemon.
 3. Remove the install directory `/var/ados/plugins/<id>/`.
-4. Drop the install entry from the state file.
+4. Delete the plugin's log file under `/var/log/ados/plugins/`, unless
+   `--keep-data` is passed.
+5. Drop the install entry from the state file.
 
-`--keep-data` additionally retains the plugin's log file. The data
-directory under `/var/ados/plugin-data/<id>/` is not deleted by remove,
-so reinstalling the same plugin id can pick up its prior data. If you
-want a clean slate, clear the data directory yourself.
+`--keep-data` preserves the plugin's log file. The data directory under
+`/var/ados/plugin-data/<id>/` (including any per-drone subdirectories and
+`config/<agent-id>.yaml` files) is never deleted by remove, with or
+without the flag, so reinstalling the same plugin id can pick up its
+prior data. If you want a clean slate, clear the data directory yourself.
 
 ## Migration between versions
 

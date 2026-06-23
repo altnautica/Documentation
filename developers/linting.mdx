@@ -1,7 +1,7 @@
 ---
 title: "Linting"
 description: "Run static analysis on a packed plugin before submission."
-lastUpdated: "2026-06-18"
+lastUpdated: "2026-06-23"
 ---
 
 `ados plugin lint` runs a static-analysis rule set over a packed
@@ -55,7 +55,7 @@ keyed by rule id with severity and the source location.
 | PY008-marshal-loads | error | `marshal.loads()` |
 | PY009-ctypes-load | error | Native library load via `ctypes.CDLL` |
 | PY020-requests | warn | Network library imported without `network.outbound` |
-| FS001-open-write | info | File opened for writing (verify the path is under `ctx.data_dir`) |
+| FS001-open-write | info | File opened for writing (verify the path is under `ctx.data_dir`, `config_dir`, or `temp_dir`) |
 | FS002-shutil-rmtree | info | `shutil.rmtree()` (verify scope is the plugin's own directory) |
 
 ### GCS bundle rules
@@ -77,6 +77,7 @@ keyed by rule id with severity and the source location.
 |------|----------|--------------|
 | ARC001-archive-size | error | Archive exceeds the 50 MB archive cap |
 | ARC002-entry-size | error | A single entry exceeds the 25 MB per-entry cap |
+| ARC003-read-fail | error | An archive entry could not be read |
 | SIG001-unsigned | warn | Archive does not carry a SIGNATURE file |
 | VND001-vendor-binary | info | Manifest declares `contains_vendor_binary` |
 | PERM001-high-risk | info | Manifest declares a high-risk capability (`vehicle.command`, `vehicle.payload.actuate`, `filesystem.host`, `mavlink.command.send`) |

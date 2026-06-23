@@ -2,7 +2,7 @@
 title: "Cloud Features"
 description: "Convex backend for fleet sync, authentication, community features, and self-hosting."
 icon: "cloud"
-lastUpdated: "2026-06-18"
+lastUpdated: "2026-06-23"
 ---
 
 Mission Control includes an optional Convex backend that adds authentication, fleet synchronization, community features, and cloud relay capabilities. Cloud features are entirely optional. The GCS works fully offline for USB and local WebSocket connections.
@@ -42,6 +42,8 @@ The cloud backend is built on [Convex](https://convex.dev), a reactive backend p
 ## Cloud Relay
 
 When the GCS runs on HTTPS, it auto-activates cloud mode. This enables connecting to remote drones through the Convex backend.
+
+In hosted cloud mode the backend is managed by Altnautica with zero configuration. If you prefer to run the stack yourself, point the GCS at your own Convex deployment using the self-hosting steps below.
 
 <Note>
 Cloud relay is the secondary, remote-access path, not a requirement. For a drone on the same network as Mission Control, serve the GCS over plain HTTP (`http://localhost:4000` or `http://<lan-ip>:4000`) and pair the agent by IP. That talks to the agent directly over the LAN with no Convex account and no HTTPS. The agent itself always serves plain HTTP on port `8080`. Reach for cloud relay only to connect a drone on a different network.

@@ -332,6 +332,7 @@
             "pages": [
               "developers/overview",
               "developers/concepts",
+              "developers/security-model",
               "developers/glossary"
             ]
           },
@@ -348,14 +349,17 @@
               "developers/manifest",
               "developers/lifecycle",
               "developers/permissions",
-              "developers/event-hooks"
+              "developers/event-hooks",
+              "developers/cli-reference",
+              "developers/troubleshooting"
             ]
           },
           {
             "group": "SDKs",
             "pages": [
-              "developers/sdk-typescript",
-              "developers/sdk-python"
+              "developers/sdk-python",
+              "developers/sdk-rust",
+              "developers/sdk-typescript"
             ]
           },
           {
@@ -404,6 +408,18 @@
               "developers/mission-and-suite-plugins",
               "developers/performance-and-budgets",
               "developers/versioning-and-updates"
+            ]
+          },
+          {
+            "group": "Self-hosting",
+            "pages": [
+              "developers/self-hosting/overview",
+              "developers/self-hosting/agent",
+              "developers/self-hosting/mission-control-and-convex",
+              "developers/self-hosting/mqtt-bridge",
+              "developers/self-hosting/video-relay",
+              "developers/self-hosting/all-in-one",
+              "developers/self-hosting/troubleshooting-and-ports"
             ]
           }
         ]

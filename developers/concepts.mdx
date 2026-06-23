@@ -1,8 +1,15 @@
 ---
 title: "Concepts"
 description: "Manifest, signing, sandboxing, and capability tokens. The four primitives every plugin author works with."
-lastUpdated: "2026-06-18"
+lastUpdated: "2026-06-23"
 ---
+
+A plugin has up to two halves: an **agent half** that runs on the drone
+or ground node, and a **GCS half** that runs in the Mission Control
+browser. The agent half is written in **Python** (the `ados.sdk`
+package) or **Rust** (the `ados-sdk` crate); the GCS half is written in
+**TypeScript** (the `@altnautica/plugin-sdk` package). One signed
+archive carries both halves and one `manifest.yaml` describes them.
 
 Four primitives describe every plugin in ADOS: a **manifest**, a
 **signature**, a **sandbox**, and a set of **capability tokens**. If
@@ -47,9 +54,12 @@ explicitly. Unsigned archives install only when the agent is in
 
 Each half runs in a separate sandbox.
 
-- **Agent half**: a Python subprocess under `ados-supervisor`. cgroup
-  v2 controls cap CPU percent, memory, and PIDs. The generated systemd
-  unit adds privilege hardening: `NoNewPrivileges=yes`,
+- **Agent half**: a subprocess under `ados-supervisor`. A Python plugin
+  runs through the plugin runner; a Rust plugin (`runtime: rust` in the
+  manifest) runs its own compiled binary directly. Either way the
+  subprocess sits in the shared `ados-plugins.slice` cgroup, which caps
+  CPU percent, memory, and PIDs. The generated systemd unit adds
+  privilege hardening: `NoNewPrivileges=yes`,
   `ProtectSystem=strict`, `ProtectHome=yes`, `PrivateTmp=yes`,
   `LockPersonality=yes`, `RestrictRealtime=yes`, and
   `RestrictSUIDSGID=yes`. The plugin reaches the host only through a
@@ -57,8 +67,10 @@ Each half runs in a separate sandbox.
   declared `network.outbound`.
 - **GCS half**: an `<iframe sandbox="allow-scripts">` with no
   `allow-same-origin`. Null origin means no shared cookies, no shared
-  storage, no DOM access to the host. The plugin reaches the host
-  only through `postMessage`. The host validates every envelope.
+  storage, no DOM access to the host. The host serves the plugin bundle
+  with a Content-Security-Policy that constrains what the frame can
+  load. The plugin reaches the host only through `postMessage`, and the
+  host validates every envelope.
 
 The sandbox is the boundary that turns a manifest's permissions into
 real authority. The plugin cannot lie about what it can do.
@@ -67,10 +79,12 @@ real authority. The plugin cannot lie about what it can do.
 
 Permissions in the manifest become **capabilities** at runtime. When
 the operator approves a permission, the host mints a capability
-token: a short string that names the permission and is bound to the
-plugin's session. The plugin presents the token (or an automatically
-attached one) on every privileged call. The host re-checks it on the
-critical path.
+token: a short string bound to the plugin id, the granted capability
+set, the plugin's session, and an expiry, signed with HMAC-SHA256
+under a per-session secret. The token carries a TTL (10 minutes by
+default). The plugin presents the token (or an automatically attached
+one) on every privileged call, and the host re-checks the HMAC and the
+expiry on the critical path before the call runs.
 
 Why tokens and not just a permission flag? Because they expire.
 Because they bind to a session, so a stolen token does not work in a

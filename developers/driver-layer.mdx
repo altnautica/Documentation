@@ -1,7 +1,7 @@
 ---
 title: "Driver layer"
 description: "Typed base classes hardware-driver plugins subclass."
-lastUpdated: "2026-06-18"
+lastUpdated: "2026-06-23"
 ---
 
 The driver layer is a sub-pattern of agent plugins. Same manifest,
@@ -10,6 +10,17 @@ classes that the host knows how to register, discover, and route
 data to and from. A driver is just a plugin that subclasses one of
 these bases and declares the matching `sensor.*.register` capability
 in its manifest.
+
+<Note>
+  The driver layer exists in **both** agent SDKs. Python drivers
+  subclass the abstract base classes in `ados.sdk.drivers`. Rust
+  drivers implement the matching trait in `ados-sdk::drivers`. The two
+  are method-for-method equivalents: the same `discover` / `open` /
+  `close` / `capabilities` preamble, the same candidate / capabilities
+  / session shapes, the same kind-specific streaming methods. A driver
+  plugin can be authored in either language. Set `agent.runtime` in the
+  manifest to `python` or `rust` to pick.
+</Note>
 
 ## Why a driver layer
 
@@ -31,9 +42,12 @@ and we will route the rest."
 | ESC telemetry (DShot, KISS, BLHeli32) | `EscDriver` | [ESC driver](/developers/esc-driver) |
 | Payload actuator (sprayer, dropper, claw, sampler) | `PayloadActuatorDriver` | [Payload actuator driver](/developers/payload-actuator-driver) |
 
-All six share the same shape:
+All six share the same shape in both languages:
 
-```python
+<CodeGroup>
+```python ados.sdk.drivers (Python)
+from abc import ABC, abstractmethod
+
 class XDriver(ABC):
     async def discover(self) -> list[XCandidate]: ...
     async def open(self, candidate: XCandidate, config: dict) -> XSession: ...
@@ -42,15 +56,35 @@ class XDriver(ABC):
     # plus kind-specific I/O methods
 ```
 
+```rust ados-sdk::drivers (Rust)
+#[async_trait]
+pub trait XDriver: Send + Sync {
+    type Session: Send + Sync;
+    async fn discover(&self) -> DriverResult<Vec<XCandidate>>;
+    async fn open(&self, candidate: &XCandidate, config: &BTreeMap<String, Value>)
+        -> DriverResult<Self::Session>;
+    async fn close(&self, session: Self::Session) -> DriverResult<()>;
+    fn capabilities(&self, session: &Self::Session) -> XCapabilities;
+    // plus kind-specific I/O methods
+}
+```
+</CodeGroup>
+
 The kind-specific methods are the meat. A `CameraDriver` yields
 `FrameBuffer`s. A `GpsDriver` yields `GpsFix`es. A `GimbalDriver`
 takes attitude commands. The shared four-method preamble lets the
-agent's peripheral manager handle every kind uniformly.
+agent's peripheral manager handle every kind uniformly, whichever
+language the driver is written in. In Python the kind-specific stream
+methods return an `AsyncIterator`. In Rust they return a `SampleStream`
+(a boxed `Stream`), and the opaque `*Session` base class becomes a
+`Session` associated type the host hands back as a token.
 
 ## Lifecycle
 
 1. The plugin's `on_start` hook constructs the driver and registers
-   it: `peripheral_manager.register_camera_driver(driver)`. The
+   it with the peripheral manager. In Python that is
+   `peripheral_manager.register_camera_driver(driver)`; in Rust it is
+   `ctx.peripheral_manager.register_camera_driver(driver_ref)`. The
    manifest must declare the matching `sensor.camera.register`
    capability or registration is rejected.
 2. The peripheral manager calls `discover()` on every registered
@@ -79,9 +113,12 @@ which capability each one uses.
 
 ## Errors
 
-Drivers raise from `ados.sdk.drivers.errors`:
+Python drivers raise from `ados.sdk.drivers.errors`. Rust drivers
+return the `DriverError` enum from `ados-sdk::drivers` (every driver
+method returns `DriverResult<T>`).
 
-```python
+<CodeGroup>
+```python ados.sdk.drivers.errors (Python)
 from ados.sdk.drivers.errors import (
     DriverError,
     DriverDeviceNotFound,
@@ -89,15 +126,33 @@ from ados.sdk.drivers.errors import (
 )
 ```
 
-`DriverError` is the base. `DriverDeviceNotFound` says "the
+```rust ados-sdk::drivers (Rust)
+use ados_sdk::drivers::{DriverError, DriverResult};
+
+// DriverError variants:
+//   DriverError::DeviceNotFound(String)
+//   DriverError::PermissionDenied(String)
+//   DriverError::InvalidParam(String)
+//   DriverError::NotSupported(String)
+//   DriverError::Other(String)
+```
+</CodeGroup>
+
+In Python, `DriverError` is the base. `DriverDeviceNotFound` says "the
 candidate disappeared between discover and open." `DriverPermissionDenied`
 says "the device exists but the agent process cannot open it"
-(missing udev rule, locked USB, etc.).
+(missing udev rule, locked USB, etc.). The Rust enum mirrors these:
+`DeviceNotFound` and `PermissionDenied` carry the same meaning,
+`InvalidParam` is returned for an unknown `set_param` name or an
+unknown `actuate` action, and `NotSupported` is returned for an
+optional capability a device does not have (a rate command on a
+position-only gimbal, RTCM injection on a non-RTK GPS). `Other` carries
+any predictable, recoverable condition that does not fit a named kind.
 
 The host catches these, logs them, and surfaces them in the GCS
-plugin event stream. A driver that raises bare `Exception` is
-treated as crashed and the plugin is moved to the circuit-breaker
-state per the lifecycle rules.
+plugin event stream. A Python driver that raises bare `Exception`
+(or a Rust driver that panics) is treated as crashed and the plugin is
+moved to the circuit-breaker state per the lifecycle rules.
 
 ## Where to go next
 

@@ -142,7 +142,7 @@ ados/{deviceId}/webrtc/offer   → browser publishes
 ados/{deviceId}/webrtc/answer  ← agent publishes
 ```
 
-The MQTT broker runs at `mqtt.altnautica.com` behind a Cloudflare Tunnel. Once the SDP exchange completes, the WebRTC media stream flows peer-to-peer through STUN-negotiated NAT traversal. The MQTT broker is only used for signaling, not for the video data itself.
+The MQTT broker is reached over a secure WebSocket behind a reverse-proxy tunnel (the hosted deployment fronts it with TLS; a self-hosted deployment points at its own broker). Once the SDP exchange completes, the WebRTC media stream flows peer-to-peer through STUN-negotiated NAT traversal. The MQTT broker is only used for signaling, not for the video data itself.
 
 <Note>
 P2P MQTT requires both sides to have internet access. Users behind symmetric NAT (some cellular carriers) may fail the ICE negotiation. The transport switcher shows the specific failure stage and error code in a tooltip.

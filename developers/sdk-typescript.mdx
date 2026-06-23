@@ -1,11 +1,18 @@
 ---
 title: "TypeScript SDK"
-description: "@altnautica/plugin-sdk reference. The SDK every GCS plugin uses."
-lastUpdated: "2026-06-18"
+description: "@altnautica/plugin-sdk reference. The GCS browser-half SDK every Mission Control plugin uses."
+lastUpdated: "2026-06-23"
 ---
 
-The TypeScript SDK is the public package every GCS plugin imports.
-It hides the postMessage envelope shape and gives you a typed
+`@altnautica/plugin-sdk` (v1.0.0, GPL-3.0-or-later) is the **GCS
+browser-half SDK**: the package a plugin's Mission Control side imports.
+It is one of three SDKs an ADOS plugin can use. The other two are the
+agent half, which runs on the companion: the [Python SDK](/developers/sdk-python)
+(`ados.sdk`) and the [Rust SDK](/developers/sdk-rust) (the `ados-sdk`
+crate). A plugin's GCS half always uses this one; its agent half picks
+Python or Rust.
+
+This SDK hides the postMessage envelope shape and gives you a typed
 `PluginContext` instead.
 
 ## Install
@@ -76,6 +83,9 @@ interface PluginContext {
   config: {
     onChange<T>(handler: (next: T) => void): () => void;
   };
+  events: {
+    subscribe<T>(topic: string, handler: (args: T) => void): () => void;
+  };
   theme: {
     onChange(handler: (vars: Record<string, string>) => void): () => void;
   };
@@ -88,6 +98,22 @@ interface PluginContext {
 Each domain group is small on purpose. Plugins drop down to
 `ctx.client.request(method, capability, args)` for any RPC the
 helpers do not expose.
+
+`definePlugin` builds this context for you. If you need one outside the
+lifecycle (in a test, or to wire it by hand), construct it with
+`createPluginContext`:
+
+```ts
+import { createPluginContext } from "@altnautica/plugin-sdk";
+
+const ctx = createPluginContext({ locale: { "hello.title": "Hello" } });
+await ctx.telemetry.subscribe("battery", (s) => store.ingest(s));
+```
+
+The `events` group subscribes to one-way host pushes that have no
+request and response round-trip: video-overlay host props, an agent
+plugin's state read-back, and any other topic the host forwards to the
+iframe. `subscribe` returns an unsubscribe function.
 
 ## `PluginClient`
 
@@ -180,3 +206,10 @@ Output goes to `gcs/plugin.bundle.js`. The manifest's `gcs.entrypoint`
 field points at the same path. The bundle is not hashed in the
 manifest; its integrity is bound by the canonical payload hash that
 the signing step writes into the separate `SIGNATURE` file.
+
+<Note>
+This SDK is the GCS browser half only. For the companion-side plugin
+half, see the [Python SDK](/developers/sdk-python) (`ados.sdk`) or the
+[Rust SDK](/developers/sdk-rust) (the `ados-sdk` crate). A hybrid
+plugin ships both halves from a single `manifest.yaml`.
+</Note>

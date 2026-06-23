@@ -1,7 +1,7 @@
 ---
 title: "MAVLink extensions"
 description: "Subscribe to MAVLink messages, send frames to the flight controller, and register as a MAVLink component."
-lastUpdated: "2026-06-18"
+lastUpdated: "2026-06-23"
 ---
 
 The agent already speaks MAVLink to the flight controller and routes it
@@ -18,6 +18,11 @@ MAVLink component.
 | `mavlink.component.{camera,gimbal,payload,peripheral,vio}` | Register as a MAVLink component of that kind. |
 | `mavlink.tunnel` | Exchange application payloads over MAVLink `TUNNEL` frames. |
 | `vehicle.command` | Issue high-level vehicle commands (arm, takeoff, RTL, mode change) through the agent's command pipeline. |
+| `estimator.pose.inject` | Push pose samples directly into the autopilot state estimator. |
+
+`mavlink.tunnel`, `vehicle.command`, and `estimator.pose.inject` are all
+high-risk permissions, alongside `mavlink.write`. The `vio` component kind
+is high-risk too, since a visual-odometry source feeds the EKF.
 
 `mavlink.write` is a high-risk permission. Operators see a warning badge
 in the install dialog, because a plugin that can write raw MAVLink can
@@ -93,6 +98,29 @@ The kinds are `camera`, `gimbal`, `payload`, `peripheral`, and `vio`.
 Each maps to the matching `mavlink.component.<kind>` capability. The
 gimbal extension registers component id 154 as a Gimbal v2 manager; the
 thermal-camera extension registers a camera component.
+
+### Visual odometry
+
+A visual-odometry plugin registers the `vio` component, then sends pose
+estimates to the flight controller. The vision SDK wraps this: it
+registers the visual-odometry component once, then builds a
+`VISION_POSITION_ESTIMATE` from a pose (or an `ODOMETRY` message from a
+pose plus body-frame twist) and sends it under the visual-odometry
+component id.
+
+```python
+async def on_start(self, ctx) -> None:
+    await self.vio.register_vio_component()  # claims the vio component
+
+async def on_pose(self, pose) -> None:
+    await self.vio.inject_pose(pose)  # sends VISION_POSITION_ESTIMATE
+```
+
+That path keeps the pose stream on the normal MAVLink link. The separate
+`estimator.pose.inject` capability is for plugins that push pose samples
+directly into the autopilot state estimator instead of going over
+MAVLink. Both are high-risk: a bad pose stream feeds the EKF and can
+produce unsafe position commands.
 
 ## Re-publishing decoded data
 

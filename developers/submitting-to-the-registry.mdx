@@ -1,7 +1,7 @@
 ---
 title: "Submitting to the registry (planned)"
 description: "Planned submission flow: pack, sign, register your publisher key, and submit a plugin."
-lastUpdated: "2026-06-18"
+lastUpdated: "2026-06-23"
 ---
 
 <Warning>
@@ -27,7 +27,7 @@ same archive.
 2. An Ed25519 publisher key
    (see [Signing keys](/developers/signing-keys)).
 3. A registry account with a registered publisher key id.
-4. A registry token (`REGISTRY_TOKEN` env var) for the REST API, or
+4. A registry token (`ADOS_REGISTRY_TOKEN` env var) for the REST API, or
    the equivalent web sign-in for the UI.
 
 ## Step 1: Pack
@@ -61,7 +61,7 @@ signature).
 Once per key. The registry needs the public half so it can verify
 your submitted archives.
 
-Web UI: log in at `registry.ados.altnautica.com`, open
+Web UI: log in at `registry.example.com`, open
 `Account, Signing keys, Add key`, paste the raw 32-byte hex public
 key, and pick a key id that matches `ADOS_SIGNING_KEY_ID`.
 
@@ -69,19 +69,19 @@ REST:
 
 ```sh
 curl -X POST \
-  -H "Authorization: Bearer $REGISTRY_TOKEN" \
+  -H "Authorization: Bearer $ADOS_REGISTRY_TOKEN" \
   -F "key_id=example-2026-A" \
   -F "public_key_hex=$(cat keys/publisher.pub.hex)" \
   -F "valid_from=2026-04-30T00:00:00Z" \
   -F "valid_to=2027-12-31T23:59:59Z" \
-  https://registry.ados.altnautica.com/v1/me/keys
+  https://registry.example.com/v1/me/keys
 ```
 
 The response includes the registered key id and the SHA-256
 fingerprint shown to operators on the install dialog.
 
 To become a verified publisher (green badge in the catalog), follow
-`registry.ados.altnautica.com/verify`. It is a domain ownership
+`registry.example.com/verify`. It is a domain ownership
 proof plus six months of activity on the registry. Verified status
 is not required for submission; it just changes the operator-facing
 trust signal.
@@ -92,12 +92,12 @@ REST upload:
 
 ```sh
 curl -X POST \
-  -H "Authorization: Bearer $REGISTRY_TOKEN" \
+  -H "Authorization: Bearer $ADOS_REGISTRY_TOKEN" \
   -F "archive=@dist/com.example.foo-1.0.0.signed.adosplug" \
   -F "repo_url=https://github.com/example/ados-foo" \
   -F "category=drivers" \
   -F "release_notes=@CHANGELOG.md" \
-  https://registry.ados.altnautica.com/v1/plugins/submit
+  https://registry.example.com/v1/plugins/submit
 ```
 
 Web UI: `Submit, Upload archive`. Drop the file, fill the metadata
@@ -130,8 +130,8 @@ form (repo URL, category, release notes), submit.
 Check status:
 
 ```sh
-curl -H "Authorization: Bearer $REGISTRY_TOKEN" \
-  https://registry.ados.altnautica.com/v1/me/submissions
+curl -H "Authorization: Bearer $ADOS_REGISTRY_TOKEN" \
+  https://registry.example.com/v1/me/submissions
 ```
 
 ## Manifest fields the analyzer reads
@@ -143,7 +143,7 @@ matter at submission time:
 |-------|----------------|
 | `plugin.id` | Must match the directory and the archive name. |
 | `plugin.license` | Drives the OSS auto-approve gate. |
-| `plugin.source` | The static analyzer diffs the archive against this repo at the declared tag. Discrepancies are flagged. |
+| `plugin.homepage` | The static analyzer diffs the archive against the source repo at the declared tag. Discrepancies are flagged. |
 | `agent.permissions` | Drives the risk band. Undeclared `subprocess` calls or network access in the source fail the analyzer. |
 | `gcs.permissions` | Same as above for the GCS half. |
 | `agent.resources` | cgroup limits applied at runtime. |
@@ -180,8 +180,8 @@ To remove a published version:
 
 ```sh
 curl -X POST \
-  -H "Authorization: Bearer $REGISTRY_TOKEN" \
-  https://registry.ados.altnautica.com/v1/plugins/com.example.foo/1.0.0/withdraw
+  -H "Authorization: Bearer $ADOS_REGISTRY_TOKEN" \
+  https://registry.example.com/v1/plugins/com.example.foo/1.0.0/withdraw
 ```
 
 Withdrawal removes the version from search and the download

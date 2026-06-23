@@ -1,7 +1,7 @@
 ---
 title: "LiDAR driver"
 description: "Implement a LidarDriver to add a new ranging sensor."
-lastUpdated: "2026-06-18"
+lastUpdated: "2026-06-23"
 ---
 
 A `LidarDriver` yields point-cloud frames from a spinning,
@@ -35,7 +35,24 @@ class MyLidarDriver(LidarDriver):
     async def frame_iterator(self, session):
         # async generator yielding LidarFrame
         ...
+
+    async def set_param(self, session, param, value) -> None:
+        # rpm, scan rate, filter mode
+        ...
 ```
+
+<Note>
+  Writing the agent half in Rust? The trait equivalent is
+  `ados_sdk::drivers::LidarDriver` (re-exported from the `drivers`
+  module of the `ados-sdk` crate). It carries the same six methods
+  (`discover`, `open`, `close`, `capabilities`, `frame_iterator`,
+  `set_param`) over an `async-trait`, with `LidarCandidate`,
+  `LidarCapabilities`, `LidarFrame`, and `LidarPoint` as the matching
+  types. `LidarFrame` holds `timestamp_ns`, `sequence`, a `points`
+  vector, and free-form `metadata`. Set `runtime: rust` in the
+  manifest and the host treats the driver the same way it treats the
+  Python one.
+</Note>
 
 ## Capabilities
 

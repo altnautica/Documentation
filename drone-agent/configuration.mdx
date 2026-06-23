@@ -2,7 +2,7 @@
 title: "Configuration"
 description: "Structure and key settings of the /etc/ados/config.yaml file."
 icon: "gear"
-lastUpdated: "2026-06-18"
+lastUpdated: "2026-06-23"
 ---
 
 # Configuration
@@ -78,14 +78,14 @@ network:
     channel: 6
 
 server:
-  mode: "cloud"           # cloud | self_hosted | local
+  mode: "local"           # cloud | self_hosted | local
   cloud:
-    url: "https://convex-site.altnautica.com"
-    mqtt_broker: "mqtt.altnautica.com"
+    url: "https://your-convex.example.com:3211"   # Convex site origin (HTTP actions)
+    mqtt_broker: "your-mqtt.example.com"
     mqtt_port: 443
   self_hosted:
-    url: ""
-    mqtt_broker: ""
+    url: "https://your-convex.example.com:3211"   # Convex site origin (HTTP actions)
+    mqtt_broker: "your-mqtt.example.com"
     mqtt_port: 8883
     api_key: ""
   telemetry_rate: 2       # Hz, MQTT publish rate
@@ -230,6 +230,10 @@ server:
 - **cloud**: connects to the ADOS cloud backend.
 - **self_hosted**: connects to your own MQTT broker and Convex instance.
 - **local**: no cloud connectivity; Mission Control reaches the agent over the LAN. Default.
+
+<Warning>
+For both `cloud` and `self_hosted` modes, the `url` must point at the Convex **site** origin on port `:3211` (HTTP actions: pairing register, heartbeat, command poll), not the client API on `:3210`. If you paste the `:3210` URL, the register call lands on the wrong origin and returns a 404. The agent normalizes a known `:3210` URL to `:3211` as a safety net, but set `:3211` explicitly. See [Self-hosting the agent](/developers/self-hosting/agent).
+</Warning>
 
 ### OTA channel
 

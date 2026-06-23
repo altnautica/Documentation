@@ -1,0 +1,388 @@
+---
+title: "Rust SDK"
+description: "The ados-sdk crate. The Rust agent-side SDK for plugins that run a tight, long-running service on the companion."
+lastUpdated: "2026-06-23"
+---
+
+A plugin's agent half can be written in two languages. This page covers
+the Rust SDK, the `ados-sdk` crate. The other agent-half language is
+Python, with [`ados.sdk`](/developers/sdk-python); both speak the same
+length-prefixed msgpack wire and capability-token handshake to the
+plugin host, so the choice is per plugin. A Rust agent half and the
+plugin host (Rust or Python) interoperate byte-for-byte: the wire lives
+in `ados-protocol` and is reused unchanged on both sides.
+
+The crate mirrors the `ados.sdk` Python package surface for surface: the
+IPC client, the plugin-facing context facade, the six driver traits, the
+vision client, a test harness, and the agent capability catalog
+re-exported from `ados-protocol`.
+
+## When to pick Rust
+
+Python is the right pick when the plugin leans on the Python ecosystem
+(machine-learning inference, scripting, fast hardware bring-up). Reach
+for Rust when:
+
+- **The plugin is a tight, long-running service.** A Rust binary has no
+  interpreter to start and a small idle footprint, so a control loop or
+  a frame consumer that runs for the whole flight pays less overhead.
+- **You ship a vendor binary.** A Rust agent half is one statically
+  linked binary placed at the manifest entrypoint. The host execs it
+  directly under systemd with no venv to provision, and the
+  `ctx.process` facade authorizes any extra vendor binary the plugin
+  spawns.
+- **You want a single artifact.** The pack step cross-compiles to
+  `aarch64` and drops the binary into the `.adosplug` archive at the
+  entrypoint path. There is nothing else to install on the board.
+
+## Layout
+
+A Rust agent half is its own crate at `agent/` inside the extension
+directory:
+
+```
+extensions/<name>/
+  manifest.yaml            # agent.runtime: rust, agent.entrypoint: bin/<name>
+  agent/
+    Cargo.toml             # the crate
+    src/main.rs            # impl Plugin + run_plugin
+  locales/ ...             # optional assets, same as any extension
+```
+
+The minimal worked example is
+[`extensions/_hello-rust`](https://github.com/altnautica/ADOSExtensions/tree/main/extensions/_hello-rust).
+
+## Depending on the SDK
+
+The crate depends on `ados-sdk`, which brings the IPC client, the
+context facade, the driver traits, and the lifecycle runner. It pulls in
+`ados-protocol` (the frame, envelope, and capability-token wire,
+including the vision framebus contract) transitively, so a crate that
+names only `ados-sdk` also gets the protocol types.
+
+In the
+[`altnautica/ADOSExtensions`](https://github.com/altnautica/ADOSExtensions)
+monorepo, the Rust agent halves form a cargo workspace alongside the
+existing pnpm (TypeScript GCS halves) and uv (Python agent halves)
+workspaces. The SDK dependency is declared once in the root
+`Cargo.toml` and a member crate inherits it:
+
+```toml
+# extensions/<name>/agent/Cargo.toml
+[dependencies]
+ados-sdk = { workspace = true }
+tokio = { workspace = true }
+rmpv = { workspace = true }
+# The Plugin trait uses async methods, so implementing it needs the same
+# attribute the trait was declared with.
+async-trait = { workspace = true }
+```
+
+For local development the root workspace resolves `ados-sdk` as a path
+dependency to a sibling checkout of the agent repository:
+
+```toml
+# Cargo.toml (workspace root)
+[workspace.dependencies]
+ados-sdk = { path = "../ADOSDroneAgent/crates/ados-sdk" }
+ados-protocol = { path = "../ADOSDroneAgent/crates/ados-protocol" }
+```
+
+<Note>
+There is no crates.io publish. CI builds against a pinned git revision
+of the same crate: a per-crate `Cargo.toml` overrides the dependency
+with a git source and `rev = "<commit>"`. Develop against the path
+dependency, pin a rev for a release build.
+</Note>
+
+A vision plugin also names `ados-protocol` directly for the framebus
+value types the SDK does not re-export (`FrameDescriptor`,
+`FrameFormat`, `Detection`, `BoundingBox`, `ModelMetadata`). It is the
+same crate the SDK already pulls in, so this only widens what the plugin
+imports, not what it links.
+
+## The plugin shape
+
+A Rust plugin implements the `Plugin` trait and hands the type to
+`run_plugin` from `main`. The trait has one required method, `new`,
+which constructs the plugin; every lifecycle hook defaults to a no-op,
+so a plugin overrides only what it needs.
+
+```rust
+use std::collections::BTreeMap;
+
+use ados_sdk::{run_plugin, Plugin, RunnerError};
+use ados_sdk::context::PluginContext;
+use ados_sdk::ClientError;
+use async_trait::async_trait;
+
+/// A plugin holds whatever state its hooks share.
+struct MyPlugin;
+
+#[async_trait]
+impl Plugin for MyPlugin {
+    fn new() -> Self {
+        MyPlugin
+    }
+
+    /// Open subscriptions, register drivers, start a loop. Each call on
+    /// `ctx` is gated on a manifest permission.
+    async fn on_start(&mut self, ctx: &PluginContext) -> Result<(), ClientError> {
+        ctx.events
+            .subscribe("vehicle.*", std::sync::Arc::new(|_args| { /* ... */ }))
+            .await?;
+        Ok(())
+    }
+
+    /// Release anything on_start acquired.
+    async fn on_stop(&mut self, _ctx: &PluginContext) -> Result<(), ClientError> {
+        Ok(())
+    }
+}
+
+/// Resolve when the process is asked to stop. The host stops the unit
+/// with SIGTERM; SIGINT covers a foreground run.
+async fn shutdown_signal() {
+    use tokio::signal::unix::{signal, SignalKind};
+    let mut term = signal(SignalKind::terminate()).expect("SIGTERM handler");
+    let mut int = signal(SignalKind::interrupt()).expect("SIGINT handler");
+    tokio::select! {
+        _ = term.recv() => {}
+        _ = int.recv() => {}
+    }
+}
+
+#[tokio::main]
+async fn main() {
+    let static_config: BTreeMap<String, rmpv::Value> = BTreeMap::new();
+    match run_plugin::<MyPlugin, _>(
+        env!("CARGO_PKG_VERSION"),
+        static_config,
+        shutdown_signal(),
+    )
+    .await
+    {
+        Ok(()) => {}
+        // Running the binary by hand (no host) lands here: no socket or
+        // token to connect to. Report and exit non-zero rather than panic.
+        Err(RunnerError::NoBridge) => {
+            eprintln!("no plugin host socket/token supplied");
+            std::process::exit(1);
+        }
+        Err(err) => {
+            eprintln!("{err}");
+            std::process::exit(1);
+        }
+    }
+}
+```
+
+<Note>
+The entry is a plain generic function, not a proc-macro. A
+`#[ados_plugin]` attribute would expand to little more than
+`fn main() { run_plugin::<P>() }`, so the SDK keeps the call site
+explicit and skips the macro crate.
+</Note>
+
+### The runner
+
+`run_plugin` parses argv and the environment, connects the IPC client,
+builds the `PluginContext`, and drives the hooks. It reads `--socket`,
+`--token`, and `--agent-id` off the command line, falling back to the
+`ADOS_PLUGIN_SOCKET`, `ADOS_PLUGIN_TOKEN`, and `ADOS_PLUGIN_AGENT_ID`
+environment variables (the exact contract the host passes a Rust
+binary). The hook order matches the Python runner:
+
+```
+on_install -> on_enable -> on_configure(ctx, config) -> on_start
+   -> (wait for shutdown) -> on_stop -> on_disable
+```
+
+`run_plugin_with` takes pre-parsed `RunnerArgs`, for a test or a host
+harness that supplies arguments without touching the process
+environment.
+
+## `PluginContext`
+
+The object handed to every hook. Each field is a small capability-gated
+facade over one IPC client; the facade shapes the request and decodes
+the reply, and the host enforces the capability before the call reaches
+a handler.
+
+| Field | What it does | Capability |
+| --- | --- | --- |
+| `ctx.events` | `publish(topic, payload)` and `subscribe(pattern, cb)` on the event bus | `event.publish` / `event.subscribe` |
+| `ctx.mavlink` | `send(bytes, component_id)`, `subscribe(msg_name, cb)`, `register_component(id, kind)` | `mavlink.read` / `mavlink.write` / `mavlink.component.*` |
+| `ctx.telemetry` | `extend(channel, payload)` to add a channel to the heartbeat the GCS reads | `telemetry.extend` |
+| `ctx.peripheral_manager` | `register_*_driver(ref)` for each driver kind, `unregister(handle)`, `claim_camera(path, exclusive)` | `sensor.<kind>.register` |
+| `ctx.camera` | `claim(path, exclusive)`, `release(path)`, `get_frame(path, format, timeout_ms)` | `sensor.camera.register` |
+| `ctx.vision` | frame subscription, model registration, inference, detection publishing, pose injection | `vision.*` |
+| `ctx.config` | `static_get(key)` (manifest config, sync), `get(key, default)` / `set(key, value, scope)` (live kv) | none |
+| `ctx.process` | `spawn(basename, args, env)` to authorize a vendor-binary launch | `process.spawn` |
+| `ctx.lifecycle` | `on_pause(cb)` / `on_resume(cb)` for GCS-side mount events | none |
+
+`ctx.peripherals` is an alias for `ctx.peripheral_manager`, matching the
+Python back-compat alias. `ctx.ping_supervisor()` is a health probe; for
+any method not yet on a facade, `ctx.client()` returns the shared IPC
+client.
+
+A subscription callback runs on the IPC reader task, so it must not
+block. Compute cheaply in the callback and offload heavy work (an async
+RPC, inference) to a spawned task, as the object detector example does.
+
+## Driver traits
+
+For a hardware-driver plugin, the SDK ships six object-safe async traits,
+one per kind. Each mirrors the matching Python base class method for
+method:
+
+- `CameraDriver`, `GimbalDriver`, `LidarDriver`, `GpsDriver`,
+  `EscDriver`, `PayloadActuatorDriver`.
+
+A driver answers `discover` honestly, opens a session on demand, and
+yields samples until the session closes. The Python `AsyncIterator`
+return becomes a `SampleStream<T>` (a boxed `Stream`), and a `Session`
+associated type stands in for the opaque Python session object: the host
+treats it as a token and only hands it back to the driver's own methods.
+A plugin registers a driver instance from `on_start` through
+`ctx.peripheral_manager.register_*_driver`, passing an opaque reference
+id; the driver itself keeps running in the plugin process and the host
+routes by that id. See the [driver layer](/developers/driver-layer)
+page for the contract and the per-kind candidate, capability, and sample
+types.
+
+## Vision
+
+`ctx.vision` is the engine facade. Frames never ride the RPC envelope:
+the engine writes normalized frames into a shared-memory ring and
+publishes a small descriptor, and the SDK memory-maps the named
+`/dev/shm` ring read-only and reads each slot through the per-slot
+seqlock the framebus contract defines, dropping any torn or stale read
+(latest-wins).
+
+```rust
+use std::sync::Arc;
+use ados_sdk::vision::Frame;
+
+// In on_start:
+let vision = ctx.vision.clone(); // a cheap clone shares the one IPC client
+ctx.vision
+    .subscribe_frames(None, Arc::new(move |frame: Frame| {
+        // frame.descriptor + frame.pixels (resolved from the ring)
+        let vision = vision.clone();
+        tokio::spawn(async move {
+            // publish a detection, run inference, inject pose ...
+        });
+    }))
+    .await?;
+```
+
+The vision client also offers `register_model`, `infer`,
+`publish_detection` / `publish_one`, and the visual-odometry helpers
+`register_vio_component`, `inject_pose`, and `inject_odometry`. The pose
+helpers build a `VISION_POSITION_ESTIMATE` (from a `Pose`) or an
+`ODOMETRY` message (from an `Odometry`, pose plus body-frame twist) and
+send it to the flight controller under the visual-odometry component id
+(`VIO_COMPONENT_ID`), so a VIO plugin never hand-builds a MAVLink frame.
+
+`Frame`, `Pose`, `Odometry`, `VisionClient`, and `VIO_COMPONENT_ID` are
+re-exported from the crate root; the framebus value types
+(`Detection`, `BoundingBox`, `FrameDescriptor`, `FrameFormat`,
+`ModelMetadata`) come from `ados-protocol`.
+
+The full worked vision plugins are
+[`object-detector-rs`](https://github.com/altnautica/ADOSExtensions/tree/main/extensions/object-detector-rs)
+(a cheap heuristic detector that proves the frame and detection path on
+any board) and
+[`vision-nav`](https://github.com/altnautica/ADOSExtensions/tree/main/extensions/vision-nav)
+(optical flow and visual-inertial odometry feeding pose to the
+autopilot EKF).
+
+## Testing
+
+The `ados_sdk::testing` module mirrors the Python harness for vision
+plugins. `FakeVisionEngine` emits synthetic frames into the same
+`FrameCallback` a plugin registers with `ctx.vision.subscribe_frames`,
+and captures the detection batches the plugin would publish, with no
+real host, vision engine, shared memory, or socket. It builds a real
+frame ring through the framebus contract and resolves each synthetic
+frame the same way the production client does, so the plugin's
+frame-handling path is exercised end to end.
+
+```rust
+use ados_sdk::testing::FakeVisionEngine;
+use ados_protocol::framebus::FrameFormat;
+
+let mut engine = FakeVisionEngine::new("uvc-0", 64, 48, FrameFormat::Rgb24);
+engine.on_frame(|frame| {
+    assert_eq!(frame.descriptor.camera_id, "uvc-0");
+});
+engine.push_solid(0x80);   // one grey frame
+engine.deliver_all();
+```
+
+`push_frame`, `push_solid`, and `push_dir` enqueue frames (the last
+reads `*.bin` / `*.raw` files in name order); `deliver_one` /
+`deliver_all` drive them through the resolver; `detection_sink` and
+`captured_detections` collect what the plugin published.
+
+## Capabilities
+
+The SDK re-exports the generated agent capability catalog from
+`ados-protocol` as `ados_sdk::capabilities`, so a plugin author
+references one source of truth for capability ids. The source of truth
+is `crates/ados-protocol/capabilities.toml`. There are **43 agent
+capabilities**, of which three are enforced at runtime by the host
+(`event.publish`, `event.subscribe`, `hardware.gpio_out`). See the
+[permissions reference](/developers/permissions) for the full list and
+what each grants.
+
+A method whose capability the manifest did not request is rejected
+before it runs: the SDK surfaces it as `ClientError::CapabilityDenied`
+(naming the missing capability), and a vendor-binary spawn the manifest
+allowlist refuses surfaces as `ClientError::AllowlistViolation`.
+
+## IPC
+
+The wire is `ados-protocol` unchanged: length-prefixed msgpack envelope
+frames over the per-plugin Unix domain socket, gated by a pipe-delimited
+HMAC capability token. The handshake echoes the token the supervisor
+minted; the client then serves request and response on one flow (each
+call mints a fresh `r<n>` request id) and event, MAVLink, and vision
+pushes on the other, dispatched to the topic-matched callbacks. The
+per-request timeout defaults to five seconds. This is the same envelope
+and capability gate the Python SDK and the GCS bridge speak, so a Rust
+plugin and a Python host interoperate without translation.
+
+## Manifest
+
+A Rust agent half sets `runtime: rust` and points the entrypoint at the
+binary path inside the installed plugin tree:
+
+```yaml
+agent:
+  runtime: rust
+  entrypoint: "bin/<name>"
+  isolation: subprocess
+  permissions:
+    - vision.frame.read
+    - vision.detection.publish
+  resources:
+    max_ram_mb: 32
+    max_cpu_percent: 10
+    max_pids: 4
+```
+
+The pack step cross-compiles the crate to `aarch64` and places the
+binary at `agent.entrypoint` in the `.adosplug` archive. The host execs
+that binary directly under systemd (not through the Python runner),
+passing the per-plugin socket on the command line and the capability
+token and agent id through the unit environment. The manifest, signing,
+and packing flow is otherwise identical to a Python plugin; see the
+[manifest reference](/developers/manifest) and
+[signing keys](/developers/signing-keys).
+
+A plugin that spawns a vendor binary sets `contains_vendor_binary: true`
+and lists each one under `vendor_attribution` (name, license, source
+url), so the installer surfaces the attribution at install time. The
+`vision-nav` example does this for its visual-inertial odometry engines.

@@ -1,7 +1,7 @@
 ---
 title: "Agent plugin deep dive"
 description: "Subprocess model, IPC envelopes, capability tokens, cgroup limits, supervisor restart policy."
-lastUpdated: "2026-06-18"
+lastUpdated: "2026-06-23"
 ---
 
 This page is for plugin authors writing non-trivial agent halves.
@@ -163,7 +163,7 @@ of 2 seconds and a start-rate limit:
 |-------|-------|
 | `Restart` | `on-failure` |
 | `RestartSec` | `2s` |
-| `StartLimitIntervalSec` | `60s` |
+| `StartLimitInterval` | `60s` |
 | `StartLimitBurst` | `5` |
 
 Five failed starts inside a 60-second window trip the limit: systemd
@@ -236,6 +236,12 @@ State on disk under the plugin's data dir survives.
 - `systemctl status ados-plugin-<id>.service` shows the live unit state.
 - `systemctl cat ados-plugin-<id>.service` shows the generated unit.
 - `ados plugin info <id>` prints granted permissions and install state.
+
+<Tip>
+For the full symptom-to-fix list (install failures, capability denials,
+a plugin stuck in `failed`, IPC handshake errors), see
+[Troubleshooting](/developers/troubleshooting).
+</Tip>
 
 ## See also
 

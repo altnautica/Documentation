@@ -1,0 +1,255 @@
+---
+title: "Security model"
+description: "What a plugin can and cannot do, the blast radius of each sandbox, and the trust boundary between signed first-party and third-party code."
+lastUpdated: "2026-06-23"
+---
+
+A plugin runs untrusted code next to a flying vehicle. The security
+model exists to make that safe: every plugin is sandboxed, every
+privileged call is gated by a capability the operator approved, and
+every archive is signed and checked before a single file lands on disk.
+
+This page lays out the boundary. It tells you what a plugin half can
+reach, what it cannot, and what the worst case looks like if a plugin
+turns out to be malicious or buggy. The mechanics live in
+[Concepts](/developers/concepts), [Permissions](/developers/permissions),
+the [agent deep dive](/developers/agent-plugin-deep-dive), and the
+[GCS deep dive](/developers/gcs-plugin-deep-dive); this page is the
+threat-model summary that ties them together.
+
+## The two sandboxes at a glance
+
+A plugin has up to two halves and each runs in its own sandbox. The two
+sandboxes are different technologies with the same goal: the plugin
+reaches the host only through one audited channel, and authority comes
+from granted capabilities, not from where the code happens to run.
+
+| | Agent half | GCS half |
+|---|---|---|
+| Where it runs | The drone or ground node, as a subprocess | The Mission Control browser, in an iframe |
+| Language | Python (`ados.sdk`) or Rust (`ados-sdk`) | TypeScript (`@altnautica/plugin-sdk`) |
+| Isolation primitive | systemd unit + `ados-plugins.slice` cgroup | `<iframe sandbox="allow-scripts">`, null origin |
+| Host channel | Unix domain socket, length-prefixed msgpack | `postMessage`, same envelope shape |
+| Resource cap | `MemoryMax`, `CPUQuota`, `TasksMax` from the manifest | Browser tab limits; CSP blocks egress |
+| Privilege gate | Capability token re-checked on every IPC call | Capability token re-checked on every RPC |
+
+## Agent half: what it can and cannot do
+
+The agent half of a third-party plugin runs as a generated systemd
+service inside the shared `ados-plugins.slice` cgroup. Isolation is
+mandatory; there is no in-process tier for third parties. The generated
+unit runs as `User=ados` `Group=ados` with these hardening directives:
+
+```ini
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/ados/plugin-data /var/log/ados/plugins /run/ados/plugins
+LockPersonality=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+```
+
+| The plugin CAN | The plugin CANNOT |
+|---|---|
+| Run its own code in its own process | Gain new privileges (`NoNewPrivileges=yes` blocks setuid escalation) |
+| Reach the host through the IPC socket | Touch the host filesystem outside its writable paths (`ProtectSystem=strict`, `ProtectHome=yes` make the rest read-only or invisible) |
+| Write under `/var/ados/plugin-data`, its logs, and its run dir | Write anywhere else on disk (only the `ReadWritePaths` list is writable) |
+| Use up to its declared RAM, CPU, and PID budget | Exceed that budget (the kernel OOM-kills on memory, throttles on CPU, refuses new threads on PIDs) |
+| Call a privileged host surface it was granted a capability for | Call a surface it was not granted (the IPC server rejects with `permission_denied` before the handler runs) |
+| Open outbound network connections if it declared `network.outbound` | Open arbitrary sockets without that capability |
+| Share `/tmp` with the host or other plugins | See a shared `/tmp` (`PrivateTmp=yes` gives it a private one) |
+
+### Blast radius if the agent half is malicious
+
+The worst a compromised agent half can do is bounded by its granted
+capabilities. With only low-risk grants (`telemetry.read`,
+`recording.write`) it can read telemetry and waste its own CPU budget,
+and nothing else. A plugin granted high-risk capabilities is a
+different matter: `mavlink.write`, `vehicle.command`,
+`flight.guided_setpoint`, and `estimator.pose.inject` can each move the
+vehicle. That is why those carry a high risk badge in the install
+dialog and the operator has to approve them explicitly. The sandbox
+contains a buggy or hostile plugin from reaching the rest of the box;
+it does not pretend a granted flight-control capability is harmless.
+
+## GCS half: what it can and cannot do
+
+The GCS half runs inside an iframe mounted with the strictest sandbox
+flags that still allow JavaScript:
+
+```html
+<iframe src="/plugins/<id>/index.html" sandbox="allow-scripts"></iframe>
+```
+
+The host also serves the plugin document with a per-plugin Content
+Security Policy whose `connect-src 'self'` is the second wall.
+
+| The plugin CAN | The plugin CANNOT |
+|---|---|
+| Run JavaScript and render its own React UI in the iframe | Read host cookies, `localStorage`, or the host DOM (no `allow-same-origin`, so it runs in a null origin) |
+| Fetch its own bundle from `/plugins/<id>/` | Fetch from the public internet (`connect-src 'self'` blocks it; route outbound calls through the agent half with `network.outbound`) |
+| Call the host over `postMessage` for capabilities it was granted | Redirect the parent window (no `allow-top-navigation`) |
+| Mount a panel into a UI slot it has the matching `ui.slot.<id>` grant for | Open new windows or submit native forms (no `allow-popups`, no `allow-forms`) |
+| Receive theme variables and apply them in its own root | Lie its way past a missing grant (the host re-resolves the required capability and ignores the envelope's claimed one) |
+
+### Blast radius if the GCS half is malicious
+
+A compromised GCS half is trapped in a null-origin iframe that cannot
+read the host session, cannot reach the public internet, and cannot
+navigate the parent page. Its only output is `postMessage` envelopes,
+and the host bridge re-resolves the capability each envelope actually
+needs and checks it against the granted set. The damage ceiling is the
+set of GCS capabilities the operator approved (for example `command.send`
+to a paired drone, or `mission.write` to edit a plan). The iframe is the
+reason the GCS half must never be your network egress point: even if you
+wanted to phone home from the browser, the CSP forbids it.
+
+## Capability least privilege
+
+Permissions are declared per half in the manifest. Each entry has an
+`id` and an optional `required` flag:
+
+```yaml
+agent:
+  permissions:
+    - id: telemetry.read
+      required: true
+    - id: recording.write
+      required: false
+```
+
+Required permissions are pinned on in the install dialog and the
+operator cannot install with them off; optional permissions default to
+off and the operator opts in. Declare the smallest set that makes your
+plugin work, mark only the genuinely load-bearing ones `required`, and
+leave the rest optional so an operator can run a reduced version. There
+are 43 agent capabilities and 21 GCS capabilities, each carrying a risk
+level (low, medium, high, critical) that the install dialog badges. The
+full catalog is on the [Permissions](/developers/permissions) page.
+
+Capabilities are not just install-time flags. At runtime the supervisor
+mints a capability token bound to the plugin id, the granted set, the
+session, and an expiry, signed with HMAC-SHA256 and carrying a TTL (10
+minutes by default). The plugin presents it on every privileged call and
+the host re-checks the HMAC and the expiry on the critical path. Tokens
+expire, bind to a session (so a stolen token does not work in a later
+one), and let the host audit which call exercised which permission.
+Three agent capabilities (`event.publish`, `event.subscribe`, and
+`hardware.gpio_out`) are enforced at the IPC layer on every request.
+
+## The trust boundary: signed first-party vs third-party
+
+Every `.adosplug` is an Ed25519-signed zip. On install the agent
+recomputes the canonical payload hash (a SHA-256 over the path-sorted
+entries, the signature file excluded), then verifies the signature
+against its trust list before unpacking anything.
+
+```
+/etc/ados/plugin-keys/<signer-id>.pem      # trusted public keys
+/etc/ados/plugin-revocations.json          # retired signer ids
+```
+
+There are three trust tiers:
+
+| Tier | How it is recognized | What it unlocks |
+|---|---|---|
+| First-party | Signer id on the hardcoded allowlist (`altnautica-2026-A`, `altnautica-2026-B`) | The `inprocess` agent isolation and `inline` GCS isolation, in addition to everything below |
+| Trusted third-party | Public key present under `/etc/ados/plugin-keys/`, signer id not revoked | Normal install, `subprocess` and `iframe` isolation only |
+| Untrusted | Unknown signer, or revoked signer, or unsigned | Rejected, unless the operator is in developer mode |
+
+First-party status is granted only to ids on the in-code allowlist, not
+by filename prefix, so an attacker who can write to
+`/etc/ados/plugin-keys/` still cannot plant a key that impersonates
+first-party status. A signer id on the revocation list is refused even
+if its public key is still present.
+
+<Warning>
+The `inprocess` (agent) and `inline` (GCS) isolation levels import a
+plugin into the host's own address space, so they skip the sandbox
+entirely. They are restricted to first-party signers for exactly that
+reason. A third-party manifest that declares either level is rejected at
+install. Never assume `inprocess`/`inline` is available to your plugin
+unless you sign with a first-party key.
+</Warning>
+
+### Unsigned plugins and developer mode
+
+Signature verification can be turned off only for local development.
+The CLI install command accepts `--allow-unsigned`, and the host shows a
+visible developer-mode indication while it is active. In any normal
+install, an unsigned or unknown-signer archive is rejected:
+
+```sh
+# Production: signature required, this fails for an unsigned archive
+ados plugin install ./my-plugin.adosplug
+
+# Developer mode only: skip signature verification for local iteration
+ados plugin install ./my-plugin.adosplug --allow-unsigned
+```
+
+Use `--allow-unsigned` only on a bench box you control. Anything you
+distribute must be signed (`ados plugin sign`), and registry submission
+requires a signed archive.
+
+## The operator install gate
+
+No plugin installs silently. The install flow is two-stage so the
+operator sees exactly what they are approving before anything touches
+the disk:
+
+<Steps>
+  <Step title="Parse in memory">
+    The operator drags a `.adosplug` into the install dialog. The host
+    validates the manifest against the schema, verifies the Ed25519
+    signature, and returns a summary with the requested permissions, the
+    signer id, and the risk level. Nothing is written to disk yet.
+  </Step>
+  <Step title="Review and approve">
+    The dialog renders the summary plus a permission grid badged by risk.
+    Required permissions are pinned on; optional ones the operator flips
+    as wanted. The operator clicks **Install**.
+  </Step>
+  <Step title="Commit">
+    Only now does the host unpack the archive, generate the systemd unit
+    from the approved resource budget, and write the install record. A
+    plugin that never gets past review leaves no trace.
+  </Step>
+</Steps>
+
+Updates re-open the gate when they ask for more. A newer version that
+requests a new optional permission re-prompts with only the new one
+highlighted; a new required permission must be approved before the
+update applies. Permissions dropped in an update are removed silently on
+load. An operator can revoke any granted capability at any time from the
+GCS or with `ados plugin perms <id> --revoke <cap>`; the plugin loses
+access on the next token rotation.
+
+## Why each layer exists
+
+The layers are independent on purpose. If one fails, the next still
+holds.
+
+- **Signing** stops a tampered or unknown-origin archive from ever
+  installing. It is the supply-chain wall.
+- **The sandbox** (subprocess plus cgroup, or null-origin iframe plus
+  CSP) bounds a plugin that did install but turns out to be buggy or
+  hostile. It is the runtime wall.
+- **Capabilities** make the plugin's reach explicit and operator-approved
+  rather than implicit. They are the authority wall.
+- **The install gate** keeps a human in the loop for every grant, so no
+  authority is handed out without someone seeing the risk badges first.
+
+A plugin that clears all four is one a malicious author cannot turn into
+a foothold: the worst it can do is the set of capabilities a human
+deliberately approved, inside a sandbox it cannot escape.
+
+## See also
+
+- [Concepts](/developers/concepts)
+- [Permissions](/developers/permissions)
+- [Agent plugin deep dive](/developers/agent-plugin-deep-dive)
+- [GCS plugin deep dive](/developers/gcs-plugin-deep-dive)
+- [Signing keys](/developers/signing-keys)
+- [Revocation and incidents](/developers/revocation-and-incidents)

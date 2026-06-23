@@ -1,7 +1,7 @@
 ---
 title: "Payload actuator driver"
 description: "Implement a PayloadActuatorDriver to control a sprayer, dropper, claw, or sampler."
-lastUpdated: "2026-06-18"
+lastUpdated: "2026-06-23"
 ---
 
 A `PayloadActuatorDriver` controls a non-imaging mission payload:
@@ -39,6 +39,20 @@ class MyPayloadDriver(PayloadActuatorDriver):
     def get_state(self, session) -> PayloadState:
         ...
 ```
+
+<Note>
+A Rust trait of the same shape ships in the `ados-sdk` crate at
+`ados_sdk::drivers::PayloadActuatorDriver`. It mirrors the Python
+contract (`discover`, `open`, `close`, `capabilities`, `actuate`,
+`get_state`) with an associated `Session` type and returns
+`DriverResult`. `actuate` returns `DriverError::InvalidParam` when
+`command.action_id` is not in `PayloadCapabilities::actions`, so the
+host can reject the request before it reaches hardware.
+`PayloadCandidate`, `PayloadCapabilities`, `PayloadCommand`, and
+`PayloadState` carry the same fields (`args` and `metadata` are
+msgpack value maps on the Rust side). Pick the language that matches
+your plugin's `agent.runtime` (`python` or `rust`).
+</Note>
 
 ## Capabilities
 

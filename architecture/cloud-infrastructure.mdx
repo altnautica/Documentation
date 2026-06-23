@@ -2,7 +2,7 @@
 title: "Cloud Infrastructure"
 description: "Three relay layers for remote access: Convex HTTP, MQTT telemetry, and WebRTC video."
 icon: "cloud"
-lastUpdated: "2026-06-18"
+lastUpdated: "2026-06-23"
 ---
 
 # Cloud Infrastructure
@@ -19,8 +19,8 @@ flowchart LR
     end
 
     subgraph CloudSvc["Cloud Services"]
-        Convex["Convex Backend<br/>(convex.altnautica.com)"]
-        Mosquitto["Mosquitto MQTT<br/>(mqtt.altnautica.com)"]
+        Convex["Convex Backend<br/>(your-convex.example.com)"]
+        Mosquitto["Mosquitto MQTT<br/>(your-mqtt.example.com)"]
         Bridge["MQTT-to-Convex bridge<br/>(self-host helper)"]
     end
 
@@ -50,7 +50,7 @@ The simplest relay. The agent's native Rust cloud service (`ados-cloud`) POSTs a
 
 | Detail | Value |
 |--------|-------|
-| Endpoint | `https://convex.altnautica.com/api/agent/status` |
+| Endpoint | Convex site origin `/agent/status` (`:3211`; managed by Altnautica in cloud mode, or `your-convex.example.com:3211` self-hosted) |
 | Frequency | Every 5 seconds |
 | Payload | JSON: mode, armed, battery, GPS, altitude, speed, connection state |
 | Bandwidth | Under 1 Kbps |
@@ -71,7 +71,7 @@ For higher-frequency data, the agent publishes to MQTT topics via a Mosquitto br
 
 | Detail | Value |
 |--------|-------|
-| Broker | `mqtt.altnautica.com` (WebSocket on port 443, Cloudflare Tunnel) |
+| Broker | `your-mqtt.example.com` (WebSocket on port 443, Cloudflare Tunnel; managed by Altnautica in cloud mode) |
 | Topics | `ados/{deviceId}/status`, `ados/{deviceId}/telemetry` |
 | Frequency | 2 Hz (configurable) |
 | Payload | JSON telemetry (attitude, GPS, battery, sensors) |
@@ -114,7 +114,7 @@ All cloud services are co-located on a single Linux server:
 |---------|------|--------|
 | Convex backend (client API) | 3210 | Used by the GCS browser client (`NEXT_PUBLIC_CONVEX_URL`) |
 | Convex backend (site / HTTP actions) | 3211 | Used by the agent heartbeat and the MQTT bridge (`/agent/status`) |
-| Mosquitto MQTT | 1883 (TCP), 9001 (WebSocket) | `mqtt.altnautica.com` via Cloudflare Tunnel |
+| Mosquitto MQTT | 1883 (TCP), 9001 (WebSocket) | `your-mqtt.example.com` via Cloudflare Tunnel |
 | MQTT-to-Convex bridge | Internal | Subscribes to Mosquitto, POSTs to the Convex site origin (`:3211`) |
 
 Everything routes through Cloudflare Tunnels. No inbound ports are open on the server. The Tunnel client (`cloudflared`) maintains outbound connections to Cloudflare's edge.
@@ -153,12 +153,12 @@ Point your agent at your own cloud. The agent reads its cloud posture from `serv
 server:
   mode: self_hosted          # local | cloud | self_hosted
   self_hosted:
-    url: "https://your-convex-instance:3211"   # Convex SITE origin (HTTP actions)
-    mqtt_broker: "your-broker.example.com"
+    url: "https://your-convex.example.com:3211"   # Convex SITE origin (HTTP actions)
+    mqtt_broker: "your-mqtt.example.com"
     mqtt_port: 8883
     api_key: ""              # if your broker requires one
 pairing:
-  convex_url: "https://your-convex-instance:3211"   # Convex SITE origin (HTTP actions)
+  convex_url: "https://your-convex.example.com:3211"   # Convex SITE origin (HTTP actions)
 ```
 
 <Warning>
@@ -169,7 +169,7 @@ The full set of `server` keys (defaults shown):
 
 | Key | Default | Purpose |
 |-----|---------|---------|
-| `server.mode` | `local` | `local` disables the cloud relay; `cloud` uses the managed backend; `self_hosted` points at your own deployment |
+| `server.mode` | `local` | `local` disables the cloud relay; `cloud` uses the Altnautica-managed backend (zero config, no endpoints to set); `self_hosted` points at your own deployment |
 | `server.self_hosted.url` | `""` | Convex site origin for status POSTs (self-hosted mode) |
 | `server.self_hosted.mqtt_broker` | `""` | Your MQTT broker host |
 | `server.self_hosted.mqtt_port` | `8883` | MQTT port (TLS) |

@@ -1,7 +1,7 @@
 ---
 title: "Event hooks and bus"
 description: "Topic taxonomy, capability-token RBAC, delivery, and back-pressure handling."
-lastUpdated: "2026-06-18"
+lastUpdated: "2026-06-23"
 ---
 
 The event bus is how the host pushes data to agent plugins and how
@@ -59,8 +59,11 @@ plugin's say-so.
 # manifest grants: event.subscribe, event.publish
 async def on_start(self, ctx) -> None:
     await ctx.events.subscribe("vehicle.armed", self._on_armed)
-    await ctx.events.publish("alert", {"kind": "cell_low", "v": 3.4})
-    # the host fans the publish out as plugin.<id>.alert
+    # publish into your own namespace so other plugins can subscribe;
+    # the topic is delivered verbatim, the host does not rewrite it
+    await ctx.events.publish(
+        f"plugin.{self.plugin_id}.alert", {"kind": "cell_low", "v": 3.4}
+    )
 ```
 
 ## Telemetry

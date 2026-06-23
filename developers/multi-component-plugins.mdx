@@ -1,18 +1,26 @@
 ---
 title: "Multi-component plugins"
 description: "Patterns for plugins that span agent, GCS, and driver halves. Lifecycle ordering, cross-half RPC, version compatibility."
-lastUpdated: "2026-06-18"
+lastUpdated: "2026-06-23"
 ---
 
 A plugin can ship up to three pieces in one archive:
 
-- An **agent** half (Python subprocess on the drone).
+- An **agent** half (a subprocess on the drone, written in Python or Rust).
 - A **GCS** half (TypeScript bundle in a sandboxed iframe).
 - One or more **drivers** registered by the agent half.
 
 Each half has its own runtime, its own SDK, and its own sandbox.
 What makes them one plugin is the shared manifest, shared id,
 shared version, and shared install state.
+
+The agent half declares its language with `agent.runtime: python` (the
+default) or `agent.runtime: rust`. A Python half uses the `ados.sdk`
+package; a Rust half links the `ados-sdk` crate. Both speak the same
+length-prefixed msgpack wire to the agent's plugin host, so a Rust agent
+half and a Python or Rust host interoperate without changes. The GCS half
+uses the `@altnautica/plugin-sdk` TypeScript SDK regardless of which
+language the agent half is written in.
 
 ## When to ship two halves
 
@@ -43,7 +51,8 @@ Install order is fixed:
    unpacks the agent half; the GCS host registers the bundle in
    the user's install record.
 5. On enable, the **agent half starts first** as its own systemd
-   subprocess.
+   subprocess (the Python interpreter for a `runtime: python` half, or
+   the cross-compiled binary for a `runtime: rust` half).
 6. Once the agent half is running, the GCS half mounts in its iframe.
    The GCS bridge gates outbound RPC to the agent until the agent half
    is listening.
@@ -69,24 +78,34 @@ ADOS Drone Agent host
 Agent plugin (subprocess)
 ```
 
-Use the plugin's own `plugin.<id>.*` topics:
+Use the plugin's own `plugin.<id>.*` topics. The agent half publishes on
+the full topic, prefixed with `plugin.` and the plugin id:
 
 ```python
 # agent half: publish on the plugin's own topic
-await ctx.events.publish("frame.ready", {"frame_id": 42, "ts_ms": now_ms()})
+await ctx.events.publish(
+    "plugin.com.example.thermal.frame.ready",
+    {"frame_id": 42, "ts_ms": now_ms()},
+)
 ```
 
 ```ts
 // GCS half (same plugin id): subscribe to the host-pushed event
-ctx.client.on("plugin.com.example.thermal.frame.ready", (evt) => {
+ctx.events.subscribe("plugin.com.example.thermal.frame.ready", (evt) => {
   redrawOverlay(evt.frame_id);
 });
 ```
 
-On the agent side, publishing and subscribing on the plugin's own
-topics use the `event.publish` and `event.subscribe` capabilities. The
-GCS half receives host-pushed events through its client, so it does not
-open a network connection of its own.
+A topic that starts with `plugin.<your-id>.` is always yours to publish
+and to subscribe to. Any other topic falls under the `event.publish` and
+`event.subscribe` capabilities and is checked against the allowlist:
+reserved namespaces (`vehicle.`, `mavlink.`, `mission.`, `safety.`,
+`agent.`, `swarm.`, `gps.`) cannot be published into, and a small set of
+public safety and lifecycle topics (`vehicle.armed`, `mission.started`,
+`agent.ready`, and similar) can be subscribed to without a per-topic
+allowlist entry. The GCS half receives host-pushed events through
+`ctx.events.subscribe`, so it does not open a network connection of its
+own.
 
 ## Shared manifest
 
@@ -161,15 +180,16 @@ to keep them backward compatible inside a major version.
 
 ## Driver halves
 
-Drivers are agent plugins that subclass one of the typed driver
-base classes (`CameraDriver`, `GimbalDriver`, etc.) and register
-with the peripheral manager. See [driver layer](/developers/driver-layer)
+Drivers live inside the agent half. In Python you implement one of the
+typed driver base classes (`CameraDriver`, `GimbalDriver`, `LidarDriver`,
+`GpsDriver`, `EscDriver`, `PayloadActuatorDriver`); in Rust you implement
+the matching driver trait. Either way you register the instance with the
+peripheral manager. See [driver layer](/developers/driver-layer)
 for the contract.
 
-A plugin can ship multiple drivers. The Thermal Camera plugin
-registers a `CameraDriver` for the FLIR sensor. A multi-sensor
-plugin can register a `CameraDriver` plus a `GpsDriver` from the
-same agent half:
+A plugin can ship multiple drivers. A thermal camera plugin registers a
+`CameraDriver` for the sensor. A multi-sensor plugin can register a
+`CameraDriver` plus a `LidarDriver` from the same agent half:
 
 ```python
 async def on_start(self, ctx) -> None:

@@ -1,7 +1,7 @@
 ---
 title: "Permissions"
 description: "The capability catalog, the risk levels, and the install dialog flow."
-lastUpdated: "2026-06-18"
+lastUpdated: "2026-06-23"
 ---
 
 A plugin can only do what its manifest declares and the operator
@@ -10,6 +10,11 @@ approves. The capability catalog is generated from one source of truth
 (TypeScript) so the three halves cannot drift. This page lists the real
 catalog, the risk levels each capability carries, and how the install
 dialog presents them.
+
+There are 43 agent capabilities and 21 GCS capabilities. Three agent
+capabilities are runtime-enforced (see the note in the agent section);
+the GCS set is 14 UI slot registrations plus 7 data and command
+capabilities.
 
 ## Risk levels
 
@@ -45,15 +50,25 @@ off and the operator flips them on when wanted.
 
 ## Agent capabilities
 
-Grouped by namespace. The risk column is the value carried in the
-catalog.
+43 capabilities, grouped by namespace. The risk column is the value
+carried in the catalog.
+
+<Note>
+Three agent capabilities are runtime-enforced at the IPC layer:
+`event.publish`, `event.subscribe`, and `hardware.gpio_out`. The host
+re-resolves the required capability from the method (and, for the event
+bus, from the topic) on every request and rejects an ungranted call.
+The other capabilities gate access at the surface they front (for
+example, a manager refuses to register a driver without the matching
+permission).
+</Note>
 
 ### `event.*` (event bus)
 
 | Capability | Risk | Lets the plugin... |
 |------------|------|-----|
-| `event.publish` | Low | Publish events on topics it has been granted. |
-| `event.subscribe` | Low | Receive events from granted topics. |
+| `event.publish` | Low | Publish events on topics it has been granted (enforced). |
+| `event.subscribe` | Low | Receive events from granted topics (enforced). |
 
 ### `mavlink.*` (flight controller link)
 
@@ -103,7 +118,7 @@ catalog.
 | `hardware.i2c` | Medium | Read and write I2C devices. |
 | `hardware.spi` | Medium | Read and write SPI devices. |
 | `hardware.gpio` | Medium | Read input and drive output GPIO pins. |
-| `hardware.gpio_out` | High | Drive a GPIO output line or a bounded buzzer/LED pattern. |
+| `hardware.gpio_out` | High | Drive a GPIO output line or a bounded buzzer/LED pattern (enforced). |
 | `hardware.usb` | Medium | Claim raw USB devices for bulk transfers. |
 | `hardware.usb.uvc` | Medium | Read frames from USB UVC cameras. |
 | `hardware.camera.csi` | Medium | Read frames from MIPI CSI cameras. |
@@ -116,6 +131,8 @@ catalog.
 | `vision.frame.read` | Medium | Subscribe to normalized frames from the vision engine. |
 | `vision.model.register` | Medium | Register an inference model with the vision engine. |
 | `vision.detection.publish` | Low | Publish detections (boxes, labels, track ids). |
+| `vision.detection.subscribe` | Low | Receive detection batches plus the tracker's lock state. |
+| `vision.track.designate` | Medium | Choose which object the single-object tracker locks onto. |
 
 ### Data, compute, and radio
 
@@ -131,12 +148,15 @@ catalog.
 
 ## GCS capabilities
 
-The GCS half declares UI slot registrations plus data and command
-access. UI slot capabilities mount a panel in a named slot; the slot
-value itself goes in `contributes.panels[].slot` (see the
-[Manifest reference](/developers/manifest)).
+21 capabilities. The GCS half declares 14 UI slot registrations plus 7
+data and command capabilities. UI slot capabilities mount a panel in a
+named slot; the slot value itself goes in `contributes.panels[].slot`
+(see the [Manifest reference](/developers/manifest)).
 
 ### UI slots
+
+`drone.detail.tab` and `flight.skill` are scoped to the currently
+selected drone; the other twelve are fleet-level.
 
 | Capability | Risk |
 |------------|------|
@@ -152,6 +172,7 @@ value itself goes in `contributes.panels[].slot` (see the
 | `ui.slot.settings-section` | Low |
 | `ui.slot.connection-protocol` | Medium |
 | `ui.slot.recording-processor` | Low |
+| `ui.slot.flight-skill` | Medium |
 | `ui.slot.drone-detail-tab` | Low |
 
 ### Data and command
