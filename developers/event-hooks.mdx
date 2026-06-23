@@ -40,6 +40,8 @@ args)` for anything else.
 |---------|--------|-----------|---------|
 | `ctx.telemetry.subscribe(topic, handler)` | `telemetry.subscribe` | `telemetry.subscribe.<topic>` | unsubscribe function |
 | `ctx.command.send(command, args)` | `command.send` | `command.send` | host-defined |
+| `ctx.notifications.publish(payload)` | `notification.publish` | `ui.slot.notification-channel` | host-defined |
+| `ctx.recording.mark(payload)` | `recording.mark` | `recording.write` | host-defined |
 | `ctx.mission.read(missionId)` | `mission.read` | `mission.read` | mission body |
 | `ctx.mission.write(update)` | `mission.write` | `mission.write` | host-defined |
 
