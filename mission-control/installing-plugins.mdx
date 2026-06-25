@@ -47,7 +47,7 @@ The second stage groups every capability the plugin requested by domain:
 - **Hardware**: UART, I2C, USB, GPIO claims
 - **Vehicle**: MAVLink read, MAVLink write, mission read/write, command send
 - **Telemetry**: subscribe to a topic, extend the heartbeat
-- **UI**: Mission Control slot contributions (fc.tab, video.overlay, drone.detail.tab, and more)
+- **UI**: Mission Control slot contributions (fc.tab, video.overlay, node.detail.tab, and more)
 - **Vendor binaries**: an extra disclosure block when the plugin spawns third-party binaries
 
 You can approve all, deny, or grant per-permission for fine-grained control. Approving sends the install command to the drone over the cloud relay (or directly when the agent is on your LAN), which downloads the `.adosplug` archive, verifies the Ed25519 signature against `/etc/ados/plugin-keys/`, and stages the plugin under the supervisor.

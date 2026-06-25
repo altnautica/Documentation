@@ -10,7 +10,7 @@ lastUpdated: "2026-06-23"
 | **Extension** | An Altnautica-published plugin shipped from the public `ADOSExtensions` repo. Same on-disk format as a third-party plugin. |
 | **Manifest** | The `manifest.yaml` at the root of the archive. Declares id, version, permissions, and contributes. It carries no asset-hash list; integrity comes from the separate `SIGNATURE` file's canonical payload hash. |
 | **Half** | The portion of a plugin that runs on one side of the system. The `agent` half runs on the drone and is written in Python or Rust (set by `agent.runtime`); the `gcs` half runs in Mission Control and is written in TypeScript. A plugin can ship one half or both. |
-| **Slot** | A named mount point in the Mission Control UI. There are 14 slots (e.g. `fc.tab`, `video.overlay`, `notification.channel`, `command.tab`, `drone.detail.tab`, `flight.skill`). The plugin manifest declares which slots its panels target. |
+| **Slot** | A named mount point in the Mission Control UI. There are 12 slots (e.g. `fc.tab`, `video.overlay`, `notification.channel`, `node.detail.tab`, `cockpit.panel`, `flight.skill`). The plugin manifest declares which slots its panels target. |
 | **Capability** | A runtime grant derived from a manifest permission. Held by the plugin for the duration of a session. Required for every privileged call. |
 | **Capability token** | The signed string that represents a capability on the wire. HMAC-SHA256 with a host key. Short TTL. |
 | **Risk band** | One of `low`, `medium`, `high`, `critical`. Computed from the most-privileged permission the plugin requests. Surfaced in the install dialog. |
@@ -19,7 +19,7 @@ lastUpdated: "2026-06-23"
 | **Bundle** | The built JS asset for the GCS half. Single ESM file, loaded via `blob:` URL into the iframe. |
 | **Entrypoint** | What the agent half launches, declared by `agent.entrypoint`. A `python` runtime points at a module (`module:Class`); a `rust` runtime points at the cross-compiled binary (`bin/<name>`). |
 | **Vendor binary** | A third-party executable or library bundled inside the agent half (for example a model runtime). When `agent.contains_vendor_binary` is true the manifest must list at least one `agent.vendor_attribution` entry (name, license, source URL) or the manifest fails validation. |
-| **Per-drone plugin** | A plugin whose agent half is installed per connected drone, each with its own `ctx.agent_id` and its own settings. Enabled by `agent.per_drone_config: true`, surfaced through the `drone.detail.tab` slot. The default is fleet-wide. |
+| **Per-drone plugin** | A plugin whose agent half is installed per connected drone, each with its own `ctx.agent_id` and its own settings. Enabled by `agent.per_drone_config: true`, surfaced through the `node.detail.tab` slot. The default is fleet-wide. |
 | **Permission** | A request the plugin makes for one slice of authority. Declared in the manifest, granted by the operator at install. |
 | **Operator** | The human running ADOS. Approves permissions, grants and revokes them through the Settings -> Plugins UI. |
 | **Publisher** | The Ed25519 keypair the plugin is signed with. Pre-trusted publishers (Altnautica's keys) get a verified-publisher badge. |

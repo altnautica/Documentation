@@ -130,29 +130,27 @@ debug one model, not two.
 
 ## The named UI slots
 
-There are 14 slots. The first 12 are fleet-scoped. The last two
-(`drone.detail.tab` and `flight.skill`) are per-drone scoped: their
-contribution is bound to the currently-selected drone and is torn
-down and re-mounted when the operator switches drones. A per-drone
+There are 12 slots. Nine are fleet-scoped. The other three
+(`node.detail.tab`, `cockpit.panel`, and `flight.skill`) are per-node
+scoped: their contribution is bound to the currently-selected node and is
+torn down and re-mounted when the operator switches nodes. A per-node
 contribution receives a capability token whose `agentId` claim matches
-the selected drone, so cross-drone RPCs are rejected at the bridge.
+the selected node, so cross-node RPCs are rejected at the bridge.
 
 | Slot id | Scope | Where it renders |
 |---------|-------|------------------|
 | `fc.tab` | Fleet | Tab inside the flight controller view. |
-| `command.tab` | Fleet | Tab in the Command area for fleet-wide tools. |
 | `hardware.tab` | Fleet | Tab on the Hardware page. |
-| `suite.widget` | Fleet | Widget inside a mission suite layout. |
 | `mission.template` | Fleet | Entry in the mission template picker. |
 | `map.overlay` | Fleet | Geometry drawn on the map view. |
 | `video.overlay` | Fleet | Layer on top of the live video pane. |
 | `notification.channel` | Fleet | Channel in the GCS notification center. |
-| `smart-function` | Fleet | Entry in the Smart Functions list. |
 | `settings.section` | Fleet | Section on the Settings page. |
 | `connection.protocol` | Fleet | Custom protocol in the Connect dialog. |
 | `recording.processor` | Fleet | Post-flight processing step over recordings. |
-| `drone.detail.tab` | Per-drone | Per-drone tab inside the drone detail panel. |
-| `flight.skill` | Per-drone | A Skill registered into the cockpit Skill Bar, bindable to a hotkey or gamepad button. |
+| `node.detail.tab` | Per-node | Per-node tab inside the node detail panel (any profile). |
+| `cockpit.panel` | Per-node | Panel in the in-flight cockpit quick-settings surface. |
+| `flight.skill` | Per-node | A Skill registered into the cockpit Skill Bar, bindable to a hotkey or gamepad button. |
 
 `flight.skill` is the one slot that does not mount an iframe. The
 plugin registers a Skill keyed to the active drone; the cockpit's arm

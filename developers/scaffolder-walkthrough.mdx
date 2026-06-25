@@ -1,0 +1,308 @@
+---
+title: "Scaffolder walkthrough"
+description: "Build a plugin that contributes a node-detail tab, a flight skill, parameters, and a vision model, end to end, from create-ados-plugin to a packed archive."
+lastUpdated: "2026-06-25"
+---
+
+This walkthrough builds one hybrid plugin that exercises four
+contribution kinds at once: a **node-detail tab**, a **flight skill**, a
+set of **parameters** (including a model switch), and a **vision model**
+registration. By the end you have a manifest the host parses, a GCS half
+that mounts, and an agent half that runs the behavior.
+
+The example follows the shape of the
+[Follow-Me reference extension](https://github.com/altnautica/ADOSExtensions/tree/main/extensions/follow-me),
+trimmed to the parts that matter for these contribution kinds.
+
+## Prerequisites
+
+- Node.js 20+ and pnpm 9+.
+- A working Mission Control install for testing the GCS half.
+- A working ADOS Drone Agent if you want to run the agent half on a
+  companion. The GCS half can be developed without one.
+
+## 1. Clone and scaffold
+
+The SDK and `create-ados-plugin` scaffolder live in the
+[`altnautica/ADOSExtensions`](https://github.com/altnautica/ADOSExtensions)
+monorepo. Develop your plugin alongside it as a pnpm workspace member.
+
+```sh
+git clone https://github.com/altnautica/ADOSExtensions.git
+cd ADOSExtensions
+pnpm install
+
+node packages/create-ados-plugin/bin/cli.mjs \
+  --target extensions/track-follow \
+  --id com.example.track-follow \
+  --half hybrid \
+  --author "Your Name"
+```
+
+The hybrid template lays out both halves:
+
+```
+extensions/track-follow/
+├── manifest.yaml
+├── package.json
+├── README.md
+├── locales/en.json
+├── agent/
+│   ├── plugin.py
+│   └── pyproject.toml
+└── gcs/
+    ├── package.json
+    ├── tsconfig.json
+    └── src/plugin.ts
+```
+
+## 2. Declare the manifest
+
+Open `manifest.yaml` and replace the skeleton `contributes` block with
+the four contributions. Each visual surface needs its matching
+`ui.slot.*` permission.
+
+```yaml
+schema_version: 2
+id: com.example.track-follow
+name: "Track Follow"
+version: "0.1.0"
+description: "Lock onto a designated subject and hold a fixed standoff follow."
+author: "Your Name"
+license: "GPL-3.0-or-later"
+risk: high
+
+compatibility:
+  ados_version: ">=0.95.0"
+  gcs_version: ">=0.34.0"
+  supported_boards: ["cm4", "cm5", "rk3588s2", "rk3576", "rpi5"]
+
+agent:
+  runtime: python
+  entrypoint: "track_follow:TrackFollowPlugin"
+  isolation: subprocess
+  per_drone_config: true
+  permissions:
+    - id: vision.detection.subscribe
+    - id: mavlink.read
+    - id: mavlink.write
+    - id: event.publish
+    - id: event.subscribe
+  resources:
+    max_ram_mb: 128
+    max_cpu_percent: 25
+    max_pids: 4
+
+gcs:
+  entrypoint: "gcs/plugin.bundle.js"
+  isolation: iframe
+  permissions:
+    - id: ui.slot.flight-skill        # the Skill Bar entry
+    - id: ui.slot.node-detail-tab     # the settings + read-back tab
+    - id: command.send
+  contributes:
+    # 1. A flight Skill in the cockpit Skill Bar
+    skills:
+      - id: track-follow
+        label: "Track Follow"
+        icon: "crosshair"
+        category: behavior
+        toggle: true
+        confirm: false
+        arm_requirement: armed
+        default_binding:
+          key: "f"
+        activation:
+          via: config
+          config_key: active
+        state:
+          via: event
+          topic: "follow.state"
+    # 2. A node-detail tab carrying the parameters
+    tabs:
+      - id: track-follow-tab
+        title: "Track Follow"
+        icon: "crosshair"
+        order: 70
+        profile: ["drone"]
+    # 3. Parameters, including a model switch
+    parameters:
+      - key: standoff_distance_m
+        schema: { type: number, minimum: 2, maximum: 60, step: 0.5, default: 8 }
+        ui: { widget: range, label: "Standoff distance", group: "Follow" }
+      - key: standoff_height_m
+        schema: { type: number, minimum: 2, maximum: 40, step: 0.5, default: 6 }
+        ui: { widget: range, label: "Standoff height", group: "Follow" }
+      - key: detector
+        schema: { type: string, default: "coco-yolov8n" }
+        ui: { widget: model, label: "Detector model", task: detection, group: "Vision" }
+        binding: engine.detector
+    # 4. A vision model registration with per-board variants
+    models:
+      - id: coco-yolov8n
+        task: detection
+        board_variants:
+          - board_match: "rk3588"
+            runtime: "rknn"
+            input: "640x640"
+            min_tops: 3
+            source: "https://example.com/models/coco-yolov8n-rk3588.rknn"
+            sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+          - board_match: "generic-arm64"
+            runtime: "onnx"
+            input: "640x640"
+            source: "https://example.com/models/coco-yolov8n.onnx"
+            sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+  locales:
+    - en
+```
+
+What each block does:
+
+<Steps>
+  <Step title="skills → the Skill Bar">
+    `ui.slot.flight-skill` lets the entry appear in the `/fly` cockpit
+    Skill Bar, bound to the `f` hotkey. Toggling it flips the per-drone
+    config key `active`; the bar reads the behavior's live state from the
+    `follow.state` event topic.
+  </Step>
+  <Step title="tabs → the node-detail tab">
+    `ui.slot.node-detail-tab` mounts a tab on the drone's detail panel.
+    The parameters render inside it.
+  </Step>
+  <Step title="parameters → the native form">
+    No extra slot is needed; the parameters render inside the tab. The
+    `detector` parameter binds to `engine.detector`, so picking a model
+    switches the drone's active vision detector.
+  </Step>
+  <Step title="models → the vision catalog">
+    The agent selects the variant whose `board_match` fits the running
+    board, downloads it from `source`, and verifies it against `sha256`.
+    The `detector` parameter's model picker then offers it.
+  </Step>
+</Steps>
+
+## 3. The GCS half
+
+The tab body renders the declared parameters with the host's native
+parameter panel. The `definePlugin` entry mounts the iframe and wires
+the click-to-designate overlay to the agent.
+
+```ts
+// gcs/src/plugin.ts
+import { definePlugin } from "@altnautica/plugin-sdk";
+
+definePlugin({
+  id: "com.example.track-follow",
+  version: "0.1.0",
+  async mount(ctx) {
+    // The parameters declared in the manifest render through the host's
+    // native parameter panel inside the node-detail tab; the plugin code
+    // only needs to drive the behavior, not draw the form.
+    const overlay = document.getElementById("designate-surface");
+    overlay?.addEventListener("click", async (e) => {
+      const track = pickTrackAt(e);          // map the click to a detection
+      await ctx.command.send({               // designate it to the agent
+        kind: "track.designate",
+        trackId: track.id,
+      });
+    });
+  },
+});
+```
+
+The parameters you declared are rendered and validated by the host, so
+the GCS half does not parse the schema or write config itself. A
+`plugin.config` commit is written to the agent over the LAN
+(local-first); the `detector` model pick switches the engine-wide
+detector directly.
+
+## 4. The agent half
+
+The agent half watches its per-drone config (`active`, `standoff_*`),
+subscribes to detections, and publishes the `follow.state` the Skill Bar
+reads back.
+
+```python
+# agent/track_follow.py
+from ados.sdk import Plugin, PluginContext
+
+
+class TrackFollowPlugin(Plugin):
+    async def on_start(self, ctx: PluginContext) -> None:
+        self.ctx = ctx
+        # Read-back state the Skill Bar consumes via the follow.state topic.
+        await ctx.events.publish("follow.state", {"state": "idle"})
+        # Detections feed the lock; the operator designates one from the
+        # video overlay.
+        await ctx.detections.subscribe(self._on_detections)
+
+    async def on_config(self, config: dict) -> None:
+        # The Skill toggle flips config["active"]; standoff_* come from
+        # the parameter form.
+        self.active = bool(config.get("active"))
+        self.standoff_m = float(config.get("standoff_distance_m", 8))
+```
+
+`activation.via: config` means the Skill toggle is just a config write
+the host already routes; the plugin reads it in `on_config`. The
+`state.via: event` topic (`follow.state`) is the channel the Skill Bar
+polls for the live state. See the [Python SDK](/developers/sdk-python)
+reference for the full context API.
+
+## 5. Pack and install
+
+```sh
+pnpm test
+scripts/pack.sh track-follow
+```
+
+`pack.sh` builds the GCS bundle, hashes every asset, and zips the result
+into `extensions/track-follow/dist/com.example.track-follow-0.1.0.adosplug`.
+Sign it with a publisher key for a release, or install the unsigned
+archive in developer mode for local testing:
+
+```sh
+ADOS_SIGNING_KEY=/path/to/key.ed25519 \
+  scripts/sign.sh dist/com.example.track-follow-0.1.0.adosplug
+```
+
+Drag the archive into **Mission Control → Settings → Plugins → Install
+plugin**, approve the declared permissions, and the contributions mount:
+the Skill in the cockpit Skill Bar, the tab on the drone detail panel,
+the parameters inside it, and the model in the detector picker.
+
+## Verify each contribution
+
+<Steps>
+  <Step title="Skill Bar">
+    Open `/fly`. The "Track Follow" skill is in the Skill Bar, bound to
+    `f`. Press it; the per-drone config key `active` flips.
+  </Step>
+  <Step title="Node-detail tab">
+    Select the drone, open its detail panel. The "Track Follow" tab is in
+    the strip.
+  </Step>
+  <Step title="Parameters">
+    Inside the tab, the "Follow" group shows the standoff sliders and the
+    "Vision" group shows the detector picker. Edits clamp to the schema
+    bounds.
+  </Step>
+  <Step title="Model">
+    The detector picker lists `coco-yolov8n` (the variant matching the
+    board). Picking it switches the drone's active vision detector.
+  </Step>
+</Steps>
+
+## See also
+
+- [Contribution points](/developers/contribution-points) — every
+  contribution kind in detail.
+- [Parameter schema](/developers/parameter-schema) — the full schema,
+  widgets, and bindings.
+- [Your first plugin](/developers/your-first-plugin) — the GCS-only
+  Battery Health Panel, line by line.
+- [Quickstart](/developers/quickstart) — scaffold and install in five
+  minutes.
+- [TypeScript SDK](/developers/sdk-typescript) and
+  [Python SDK](/developers/sdk-python) — the half APIs.

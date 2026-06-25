@@ -1,0 +1,282 @@
+---
+title: "Parameter schema"
+description: "The JSON-Schema subset (type, minimum, maximum, step, enum, pattern, default), the ui widgets (number, range, boolean, enum, string, model, model_upload, group, visible_if), and the binding field (plugin.config, engine.detector, agent.config) with worked examples."
+lastUpdated: "2026-06-25"
+---
+
+A plugin declares parameters under `gcs.contributes.parameters[]` (or
+nested inside a `settings` section). The GCS renders each as a native,
+dark-themed control, validates and clamps the committed value against
+the schema, and writes it to the binding you name. No iframe, no custom
+form code.
+
+A parameter has three parts:
+
+```yaml
+- key: standoff_distance_m     # the config key the value is written under
+  schema: { ... }              # the JSON-Schema data contract (what is valid)
+  ui: { ... }                  # how it renders (widget, label, grouping)
+  binding: plugin.config       # where the committed value is written
+```
+
+`schema` is the only required part beyond `key`. A missing or malformed
+`schema` drops the parameter at parse time (with a console warning); the
+rest of the manifest still loads.
+
+## `schema` — the data contract
+
+`schema` is a Draft-07 JSON-Schema subset, deliberately scoped to what a
+drone-plugin parameter needs. Unknown keywords are ignored
+(forward-compatible), never an error.
+
+| Field | Type | Applies to | Notes |
+|-------|------|-----------|-------|
+| `type` | enum | all | `number`, `integer`, `boolean`, or `string`. Required. |
+| `minimum` | number | number, integer | Inclusive lower bound. |
+| `maximum` | number | number, integer | Inclusive upper bound. Must be `>= minimum`. |
+| `step` | number | number, integer | Quantization / UI step. Must be positive. |
+| `enum` | array | any scalar | Allowed values. When present, the value must be one of these. Pairs with the `enum` widget. |
+| `pattern` | string | string | Regex source applied to string values. Must be a valid regex. |
+| `default` | scalar | all | Applied when no stored value exists. Must itself be valid against the schema. |
+
+**Validation and clamping.** On every commit the host validates the
+value against the schema. Numbers are clamped to `[minimum, maximum]`
+and quantized to `step`; an `integer` is rounded. A string is checked
+against `pattern`. An `enum` value must be a member. An invalid value is
+rejected and the control reverts; a clampable value is clamped silently.
+
+```yaml
+# An integer with bounds and a step
+- key: max_targets
+  schema:
+    type: integer
+    minimum: 1
+    maximum: 16
+    step: 1
+    default: 4
+
+# A pattern-validated string
+- key: camera_name
+  schema:
+    type: string
+    pattern: "^[a-zA-Z0-9_-]{1,32}$"
+    default: "front"
+
+# An enum (string members)
+- key: follow_mode
+  schema:
+    type: string
+    enum: ["chase", "orbit", "lead"]
+    default: "chase"
+```
+
+<Note>
+`integer` is a schema `type`, not a widget. Both `number` and `integer`
+render with the `number` (or `range`) widget; `integer` adds the
+round-to-whole rule on commit.
+</Note>
+
+## `ui` — the presentation layer
+
+`ui` never affects validation. It only controls how a parameter is shown
+and grouped.
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `widget` | enum | The control to render. Inferred from `schema.type` when omitted; `range`, `model`, `model_upload` are always explicit. |
+| `label` | string | The control label. Defaults to `key`. |
+| `group` | string | Section grouping in the rendered panel. |
+| `help` | string | Helper text under the control. |
+| `visible_if` | object | Conditional reveal: `{ key, equals }`. Shows the control only when another parameter's committed value equals `equals`. |
+| `task` | string | For `model` / `model_upload`: the vision task the picker lists (`detection`, `reid`, `depth`). |
+| `order` | number | Sort hint within a group. |
+
+### Widgets
+
+| Widget | Renders | Default for |
+|--------|---------|-------------|
+| `number` | A numeric input that clamps and quantizes on commit. | `type: number` / `integer` |
+| `range` | A slider between `minimum` and `maximum` stepping by `step`, with a live value readout. | (always explicit) |
+| `boolean` | A toggle. | `type: boolean` |
+| `enum` | A dropdown of the `enum` members, mapping the chosen string back to the typed value. | a schema with `enum` |
+| `string` | A text input validated against `pattern`. | `type: string` |
+| `model` | The board-filtered model picker bound to the engine's active detector. | (always explicit) |
+| `model_upload` | The model picker with upload enabled. | (always explicit) |
+| `group` | A grouping marker (rare; prefer `ui.group` on each field). | (always explicit) |
+
+When `ui.widget` is omitted, the host infers: an `enum` schema becomes
+the `enum` widget, a `boolean` becomes `boolean`, a number/integer
+becomes `number`, and everything else becomes `string`.
+
+### Grouping and conditional reveal
+
+Parameters are grouped by `ui.group` (groups order by first appearance,
+controls within a group by `ui.order` then declaration order). A control
+with `visible_if` shows only when the referenced parameter's committed
+value matches.
+
+```yaml
+contributes:
+  parameters:
+    - key: vio_enabled
+      schema: { type: boolean, default: false }
+      ui:
+        widget: boolean
+        label: "Enable VIO"
+        group: "Navigation"
+
+    # Only shown when vio_enabled is true
+    - key: vio_backend
+      schema:
+        type: string
+        enum: ["openvins", "vins_fusion"]
+        default: "openvins"
+      ui:
+        widget: enum
+        label: "VIO backend"
+        group: "Navigation"
+        visible_if: { key: vio_enabled, equals: true }
+```
+
+## `binding` — where the value is written
+
+The `binding` field routes the committed value. It defaults to
+`plugin.config` when absent.
+
+| Binding | Writes to | Read-back |
+|---------|-----------|-----------|
+| `plugin.config` | The per-drone plugin config, over the LAN agent (local-first). | The agent exposes a config write but no config read, so the GCS seeds from the schema default and badges it "Default — not read from drone" until a value is committed this session. |
+| `engine.detector` | The shared, engine-wide vision detector. Every vision consumer on that drone shares one detector. | The model picker owns the write and reports the new active model back, so the form tracks the live detector. |
+| `agent.config` | A whitelisted system config key on the agent. | Read-only on this surface; its write router is a separate surface. |
+
+```yaml
+# Default: per-drone plugin config
+- key: standoff_distance_m
+  schema: { type: number, minimum: 2, maximum: 60, step: 0.5, default: 8 }
+  ui: { widget: range, label: "Standoff distance" }
+  binding: plugin.config
+
+# A whitelisted system key, shown read-only here
+- key: video_bitrate_kbps
+  schema: { type: integer, minimum: 500, maximum: 20000, default: 4000 }
+  ui: { widget: number, label: "Video bitrate" }
+  binding: agent.config
+```
+
+<Warning>
+On a `plugin.config` commit the host writes optimistically and rolls the
+control back if the agent does not accept the write, so the surface never
+shows a value the agent rejected. Because there is no config read-back, a
+freshly-loaded `plugin.config` control shows the schema default until the
+operator commits a value.
+</Warning>
+
+## The `model` parameter — switch the vision detector
+
+A `model` (or `model_upload`) parameter binds to `engine.detector` and
+renders the board-filtered model picker. Selecting a model switches the
+drone's active vision detector engine-wide; every vision consumer on that
+drone then runs against the new model.
+
+```yaml
+gcs:
+  permissions:
+    - id: ui.slot.node-detail-tab
+    - id: telemetry.subscribe
+  contributes:
+    # Register the models the picker can offer (per-board variants).
+    models:
+      - id: coco-yolov8n
+        task: detection
+        board_variants:
+          - board_match: "rk3588"
+            runtime: "rknn"
+            input: "640x640"
+            min_tops: 3
+            source: "https://example.com/models/coco-yolov8n-rk3588.rknn"
+            sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+          - board_match: "generic-arm64"
+            runtime: "onnx"
+            input: "640x640"
+            source: "https://example.com/models/coco-yolov8n.onnx"
+            sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+    # A model parameter that lets the operator switch the active detector.
+    parameters:
+      - key: detector
+        schema:
+          type: string
+          default: "coco-yolov8n"
+        ui:
+          widget: model              # render the model picker
+          label: "Detector model"
+          task: detection            # the picker lists detection models
+          group: "Vision"
+        binding: engine.detector     # switch the engine-wide detector
+```
+
+When the operator picks a model, the picker writes the engine-wide
+detector on the agent directly and reports the new active id back, so no
+second write happens and there is no optimistic rollback for this widget.
+Use `model_upload` instead of `model` when you want the operator to be
+able to upload their own model file.
+
+<Note>
+A `model` widget needs a drone context to write to. On a detached
+preview (no selected drone) it falls back to a read-only display of the
+current value rather than rendering a picker with nowhere to write.
+</Note>
+
+## Full worked example
+
+A small follow-behavior plugin's parameter block, mixing a range, a
+toggle, a conditional enum, and a model switch:
+
+```yaml
+gcs:
+  permissions:
+    - id: ui.slot.settings-section
+    - id: ui.slot.node-detail-tab
+    - id: command.send
+  contributes:
+    settings:
+      - id: follow-tuning
+        title: "Follow tuning"
+        icon: "sliders"
+        parameters:
+          - key: standoff_distance_m
+            schema: { type: number, minimum: 2, maximum: 60, step: 0.5, default: 8 }
+            ui: { widget: range, label: "Standoff distance", help: "Meters behind the subject." }
+          - key: standoff_height_m
+            schema: { type: number, minimum: 2, maximum: 40, step: 0.5, default: 6 }
+            ui: { widget: range, label: "Standoff height" }
+          - key: gimbal_track
+            schema: { type: boolean, default: true }
+            ui: { widget: boolean, label: "Point gimbal at subject" }
+          - key: lost_behavior
+            schema: { type: string, enum: ["hover", "rth"], default: "hover" }
+            ui: { widget: enum, label: "On lost", visible_if: { key: gimbal_track, equals: true } }
+    models:
+      - id: coco-yolov8n
+        task: detection
+        board_variants:
+          - board_match: "generic-arm64"
+            runtime: "onnx"
+            input: "640x640"
+            source: "https://example.com/models/coco-yolov8n.onnx"
+            sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+    parameters:
+      - key: detector
+        schema: { type: string, default: "coco-yolov8n" }
+        ui: { widget: model, label: "Detector model", task: detection }
+        binding: engine.detector
+```
+
+## See also
+
+- [Contribution points](/developers/contribution-points) — the
+  `settings` and `parameters` contributions in context.
+- [Scaffolder walkthrough](/developers/scaffolder-walkthrough) — a
+  plugin that contributes parameters and a model end to end.
+- [Vision plugins](/developers/vision-plugins) — how the engine detector
+  is consumed on the agent side.
+- [Manifest reference](/developers/manifest) — every manifest field.

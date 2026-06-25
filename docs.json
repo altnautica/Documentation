@@ -355,6 +355,14 @@
             ]
           },
           {
+            "group": "Contribution points",
+            "pages": [
+              "developers/contribution-points",
+              "developers/parameter-schema",
+              "developers/scaffolder-walkthrough"
+            ]
+          },
+          {
             "group": "SDKs",
             "pages": [
               "developers/sdk-python",

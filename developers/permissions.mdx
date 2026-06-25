@@ -11,9 +11,9 @@ approves. The capability catalog is generated from one source of truth
 catalog, the risk levels each capability carries, and how the install
 dialog presents them.
 
-There are 43 agent capabilities and 21 GCS capabilities. Three agent
+There are 43 agent capabilities and 19 GCS capabilities. Three agent
 capabilities are runtime-enforced (see the note in the agent section);
-the GCS set is 14 UI slot registrations plus 7 data and command
+the GCS set is 12 UI slot registrations plus 7 data and command
 capabilities.
 
 ## Risk levels
@@ -148,32 +148,31 @@ permission).
 
 ## GCS capabilities
 
-21 capabilities. The GCS half declares 14 UI slot registrations plus 7
+19 capabilities. The GCS half declares 12 UI slot registrations plus 7
 data and command capabilities. UI slot capabilities mount a panel in a
 named slot; the slot value itself goes in `contributes.panels[].slot`
 (see the [Manifest reference](/developers/manifest)).
 
 ### UI slots
 
-`drone.detail.tab` and `flight.skill` are scoped to the currently
-selected drone; the other twelve are fleet-level.
+`ui.slot.node-detail-tab`, `ui.slot.cockpit-panel`, and
+`ui.slot.flight-skill` are scoped to the currently selected node; the
+other nine are fleet-level.
 
 | Capability | Risk |
 |------------|------|
 | `ui.slot.fc-tab` | Low |
-| `ui.slot.command-tab` | Low |
 | `ui.slot.hardware-tab` | Low |
-| `ui.slot.suite-widget` | Low |
 | `ui.slot.mission-template` | Low |
 | `ui.slot.map-overlay` | Low |
 | `ui.slot.video-overlay` | Low |
 | `ui.slot.notification-channel` | Low |
-| `ui.slot.smart-function` | Medium |
 | `ui.slot.settings-section` | Low |
 | `ui.slot.connection-protocol` | Medium |
 | `ui.slot.recording-processor` | Low |
 | `ui.slot.flight-skill` | Medium |
-| `ui.slot.drone-detail-tab` | Low |
+| `ui.slot.node-detail-tab` | Low |
+| `ui.slot.cockpit-panel` | Low |
 
 ### Data and command
 

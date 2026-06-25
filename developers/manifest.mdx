@@ -216,13 +216,14 @@ gcs:
     - "en"
 ```
 
-`contributes` carries `panels`, `overlays`, `notifications`,
-`smart_functions`, and `skills`. The `slot` value in
-`contributes.panels[].slot` comes from the slot taxonomy (`fc.tab`,
-`command.tab`, `video.overlay`, and the rest; see the
-[glossary](/developers/glossary)). Mounting in a slot also requires the
-matching `ui.slot.*` permission listed under `gcs.permissions`. Locales
-are listed under `gcs.locales`, a sibling of `contributes`.
+`contributes` carries `skills`, `tabs`, `parameters`, `settings`,
+`panels`, `overlays`, `notifications`, `missionTemplates`, `mapOverlays`,
+and `models`. The `slot` value in `contributes.panels[].slot` comes from
+the slot taxonomy (`fc.tab`, `hardware.tab`, `settings.section`, and the
+rest; see the [contribution points](/developers/contribution-points)
+reference). Mounting in a slot also requires the matching `ui.slot.*`
+permission listed under `gcs.permissions`. Locales are listed under
+`gcs.locales`, a sibling of `contributes`.
 
 `skills` declares flight Skills that surface in the cockpit Skill Bar
 (toggle, hotkey or gamepad binding, activation through per-drone config,
@@ -232,11 +233,20 @@ entries; the GCS skill registry reads them.
 
 | `contributes` key | Mounts |
 |-------------------|--------|
-| `panels` | A tab or panel in a UI slot (`fc.tab`, `command.tab`, `drone.detail.tab`, `hardware.tab`, `settings.section`). |
-| `overlays` | A map or video overlay (`map.overlay`, `video.overlay`). |
-| `notifications` | A notification channel. |
-| `smart_functions` | A smart-function entry. |
-| `skills` | A flight Skill in the cockpit Skill Bar. |
+| `skills` | A flight Skill in the cockpit Skill Bar (`flight.skill`). |
+| `tabs` | A node-detail tab on any node profile (`node.detail.tab`). |
+| `parameters` | Native schema-driven form fields (no UI slot of their own). |
+| `settings` | A native settings section (`settings.section`). |
+| `panels` | A tab or panel in a UI slot (`fc.tab`, `hardware.tab`, `settings.section`). |
+| `overlays` | A video overlay (`video.overlay`). |
+| `notifications` | A notification channel (`notification.channel`). |
+| `missionTemplates` | A mission template entry (`mission.template`). |
+| `mapOverlays` | A map overlay (`map.overlay`). |
+| `models` | A vision model registration (no UI slot). |
+
+The full contribution reference, with the manifest shape of each kind and
+where it renders, is on the
+[contribution points](/developers/contribution-points) page.
 
 ## Signing and the archive
 

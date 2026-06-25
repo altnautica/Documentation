@@ -1,0 +1,462 @@
+---
+title: "Contribution points"
+description: "Every kind a plugin can declare under contributes: skills, tabs, parameters, settings, panels, overlays, notifications, mission templates, map overlays, and models. What each does, the manifest shape, where it renders, and the capability it needs."
+lastUpdated: "2026-06-25"
+---
+
+A plugin's `contributes` block is how it adds surfaces to Mission
+Control. The GCS half declares them under `gcs.contributes`; the agent
+half declares its own (`services`, `drivers`, `vision`) under
+`agent.contributes`. This page is the reference for the GCS-side
+contribution kinds the host parses and mounts.
+
+Every contribution is **declarative**. You name what you want in
+`manifest.yaml`, request the matching capability, and the host mounts
+it. There is no imperative "register this panel" call at runtime.
+
+<Note>
+Each visual contribution needs the matching `ui.slot.*` capability listed
+under `gcs.permissions`. Declaring a panel in a slot without holding the
+slot capability is rejected at parse time. See the
+[permissions reference](/developers/permissions) for the full list.
+</Note>
+
+## The shape of `contributes`
+
+```yaml
+gcs:
+  entrypoint: "gcs/plugin.bundle.js"
+  isolation: iframe
+  permissions:
+    - id: ui.slot.flight-skill
+    - id: ui.slot.node-detail-tab
+    - id: ui.slot.video-overlay
+    # ... one ui.slot.* per visual surface you mount
+  contributes:
+    skills: []            # cockpit Skill Bar entries
+    tabs: []              # node.detail.tab on any node profile
+    parameters: []        # native schema-driven form fields
+    settings: []          # settings.section: a section of native parameters
+    panels: []            # fc.tab / hardware.tab and other slot-bearing tabs
+    overlays: []          # video.overlay (and map overlays via mapOverlays)
+    notifications: []     # notification.channel
+    missionTemplates: []  # mission.template entries
+    mapOverlays: []       # map.overlay entries
+    models: []            # vision model catalog registrations
+  locales:
+    - en
+```
+
+Arrays you do not need can be omitted entirely. The host parses each
+array independently and drops any malformed entry (with a console
+warning) rather than failing the whole install, so a forward-compatible
+manifest still loads on an older host.
+
+The id of every entry is namespaced to `${pluginId}:${id}` internally,
+so two plugins can both ship a panel called `overview` without
+colliding.
+
+## Slot and capability map
+
+| `contributes` key | Slot | Capability | Renders in |
+|-------------------|------|------------|------------|
+| `skills` | `flight.skill` | `ui.slot.flight-skill` | Cockpit Skill Bar in `/fly` |
+| `tabs` | `node.detail.tab` | `ui.slot.node-detail-tab` | Node detail panel (any profile) |
+| `panels` (`slot: fc.tab`) | `fc.tab` | `ui.slot.fc-tab` | Per-drone flight controller area |
+| `panels` (`slot: hardware.tab`) | `hardware.tab` | `ui.slot.hardware-tab` | Hardware page |
+| `panels` (`slot: settings.section`) | `settings.section` | `ui.slot.settings-section` | Settings page |
+| `settings` | `settings.section` | `ui.slot.settings-section` | Settings page (native form, no iframe) |
+| `overlays` | `video.overlay` | `ui.slot.video-overlay` | Above the live video player |
+| `mapOverlays` | `map.overlay` | `ui.slot.map-overlay` | The map view |
+| `notifications` | `notification.channel` | `ui.slot.notification-channel` | GCS notification center |
+| `missionTemplates` | `mission.template` | `ui.slot.mission-template` | Mission template picker |
+| `models` | (no UI slot) | declared via parameters/vision | Vision model catalog |
+
+The full slot taxonomy is `fc.tab`, `hardware.tab`, `mission.template`,
+`map.overlay`, `video.overlay`, `notification.channel`,
+`settings.section`, `connection.protocol`, `recording.processor`,
+`node.detail.tab`, `cockpit.panel`, and `flight.skill`. Each slot id
+maps one-to-one to its capability by replacing dots with dashes:
+`node.detail.tab` needs `ui.slot.node-detail-tab`.
+
+---
+
+## skills
+
+A **Skill** is a flight behavior that surfaces in the cockpit Skill Bar
+in `/fly`. It can be bound to a hotkey or a gamepad button, toggled or
+fired one-shot, and gated on arm state. Built-in commands (Arm, RTH,
+Land) and plugin behaviors (Follow-Me, Orbit) are the same Skill shape.
+
+**What it does.** Registers an entry in the Skill Bar. Activation flips
+a key in the plugin's per-drone config (`activation.via: config`); the
+plugin's agent half watches that key and starts or stops the behavior.
+The Skill's live state is read back over an event topic
+(`state.via: event`), so the bar can show armed / running / lost.
+
+```yaml
+contributes:
+  skills:
+    - id: follow-me
+      label: "Follow-Me"
+      icon: "crosshair"             # lucide-react icon name
+      category: behavior            # behavior | camera | navigation | utility
+      toggle: true                  # on/off toggle vs. one-shot
+      confirm: false                # host builds a confirm step before activation
+      arm_requirement: armed        # any | armed | disarmed
+      default_binding:
+        key: "f"                    # suggested hotkey
+        gamepad_button: 3           # optional, suggested gamepad button
+      activation:
+        via: config                 # v1 supports config-write only
+        config_key: active          # the per-drone config key activation flips
+      state:
+        via: event                  # v1 supports event-read only
+        topic: "follow.state"       # the event topic the bar reads back
+```
+
+**Where it renders.** The bottom Skill Bar in the `/fly` cockpit. The
+operator binds it under the bindings editor.
+
+**Capability.** `ui.slot.flight-skill`.
+
+<Warning>
+v1 honors only `activation.via: config` and `state.via: event`, and both
+`config_key` and `topic` must be set. A skill entry with any other
+transport is dropped at parse time. The Skill itself triggers plugin
+behavior; the plugin's agent half still needs its own flight-control
+capabilities (`mavlink.write`, `command.send`) to actually act, and the
+cockpit's arm and confirm gates still apply.
+</Warning>
+
+For the end-to-end design (agent config write, event read-back, the
+Skill Bar dispatcher), see [vision plugins](/developers/vision-plugins)
+and the Follow-Me reference walkthrough on the
+[scaffolder walkthrough](/developers/scaffolder-walkthrough) page.
+
+---
+
+## tabs
+
+A **node-detail tab** mounts on a node's detail panel. It works on any
+node profile: drone, ground station, or compute. Use it for a
+configuration or status surface that belongs to one node.
+
+**What it does.** Adds a tab to the detail panel of the currently
+selected node, rendered as a sandboxed iframe scoped to that node. An
+optional `profile` list narrows which node profiles offer the tab.
+
+```yaml
+contributes:
+  tabs:
+    - id: follow-me-tab
+      title: "Follow-Me"
+      icon: "crosshair"
+      order: 70                     # sort hint in the tab strip (host default 60)
+      profile: ["drone"]            # optional: drone | ground-station | compute
+      entrypoint: "gcs/tab.html"    # optional bundle entrypoint for the tab
+```
+
+**Where it renders.** The node detail panel (`NodeDetailPanel`), in the
+tab strip, when the node profile matches. With no `profile` the tab is
+offered on every profile the host allows.
+
+**Capability.** `ui.slot.node-detail-tab`.
+
+<Note>
+The entry accepts `id` or `key` for the stable id. A `tabs` entry always
+resolves to the `node.detail.tab` slot: the host ignores any `slot` field
+you set on a `tabs` entry. Declare a node tab under `tabs` (not as a
+`panels` entry with a hand-set slot) so the tab is available on every node
+profile, not just drones.
+</Note>
+
+---
+
+## parameters
+
+A **parameter** is a native, schema-driven form field the GCS renders
+itself, with no iframe. The plugin declares the field's type, bounds,
+and widget; the host renders a dark-themed control, validates and clamps
+the value, and writes it to the binding you name.
+
+**What it does.** Renders a typed control (number, range, boolean, enum,
+string, model) in the plugin's settings panel and the cockpit
+quick-settings drawer. On commit the host validates against the schema,
+clamps to bounds, quantizes to `step`, and writes the value to the
+parameter's `binding`.
+
+```yaml
+contributes:
+  parameters:
+    - key: standoff_distance_m
+      schema:
+        type: number
+        minimum: 2
+        maximum: 60
+        step: 0.5
+        default: 8
+      ui:
+        widget: range
+        label: "Standoff distance"
+        group: "Follow"
+        help: "How far behind the subject to hold, in meters."
+      binding: plugin.config
+```
+
+**Where it renders.** The plugin's settings panel on the node detail
+panel, and the in-flight cockpit quick-settings drawer. Parameters are
+grouped by `ui.group` and ordered by `ui.order`.
+
+**Capability.** No `ui.slot.*` is needed for the native form itself; the
+parameters render inside the surface the plugin already mounts (a
+`settings.section` or `node.detail.tab`). A parameter whose binding is
+`engine.detector` participates in the shared vision detector and needs
+the agent-side vision capabilities.
+
+The full schema, the widget set, `visible_if`, and the binding router
+are documented on the [parameter schema reference](/developers/parameter-schema).
+
+---
+
+## settings
+
+A **settings section** groups native parameters under a heading in the
+plugin's settings panel. Use it when a plugin has more than a handful of
+parameters and you want them split into labeled sections.
+
+**What it does.** Renders a section (heading plus nested native
+parameters) in the plugin's settings surface. Each section carries its
+own `parameters` array, parsed by the same parameter rules above.
+
+```yaml
+contributes:
+  settings:
+    - id: follow-tuning
+      title: "Follow tuning"
+      icon: "sliders"
+      order: 10
+      parameters:
+        - key: standoff_distance_m
+          schema: { type: number, minimum: 2, maximum: 60, step: 0.5, default: 8 }
+          ui: { widget: range, label: "Standoff distance" }
+        - key: standoff_height_m
+          schema: { type: number, minimum: 2, maximum: 40, step: 0.5, default: 6 }
+          ui: { widget: range, label: "Standoff height" }
+```
+
+**Where it renders.** The Settings page section list, or the plugin's
+settings tab on the node detail panel. Sections are ordered by `order`.
+
+**Capability.** `ui.slot.settings-section`.
+
+---
+
+## panels
+
+A **panel** mounts a sandboxed iframe into a slot you name per entry.
+Unlike `tabs` (which always resolves to `node.detail.tab`), a panel
+declares its own `slot`, so the same array can host a flight-controller
+tab, a hardware-page tab, or a settings section.
+
+**What it does.** Mounts the plugin's iframe bundle into the named slot.
+The two most common are `fc.tab` (a tab in the per-drone flight
+controller area) and `hardware.tab` (a tab on the Hardware page).
+
+```yaml
+contributes:
+  panels:
+    - id: battery-health-tab
+      slot: fc.tab                  # fc.tab | hardware.tab | settings.section | ...
+      title: "Battery Health"
+      icon: "battery"
+      order: 30
+```
+
+**Where it renders.** Depends on the slot:
+
+- `slot: fc.tab` renders a tab in the per-drone flight controller
+  configuration area.
+- `slot: hardware.tab` renders a tab on the Hardware page so the
+  operator can inspect or configure devices the plugin manages.
+- `slot: settings.section` renders an iframe section on the Settings
+  page (use `settings` for a native, no-iframe section instead).
+
+**Capability.** One of `ui.slot.fc-tab`, `ui.slot.hardware-tab`, or
+`ui.slot.settings-section`, matching the slot you declare.
+
+---
+
+## overlays
+
+A **video overlay** draws on top of the live video feed. Use it for
+detection boxes, a HUD, or an interactive surface like click-to-follow.
+
+**What it does.** Mounts the plugin's iframe above the live video
+player, letterbox-corrected so plugin geometry lines up with the video
+pixels. The overlay can render telemetry on top of the feed or accept
+operator clicks.
+
+```yaml
+contributes:
+  overlays:
+    - id: follow-me-overlay
+      title: "Follow-Me"           # optional
+      icon: "crosshair"            # optional
+      order: 50                    # optional
+```
+
+An `overlays` entry implies the `video.overlay` slot, so you do not set
+`slot` on the entry.
+
+**Where it renders.** Above the live video element, in both the main
+video pane and the `/fly` cockpit.
+
+**Capability.** `ui.slot.video-overlay`.
+
+<Note>
+A map-side overlay is a different contribution: declare it under
+`mapOverlays` (see below), which implies the `map.overlay` slot.
+</Note>
+
+---
+
+## notifications
+
+A **notification channel** lets the plugin push alerts into the GCS
+notification center.
+
+**What it does.** Registers a named channel. The plugin's code (GCS half
+via `ctx.notifications.publish`, agent half via an event) pushes
+messages into the channel; they appear as toasts the operator can mute
+or dismiss.
+
+```yaml
+contributes:
+  notifications:
+    - id: battery-anomaly
+      title: "Battery anomaly"
+      icon: "battery-warning"      # optional lucide-react icon
+      order: 20                    # optional sort hint
+```
+
+A `notifications` entry implies the `notification.channel` slot. The host
+reads only `id`, `title`, `icon`, and `order` from the manifest entry.
+Severity is not a manifest field: it is set per message at publish time
+on the `ctx.notifications.publish` payload (`info` | `warning` | `error`
+| `success` | `critical`).
+
+**Where it renders.** The GCS notification center, as a toast and in the
+channel list (where it can be muted).
+
+**Capability.** `ui.slot.notification-channel`.
+
+---
+
+## missionTemplates
+
+A **mission template** adds an entry to the mission template picker so
+an operator can start a mission pre-configured with the plugin's
+parameters.
+
+**What it does.** Registers a template entry in the planner's template
+list. Selecting it seeds a new mission from the plugin's logic.
+
+```yaml
+contributes:
+  missionTemplates:
+    - id: corridor-survey
+      title: "Corridor Survey"
+      icon: "route"
+      entrypoint: "gcs/templates/corridor.js"   # optional
+```
+
+**Where it renders.** The mission template picker in the planner.
+
+**Capability.** `ui.slot.mission-template`.
+
+<Note>
+Template metadata only registers the entry. Missions generated from a
+template still go through the normal pre-upload validation and operator
+approval before they reach the aircraft.
+</Note>
+
+---
+
+## mapOverlays
+
+A **map overlay** draws geometry on the map view: polygons, markers, or
+heatmaps.
+
+**What it does.** Mounts the plugin's overlay onto the map surface,
+rendered in a sandboxed canvas. Use it to visualize a coverage area, a
+detected target, or a no-go zone.
+
+```yaml
+contributes:
+  mapOverlays:
+    - id: coverage-heatmap
+      title: "Coverage"
+      icon: "map"
+      entrypoint: "gcs/overlays/coverage.js"    # optional
+```
+
+**Where it renders.** The map view, as a visual layer above the base
+map.
+
+**Capability.** `ui.slot.map-overlay`.
+
+---
+
+## models
+
+A **model registration** adds a vision model to the catalog the agent's
+vision engine selects from, with per-board variants. Use it when a
+plugin ships its own detector or re-id model rather than relying on the
+built-in catalog.
+
+**What it does.** Registers a model id for a vision task (detection,
+re-id, depth) with one or more per-board variants. The agent selects the
+variant whose `board_match` fits the running board, downloads it from
+`source`, and verifies it against `sha256`. A `model` parameter (see the
+[parameter schema reference](/developers/parameter-schema)) then lets the
+operator switch the active detector from the GCS.
+
+```yaml
+contributes:
+  models:
+    - id: coco-yolov8n
+      task: detection               # detection | reid | depth
+      board_variants:
+        - board_match: "rk3588"     # SoC / board substring
+          runtime: "rknn"           # inference runtime the variant targets
+          input: "640x640"          # input resolution hint
+          min_tops: 3               # minimum NPU throughput needed
+          source: "https://example.com/models/coco-yolov8n-rk3588.rknn"
+          sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+        - board_match: "generic-arm64"
+          runtime: "onnx"
+          input: "640x640"
+          source: "https://example.com/models/coco-yolov8n.onnx"
+          sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+```
+
+**Where it renders.** No UI slot of its own. The registered model shows
+up in the model picker that a `model` / `model_upload` parameter renders,
+and feeds the agent's vision engine.
+
+**Capability.** No `ui.slot.*`. The agent half needs the vision
+capabilities to consume the model (`vision.frame.read`,
+`vision.detection.subscribe`, and related), and a `model` parameter must
+bind to `engine.detector` to switch the active detector.
+
+## See also
+
+- [Parameter schema reference](/developers/parameter-schema) — the full
+  schema subset, widgets, and bindings.
+- [Scaffolder walkthrough](/developers/scaffolder-walkthrough) — build a
+  plugin that contributes a tab, a skill, parameters, and a model.
+- [Manifest reference](/developers/manifest) — every manifest field in
+  dependency order.
+- [Permissions reference](/developers/permissions) — the full capability
+  set.
