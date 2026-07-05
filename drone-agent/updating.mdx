@@ -1,0 +1,101 @@
+---
+title: "Updating the Agent"
+description: "Update the ADOS Drone Agent to the latest version with ados update."
+icon: "arrows-rotate"
+lastUpdated: "2026-07-05"
+---
+
+# Updating the Agent
+
+`ados update` moves the agent to the latest version on the `main` branch. It re-runs the canonical installer in upgrade mode, which is the one path that actually updates the agent (the Rust daemons and the CLI). Your device identity and config are preserved.
+
+## What `ados update` does
+
+The command fetches the latest `scripts/install.sh` from the `main` branch and runs it with `--upgrade`. What happens next depends on the platform:
+
+- **Linux.** The prebuilt installer is refetched and the full install chain re-runs, elevating with `sudo`. It updates the Rust service binaries, the systemd units, and the CLI, then restarts the agent.
+- **macOS.** The source checkout is updated with `git pull` and rebuilt. macOS is a development target and does not run systemd or radio hardware.
+
+Both paths keep `/etc/ados/config.yaml`, the device ID, and pairing state intact.
+
+```bash
+ados update
+```
+
+By default the command asks for confirmation before it installs.
+
+## Flags
+
+| Flag | What it does |
+|------|--------------|
+| `--check-only` | Report the current version and the latest version on `main`. Installs nothing. |
+| `--yes` | Skip the confirmation prompt and update straight away. |
+| `--json` | Print `{current_version, latest_version, update_available}` and exit. |
+
+### Check without installing
+
+```bash
+ados update --check-only
+```
+
+Example output:
+
+```text
+Current version: 0.89.2
+Latest version:  0.90.0
+Update available: yes
+```
+
+### Update without a prompt
+
+```bash
+ados update --yes
+```
+
+### Machine-readable check
+
+```bash
+ados update --json
+```
+
+```json
+{
+  "current_version": "0.89.2",
+  "latest_version": "0.90.0",
+  "update_available": true
+}
+```
+
+## Checking the installed version
+
+`ados version` prints the installed version. It works even when the agent service is down.
+
+```bash
+ados version
+```
+
+## Updating with the install one-liner
+
+`ados update` is a wrapper around the installer's upgrade mode, so you can run the same upgrade by hand:
+
+```bash
+# Linux
+curl -sSL https://raw.githubusercontent.com/altnautica/ADOSDroneAgent/main/scripts/install.sh | sudo bash -s -- --upgrade
+```
+
+On macOS, run the one-liner without `sudo`.
+
+## Rolling back
+
+There is no rollback API. To return to an earlier version, reinstall it by running the installer against that version's commit or release. Fetch `install.sh` from the tag or commit you want (replace `main` in the URL) and run it the same way as a fresh install:
+
+```bash
+# Replace <ref> with the release tag or commit you want
+curl -sSL https://raw.githubusercontent.com/altnautica/ADOSDroneAgent/<ref>/scripts/install.sh | sudo bash
+```
+
+On macOS, run it without `sudo`. A reinstall preserves `/etc/ados/config.yaml` and pairing state, the same as an upgrade.
+
+<Tip>
+Test an update on a bench drone before you roll it out to a field fleet. Run `ados update --check-only` to see what version `main` is on, update the bench node, confirm it flies, then update the rest.
+</Tip>

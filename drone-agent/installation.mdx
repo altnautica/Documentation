@@ -77,13 +77,13 @@ To upgrade to the latest version without losing your config:
 curl -sSL https://raw.githubusercontent.com/altnautica/ADOSDroneAgent/main/scripts/install.sh | sudo bash -s -- --upgrade
 ```
 
-Or use the built-in update command:
+Or run `ados update`, which re-runs the installer upgrade for you:
 
 ```bash
 ados update
 ```
 
-Both methods preserve `/etc/ados/config.yaml` and your pairing state.
+Both preserve `/etc/ados/config.yaml` and your pairing state. See [Updating the Agent](/drone-agent/updating) for details.
 
 ## Install from source
 

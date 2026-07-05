@@ -125,7 +125,7 @@ ADOSMissionControl/
 
 **Repository:** [github.com/altnautica/ADOSDroneAgent](https://github.com/altnautica/ADOSDroneAgent)
 
-**Stack:** Rust (Cargo workspace, tokio, axum) plus Python 3.11+ (FastAPI, structlog), systemd-managed. The long-running and safety-critical services are Rust binaries in `crates/`; Python handles AI and vision, the plugin runtime, setup and OTA, HAL detection, and the residual web API.
+**Stack:** Rust (Cargo workspace, tokio, axum) plus Python 3.11+ (FastAPI, structlog), systemd-managed. The long-running and safety-critical services are Rust binaries in `crates/`; Python handles AI and vision, the plugin runtime, setup, HAL detection, and the residual web API.
 
 ```
 ADOSDroneAgent/
@@ -153,13 +153,12 @@ ADOSDroneAgent/
 │   └── ados-tui/                   # Terminal dashboard launched by `ados` with no subcommand
 │
 ├── src/
-│   └── ados/                       # Python: AI/vision, plugin runtime, setup/OTA, HAL, residual API
+│   └── ados/                       # Python: AI/vision, plugin runtime, setup, HAL, residual API
 │       ├── __init__.py             # Version (single source of truth)
 │       ├── core/                   # IPC helpers, config models, identity, pairing, health probe
 │       ├── services/               # Python-backed units and driver/manager glue
 │       │   ├── api/                # Residual FastAPI (internal socket, behind ados-control)
 │       │   ├── health/             # CPU / RAM / temperature monitor
-│       │   ├── ota/                # Release poll and upgrade
 │       │   ├── peripherals/        # USB and sensor manager
 │       │   ├── discovery/          # mDNS advertisement
 │       │   ├── ground_station/     # Ethernet, WiFi-client, modem managers

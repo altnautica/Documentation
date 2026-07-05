@@ -126,7 +126,7 @@ The entire ADOS stack lives in two public repositories:
 
 Both are GPLv3. The agent runs on the drone and the ground station (same code, different profile). Mission Control runs in a browser and talks to both.
 
-The agent is Rust-first. The long-running and safety-critical services (MAVLink router, cloud relay, video pipeline, radio, supervisor, logging, the HTTP front) are native Rust binaries; Python stays for AI and vision, the plugin runtime, setup and OTA, HAL detection, and some ground-station hardware glue. See [Agent Services](/architecture/agent-services) for the full breakdown.
+The agent is Rust-first. The long-running and safety-critical services (MAVLink router, cloud relay, video pipeline, radio, supervisor, logging, the HTTP front) are native Rust binaries; Python stays for AI and vision, the plugin runtime, setup, HAL detection, and some ground-station hardware glue. See [Agent Services](/architecture/agent-services) for the full breakdown.
 
 ## Key architectural decisions
 

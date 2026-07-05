@@ -7,7 +7,7 @@ lastUpdated: "2026-06-18"
 
 # REST API
 
-Port 8080 is owned by the native Rust front (`ados-control`, an axum server). It serves migrated routes directly and reverse-proxies the rest to a residual FastAPI on an internal Unix socket (`/run/ados/api-internal.sock`). From a client's point of view it is one HTTP API for status, telemetry, commands, configuration, video, OTA, pairing, and everything else the agent can do.
+Port 8080 is owned by the native Rust front (`ados-control`, an axum server). It serves migrated routes directly and reverse-proxies the rest to a residual FastAPI on an internal Unix socket (`/run/ados/api-internal.sock`). From a client's point of view it is one HTTP API for status, telemetry, commands, configuration, video, pairing, and everything else the agent can do.
 
 The API is the backbone that the CLI, TUI, and Mission Control all talk to.
 
@@ -48,7 +48,6 @@ The API is organized by domain. The "Served by" column shows where a domain curr
 | MAVLink signing | `/api/mavlink/signing` | Rust front | MAVLink2 signing capability and FC enrollment |
 | Pairing | `/api/pairing` | Mixed | Pair, unpair, info, code |
 | Plugins | `/api/plugins` | FastAPI (proxied) | Plugin lifecycle, install, list, perms |
-| OTA | `/api/ota` | FastAPI (proxied) | Update check, install, rollback |
 | Services | `/api/services` | Rust front | Systemd service control |
 | System | `/api/system`, `/api/v1/diagnostics` | Rust front | Reboot, shutdown, diagnostics, resource reads |
 | Fleet | `/api/fleet` | Rust front | Fleet enrollment and peers |
@@ -168,26 +167,6 @@ curl http://localhost:8080/api/pairing/info
 
 # Unpair
 curl -X POST http://localhost:8080/api/pairing/unpair \
-  -H "X-ADOS-Key: $KEY"
-```
-
-### OTA Updates
-
-```bash
-# Check for updates
-curl -X POST http://localhost:8080/api/ota/check \
-  -H "X-ADOS-Key: $KEY"
-
-# Install pending update
-curl -X POST http://localhost:8080/api/ota/install \
-  -H "X-ADOS-Key: $KEY"
-
-# Rollback
-curl -X POST http://localhost:8080/api/ota/rollback \
-  -H "X-ADOS-Key: $KEY"
-
-# Restart agent
-curl -X POST http://localhost:8080/api/ota/restart \
   -H "X-ADOS-Key: $KEY"
 ```
 

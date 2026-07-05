@@ -9,7 +9,7 @@ lastUpdated: "2026-06-18"
 
 The ADOS Drone Agent uses a multi-process architecture where each service runs as an independent systemd unit. A supervisor service manages the lifecycle. Services communicate through Unix domain sockets and share no memory.
 
-The agent is a Rust-first hybrid. Most long-running services are native Rust binaries: the supervisor, the MAVLink router, the cloud relay, the video pipeline, the radio data plane, the ground-side receiver, the physical-UI display, the uplink router, the logging daemon, and the vision host. Port 8080 is owned by the native Rust front, `ados-control`, which answers migrated routes directly and reverse-proxies the rest to a residual FastAPI process on an internal Unix socket. Python stays where the ecosystem lives: AI and vision inference, the plugin runtime, the setup and OTA webapp, HAL board detection and first-boot bootstrap, the config layer, the health monitor, and some ground-station hardware glue (Ethernet, WiFi client, modem, buttons, peripherals). The supervisor never spawns these processes itself: it issues `systemctl` against a fixed catalog, so systemd remains the process manager and owns the cgroup, restart, and journald wiring. Many unit names are stable shims that exec a Rust binary, so the commands you type (`systemctl restart ados-oled`, `ados-wfb`) keep working while the implementation underneath is native.
+The agent is a Rust-first hybrid. Most long-running services are native Rust binaries: the supervisor, the MAVLink router, the cloud relay, the video pipeline, the radio data plane, the ground-side receiver, the physical-UI display, the uplink router, the logging daemon, and the vision host. Port 8080 is owned by the native Rust front, `ados-control`, which answers migrated routes directly and reverse-proxies the rest to a residual FastAPI process on an internal Unix socket. Python stays where the ecosystem lives: AI and vision inference, the plugin runtime, the setup webapp, HAL board detection and first-boot bootstrap, the config layer, the health monitor, and some ground-station hardware glue (Ethernet, WiFi client, modem, buttons, peripherals). The supervisor never spawns these processes itself: it issues `systemctl` against a fixed catalog, so systemd remains the process manager and owns the cgroup, restart, and journald wiring. Many unit names are stable shims that exec a Rust binary, so the commands you type (`systemctl restart ados-oled`, `ados-wfb`) keep working while the implementation underneath is native.
 
 ## Why multi-process
 
@@ -46,7 +46,6 @@ flowchart TB
     end
 
     subgraph OnDemand["On-Demand"]
-        OTA["ados-ota (Python)<br/>release poll + upgrade"]
         Discovery["ados-discovery (Python)<br/>mDNS"]
         Plugins["ados-plugin-host (Rust)<br/>subprocess plugin supervisor"]
     end
@@ -193,7 +192,7 @@ The result is written to `/etc/ados/profile.conf` with the full fingerprint snap
     - `ados-gpio` (off until enabled, for a status buzzer or LED)
 
     On-demand:
-    - `ados-ota`, `ados-discovery`, `ados-plugin-host`
+    - `ados-discovery`, `ados-plugin-host`
 
     Masked (never started):
     - All ground-station services (hostapd, oled, buttons, kiosk, etc.)
@@ -238,7 +237,7 @@ The surface provides:
 
 Authentication uses the `X-ADOS-Key` header with a key stored in `/etc/ados/config.yaml`, generated at install time. The MAVLink WebSocket on `:8765` (served by `ados-mavlink-router`) uses a short-lived HMAC ticket instead.
 
-The residual FastAPI keeps the features that stay in Python: AI and vision endpoints, the plugin runtime surface, the setup and OTA webapp, the device-discovery and peripherals routes, and the WHEP video bridge. As more routes move to the Rust front, the FastAPI footprint shrinks toward those Python-bound features only.
+The residual FastAPI keeps the features that stay in Python: AI and vision endpoints, the plugin runtime surface, the setup webapp, the device-discovery and peripherals routes, and the WHEP video bridge. As more routes move to the Rust front, the FastAPI footprint shrinks toward those Python-bound features only.
 
 ## HAL board profiles
 

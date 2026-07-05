@@ -179,7 +179,6 @@
               "drone-agent/dashboard-pairing",
               "drone-agent/dashboard-peripherals",
               "drone-agent/dashboard-plugins",
-              "drone-agent/dashboard-ota",
               "drone-agent/dashboard-logs",
               "drone-agent/dashboard-diagnostics",
               "drone-agent/dashboard-settings"
@@ -207,7 +206,7 @@
           {
             "group": "Operations",
             "pages": [
-              "drone-agent/ota-updates",
+              "drone-agent/updating",
               "drone-agent/hal-and-tiers",
               "drone-agent/systemd-services",
               "drone-agent/setup-webapp",
@@ -273,7 +272,6 @@
               "drone-agent/dashboard-pairing",
               "drone-agent/dashboard-peripherals",
               "drone-agent/dashboard-plugins",
-              "drone-agent/dashboard-ota",
               "drone-agent/dashboard-logs",
               "drone-agent/dashboard-diagnostics",
               "drone-agent/dashboard-settings"

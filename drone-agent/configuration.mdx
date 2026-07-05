@@ -123,14 +123,6 @@ api:
     port: 8080
   mission_control_url: ""
 
-ota:
-  channel: "stable"       # stable | beta | dev
-  check_interval: 24      # Hours between auto-checks
-  auto_install: false     # Auto-install after check
-  github_repo: "altnautica/ADOSDroneAgent"
-  pip_path: "/opt/ados/venv/bin/pip"
-  service_name: "ados-supervisor"
-
 logging:
   level: "info"           # debug | info | warning | error
   max_size_mb: 50
@@ -234,17 +226,6 @@ server:
 <Warning>
 For both `cloud` and `self_hosted` modes, the `url` must point at the Convex **site** origin on port `:3211` (HTTP actions: pairing register, heartbeat, command poll), not the client API on `:3210`. If you paste the `:3210` URL, the register call lands on the wrong origin and returns a 404. The agent normalizes a known `:3210` URL to `:3211` as a safety net, but set `:3211` explicitly. See [Self-hosting the agent](/developers/self-hosting/agent).
 </Warning>
-
-### OTA channel
-
-```yaml
-ota:
-  channel: "stable"  # stable | beta | dev
-```
-
-- **stable**: production releases only. Recommended for field use.
-- **beta**: pre-release versions for testing.
-- **dev**: bleeding edge. Expect breaking changes.
 
 ### Vision backend
 

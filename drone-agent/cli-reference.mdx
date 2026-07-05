@@ -23,10 +23,10 @@ setup, remote access) lives in the local setup webapp or ADOS Mission Control.
 | `ados status` | Print setup, MAVLink, video, network, remote access, and service status. |
 | `ados status --json` | Print the full setup status payload for scripts and support tools. |
 | `ados version` | Print the installed agent version. Works even when the service is down. |
-| `ados update` | Check for and install an available agent update. |
-| `ados update --check-only` | Check for updates without installing. |
-| `ados update --yes` | Install without an interactive confirmation. |
-| `ados update --json` | Print update check details as JSON. |
+| `ados update` | Update the agent to the latest version by re-running the installer in upgrade mode. |
+| `ados update --check-only` | Report the current and latest version without installing. |
+| `ados update --yes` | Update without an interactive confirmation. |
+| `ados update --json` | Print the current version, latest version, and update-available flag as JSON. |
 | `ados install --status` | Show the last install result and which checkpoints are done or missing. |
 | `ados install --resume` | Resume an interrupted install. |
 | `ados uninstall` | Remove ADOS Drone Agent from the system. |
@@ -102,29 +102,34 @@ Control.
 
 ## `ados update`
 
-Check and install updates:
+Update the agent to the latest version. `ados update` re-runs the installer in
+upgrade mode, which updates the Rust daemons and the CLI while preserving the
+device identity and config.
 
 ```bash
 ados update
 ```
 
-Check without installing:
+Report the current and latest version without installing:
 
 ```bash
 ados update --check-only
 ```
 
-Run non-interactively:
+Update without a confirmation prompt:
 
 ```bash
 ados update --yes
 ```
 
-Print machine-readable output:
+Print `current_version`, `latest_version`, and `update_available` as JSON:
 
 ```bash
 ados update --json
 ```
+
+See [Updating the Agent](/drone-agent/updating) for platform behavior and
+rollback.
 
 ## `ados uninstall`
 

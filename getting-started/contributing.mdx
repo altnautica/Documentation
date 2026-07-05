@@ -180,7 +180,7 @@ ADOSDroneAgent/
 
 ### Key Architecture Concepts
 
-**systemd services.** In production, each agent service runs as a separate systemd unit. Many units run native Rust binaries (the supervisor, MAVLink router, control front, cloud relay, video, radio). Others run Python (the residual API, health, OTA, and the ground-station hardware managers). A Rust supervisor orchestrates the unit catalog through systemd. For development, you can run individual services directly.
+**systemd services.** In production, each agent service runs as a separate systemd unit. Many units run native Rust binaries (the supervisor, MAVLink router, control front, cloud relay, video, radio). Others run Python (the residual API, health, and the ground-station hardware managers). A Rust supervisor orchestrates the unit catalog through systemd. For development, you can run individual services directly.
 
 **HAL board profiles.** Each supported SBC has a YAML profile (`src/ados/hal/boards/*.yaml`) that describes its hardware: serial ports, camera paths, GPIO pins, capabilities. The agent reads the profile at boot and configures itself accordingly.
 

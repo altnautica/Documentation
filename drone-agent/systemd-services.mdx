@@ -29,7 +29,6 @@ This architecture gives you per-service restart, resource isolation via cgroups,
 | `ados-discovery` | mDNS | Python | mDNS advertisement (`_ados._tcp.local.`) |
 | `ados-plugin-host` | plugin host | Rust | Plugin subprocess supervisor |
 | `ados-peripherals` | peripherals manager | Python | USB hot-plug, sensor manager |
-| `ados-ota` | `ados.services.ota` | Python | Release polling, upgrade, rollback |
 
 ### Drone profile services
 
@@ -83,8 +82,7 @@ ados-supervisor
   ├── ados-wfb            (after ados-video)
   ├── ados-cloud          (after ados-control)
   ├── ados-plugin-host    (after ados-control)
-  ├── ados-peripherals    (after ados-control)
-  └── ados-ota            (after ados-control)
+  └── ados-peripherals    (after ados-control)
 ```
 
 Hardware-dependent services (video, wfb, modem) only start when the relevant hardware is detected.
