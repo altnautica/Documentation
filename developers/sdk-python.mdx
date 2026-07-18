@@ -118,8 +118,12 @@ service helpers a plugin needs, including `ctx.mavlink.subscribe(...)`
 and `ctx.mavlink.send(...)`, `ctx.events.subscribe(...)` and
 `ctx.events.publish(...)`, `ctx.vision.subscribe_detections(...)` and
 `ctx.vision.designate_track(...)`,
-`ctx.peripheral_manager.register_*_driver(...)`, `ctx.config`, and
-`ctx.process.spawn`. Each call is gated on a manifest permission;
+`ctx.flight.guided_setpoint(...)` (a scoped guided-mode
+position/velocity sender for flight-behaviour plugins, gated on
+`flight.guided_setpoint`), `ctx.video.set_source(...)` (a driver plugin
+declares the video pipeline's stream sources, gated on
+`video.source.set`), `ctx.peripheral_manager.register_*_driver(...)`,
+`ctx.config`, and `ctx.process.spawn`. Each call is gated on a manifest permission;
 calling a method whose capability was not granted is rejected. Because
 the context type is not yet published in `ados.sdk`, the reference
 extensions declare a local `Protocol` for the parts they use. Read the
