@@ -96,9 +96,9 @@ the plugin's config. `on_stop` runs when the supervisor sends `SIGTERM`.
 
 The `ctx` is a `PluginContext` with capability-gated facades:
 `ctx.events`, `ctx.mavlink`, `ctx.peripheral_manager` (alias
-`ctx.peripherals`), `ctx.camera`, `ctx.vision`, `ctx.telemetry`,
-`ctx.config`, and `ctx.process`. These are the host surfaces; the IPC
-client underneath is an implementation detail.
+`ctx.peripherals`), `ctx.camera`, `ctx.video`, `ctx.vision`,
+`ctx.telemetry`, `ctx.config`, and `ctx.process`. These are the host
+surfaces; the IPC client underneath is an implementation detail.
 
 <Note>
 The author SDK package `ados.sdk` currently exports the typed driver
@@ -128,6 +128,43 @@ except CapabilityDenied:
 Operators can revoke a capability at any time from the GCS or with
 `ados plugin perms <id> --revoke <cap>`. The plugin loses access on the
 next token rotation, and matching calls then fail with the same denial.
+
+## Configuring the video pipeline's sources
+
+A camera or optical-pod driver can declare which video streams the
+agent's video pipeline should serve, so the operator never has to type
+an RTSP URL by hand. Call `ctx.video.set_source` with one leg per stream:
+
+```python
+await ctx.video.set_source([
+    {"id": "main",    "source": "rtsp://192.168.144.25:8554/main", "role": "eo",  "codec": "h264"},
+    {"id": "eo_wide", "source": "rtsp://192.168.144.25:8554/sub",  "role": "eo_wide"},
+    {"id": "ir",      "source": "rtsp://192.168.144.25:8554/ir",   "role": "ir"},
+])
+```
+
+Each leg needs a non-empty `id` (the stream path; the primary leg is
+`main`) and a `source` (an RTSP or other URL the pipeline pulls, or
+`publisher` for a locally-encoded leg). `role` (`eo` / `eo_wide` / `ir`,
+advisory) and `codec` are optional. Applying a new list persists the
+`video.cameras` config and restarts the video pipeline, which then serves
+each leg on its own path. The cockpit shows a stream switcher when a node
+exposes more than one leg. The call requires the `video.source.set`
+capability and returns `{"ok": bool, "count": int, "restarted": bool}`.
+
+The same source list can be set statically in the agent config instead of
+from a plugin:
+
+```yaml
+video:
+  cameras:
+    - id: main
+      source: rtsp://192.168.144.25:8554/main
+      role: eo
+    - id: ir
+      source: rtsp://192.168.144.25:8554/ir
+      role: ir
+```
 
 ## cgroup limits
 
