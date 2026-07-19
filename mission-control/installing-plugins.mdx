@@ -9,13 +9,13 @@ lastUpdated: "2026-06-18"
 
 Extensions extend Mission Control and the agent on the drones you select. Each extension is signed, reviewed at install time, and scoped to the specific drone you install it on. An extension you enable on one drone in your fleet stays off on the others until you install it there too.
 
-<Frame caption="The Plugins tab on the per-drone detail view, showing installed plugins and the registry browser.">
-  <img src="/images/dashboard/drone/plugins-tab.png" alt="Mission Control Plugins tab on a per-drone view" />
+<Frame caption="The Extensions tab on the per-drone detail view, showing installed extensions and the registry browser.">
+  <img src="/images/dashboard/drone/plugins-tab.png" alt="Mission Control Extensions tab on a per-drone view" />
 </Frame>
 
 ## Where to install
 
-Open a drone from the fleet, then switch to the **Plugins** tab in the per-drone detail panel. The tab has two regions:
+Open a drone from the fleet, then switch to the **Extensions** tab in the per-drone detail panel. The tab has two regions:
 
 - **Installed**: every plugin currently installed on this drone. Each row shows version, state (running / stopped / errored), and a quick toggle.
 - **Add a plugin**: install a signed `.adosplug` package. Click a plugin to see its manifest and requested permissions before installing.
@@ -58,7 +58,7 @@ A successful install promotes the plugin to **Installed**; the toggle is off by 
 
 Plugins are scoped per drone. Installing the same plugin across several drones means an install action per drone (or one fleet rollout from the fleet view). This is intentional: the operator decides per drone what hardware and capabilities are reasonable, and a plugin that needs a thermal camera should not appear on drones that don't have one.
 
-The Plugins tab badge counts installed + running plugins for this drone only. Switching to another drone re-renders the panel with that drone's set.
+The Extensions tab badge counts installed + running plugins for this drone only. Switching to another drone re-renders the panel with that drone's set.
 
 ## Updating a plugin
 

@@ -1,13 +1,13 @@
 ---
 title: "Install on a drone"
-description: "Installing the Vision Navigation plugin on a single drone via Mission Control's per-drone Plugins tab. Six-stage install progress, permissions, local-first transport."
+description: "Installing the Vision Navigation plugin on a single drone via Mission Control's per-drone Extensions tab. Six-stage install progress, permissions, local-first transport."
 icon: "download"
 lastUpdated: "2026-06-18"
 ---
 
 # Install on a drone
 
-Vision Navigation is a first-party plugin. You install it on one drone at a time from Mission Control's per-drone Plugins tab. Each install carries its own permission grants and its own per-drone configuration; the plugin runs only on the agent of the drone you picked.
+Vision Navigation is a first-party plugin. You install it on one drone at a time from Mission Control's per-drone Extensions tab. Each install carries its own permission grants and its own per-drone configuration; the plugin runs only on the agent of the drone you picked.
 
 <Note>
 The per-drone install model means a fleet running ten drones can have the plugin on three of them without affecting the other seven. Each drone's Mission Control tab list reflects its own installs.
@@ -24,13 +24,13 @@ The plugin's agent half is a compiled Rust binary. Install and operation are unc
 - A downward camera is mounted, and a rangefinder is wired or relayed through the FC. See [Hardware](/drone-agent/vision-nav-hardware).
 - The signed `.adosplug` archive is downloaded from the ADOS Extensions catalog, or you have its URL ready.
 
-## Open the drone's Plugins tab
+## Open the drone's Extensions tab
 
 In Mission Control:
 
 1. From the Dashboard, click the drone you want to extend. The drone detail panel opens on the right.
-2. The detail panel header carries a tab row. The Plugins tab is at the right end of the row; if it isn't visible yet, your agent is older than 0.13 and needs an upgrade first.
-3. Click **Plugins**. The per-drone plugin list opens. A fresh drone shows "No plugins installed on this drone."
+2. The detail panel header carries a tab row. The Extensions tab is at the right end of the row; if it isn't visible yet, your agent is older than 0.13 and needs an upgrade first.
+3. Click **Extensions**. The per-drone plugin list opens. A fresh drone shows "No plugins installed on this drone."
 4. Click **Install plugin on this drone** at the top right of the panel.
 
 The install dialog opens. The dialog runs the same six-stage flow whether the agent is reachable on the local network or only through the cloud relay.
@@ -95,7 +95,7 @@ If Mission Control is on HTTPS and the agent isn't reachable directly (the commo
 
 A successful install leaves the plugin in the **Disabled** state. This is so you can configure it before it starts touching the FC.
 
-1. The per-drone Plugins tab now lists `ADOS Vision Navigation` with the installed version.
+1. The per-drone Extensions tab now lists `ADOS Vision Navigation` with the installed version.
 2. Click the plugin row. The configuration drawer opens on the right.
 3. Set the camera device, the rangefinder driver, and the rest of the per-drone config. See [Configure optical flow](/drone-agent/vision-nav-optical-flow).
 4. Click **Enable**. The drawer asks for confirmation and starts the plugin's subprocess on the agent. Within a few seconds, a new **Vision Nav** tab appears in the drone's detail panel.
@@ -109,7 +109,7 @@ A successful install leaves the plugin in the **Disabled** state. This is so you
 
 ## Uninstall
 
-The Plugins tab has an **Uninstall** action per plugin. It stops the subprocess, removes the install record from your fleet database, and clears the plugin's per-drone state on the agent. The drone returns to its baseline navigation behavior (GPS-only flight on ArduPilot or PX4).
+The Extensions tab has an **Uninstall** action per plugin. It stops the subprocess, removes the install record from your fleet database, and clears the plugin's per-drone state on the agent. The drone returns to its baseline navigation behavior (GPS-only flight on ArduPilot or PX4).
 
 ## Troubleshooting
 
