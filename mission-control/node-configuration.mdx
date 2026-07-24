@@ -1,0 +1,56 @@
+---
+title: "Node Configuration"
+description: "Per-node configuration pages (network, Wi-Fi, cellular, adapter pinning, self-heal, MAVLink routing, security, vision, discovery, video) at parity across the on-box dashboard and Mission Control."
+icon: "sliders"
+lastUpdated: "2026-07-24"
+---
+
+# Node Configuration
+
+Every node (a drone agent, a ground agent, or a workstation) exposes one configuration surface, rendered as curated, task-oriented pages rather than a raw list of settings. The same pages are available two ways, at parity: on the node's own browser dashboard, and in the node's settings in Mission Control. Same configuration, same layout, both first-class.
+
+## Two surfaces, one contract
+
+Both surfaces read and write the same configuration through the node's config service. A change you make on the on-box dashboard shows up when you open the node's settings in Mission Control, and the other way around, because there is one source of truth on the node.
+
+| Surface | When you use it |
+|---|---|
+| On-box dashboard | You are on the node's network and want to configure it directly in a browser |
+| Mission Control | You manage the node as part of a fleet and want its settings alongside the others |
+
+## The pages
+
+The configuration is organized into task pages rather than a flat parameter tree. Which pages appear depends on the node's profile and capabilities:
+
+| Page | What it configures |
+|---|---|
+| Network / uplink | The uplink options and their priority order |
+| Wi-Fi | Scan and join a wireless network |
+| Cellular | The modem and its access point settings |
+| Adapter pinning | A stable hardware address for a radio adapter |
+| Self-heal | The link guardian and recovery behavior |
+| MAVLink routing | How MAVLink is routed and rate-limited |
+| Security | The node's access and pairing state |
+| Vision / perception | The onboard detection engine and its model |
+| World model and swarm | The mapping and multi-node features, when the node supports them |
+| Discovery | The reach names the node advertises |
+| Video / camera | The camera sources and stream settings |
+
+## Reliable writes
+
+Every field confirms its write by reading the value back from the node, so a setting that did not take is visible rather than assumed. Secret values (keys and passwords) are redacted on read, so the configuration surface never echoes a secret it stored.
+
+## Three ways to reach a node
+
+A node's configuration is reachable over each of the paths Mission Control can use to talk to it:
+
+1. **On the node's network.** Open the on-box dashboard directly.
+2. **Over the LAN or the cloud.** Mission Control reads and writes the node's configuration whether it is on your LAN or reached over the cloud relay.
+3. **Over the radio.** A drone reached only through a ground station is configured over a tunnel that carries the configuration request across the radio link and terminates at the drone. This lets you read a config page and change a setting on a drone that has no direct network path to you.
+
+## Where to next
+
+- [Nodes View](/mission-control/nodes-fleet-view) - the fleet console whose inline feature toggles write these same config keys.
+- [Settings](/mission-control/settings) - the GCS application settings (a separate surface from per-node configuration).
+- [Transitive Enrollment](/ground-agent/transitive-enrollment) - how a drone reached over the radio becomes a configurable node.
+- [Uplink Matrix](/ground-agent/uplink-matrix) - the uplink options the network page configures.

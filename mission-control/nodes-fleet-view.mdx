@@ -1,0 +1,60 @@
+---
+title: "Nodes View"
+description: "One console for the whole fleet: a live node map, a hierarchy tree-table with per-bearer reach, relay streams, and inline per-node, bulk, and fleet controls."
+icon: "network-wired"
+lastUpdated: "2026-07-24"
+---
+
+# Nodes View
+
+The dashboard has three view modes: **Grid**, **Overview**, and **Nodes**. Grid shows a video card per node and Overview shows a stat card per node. Both answer "how is each node doing?" The Nodes view answers the fleet-wide questions instead: how the fleet is actually connected, where the relay streams flow, and how to change flight mode, relay mode, or features across many nodes at once.
+
+It is a single console for the whole fleet, whichever way each node is reached: on the LAN, over the cloud relay, or relayed over the radio through another node.
+
+## Reach types
+
+Every node is shown with how it is reached, so a direct link, a cloud link, and a relayed link never look the same:
+
+| Reach | What it means |
+|---|---|
+| **Direct (LAN)** | Mission Control is on the node's own network |
+| **Cloud** | Reached over the cloud relay (remote or cross-network) |
+| **Relayed** | Reached over the radio through a ground station or a relay drone |
+| **Direct FC** | A flight controller connected straight to the GCS |
+| **Unreachable** | No live path to the node right now |
+
+A node is often reachable by more than one path at once. The view shows the primary path plus any alternates, so you can see where the redundancy is.
+
+## The tree-table
+
+The Nodes view replaces the card grid with one live row per node, grouped and indented by how it is reached. A drone reached through a ground station nests under that ground station, and a relay drone nests its downstream drone under itself. Each row carries:
+
+- **Node** - profile glyph, name, firmware or airframe chips, and a role badge.
+- **Reach** - the bearer chip (direct, radio, cellular, mesh, or cloud) plus any secondary path.
+- **Link** - signal bars and RSSI for the active path.
+- **Battery** - live level with a color band.
+- **Flight mode** - an actionable dropdown, with return-to-launch and land as one-tap actions and an armed or disarmed indicator.
+- **Relay mode** - an actionable dropdown for a ground station's mesh role and the bearers it hosts, or a relay drone's last-mile bearer.
+- **Features** - inline toggles that write the same config keys as the per-node settings pages.
+- **Actions** - a per-node menu: arm or disarm, return to launch, land, open cockpit, configure, view logs, unpair.
+
+## Bulk and fleet actions
+
+Select several nodes and a bulk bar lets you apply a flight mode, a relay mode, or a feature toggle to the whole selection at once. A fleet-actions control at the top fans an action over the entire fleet (for example, return all to launch).
+
+Each control writes over whichever path reaches the node: the LAN, the cloud config path, or, for a drone reached only over the radio, the tunnel path through its ground station. Flight-mode and arm actions are MAVLink commands over the same reach.
+
+## Mesh and reach map
+
+A collapsible map on the right draws the fleet as a live node-to-node graph rather than a flat list. Solid edges are data paths and dashed edges are relay streams that animate toward their destination (and respect a reduced-motion preference). Color marks the bearer. Below the map, a relay-streams list names each funnel path end to end with its hops, for example `Delta-04 (radio) -> Charlie-03 (radio) -> GS-A -> GCS`.
+
+## Honest states
+
+The board follows the status-honesty rule. A node whose telemetry has gone stale renders a stale state rather than a confident but wrong row, and a radio link whose reception has not been confirmed shows as unverified rather than green. A control that cannot act on a given node is disabled with the reason stated, not silently ignored.
+
+## Where to next
+
+- [Node Configuration](/mission-control/node-configuration) - the per-node config pages the inline feature toggles reach into.
+- [Dashboard](/mission-control/dashboard) - the Grid and Overview view modes.
+- [Transitive Enrollment](/ground-agent/transitive-enrollment) - how a drone reached over the radio becomes its own node.
+- [Mesh & Distributed Receive](/ground-agent/mesh-overview) - the ground mesh whose links the map draws.
