@@ -111,6 +111,13 @@
             ]
           },
           {
+            "group": "Fleet & Nodes",
+            "pages": [
+              "mission-control/nodes-fleet-view",
+              "mission-control/node-configuration"
+            ]
+          },
+          {
             "group": "Mission Planning",
             "pages": [
               "mission-control/mission-planning",
@@ -287,6 +294,13 @@
               "ground-agent/batman-adv",
               "ground-agent/field-pairing",
               "ground-agent/mesh-troubleshooting"
+            ]
+          },
+          {
+            "group": "Relay & Fleet",
+            "pages": [
+              "ground-agent/transitive-enrollment",
+              "ground-agent/elrs-crsf-control-lane"
             ]
           },
           {

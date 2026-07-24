@@ -1,0 +1,67 @@
+---
+title: "ELRS / CRSF Control Lane"
+description: "Run a Ground Agent as a programmatic ELRS transmitter: inject RC channels, carry MAVLink over ELRS, and relay control to another drone as a long-range backup to the WFB link."
+icon: "tower-cell"
+lastUpdated: "2026-07-24"
+---
+
+# ELRS / CRSF Control Lane
+
+The Ground Agent already receives video and telemetry from your drone over WFB-ng. The control lane adds the other direction as an independent link: the Ground Agent runs an ExpressLRS (ELRS) transmitter module and generates the RC link itself.
+
+This is a low-bandwidth, long-range control lane that sits alongside WFB, not inside it. WFB stays the primary link for video and full-rate MAVLink. The ELRS control lane is the manual-pilot backup, the supervisory command backstop when the main link is out of range or behind terrain, and a cheap last-mile link to a drone that has no companion computer of its own.
+
+<Note>
+The control lane is a newer capability. Validate your own hardware, antennas, and failsafe behavior before you rely on it as a control link, and confirm your setup complies with the radio regulations that apply where you fly.
+</Note>
+
+## What it carries
+
+An ELRS transmitter module is a CRSF serial device: whatever generates the CRSF `RC_CHANNELS_PACKED` frames is the transmitter. The Ground Agent opens the module as a serial device and drives it. It carries two things over the same module:
+
+1. **CRSF RC channels.** Sixteen channels of stick, switch, and arm input, packed into CRSF frames and transmitted to the drone's ELRS receiver. The input can come from a plugged-in handset or from software.
+2. **MAVLink over ELRS.** Using the ELRS module's native MAVLink mode, an independent long-range MAVLink telemetry and command lane, pulled off the module and fed into the agent's existing MAVLink routing. This path needs no CRSF parsing.
+
+## The handset is a dumb input, the ground node transmits
+
+A pilot who wants stick control plugs a hobby RC handset running EdgeTX into the Ground Agent over USB, in "USB Joystick (HID)" mode. In that mode the handset's own radio is off and its sticks and switches become plain HID axes and buttons. The Ground Agent reads them and its own ELRS module does all the transmitting. The handset is a hot-pluggable input device; the ground node owns the radio, the video, and the GCS connection.
+
+## Programmatic control
+
+The same CRSF packer also accepts channels from a software injection interface, so control can come from a handset or from software: an autonomy layer, the mission engine, or virtual sticks in the GCS. The control lane's link state and relay topology are reported over the agent's status feed, so a human or a program can drive the lane and both can see what it is doing.
+
+## Relay: control another drone
+
+Because the control lane is a radio link the Ground Agent generates, it can be extended by a relay in the air. A drone flying high can forward control past a hill or over the horizon, since range on this lane is about line of sight more than raw distance. Two relay shapes are supported:
+
+- **Pure-ELRS repeater.** A relay that re-transmits the CRSF link, the simplest and cheapest path.
+- **Agent relay.** A relay drone that carries the heavy link (WFB or mesh) as its backhaul and uses ELRS only for the cheap last mile to a far, companion-less drone.
+
+## Bands
+
+The control lane supports three band classes, so you can pick the tradeoff that fits your flight:
+
+| Band | Tradeoff |
+|---|---|
+| 900 MHz | Best range, lower MAVLink throughput |
+| 2.4 GHz | Best MAVLink throughput, less range |
+| Dual-band (900 + 2.4) | Both, at a higher module cost |
+
+Power, band, and packet rate are set through the ELRS module's own configuration parameters. Actual range depends on the module, the antennas, the band, and line of sight to the drone. This lane makes no claim to a fixed range figure.
+
+## Complementary to WFB, not a replacement
+
+The control lane is the long-range control bearer. WFB carries the video and the fast link at short to medium range, ELRS carries the RC and light MAVLink at long range, and a relay in the air buys the line of sight that turns tens of kilometers into over the horizon. One Ground Agent owns all of it: video, control, mesh, and the GCS connection.
+
+The lane does not provide an internet uplink and carries no routed IP traffic. It reports a link state like any other radio and never becomes a data-plane route.
+
+## Safety
+
+A second link that can move the sticks is a safety-critical addition. Which link holds command at a given moment (the WFB link, the ELRS link, or a failsafe) is arbitrated so that two sources never fight for the vehicle, and failsafe behavior is defined for a lost link. The full bidirectional command path over ELRS is off by default and requires explicit enablement after you have reviewed the pilot-in-command and failsafe behavior for your setup. Telemetry over the lane is available without opening the command path.
+
+## Where to next
+
+- [Uplink Matrix](/ground-agent/uplink-matrix) - the internet uplink options the Ground Agent carries (a separate concern from this control lane).
+- [Mesh & Distributed Receive](/ground-agent/mesh-overview) - the local mesh a relay can use as backhaul.
+- [Transitive Enrollment](/ground-agent/transitive-enrollment) - how a relayed drone appears as its own node in Mission Control.
+- [Nodes View](/mission-control/nodes-fleet-view) - the fleet console where the control lane and relay paths are laid out.
