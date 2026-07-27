@@ -6,4 +6,5 @@ scripts/.env
 
 
 # Local agent tooling directory (not part of the project)
-.omp/
+.opencode/
+opencode.jsonc
