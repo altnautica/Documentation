@@ -9,10 +9,6 @@ operator workflows, developer guides, troubleshooting, and extension authoring.
 Keep pages task-oriented, technically precise, and aligned with released
 behavior.
 
-This file is self-contained for public repository work. Do not rely on
-instructions outside this repository when writing docs, examples, comments,
-tests, logs, or commit messages here.
-
 ## Read First
 
 - Check `git status --short` before edits and preserve unrelated changes.
@@ -74,20 +70,34 @@ entry in the same change.
   sample coordinates or hostnames.
 - Keep API paths, command names, config keys, and response fields exact.
 
-## Public Boundary
+## Working in the Open
 
-Keep documentation self-contained and technical. Document product behavior,
-setup, APIs, commands, configuration, hardware interfaces, deployment, and
-operator workflows.
+This is a public, open-source repository. Every commit, diff, and branch is
+visible the moment it is pushed and stays in history permanently, so a mistake
+cannot be un-published by deleting it later. Review what a change actually
+contains before committing.
 
-Do not include non-public company context, named customers, financial context,
-internal planning labels, attribution trails, or source-path hints from outside
-this repository. Use neutral placeholders such as `example-oem`,
-`cloud.example.com`, and public protocol names.
-
-Examples, screenshots, code blocks, page titles, metadata, PR titles, and commit
-messages should be bland and technical. Do not write messages that describe a
-cleanup of sensitive wording.
+- **Never commit secrets.** API keys, tokens, deploy keys, passwords, private
+  certificates, and `.env` files stay out of the tree. Generated secrets belong
+  only in gitignored files. If a secret does land in a commit, treat it as
+  compromised and rotate it.
+- **Never commit real deployment detail.** Hostnames, IP addresses, tunnel
+  names, device identifiers, and account names from a live setup are an attack
+  surface. Use placeholders such as `example-oem`, `cloud.example.com`,
+  `192.168.1.50`, and `mycompany-fleet`.
+- **Never commit other people's data.** Personal names, email addresses,
+  customer or employer names, real flight logs and GPS traces, and raw log
+  dumps that contain any of the above do not belong in a public repository.
+- **Examples are published too.** Sample commands, coordinates, hostnames, and
+  screenshots get the same care as prose.
+- **Respect licensing when bringing in outside code.** Third-party source is
+  vendored into a vendor directory with its license intact and is never pasted
+  into our own modules.
+- **Keep contributions technical.** Architecture, APIs, commands, schemas,
+  configuration, hardware interfaces, deployment, and troubleshooting.
+  Commercial, pricing, or roadmap commentary does not belong in the codebase.
+- **Comments, log strings, commit messages, and PR titles are public too.** Keep
+  them bland, factual, and technical.
 
 ## Verification
 
@@ -99,9 +109,7 @@ cleanup of sensitive wording.
   API where practical.
 - Broad docs change: run `mintlify broken-links`.
 
-Before finalizing, run `git diff --check` and targeted scans on changed public
-files for non-public context, named customers, internal planning labels,
-attribution-trail wording, and financial context. Report any skipped checks.
+Before finalizing, run `git diff --check` and report any skipped checks.
 
 ## Review Expectations
 
