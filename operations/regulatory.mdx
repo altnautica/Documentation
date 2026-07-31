@@ -1,0 +1,88 @@
+---
+title: "Regulatory"
+description: "Your obligations as the operator, and the regulatory posture the agent ships with."
+icon: "scale-balanced"
+lastUpdated: "2026-07-31"
+---
+
+# Regulatory
+
+ADOS is open-source software that talks to a flight controller and a radio. It does not hold a certificate, does not register your aircraft, and does not know where you are. Every obligation described here is yours.
+
+<Warning>
+The agent ships in an unrestricted radio posture. On first boot it transmits on the configured channel at the hardware-bounded power budget without verifying a regional domain. That is a deliberate default for a research and development platform, and it means the software will not stop you from transmitting somewhere you are not permitted to. Pin your operating region before you fly.
+</Warning>
+
+## Two separate obligations
+
+Flying a drone and operating a radio are regulated separately, often by different authorities. Meeting one says nothing about the other.
+
+**Aviation** covers registration, pilot competency, where and how high you may fly, whether you need permission for a given flight, and what identification the aircraft must broadcast. Depending on where you fly, the authority may be the FAA, EASA, CASA, DGCA, or another national regulator, generally working within the ICAO framework.
+
+**Radio** covers which frequencies you may transmit on, at what power, and with what duty cycle. This is usually a different authority from the aviation one, and the drone rules do not grant you a radio licence.
+
+The long-range video link is the part of ADOS most likely to put you outside a radio rule. It is not standard WiFi. It broadcasts raw frames in monitor mode, and the channel and power you configure are what it uses.
+
+## Set your operating region
+
+The agent has two postures.
+
+**Unrestricted** is the default. The radio comes up on the configured channel at the hardware-bounded power budget with no regional domain verified. You are responsible for legal RF operation where you fly. This state is shown on every status surface, never silently.
+
+**Region** is what you opt into. The radio applies that region's channel set and per-channel power limit before transmitting, and refuses to radiate on a channel the region forbids.
+
+Pin a region from the CLI:
+
+```bash
+ados network regulatory status
+ados network regulatory region US
+```
+
+Or from the on-box dashboard at `/settings/region`.
+
+Restart the agent, or reboot, to apply. The radio reads the posture at service start.
+
+<Note>
+A region mode with a missing or unrecognised region code falls back to unrestricted rather than refusing to transmit. Confirm with `ados network regulatory status` that the region you intended is actually pinned, rather than assuming the write took.
+</Note>
+
+To go back:
+
+```bash
+ados network regulatory unrestricted
+```
+
+The region setting governs the legal cap only. The transmit power budget and brownout clamps and the link-liveness checks stay in force in both postures. Pinning a region cannot raise transmit power past what the hardware can carry, and running unrestricted does not lift that ceiling either.
+
+## Remote ID
+
+**ADOS does not implement Remote ID.** There is no Remote ID broadcast anywhere in the agent or in Mission Control.
+
+Mission Control's aircraft registry has a field to record a Remote ID serial number for your own record-keeping. It is stored locally and is never transmitted or sent to the flight controller. Recording it there does not make your aircraft compliant.
+
+Where Remote ID is required, it has to come from your flight controller's own Remote ID support or from a separate broadcast module. Check that requirement before you fly, because it applies in a growing number of jurisdictions and is not something you can add later in the field.
+
+## Altitude and airspace
+
+ADOS does not impose an altitude ceiling. Mission Control lets you record an operating jurisdiction, which sets default altitude and distance suggestions for geofence planning, and it recognises FAA, EASA, CASA, DGCA, and an ICAO fallback for that purpose. Those are planning defaults to save you typing, not compliance checks, and they do not stop you drawing a mission outside them.
+
+The limit the aircraft actually respects is the one you set in `FENCE_ALT_MAX` and the fence geometry you upload to the flight controller. See [Geofences and rally points](/mission-control/geofences-rally).
+
+Airspace authorisation, flight permissions, and no-fly zones are not handled by ADOS. Check them through whatever service your authority requires before each flight.
+
+## A short operator checklist
+
+Before flying a new aircraft in a new place:
+
+1. Is the aircraft registered where registration is required?
+2. Are you licensed or certificated to the level this flight needs?
+3. Is the airspace permitted, and does this flight need authorisation?
+4. Does the aircraft need to broadcast Remote ID, and does it?
+5. Is your radio channel and transmit power legal here? Is a region pinned?
+6. Is `FENCE_ALT_MAX` set to the local ceiling and the fence uploaded?
+
+## Where to next
+
+- [Safety](/operations/safety) - the failsafes to configure before the first flight.
+- [Operating limits](/operations/operating-limits) - measured performance, and what is not yet characterised.
+- [WFB-ng](/drone-agent/wfb-ng) - channel and transmit power configuration.
