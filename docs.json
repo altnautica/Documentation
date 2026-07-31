@@ -317,6 +317,18 @@
         ]
       },
       {
+        "tab": "Operations",
+        "icon": "shield-halved",
+        "groups": [
+          {
+            "group": "Before You Fly",
+            "pages": [
+              "operations/safety"
+            ]
+          }
+        ]
+      },
+      {
         "tab": "Architecture",
         "icon": "sitemap",
         "groups": [

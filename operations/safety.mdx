@@ -1,0 +1,126 @@
+---
+title: "Safety"
+description: "What to configure before the first flight, how arming is gated, and what happens when the link drops."
+icon: "shield-halved"
+lastUpdated: "2026-07-31"
+---
+
+# Safety
+
+Read this before the first flight of any aircraft running ADOS.
+
+The short version: ADOS does not fly your aircraft. The flight controller does. ADOS gives you a link to it, a checklist against live telemetry, and panels to configure it, but every protective behaviour that matters when something goes wrong lives in the FC and is off until you set it.
+
+## What ADOS does not do
+
+<Warning>
+The agent has no flight envelope of its own. There is no companion-side geofence and no companion-side return-to-launch. If the FC is not configured to protect the aircraft, nothing else will.
+</Warning>
+
+Concretely:
+
+- **No geofence enforcement in the agent.** The agent can republish a geofence breach the FC reports, as a notification. It never commands anything in response.
+- **No autonomous RTL.** `rtl` exists only as a command you send.
+- **The swarm setpoint loop stops rather than substitutes.** When the vehicle is disarmed, the FC has left GUIDED, or the neighbour table has gone stale, it stops emitting and the FC holds on its own terms.
+
+Everything below is about configuring the FC and understanding what ADOS shows you about it.
+
+## Before the first flight
+
+### 1. Set the failsafes on the flight controller
+
+Open the drone's **Failsafe** panel and the **Power** panel in Mission Control. At minimum, decide the answer to each of these before you fly:
+
+| Question | ArduPilot parameters | Where |
+|---|---|---|
+| What happens when the RC transmitter goes out of range? | `FS_SHORT_ACTN`, `FS_SHORT_TIMEOUT`, `FS_LONG_ACTN`, `FS_LONG_TIMEOUT`, `FS_THR_VALUE` | Failsafe panel |
+| What happens on a low battery? | `BATT_FS_LOW_VOLT`, `BATT_FS_LOW_ACT` | Failsafe panel |
+| What happens on a critically low battery? | `BATT_FS_CRT_VOLT`, `BATT_FS_CRT_ACT` | Power panel |
+| Where are the boundaries, and what happens at them? | `FENCE_ENABLE`, `FENCE_ACTION`, `FENCE_ALT_MAX`, `FENCE_RADIUS` | Failsafe or Geofence panel |
+| How high does the aircraft climb before returning? | `RTL_ALT` | Parameters editor |
+
+Two of these are easy to miss. The **critical** battery tier is on the Power panel, not the Failsafe panel, so setting only the low tier from the Failsafe panel leaves the second stage unset. And no panel edits `RTL_ALT`, so it has to be set in the generic parameters editor. A default `RTL_ALT` that is lower than the trees between the aircraft and home is the classic way to lose one.
+
+On a plane or VTOL the RC failsafe parameters are `THR_FAILSAFE` and `THR_FS_VALUE` instead.
+
+On PX4, the panel writes the equivalent PX4 parameters where a mapping exists: battery to `COM_LOW_BAT_ACT` and `BAT_LOW_THR`, the fence to `GF_ACTION`, `GF_MAX_VER_DIST`, and `GF_MAX_HOR_DIST`, and `RTL_ALT` to `RTL_RETURN_ALT`. PX4's link-loss *actions* are not surfaced by the panel, so set those in the parameters editor.
+
+On Betaflight the equivalents are `BF_FS_DELAY`, `BF_FS_OFF_DELAY`, `BF_FS_THROTTLE`, and `BF_FS_PROCEDURE`. On iNav, the failsafe panel exposes `failsafe_nav_mode`, `failsafe_min_distance_behaviour`, and `failsafe_min_distance`.
+
+### 2. Understand what GCS failsafe will and will not do for you
+
+This one is specific to running a companion computer, and it surprises people.
+
+The agent sends a heartbeat to the flight controller once a second, identifying itself as an onboard controller. That is deliberate: without it, ArduPilot would decide the GCS had vanished a few seconds after boot and trigger its GCS failsafe while the aircraft sat on the bench.
+
+The consequence is that **the FC's GCS failsafe is satisfied by the companion, not by your link to the aircraft**. Losing video and telemetry to your laptop does not trip it, because the agent is still talking to the FC from a few centimetres away. `FS_GCS_ENABL` only fires if the agent itself dies or the serial link between the companion and the FC breaks.
+
+So do not treat GCS failsafe as your downlink-loss protection. **RC failsafe, battery failsafe, and the geofence are the backstops that actually fire when you lose the aircraft.** Configure those.
+
+### 3. Work the pre-flight checklist
+
+Mission Control's cockpit checklist verifies 18 items, most of them against live telemetry rather than against your memory:
+
+- **Hardware:** battery above 20 percent, pack voltage above 10.5 V, props secured, frame intact, motors free
+- **Software:** 3D GPS fix, at least 8 satellites, EKF variances healthy, sensors healthy, pre-arm checks passing
+- **Environment:** wind acceptable, airspace clear, launch area clear, observers briefed
+- **Mission:** flight plan loaded, geofence set, RTL point set, emergency procedure reviewed
+
+Items with a telemetry source verify themselves. The rest you confirm by hand.
+
+<Note>
+The checklist's pre-arm item is derived from sensor health, not from the flight controller's own pre-arm text. Read the Health panel for the FC's actual pre-arm verdict and its named blockers. The two can disagree, and the FC is the one that decides whether the motors spin.
+</Note>
+
+There is a second, shorter checklist in the mission planner. That one is advisory, is not persisted, and does not gate arming. The cockpit checklist is the one that matters.
+
+## Arming
+
+Arming is a skill in the cockpit skill bar, not a button that can be brushed. It requires the aircraft to be disarmed, and it asks you to type **ARM** to confirm.
+
+If the checklist is not complete, the confirmation escalates: the typed phrase becomes **OVERRIDE**, and the override is written to the audit log. That is the design point. Skipping the checklist stays possible, because a field sometimes demands it, but it cannot happen quietly.
+
+Disarm requires typing **DISARM** and does not escalate.
+
+Two more gates worth knowing:
+
+- **Fleet-wide arming needs a separate arm-the-broadcast step.** Broadcast controls stay inert until you arm the broadcast, and that arming expires by itself after 5 seconds.
+- **Extensions can never arm the aircraft.** Arm and disarm, motor test, calibration, and reboot are hard-blocked in the extension command path regardless of declared permissions. Extensions may command takeoff, land, and RTL only, with takeoff altitude clamped between 1 and 120 m.
+
+### Editing parameters while armed
+
+Most parameter panels stay usable while the aircraft is armed, with a banner warning that writes go live, and a confirmation at save time.
+
+A small set is genuinely disabled while armed and connected: motor test, ESC and servo output configuration, DShot commands, PX4 actuator test, and frame class. Those are the ones where a write while armed spins a motor.
+
+## When the link drops
+
+### The radio link
+
+The receiving side does not treat silence alone as a fault. Video can be quiet for good reasons. It acts when video is silent **and** it has not heard the drone's presence beacon recently, which is the combination that means the link is genuinely gone rather than idle.
+
+Recovery goes in that order: it first tries the channel the peer last announced, and only then sweeps the band. Both ends return to the configured home channel on link loss, so the two sides meet at a known place instead of hunting for each other.
+
+The transmit side runs its own check. A transmitter whose byte counter has stopped moving while it is still being fed is treated as dead and restarted, because a process that is running is not the same as a process that is transmitting.
+
+Link state is reported as one of `disconnected`, `unpaired`, `auto_pairing`, `binding`, `connecting`, `connected`, `degraded`, or `rf_unverified`. The last one deserves attention: it means the radio is transmitting but nothing has confirmed reception. A transmitter with no listener looks identical to a healthy transmitter from the transmit side alone, so it is reported honestly rather than shown as connected.
+
+### The internet uplink
+
+On a ground station, the internet uplink fails over in order: Ethernet, then WiFi client, then cellular, then USB tether. A link has to fail three consecutive checks before it is dropped and pass three before it is trusted again, with a 30 second cooldown between switches, so a flapping interface does not thrash the routing table.
+
+This ladder carries the ground station's internet traffic. **It does not carry the aircraft's radio link, and there is no failover from the radio to cellular.** If the radio link to the drone is down, the drone is out of contact regardless of the ground station's internet.
+
+### The management link
+
+If the network you administer the box over goes dead, a guardian climbs a repair ladder without rebooting: re-assert the regulatory domain, renew DHCP, reconnect WiFi, bounce the interface, restart the network backend. It is on by default, and stays on if its configuration is missing or malformed, on the grounds that a missing config should not silently disable the thing that recovers the box.
+
+If a wired primary link stays down and onboard WiFi has a usable path, the box can fall back to a heartbeat-only reach-back. You keep seeing the node in Mission Control, and video and full telemetry correctly show as unavailable, because that path carries status and not the data plane.
+
+## Where to next
+
+- [Operating limits](/operations/operating-limits) - what has been measured, and what has not.
+- [Regulatory](/operations/regulatory) - your obligations as the operator.
+- [Recovery](/operations/recovery) - reaching a box that has stopped answering.
+- [Geofences and rally points](/mission-control/geofences-rally) - drawing the boundaries the FC enforces.
+- [Your first flight](/getting-started/your-first-flight) - the walkthrough.
