@@ -332,7 +332,8 @@
           {
             "group": "When Things Go Wrong",
             "pages": [
-              "operations/recovery"
+              "operations/recovery",
+              "operations/support"
             ]
           }
         ]

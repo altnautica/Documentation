@@ -1,0 +1,93 @@
+---
+title: "Support Escalation"
+description: "How to report a problem, and what to attach so it can be diagnosed."
+icon: "bug"
+lastUpdated: "2026-07-31"
+---
+
+# Support Escalation
+
+A field report is usually a sentence and a photograph of a screen. What settles it is the agent's own state at the time: which version, which profile, which services were up, what the radio counters said, what the black box recorded.
+
+`ados support-bundle` collects that into one archive.
+
+## Collect a bundle
+
+```bash
+ados support-bundle
+```
+
+It writes `ados-support-<device>-<timestamp>.tar.gz` to the current directory, or wherever `-o` points:
+
+```bash
+ados support-bundle -o /tmp/report.tar.gz
+```
+
+Run it on the node that has the problem, as close to the failure as you can. Collect before you reboot and before you reflash: a reboot clears the runtime state and a reflash destroys it.
+
+The archive is written readable only by its owner.
+
+### It sends nothing anywhere
+
+The command makes no outbound connection except to the agent on the box itself. It writes a file and stops. You decide who sees it.
+
+## What is in it
+
+| Area | Contents |
+|---|---|
+| Host | Platform, architecture, kernel, agent version |
+| Agent state | Full status, radio status, pairing info, services, configuration |
+| Diagnostics | `ados diag video` and `ados diag link` output |
+| Logs | The last 5000 black-box records |
+| Journal | The last 2000 lines for each of ten agent services |
+| System | Systemd unit states, failed units, addresses, routes, disk, memory |
+| Fleet | The fleet slot table, on a ground station that has one |
+| Manifest | What was collected, what was absent, what failed |
+
+A collector that fails does not abort the bundle. The failure is written into the archive and recorded in the manifest, because a service that will not answer is usually the one being reported.
+
+Read `MANIFEST.json` first. It separates three things that look alike from the outside: files collected, files absent because that node does not have them, and files that failed to collect.
+
+### Redaction
+
+Every file is redacted on the way in. Values under keys named like secrets are replaced while the key is kept, so the archive still shows that a key was configured without carrying it, and long base64 or hex runs are replaced wholesale to catch key material that is not behind a named key.
+
+<Note>
+Redaction removes what can be named. It is not a promise that nothing sensitive remains. Before attaching a bundle to a public issue, look through it. GPS traces in the black box are your flight locations, and network output shows your addressing.
+</Note>
+
+## Report it
+
+1. **Collect the bundle** on the affected node, before rebooting.
+2. **Open an issue** on the relevant repository:
+   - [ADOSDroneAgent](https://github.com/altnautica/ADOSDroneAgent/issues) for the drone or ground agent, the installer, the CLI, the radio link, or video
+   - [ADOSMissionControl](https://github.com/altnautica/ADOSMissionControl/issues) for the browser or desktop GCS, mission planning, or FC panels
+   - [ADOSExtensions](https://github.com/altnautica/ADOSExtensions/issues) for a first-party extension
+   - [ADOSAndroidGCS](https://github.com/altnautica/ADOSAndroidGCS/issues) for the Android app
+3. **Attach the bundle**, or the relevant parts of it if you would rather not attach the whole thing.
+4. **Say what you expected and what happened.** For anything involving the radio or video, include the reading you were looking at when you decided something was wrong. A signal figure or a packet count is worth more than a description.
+5. For real-time help, the [Discord community](https://discord.gg/uxbvuD4d5q) is faster than an issue, though an issue is what makes a fix trackable.
+
+## What makes a report diagnosable
+
+**Say which version.** It is in the bundle, but stating it up front saves a round trip.
+
+**Say whether it is reproducible**, and what reproduces it. A fault that happens once per flight and a fault that happens on every boot are different problems.
+
+**Distinguish what you observed from what you concluded.** "Video is dark and `bytesReceived` is not advancing" can be acted on. "The video pipeline is dead" cannot, and it is often wrong, because most of the ways to check a live pipeline by hand report a false zero.
+
+**Include the counters, not a snapshot.** Sample a growing counter two or three times a few seconds apart and say whether it moved. A single reading of a cumulative counter says nothing, and a queue-depth reading of zero on a healthy flow looks identical to a dead one.
+
+**For a radio problem, run `ados diag link` first** and paste it. Signal strength, decoded packets, decrypt errors, and FEC counts only come from real radio traffic, so they distinguish a genuinely dead link from a measurement error.
+
+**For a flight incident, include the flight controller's log too.** The `.bin` or `.ulg` from the FC records what the aircraft did. The support bundle records what the companion computer saw, which is a different question.
+
+## Security reports
+
+Do not open a public issue for a vulnerability. Report it privately through the security policy on the relevant repository so it can be fixed before it is described in public.
+
+## Where to next
+
+- [Recovery](/operations/recovery) - reaching and rebuilding a node.
+- [Troubleshooting](/drone-agent/troubleshooting) - symptom-by-symptom diagnosis.
+- [CLI reference](/drone-agent/cli-reference) - the full command surface.

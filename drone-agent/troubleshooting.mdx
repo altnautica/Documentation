@@ -292,7 +292,8 @@ climbing `controlRttMs` on the drone card.
 
 If the troubleshooting steps above do not solve your problem:
 
-1. Run `ados status --json` and save the output
-2. Collect relevant service logs: `sudo journalctl -u ados-* --since "1h ago" > /tmp/ados-logs.txt`
-3. Open an issue on [GitHub](https://github.com/altnautica/ADOSDroneAgent/issues) with the diagnostics output and logs
-4. Join the [Discord community](https://discord.gg/uxbvuD4d5q) for real-time help
+1. Run `ados support-bundle` on the affected node, before rebooting it. It collects status, configuration, diagnostics, black-box records, and service journals into one redacted archive, and sends nothing anywhere.
+2. Open an issue on [GitHub](https://github.com/altnautica/ADOSDroneAgent/issues) and attach it.
+3. Join the [Discord community](https://discord.gg/uxbvuD4d5q) for real-time help.
+
+See [Support escalation](/operations/support) for what the bundle contains and what makes a report diagnosable.
