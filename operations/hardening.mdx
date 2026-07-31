@@ -1,0 +1,121 @@
+---
+title: "Operator Hardening"
+description: "The credentials an ADOS node holds, what each one grants, and what a factory reset does and does not clear."
+icon: "lock"
+lastUpdated: "2026-07-31"
+---
+
+# Operator Hardening
+
+ADOS is built local-first. The design assumption is that the network a node sits on is a network you control. This page is about what that assumption buys, where it breaks, and what to do about it.
+
+## Start with the honest part
+
+<Warning>
+Anything within radio range of a paired fleet has substantial authority over it.
+
+A fleet shares one radio keypair, and the ground station distributes no separate per-node credential to prove who is calling. A request arriving over the radio therefore reaches the drone with on-box trust, bounded only by a denylist of paths that hand out authority. Radio range means telemetry, parameters, configuration, service control, and flight control.
+
+Plan around it. The radio key is the boundary, so treat a paired node the way you would treat a machine with an open shell, and factory reset anything that leaves your control.
+</Warning>
+
+A per-pair relay credential is being introduced to narrow this. It is delivered to each drone at pair time, which means the delivery itself happens over the radio: that is trust-on-first-use, and it shrinks the exposure to one exchange at pairing rather than every request afterwards. It does not eliminate it.
+
+## The credentials a node holds
+
+| Credential | Location | What it grants |
+|---|---|---|
+| Pairing key | `/etc/ados/pairing.json`, mode 0600 | The entire agent API. It is not scoped. |
+| Radio keypair | `/etc/ados/wfb/`, mode 0600 | Fleet membership, and with it authority over the linked node |
+| Dashboard PIN | `/etc/ados/dashboard-pin.json`, mode 0600 | Browser dashboard sessions |
+| AP passphrase | `/etc/ados/ap-passphrase`, mode 0600 | The ground station's WiFi network |
+| Extension-control token | `/etc/ados/mcp-token.json` | An alternative to the pairing key at the auth edge |
+| Service secrets | `/etc/ados/secrets/` | Tunnel token, setup token, relay peer secret |
+
+The pairing key is the one to be careful with. It is presented as an `X-ADOS-Key` header and it grants the whole data plane with no scoping: telemetry, parameters, configuration writes, service control, extension installation. There is no read-only variant.
+
+## Default credentials
+
+**No default password ships for SSH or for the dashboard.**
+
+- **SSH is not managed by ADOS at all.** The agent does not configure sshd, does not set a password, and does not touch root login or password authentication. Whatever your OS image shipped with is what you have. If that image has a default account and password, change it. This is the most likely default credential on your box and it is not one ADOS can fix for you.
+- The installer creates a system account with no login shell and no home directory, and sets no password on it.
+- **The dashboard has no default PIN.** With no PIN file present, the first visitor from the LAN sets one. Set it yourself, from the box, before the box goes anywhere.
+- **The AP passphrase is generated per unit** on first boot rather than shipped as a shared string. See [WiFi AP Mode](/ground-agent/wifi-ap#the-ap-passphrase).
+
+<Note>
+Two caveats on the AP passphrase. A value set in `network.hotspot.password` takes precedence over the generated one, so an image carrying that key gives every unit built from it the same passphrase. And a shared built-in remains as a fallback for the case where the system cannot produce randomness. Check `ados` on the box to see the passphrase it is actually using rather than assuming it generated one.
+</Note>
+
+## Locking down the access point
+
+The ground station's access point is WPA2-PSK with a per-unit passphrase, so it is not open. What to do beyond that:
+
+1. **Read the generated passphrase and keep it.** The installer summary, the `ados` status page, and the on-box panel all show it. The panel also shows a join QR code.
+2. **Do not put a shared passphrase in a fleet image.** If `network.hotspot.password` is set, every unit from that image shares one credential.
+3. **Turn the AP off if you do not use it.** Only if you have another way in. Disabling the AP on a box with no Ethernet and no USB tether means a monitor and keyboard to get it back.
+4. **Treat AP clients as trusted.** Devices on the AP reach the agent API, the video stream, and the MAVLink WebSocket. The AP subnet is treated as an operator route even on an unpaired box, which is what makes a fresh unit claimable.
+
+## Set the dashboard PIN
+
+The browser dashboard is gated by a 4 to 12 digit PIN. A correct PIN mints a session token presented as `X-ADOS-Dashboard-Session`.
+
+Set it from the box before deployment. Leaving it unset means the first visitor from the LAN sets it, which is convenient at the bench and wrong in the field.
+
+Wrong attempts lock out on a ladder: 5 wrong attempts locks for 30 seconds, 10 for 5 minutes, 15 for 30 minutes. A 4 digit PIN is a convenience gate whose real defences are the file mode, the reach boundary, and that lockout, not the strength of the PIN. Do not treat it as protection against an attacker already on your network.
+
+Clearing or changing the PIN rotates its salt, which revokes every live session.
+
+## The network ports
+
+| Port | Carries | Authentication |
+|---|---|---|
+| 8080 | Agent REST API and dashboard | Pairing key, or a dashboard session |
+| 8765 | MAVLink WebSocket | Ticket or pairing key, enforcement being enabled |
+| 5760 | Raw MAVLink over TCP | None, by design |
+| 14550 | Raw MAVLink over UDP | None, by design |
+
+The raw MAVLink endpoints are unauthenticated so a desktop GCS can attach to them. They speak to the flight controller.
+
+<Warning>
+Do not expose 8080, 8765, 5760, or 14550 to the internet, and do not put a powered-up drone on a network you do not control. Anything that can reach 5760 can command the flight controller.
+</Warning>
+
+The API is open when the node is unpaired, but only from a narrow set of peers: loopback, link-local, the access point subnet, and the USB gadget subnet. The public pairing routes stay reachable from the whole LAN so a fresh box can be claimed. Pair a node promptly rather than leaving it unpaired on a shared network.
+
+Loopback traffic is treated as on-box and bypasses API authentication, on the reasoning that a local shell already exceeds anything the API could grant. A forwarding header disqualifies a request from that treatment, so a tunnel terminating on localhost cannot impersonate a local operator.
+
+## What a factory reset clears
+
+| Item | Script | API path |
+|---|---|---|
+| Pairing key | cleared | cleared |
+| Radio keys | cleared | cleared |
+| Dashboard PIN | cleared | cleared |
+| Extension-control token | cleared | cleared |
+| AP passphrase | cleared | cleared |
+| Secrets and TLS material | cleared | cleared |
+| `config.yaml` | cleared | **kept** |
+| Device ID | cleared | **kept** |
+| Logs | cleared | **kept** |
+| `profile.conf` | **kept** | **kept** |
+| Hostname | **kept** | **kept** |
+
+Both paths clear every standing credential. They differ on identity and configuration, so pick deliberately. `profile.conf` is kept on purpose: without it a later upgrade can re-profile the box into the wrong kind of node.
+
+A reset does not wipe the filesystem and does not remove the agent. It also does not change the hostname, so a node handed to someone else still carries the name you gave it.
+
+## Before a node leaves your control
+
+1. `ados support-bundle` if you want a record of its state.
+2. Factory reset it, choosing the path that clears what you need cleared.
+3. Confirm the pairing key, radio keys, and AP passphrase are gone.
+4. Re-pair the remaining fleet if that node held fleet radio keys. Its copy of the fleet key is what gave it authority over the others.
+5. Reflash if the node held anything you care about beyond credentials. A reset clears credentials, not data.
+
+## Where to next
+
+- [Safety](/operations/safety) - configuring the aircraft's own protections.
+- [Recovery](/operations/recovery) - reaching and rebuilding a node.
+- [Security model](/developers/security-model) - the extension permission model.
+- [Pairing](/drone-agent/pairing) - how pairing works and how to redo it.
