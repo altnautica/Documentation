@@ -327,6 +327,12 @@
               "operations/operating-limits",
               "operations/regulatory"
             ]
+          },
+          {
+            "group": "When Things Go Wrong",
+            "pages": [
+              "operations/recovery"
+            ]
           }
         ]
       },

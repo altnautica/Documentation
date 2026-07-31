@@ -1,0 +1,144 @@
+---
+title: "Recovery"
+description: "Reaching a node that has stopped answering, and reinstalling one that is genuinely broken."
+icon: "life-ring"
+lastUpdated: "2026-07-31"
+---
+
+# Recovery
+
+A node that does not answer is usually reachable by a route you have not tried, not broken. Work through reaching it before you reach for a card reader.
+
+## Reaching a node that stopped answering
+
+### Try the name the agent advertises
+
+The agent publishes an mDNS service (`_ados._tcp`, port 8080) and the resolvable name is the box's **system hostname**, the one you set at install time:
+
+```bash
+curl -s http://<hostname>.local:8080/api/ping
+```
+
+The installer prints this URL on its completion summary. It is the address to keep, because unlike an IP address it survives the box getting a different lease.
+
+<Warning>
+`.local` resolution is not guaranteed. It has been observed failing on a box that was otherwise completely healthy and answering fine on its address. mDNS depends on the responder running on the node, on your own machine resolving mDNS at all, and on the network passing multicast. A name that does not resolve is not evidence of a dead node.
+
+Equally, a recorded IP address goes stale when the lease changes. Neither route is reliable on its own, which is why the agent advertises several and why you should try more than one before concluding anything.
+</Warning>
+
+### Try the other routes
+
+The agent advertises every way it can be reached, in priority order: the mDNS name, then per-interface LAN addresses, then the hotspot, then USB, then a cloud tunnel if one is configured. Any of them that is up will work.
+
+| Route | Address | When it helps |
+|---|---|---|
+| Ground station access point | `http://192.168.4.1:8080` | The box's own WiFi is up but its uplink is not |
+| USB gadget | `http://192.168.7.1:8080` | Nothing on the network works; plug in a USB cable |
+| LAN address | `http://<address>:8080` | mDNS is not resolving but the lease is intact |
+
+Both the access point and the USB gadget subnets are treated as operator routes by the agent even when it is unpaired, so they stay usable on a box you cannot otherwise reach.
+
+If you do not know the address, scan the network for the hostname rather than guessing at old addresses.
+
+### Check it from the box itself
+
+If you can get a shell on it:
+
+```bash
+ados                      # full status page
+ados status --json        # the same thing for scripts
+ados diag link            # radio link, with real counters
+ados diag video           # video pipeline, hop by hop
+ados logs query --limit 200
+```
+
+Reach for `ados diag` and `ados logs` before `journalctl`. The black-box log store survives reboots and holds telemetry and hardware history alongside the log lines, which the journal does not.
+
+Check whether services are actually up:
+
+```bash
+systemctl list-units 'ados*' --all
+systemctl list-units --state=failed
+```
+
+## Repairing without reinstalling
+
+Try these before a reflash. Each is idempotent.
+
+**A half-finished install** leaves checkpoints behind and can be resumed rather than restarted:
+
+```bash
+sudo ados install --status
+sudo ados install --resume
+```
+
+**An out-of-date or partially broken install** is repaired by re-running the installer in upgrade mode, which is exactly what `ados update` does. It preserves identity and configuration:
+
+```bash
+sudo ados update
+```
+
+**A radio that will not come up** may be missing its driver:
+
+```bash
+ados radio status
+ados radio install-driver
+```
+
+## Factory reset
+
+A factory reset clears credentials and pairing so the box comes back up as if it were new. It does not reinstall software.
+
+<Warning>
+There are two reset paths and they do not clear the same things.
+
+The **script** at `scripts/factory-reset.sh` also deletes `config.yaml`, the device ID, and the logs. The box comes back with a new identity and no configuration.
+
+The **API path**, used by the ground station's captive setup flow, keeps `config.yaml` and the device ID.
+
+Both clear the pairing key, the dashboard PIN, the extension-control token, the radio keys, the AP passphrase, the secrets directory, and TLS material. Both keep `profile.conf`, so the box does not lose its profile and get re-profiled by a later upgrade.
+</Warning>
+
+Neither path changes the hostname. Neither is available as a button in the browser dashboard.
+
+After a reset, reboot. The box comes up in setup mode with a freshly generated AP passphrase, so read the new one off the on-box panel or the `ados` status page.
+
+## Reflash and reinstall
+
+This is the supported recovery for a box that is genuinely broken, and it is deliberately not a repair-in-place procedure.
+
+<Note>
+Do not fix a broken node by editing files under `/opt/ados`, `/etc/ados`, or the systemd units. A patched runtime cannot be reproduced, does not survive the next update, and turns the next fault into an investigation of unknown state. Read-only inspection of those paths is fine. Changing them is not.
+
+Recovery is a clean image plus a fresh install from a known release. That gets you a node whose state you can reason about.
+</Note>
+
+The procedure:
+
+1. **Collect evidence first, if the box still answers at all.** Run `ados support-bundle`. Once you reflash, whatever caused the fault is gone. See [Support escalation](/operations/support).
+2. **Write a clean OS image** to the card or eMMC, following [Installation](/drone-agent/installation).
+3. **Install the agent**, passing the profile explicitly so the box cannot come up as the wrong kind of node:
+
+   ```bash
+   curl -sSL https://raw.githubusercontent.com/altnautica/ADOSDroneAgent/main/scripts/install.sh \
+     | sudo bash -s -- --profile drone --name my-drone
+   ```
+
+   Use `--profile ground_station` for a ground node. Setting `--name` here is what gives you a `<hostname>.local` to reach it by afterwards.
+4. **Re-pair.** Pairing keys, radio keys, and the AP passphrase were all on the old install and are gone. Pair the drone and ground station again, and re-pair Mission Control.
+5. **Verify before flying.** `ados` for overall status, `ados diag link` for the radio, `ados diag video` for the pipeline. Then work the pre-flight checklist in [Safety](/operations/safety).
+
+## Removing the agent
+
+```bash
+sudo ados uninstall            # leaves configuration in place
+sudo ados uninstall --purge    # removes configuration too
+```
+
+## Where to next
+
+- [Support escalation](/operations/support) - collecting a bundle and reporting a fault.
+- [Operator hardening](/operations/hardening) - what the credentials you just recreated actually grant.
+- [Troubleshooting](/drone-agent/troubleshooting) - symptom-by-symptom diagnosis.
+- [Installation](/drone-agent/installation) - the full install procedure.
