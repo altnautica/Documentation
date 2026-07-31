@@ -18,29 +18,35 @@ When `mavlink.serial_port` is empty in config (the default), the proxy scans ser
 1. Ports listed in the board profile's `uart_paths` (e.g., `/dev/ttyS0`, `/dev/ttyAMA0`)
 2. USB serial devices at `/dev/ttyACM*` and `/dev/ttyUSB*`
 
-For each candidate port, it opens the connection at the configured baud rate and listens for MAVLink heartbeat messages. The first port that sends a valid heartbeat within 5 seconds wins.
+For each candidate port it sweeps a list of baud rates, listening 1.5 seconds at each one for a MAVLink heartbeat. The first port and baud that produces a heartbeat wins. If the port is emitting MSP instead of MAVLink, the sweep stops there as well, because no baud will ever yield a heartbeat from an MSP flight controller.
 
-If no FC is found, the proxy retries every 10 seconds. This handles cases where the FC boots slower than the companion computer or gets power-cycled mid-flight.
+If no FC is found, the proxy backs off and retries, starting at 1 second and doubling to a 30 second ceiling. This handles cases where the FC boots slower than the companion computer or gets power-cycled mid-flight.
 
 ## Serial connection
 
 | Setting | Config key | Default |
 |---------|-----------|---------|
-| Port | `mavlink.serial_port` | Auto-detect |
-| Baud rate | `mavlink.baud_rate` | 57600 |
+| Port | `mavlink.serial_port` | Empty, which means autodetect |
+| Baud rate | `mavlink.baud_rate` | 57600, used only when `serial_port` is also set |
 | System ID | `mavlink.system_id` | 1 |
 | Component ID | `mavlink.component_id` | 191 |
 
-Common baud rates by firmware:
+### What baud your drone is actually running
 
-| Firmware | Default baud |
-|----------|-------------|
-| ArduPilot | 57600 or 921600 |
-| PX4 | 115200 or 921600 |
-| Betaflight | 115200 |
+`mavlink.baud_rate` is only honoured when `mavlink.serial_port` names a port. With the port left empty, the configured baud is not used at all and the proxy sweeps this list in order:
+
+```
+115200, 921600, 57600, 230400, 1500000, 38400, 19200
+```
+
+So a drone left on the default config most likely settles at 115200, not at the 57600 the config file shows. 57600 is third in the sweep, and it is also the last-ditch baud the proxy opens at when no candidate produced a heartbeat, which is a silent port rather than a working link.
+
+Two things follow. Setting `mavlink.baud_rate` on its own changes nothing, so pin `mavlink.serial_port` alongside it if you want a specific rate. And a fresh install behaves differently depending on what was plugged in at the time: the installer writes the detected port into the config when an FC is attached, which pins the link and skips the sweep, while a unit installed with no FC attached ships with an empty port and probes on every connect.
+
+Read back what the link actually settled on with `ados status`, rather than reading it off the config file.
 
 <Tip>
-For the best telemetry rates, use 921600 baud. At 57600, you are limited to roughly 60 messages per second. At 921600, you can push 500+ messages per second, which matters for high-rate attitude data and parameter downloads.
+A USB-CDC flight controller ignores the requested baud entirely, since bytes flow at the native USB rate. The sweep matters for FCs on a real UART. For those, 921600 carries high-rate attitude data and parameter downloads far better than 57600.
 </Tip>
 
 ## Multi-client distribution

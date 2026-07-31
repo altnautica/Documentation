@@ -30,8 +30,8 @@ agent:
   profile: "auto"         # auto | drone | ground_station
 
 mavlink:
-  serial_port: ""         # Auto-detected if empty
-  baud_rate: 57600        # Common: 57600, 115200, 921600
+  serial_port: ""         # Autodetected if empty
+  baud_rate: 57600        # Applies only when serial_port is set
   system_id: 1
   component_id: 191
   # MAVLink v2 message signing is managed from the GCS. The key lives in
@@ -197,9 +197,19 @@ mavlink:
   baud_rate: 57600
 ```
 
-Leave `serial_port` empty for auto-detection. The agent scans `/dev/ttyS*`, `/dev/ttyAMA*`, and `/dev/ttyACM*` based on the board profile's `uart_paths`. It tries each port at the configured baud rate and looks for MAVLink heartbeats.
+Leave `serial_port` empty for autodetection. The agent scans `/dev/ttyACM*`, `/dev/ttyAMA*`, `/dev/ttyUSB*`, and `/dev/ttyS*`, plus any USB serial device regardless of its node name.
 
-Common baud rates: 57600 (ArduPilot default), 115200 (PX4 default), 921600 (high-speed telemetry).
+`baud_rate` applies only when `serial_port` also names a port. With the port empty, the configured baud is skipped entirely and the agent sweeps `115200, 921600, 57600, 230400, 1500000, 38400, 19200`, listening 1.5 seconds at each for a heartbeat. A default-config drone therefore usually runs at 115200 even though the file says 57600.
+
+To pin a rate, set both keys:
+
+```yaml
+mavlink:
+  serial_port: "/dev/ttyS0"
+  baud_rate: 921600
+```
+
+Check what the link settled on with `ados status`, not by reading the config file. See [MAVLink Proxy](/drone-agent/mavlink-proxy#what-baud-your-drone-is-actually-running).
 
 ### Video codec
 
