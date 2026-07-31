@@ -71,11 +71,12 @@ These are real and in the code, unlike the figures above.
 | Limit | Value | Why |
 |---|---|---|
 | Transmit power floor | 5 dBm | Bring-up default |
-| Transmit power ceiling | 15 dBm | The USB adapter browns out above roughly 18 dBm sustained on host power |
-| Extension takeoff altitude | 1 to 120 m | Clamped in the extension command path |
+| Transmit power ceiling | 15 dBm | Configured maximum. The margin above it is a brownout guard, not a measured threshold |
 | Degraded link threshold | 50 percent loss, or -85 dBm | Reporting threshold |
 
 The transmit power clamp is a hardware protection, not a regulatory one, and it stays in force in every operating region posture. Raising transmit power past what the adapter's power supply can carry does not increase range, it drops the link. If you are running an adapter on a powered hub or external 5 V rather than host power, set `video.wfb.topology` accordingly so the brownout warning reflects your setup.
+
+The exact power at which a given adapter browns out has not been characterised. It depends on the adapter, the cable and the supply, so treat the ceiling as the tested configuration rather than a measured cliff.
 
 ## Where to next
 
