@@ -74,7 +74,21 @@ Two Unix domain sockets carry data between services:
 
 ### WebSocket endpoint
 
-The proxy exposes a WebSocket endpoint at port 8765 (configurable via `mavlink.endpoints`). This is the primary way ADOS Mission Control and other browser-based GCS tools connect to the drone. The endpoint authenticates clients with a short-lived HMAC ticket, minted by the agent and presented as a WebSocket subprotocol on connect.
+The proxy exposes a WebSocket endpoint at port 8765 (configurable via `mavlink.endpoints`). This is the primary way ADOS Mission Control and other browser-based GCS tools connect to the drone.
+
+The credential for that endpoint is a short-lived HMAC ticket. A client asks the agent for one with `POST /api/_ws/ticket`, which is itself gated by the pairing key, and presents it on connect as a WebSocket subprotocol:
+
+```js
+new WebSocket("ws://drone.local:8765/", ["ados-ws-ticket", token])
+```
+
+The ticket is signed with a key derived from the agent's pairing key, carries a scope, and expires after 30 seconds by default (120 seconds maximum). Because it is derived rather than stored, re-pairing or a factory reset invalidates every ticket already issued. A non-browser client can present the pairing key directly in an `X-ADOS-Key` header instead.
+
+<Warning>
+Ticket enforcement is being turned on and is not refusing connections yet. The flag is `mavlink.ws_proxy_enforce_auth`, currently `false`, and an unauthorized connection is recorded rather than rejected. The raw MAVLink endpoints on TCP 5760 and UDP 14550 have no credential at all, by design, so that a desktop GCS can attach.
+
+Until that lands, treat any network the agent is on as a network that can fly the aircraft. Keep the agent on a link you control, do not port-forward 8765, 5760, or 14550 to the internet, and do not join an untrusted WiFi network with a drone powered up. Set `mavlink.ws_proxy_enforce_auth: true` if you want the WebSocket refusing off-box connections now.
+</Warning>
 
 The WebSocket carries raw binary MAVLink frames, wire-compatible with the SITL bridge tool. No encoding changes, no JSON wrapping. The GCS decodes MAVLink in the browser using the same CRC and payload tables as pymavlink.
 
