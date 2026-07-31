@@ -1,0 +1,84 @@
+---
+title: "Operating Limits"
+description: "What has been measured on ADOS hardware, and what has not yet been characterised."
+icon: "gauge"
+lastUpdated: "2026-07-31"
+---
+
+# Operating Limits
+
+This page separates two things that often get printed side by side: what the radio and the software are capable of in principle, and what has been measured on ADOS hardware. Only the second kind is on this page.
+
+<Note>
+Where a figure has not been measured, this page says so rather than estimating. A number you can plan a flight against has to come from somewhere, and a plausible number with no measurement behind it is worse than an admitted gap.
+</Note>
+
+## Measured: the radio link
+
+From a bench run on a paired drone and ground station, with `ados diag link` and the receiver's own counters as independent sources:
+
+| Reading | Value |
+|---|---|
+| Signal strength | -36 dBm |
+| Decoded packets | 232 per second |
+| Throughput | 1.396 Mbps |
+| Decrypt errors | 0 |
+| Packet loss | 0 |
+| FEC blocks recovered / failed | 18 / 0 |
+
+Read this for what it is: a healthy link at close range, confirming the pipeline decodes cleanly end to end. It is not a range figure, and the throughput is what that session was carrying rather than a ceiling.
+
+Two things it does establish. Zero decrypt errors alongside a recovered-FEC count means the crypto and error correction are working on real radio frames, not on a loopback. And a signal this strong with zero loss is the shape of a healthy short-range link, which is the baseline to compare a degraded one against.
+
+The agent reports a link as degraded once loss passes 50 percent or signal falls below -85 dBm.
+
+## Measured: latency
+
+Glass-to-glass video latency over the ground station's WiFi access point sits under 100 ms in normal operation. This is the figure the video pipeline is built around and is quoted elsewhere in these docs.
+
+## Not yet characterised
+
+Each of the following would need controlled flight testing that has not been done. Do not plan against a number that is not here.
+
+### Range
+
+**Not characterised by our own flight testing.** The protocol and hardware are capable of long-range operation, and the [WFB-ng page](/drone-agent/wfb-ng) describes what the link is capable of with directional antennas. What has not happened is a measured range test on an ADOS aircraft producing a distance at which the link degrades, with the antennas, transmit power, and terrain recorded alongside it.
+
+Range depends on antenna gain and pattern on both ends, transmit power, terrain and line of sight, interference, and the regulatory limit where you fly. Any single number without those conditions attached would not transfer to your setup.
+
+If you need a range figure you can rely on, fly it yourself, incrementally, with the aircraft in sight and a working RC failsafe.
+
+### Endurance
+
+**Not characterised.** Flight time is a property of your airframe, battery, and payload, not of ADOS. The companion computer and radio draw power that shortens it, and that draw has not been characterised per board.
+
+### Altitude
+
+**No altitude ceiling has been measured**, and ADOS does not impose one. Your altitude limit is whatever your jurisdiction sets and whatever you configure in `FENCE_ALT_MAX`. See [Regulatory](/operations/regulatory).
+
+### Link budget
+
+**Not characterised.** No measured curve of signal strength against distance, transmit power, and antenna gain exists for ADOS hardware, so there is no link budget table to publish. The -36 dBm reading above is one point at close range, not a curve.
+
+### Client capacity
+
+Roughly 3 to 4 devices can stream video simultaneously over the ground station's 2.4 GHz access point before throughput degrades. This is a working figure from bench use rather than a characterised limit. Telemetry over WebSocket is far lighter and supports more clients.
+
+## Limits ADOS does enforce
+
+These are real and in the code, unlike the figures above.
+
+| Limit | Value | Why |
+|---|---|---|
+| Transmit power floor | 5 dBm | Bring-up default |
+| Transmit power ceiling | 15 dBm | The USB adapter browns out above roughly 18 dBm sustained on host power |
+| Extension takeoff altitude | 1 to 120 m | Clamped in the extension command path |
+| Degraded link threshold | 50 percent loss, or -85 dBm | Reporting threshold |
+
+The transmit power clamp is a hardware protection, not a regulatory one, and it stays in force in every operating region posture. Raising transmit power past what the adapter's power supply can carry does not increase range, it drops the link. If you are running an adapter on a powered hub or external 5 V rather than host power, set `video.wfb.topology` accordingly so the brownout warning reflects your setup.
+
+## Where to next
+
+- [Safety](/operations/safety) - what to configure before the first flight.
+- [Regulatory](/operations/regulatory) - the limits that are legal rather than physical.
+- [WFB-ng](/drone-agent/wfb-ng) - the radio link, its configuration, and its counters.

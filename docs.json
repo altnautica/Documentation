@@ -323,7 +323,8 @@
           {
             "group": "Before You Fly",
             "pages": [
-              "operations/safety"
+              "operations/safety",
+              "operations/operating-limits"
             ]
           }
         ]
