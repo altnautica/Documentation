@@ -75,11 +75,11 @@ The install takes 5-10 minutes depending on your internet speed and SD card clas
 After the reboot, you should see:
 
 1. **OLED** shows the Link screen with "No drone" (if not yet paired) or signal strength (if paired during install)
-2. **WiFi AP** broadcasts `ADOS-GS-XXXX` where `XXXX` is the last four hex digits of the device ID
+2. **WiFi AP** broadcasts `ADOS-GS-XXXX`, where `XXXX` is derived from the device ID
 3. **Setup webapp** is reachable at `http://setup.ados.local/` from any device on the AP
 
 <Note>
-The AP passphrase is printed on the case sticker for production units. For bench builds, the default passphrase is `ados-ground`. You can change it in the setup webapp or via the OLED menu.
+The AP passphrase is generated for that unit on first boot, so it differs from unit to unit and is not printed anywhere in advance. The installer prints it on its completion summary. Write it down there, or read it back later from the `ados` status page or the on-box panel. See [WiFi AP Mode](/ground-agent/wifi-ap#the-ap-passphrase).
 </Note>
 
 ## Verifying the install

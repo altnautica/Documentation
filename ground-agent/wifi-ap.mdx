@@ -36,7 +36,7 @@ The onboard WiFi radio hosts the access point on 2.4 GHz. The dedicated video-li
 
 <Steps>
   <Step title="Join the WiFi network">
-    Look for `ADOS-GS-XXXX` in your WiFi list. The `XXXX` suffix is the last four hex digits of the ground station device ID. Enter the passphrase printed on the case (default for bench builds: `ados-ground`).
+    Look for `ADOS-GS-XXXX` in your WiFi list. The `XXXX` suffix is derived from the ground station's device ID. The passphrase is generated for that unit on first boot. See [The AP passphrase](#the-ap-passphrase) below for where to read it.
   </Step>
   <Step title="Open the browser">
     Navigate to `http://192.168.4.1:4000` for Mission Control, or `http://setup.ados.local/` for the setup webapp. If Mission Control is not installed on the ground node, the setup webapp is the default landing page.
@@ -85,6 +85,32 @@ Once connected to the AP, your browser can reach:
 Up to 3-4 devices can stream video simultaneously over the 2.4 GHz AP before throughput starts to degrade. Each client gets its own WebRTC session from MediaMTX. Telemetry over WebSocket is lightweight and supports many more clients.
 
 Only one client at a time has pilot-in-command authority (the ability to send stick inputs to the drone). The first client with an active gamepad claims PIC. Other clients can request it through Mission Control.
+
+## The AP passphrase
+
+The access point is WPA2-PSK. There is no open mode and no passphrase printed in advance, because the agent generates one for that unit on first boot. Two units flashed from the same image get different passphrases.
+
+The generated value is 12 characters drawn from `ABCDEFGHJKMNPQRSTUVWXYZ23456789`. The alphabet leaves out `0`, `O`, `1`, `I`, and `L` so that a passphrase read off a small display and typed into a phone does not fail on a character you cannot tell apart. It is stored at `/etc/ados/ap-passphrase`, readable only by root.
+
+### Where to read it
+
+| Surface | What to look for |
+|---|---|
+| Installer completion summary | A `Wi-Fi access point` section with the network name and passphrase. This is the moment to write it down. |
+| `ados` status page | The `wifi key` row. Run `ados` on the box or over SSH. |
+| On-box panel | The access-point page shows the name, the passphrase, and a join QR code your phone camera can scan. |
+
+The passphrase is deliberately not returned by the REST API and is not shown in the browser dashboard. Those surfaces answer anything that can already reach the ground station, which is the population the access point exists to admit on purpose.
+
+### If a passphrase is set in config
+
+`network.hotspot.password` takes precedence over the generated value. That is there so a fleet can deliberately run one shared credential, but it means every unit built from a config that carries the same value shares one passphrase. Check that key before you roll an image out to more than one box.
+
+To change the passphrase, use the ground-station network settings or `PUT /api/v1/ground-station/network/ap`. There is no `ados` command for it.
+
+<Note>
+A factory reset deletes `/etc/ados/ap-passphrase` and clears a configured passphrase, so the unit generates a fresh one on the next boot. Anyone who wrote down the old one loses access, which is the point.
+</Note>
 
 ## WiFi AP configuration
 
