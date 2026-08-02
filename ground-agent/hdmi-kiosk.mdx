@@ -9,7 +9,7 @@ lastUpdated: "2026-06-18"
 
 Plug a monitor and a gamepad into the ground station SBC. The agent launches Chromium in kiosk mode, rendering the Mission Control HUD route at full screen. You get video, telemetry overlays, and stick control without a laptop, phone, or internet connection.
 
-<Frame caption="HDMI kiosk showing the /hud route with video background, attitude indicator, and telemetry overlays">
+<Frame caption="HDMI kiosk showing the cockpit: video background, attitude indicator, and telemetry overlays">
   <img src="/images/placeholder-hdmi-kiosk.png" alt="Ground station HDMI output showing fullscreen video with HUD overlay" />
 </Frame>
 
@@ -19,21 +19,21 @@ Plug a monitor and a gamepad into the ground station SBC. The agent launches Chr
 - Any HDMI monitor or display (7" field monitors work well)
 - USB or Bluetooth gamepad (Logitech F310, Xbox, PS4, PS5, 8BitDo)
 
-The ground station must have Mission Control installed locally. The install script handles this.
+The agent serves the cockpit itself, on its own HTTP surface. Nothing else needs installing for the panel to work.
 
 ## How it works
 
-When the ground station detects a display output at `/dev/dri/card0`, the kiosk path comes up:
+When a display is connected, the kiosk path comes up. The DRM node is not assumed to be `card0`: the service scans every card for a connected connector, because on a Pi 4 the render node and the display are different cards, and it waits for one to appear rather than checking once (the driver probes asynchronously, so a one-shot check loses the boot race).
 
-1. A local Mission Control build is served on `http://localhost:4000`. The install handles serving this build; the agent does not bundle or serve a GCS build itself, so the kiosk assumes the URL is reachable.
-2. **`ados-kiosk`** launches Chromium inside the `cage` Wayland compositor, pointing at `http://localhost:4000/hud`
-3. **Chromium** renders the HUD route in fullscreen kiosk mode, with no address bar, no tabs, no browser chrome
+1. The agent serves the cockpit at `http://localhost:8080/cockpit/` — a light single-page app served by the agent's own front. The kiosk waits for that URL to answer before launching, so the panel never lands on an error page it will not retry from.
+2. **`ados-kiosk`** launches Chromium pointed at it, either inside the `cage` Wayland compositor (when the board has no desktop, the appliance case) or as a fullscreen window inside a running desktop session (cage needs the DRM master, which a running compositor already holds).
+3. **Chromium** renders it fullscreen, with no address bar, no tabs, no browser chrome. Its profile and cache are kept in a RAM-backed directory with a bounded cache, so a panel running for months does not wear out the card.
 
-The display chain runs locally on the SBC. No network traffic, no external server. Video from WFB-ng flows through MediaMTX (`ados-mediamtx-gs`) on localhost. Telemetry comes from the local MAVLink WebSocket.
+The display chain runs locally on the SBC. No network traffic, no external server. Video from the radio link flows through MediaMTX (`ados-mediamtx-gs`) on localhost. Telemetry comes from the local MAVLink WebSocket.
 
-## The HUD layout
+## The cockpit layout
 
-The `/hud` route is a stripped-down flight view designed for fullscreen use:
+The cockpit is a flight view designed for a small fullscreen panel:
 
 - **Full-frame video background** (WebRTC from the local MediaMTX)
 - **Top bar:** link RSSI, flight mode, battery percentage, altitude, speed, GPS satellite count
@@ -41,7 +41,7 @@ The `/hud` route is a stripped-down flight view designed for fullscreen use:
 - **Corner alerts:** failsafe indicators, home distance, connection health
 - No menus, no maps, no multi-drone fleet views
 
-This is the pilot-in-command view. For mission planning, configuration, and fleet management, use a laptop connected over WiFi or USB.
+This is the pilot-in-command view. For mission planning and fleet management, use a laptop connected over WiFi or USB.
 
 ## Performance on Pi 4B
 
