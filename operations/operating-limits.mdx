@@ -15,20 +15,20 @@ Where a figure has not been measured, this page says so rather than estimating. 
 
 ## Measured: the radio link
 
-From a bench run on a paired drone and ground station, with `ados diag link` and the receiver's own counters as independent sources:
+From two separate bench runs on a paired drone and ground station, with `ados diag link` and the receiver's own counters as independent sources:
 
-| Reading | Value |
-|---|---|
-| Signal strength | -36 dBm |
-| Decoded packets | 232 per second |
-| Throughput | 1.396 Mbps |
-| Decrypt errors | 0 |
-| Packet loss | 0 |
-| FEC blocks recovered / failed | 18 / 0 |
+| Reading | First run | Second run |
+|---|---|---|
+| Signal strength | -36 dBm | -41 dBm |
+| Decoded packets | 232 per second | 308 per second |
+| Throughput | 1.396 Mbps | 1.6 Mbps |
+| Decrypt errors | 0 | 0 |
+| Packet loss | 0 | not measured |
+| FEC blocks recovered / failed | 18 / 0 | not recorded |
 
-Read this for what it is: a healthy link at close range, confirming the pipeline decodes cleanly end to end. It is not a range figure, and the throughput is what that session was carrying rather than a ceiling.
+Read these for what they are: healthy links at close range, confirming the pipeline decodes cleanly end to end. Neither is a range figure, and the throughput in each is what that session happened to be carrying rather than a ceiling.
 
-Two things it does establish. Zero decrypt errors alongside a recovered-FEC count means the crypto and error correction are working on real radio frames, not on a loopback. And a signal this strong with zero loss is the shape of a healthy short-range link, which is the baseline to compare a degraded one against.
+Two things they do establish. Zero decrypt errors alongside a recovered-FEC count means the crypto and error correction are working on real radio frames, not on a loopback. And a signal this strong with zero loss is the shape of a healthy short-range link, which is the baseline to compare a degraded one against. The second run reached the same shape independently, after both ends were re-paired from scratch.
 
 The agent reports a link as degraded once loss passes 50 percent or signal falls below -85 dBm.
 
@@ -73,6 +73,42 @@ These are real and in the code, unlike the figures above.
 | Transmit power floor | 5 dBm | Bring-up default |
 | Transmit power ceiling | 15 dBm | Configured maximum. The margin above it is a brownout guard, not a measured threshold |
 | Degraded link threshold | 50 percent loss, or -85 dBm | Reporting threshold |
+| Flight controller heartbeat timeout | 4 seconds | Past this the link is reported as not alive, and vehicle telemetry is withheld rather than shown frozen |
+| Default takeoff altitude | 10 m | Used when a takeoff command carries no altitude |
+| Takeoff altitude from an extension | 1 m to 120 m | Clamped. Extensions cannot command arm, disarm, motor test, calibration, or reboot at all |
+| Video recording segment | 30 minutes | Maximum duration before a new segment starts |
+| Log store size | 1 GB | Includes the write-ahead log. Oldest data is evicted first |
+| Log retention | 30 days raw, 365 days for rollups | Rollups survive the raw data they were derived from |
+| Cellular data cap | 5 GB per period by default | Warns at 80 percent, throttles to 256 kbps at 95 percent, blocks at 100 percent |
+
+### Video defaults
+
+The primary camera defaults to **1280x720 at 30 fps, 4000 kbps**. On a fleet, non-primary
+aircraft stream a thumbnail at **320x180 at 1 fps, 50 kbps** instead, so that adding aircraft
+costs a small fraction of the channel rather than another full video stream.
+
+### Fleet size
+
+The radio addressing scheme supports up to **24 aircraft** on one ground station.
+
+<Warning>
+Do not read 24 as a supported configuration at default settings. At the default modulation
+rate, one full-rate video stream alone occupies roughly half the channel, and a fleet of 24
+would need more airtime than the channel has.
+
+**The committed fleet size at default settings is 8**: one aircraft streaming full-rate video
+and seven on thumbnails. Reaching 24 requires the adaptive modulation ladder to be holding a
+higher rate, which depends on signal quality and is not guaranteed at range.
+</Warning>
+
+### Guided setpoints decay
+
+Anything commanding the aircraft through guided setpoints, including follow behaviours and
+swarm control, has to keep sending. Most autopilots brake roughly **3 seconds** after the last
+setpoint and then run their own failsafe. A single setpoint does not hold; it decays.
+
+This is a property of the flight controller, not of ADOS, and it is the reason a companion-side
+behaviour that stops emitting causes the aircraft to hold position rather than continue.
 
 The transmit power clamp is a hardware protection, not a regulatory one, and it stays in force in every operating region posture. Raising transmit power past what the adapter's power supply can carry does not increase range, it drops the link. If you are running an adapter on a powered hub or external 5 V rather than host power, set `video.wfb.topology` accordingly so the brownout warning reflects your setup.
 

@@ -50,6 +50,7 @@ ados                      # full status page
 ados status --json        # the same thing for scripts
 ados diag link            # radio link, with real counters
 ados diag video           # video pipeline, hop by hop
+ados diag storage         # write rate, throttling, store footprint
 ados logs query --limit 200
 ```
 
@@ -61,6 +62,86 @@ Check whether services are actually up:
 systemctl list-units 'ados*' --all
 systemctl list-units --state=failed
 ```
+
+## Three symptoms worth triaging before anything else
+
+### The node will not boot
+
+A node that gets no further than a blank screen or a boot loop is not reachable over the
+network, so the diagnostics above do not apply. Work in this order.
+
+1. **Power first.** An under-powered supply, or an adapter drawing more than the rail can carry,
+   presents as a board that boots partway and restarts. `ados diag storage` reports the board's
+   own undervoltage and thermal-throttle flags, which is worth checking on any node that has
+   been rebooting on its own, once the node is reachable again.
+2. **Read the card on another machine.** A full filesystem and a corrupted root are both
+   visible from a card reader, and both look identical from the outside.
+3. **Reflash.** If the card is intact and the box still will not come up, this is the supported
+   recovery. See below.
+
+<Note>
+A node that reboots repeatedly, rather than failing to start once, is worth investigating
+before reflashing. Reflashing clears the evidence and a cause that is still present will
+reappear. If the box is reachable at all between reboots, collect a support bundle first.
+</Note>
+
+### The radio link is down
+
+Check the link and the pairing as two separate questions, because they fail separately and the
+answers point in different directions.
+
+```bash
+ados diag link            # is anything decoding?
+ados radio status         # is this box paired, and is its radio up at all?
+```
+
+Read the link state rather than the packet counters alone. `rf_unverified` is the one to know:
+it means this end is transmitting and nothing has confirmed receiving it. A transmitter with no
+listener looks identical to a healthy transmitter when you only look at the transmit side, so
+this state is reported honestly instead of as connected.
+
+<Warning>
+A well-formed radio key is not a working radio key. If one end has been reflashed or
+re-imaged, the other end may still hold a key for a peer that no longer exists. It will
+transmit into nothing while every local check passes, because the key file itself is perfectly
+valid.
+
+If `ados diag link` shows this end transmitting with nothing decoding, and both ends claim to
+be paired, re-pair them rather than continuing to diagnose the radio. Run `ados pair --role gs`
+on the ground station and `ados pair --role drone` on the aircraft.
+</Warning>
+
+Also confirm both ends are on the same channel, and that a pinned operating region is not
+excluding the channel one of them is trying to use. See [Regulatory](/operations/regulatory).
+
+### Video is black
+
+Video crosses several stages, and each one fails differently. Start at the source and work
+outward rather than guessing.
+
+```bash
+ados diag video
+```
+
+It reports a verdict for every stage and names the one where video stops, so read that name
+before changing anything.
+
+| Where it stops | Usually means |
+|---|---|
+| At the camera | Camera not detected, or a source that does not match the configured one. Check the camera is enumerated at all. |
+| In the pipeline | Encoder or pipeline fault. The logs carry the encoder's own error. |
+| At the radio | Not a video fault. Diagnose the link first, using the section above. |
+| At the viewer, with every stage flowing | The stream is being produced and not displayed. Check the viewer URL and, on a browser that has been open across an update, do one hard reload. |
+
+<Note>
+If the radio link is unverified, video will be black on the ground with a pipeline that is
+working perfectly on the aircraft. Confirm the link before investigating the camera, because
+the two symptoms are indistinguishable from the receiving end.
+</Note>
+
+On a ground station driving an HDMI panel, a black panel with a healthy link is a display-side
+fault rather than a video-pipeline one. Check that the browser process is actually running, not
+just the unit that supervises it.
 
 ## Repairing without reinstalling
 

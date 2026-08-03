@@ -37,6 +37,7 @@ setup, remote access) lives in the local setup webapp or ADOS Mission Control.
 
 | Subgroup | Use it for |
 |---|---|
+| `ados diag` | Per-hop verdicts on the video pipeline, the radio link, and storage wear. |
 | `ados hardware` | Inspect the persisted hardware snapshot and bust the hardware-check cache. |
 | `ados logs` | Query, tail, aggregate, export, and push the black-box log store. |
 | `ados network` | Inspect and manage network adapters: stable-MAC pinning and the operating-region posture. |
@@ -171,6 +172,32 @@ The `ados plugin` subgroup manages the agent plugin host: install, enable, disab
 `install`, `enable`, `disable`, `remove`, and `perms --revoke` prompt for confirmation by default. Pass `--yes` to skip prompts in scripts.
 
 The full operator and OEM guide is at [Plugins](/drone-agent/plugins). Plugin authoring lives under the [Developers](/developers/your-first-plugin) tab.
+
+## `ados diag`
+
+Per-hop verdicts on the subsystems that fail most often. Reach for these before `journalctl`:
+each one reports what it measured and how, rather than leaving you to infer a verdict from
+raw output.
+
+| Command | What it does |
+|---|---|
+| `ados diag video [--json]` | Per-hop verdict on the video pipeline. Names the hop where video stops, or reports every hop flowing. |
+| `ados diag link [--json]` | Radio link diagnosis, with the receiver's real counters: signal, decoded packets per second, decrypt errors, packet loss, FEC recovered and failed, bitrate. |
+| `ados diag storage [--json]` | Storage-wear verdict: write rate in KB/s and GB/day with its measurement window, the device, power and thermal throttle flags, log-store footprint, and any quarantined stores. |
+
+`ados diag link` reports the decode verdict and the pairing state as two separate things, on
+purpose. A box can be paired and decoding nothing, and the two answers point at different
+faults. It also says so plainly when neither end measured packet loss, rather than reporting
+zero loss it did not observe.
+
+`ados diag storage` reads back wear the box has been recording all along. It is the first thing
+to check on a node that has been rebooting on its own, because undervoltage and thermal
+throttling both show up there.
+
+<Note>
+`ados diag` does not appear in `ados help`. It is a working diagnostic group rather than a
+first-run command, and it is fully supported.
+</Note>
 
 ## `ados hardware`
 

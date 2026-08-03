@@ -21,6 +21,7 @@ Concretely:
 
 - **No geofence enforcement in the agent.** The agent can republish a geofence breach the FC reports, as a notification. It never commands anything in response.
 - **No autonomous RTL.** `rtl` exists only as a command you send.
+- **No pre-arm checks of its own.** The agent relays your arm request to the flight controller and reports back what the FC decided, including the FC's own reason text when it refuses. Every arming rule that exists lives in the flight controller. If the FC's pre-arm checks are disabled, nothing in ADOS re-adds them.
 - **The swarm setpoint loop stops rather than substitutes.** When the vehicle is disarmed, the FC has left GUIDED, or the neighbour table has gone stale, it stops emitting and the FC holds on its own terms.
 
 Everything below is about configuring the FC and understanding what ADOS shows you about it.
@@ -82,6 +83,38 @@ If the checklist is not complete, the confirmation escalates: the typed phrase b
 
 Disarm requires typing **DISARM** and does not escalate.
 
+### What a command confirmation means
+
+A command is not reported as successful until the flight controller acknowledges it. The agent
+sends the command, waits about 1.2 seconds, and resends up to two more times before giving up.
+If the FC replies that it has accepted the command but needs time, the agent waits up to
+8 seconds more for the outcome.
+
+If no acknowledgement arrives inside that budget, the agent reports the command as
+**not observed**. It never reports a success it did not see. Treat an unconfirmed command as
+one that may or may not have reached the aircraft, and check the vehicle's actual state before
+sending it again.
+
+When the FC refuses a command, its own reason text is attached to the refusal. That text is the
+authoritative explanation, not anything ADOS infers.
+
+## The kill switch
+
+The cockpit offers a kill switch alongside arm and disarm. It is not a stronger disarm.
+
+<Warning>
+The kill switch is an emergency motor cut. It force-disarms immediately and **bypasses the
+flight controller's in-flight safety checks**, which normally refuse a disarm while airborne.
+An aircraft in the air will stop its motors and fall.
+
+Use it when the alternative is worse than the aircraft falling where it currently is. Do not
+use it as a quicker way to disarm on the ground, because it is a habit that transfers into
+the air.
+</Warning>
+
+A normal `disarm` is the safe command. It goes through the FC's checks, which is exactly why
+it will refuse while the aircraft is flying.
+
 Two more gates worth knowing:
 
 - **Fleet-wide arming needs a separate arm-the-broadcast step.** Broadcast controls stay inert until you arm the broadcast, and that arming expires by itself after 5 seconds.
@@ -92,6 +125,25 @@ Two more gates worth knowing:
 Most parameter panels stay usable while the aircraft is armed, with a banner warning that writes go live, and a confirmation at save time.
 
 A small set is genuinely disabled while armed and connected: motor test, ESC and servo output configuration, DShot commands, PX4 actuator test, and frame class. Those are the ones where a write while armed spins a motor.
+
+<Note>
+These blocks live in the interface, not in the agent. A parameter write that reaches the
+agent's API directly is not refused for being sent while armed. Treat the disabled panels as
+a guard against a mistake, not as an interlock that something else is enforcing on your behalf.
+</Note>
+
+### One parameter the agent refuses outright
+
+The agent will not write `SYSID_THISMAV`, or any other parameter that changes the vehicle's own
+MAVLink identity. The write is refused with a reason rather than accepted.
+
+This is deliberate. The agent addresses the vehicle at system id 1. Changing the vehicle's
+system id would make it unreachable by the very connection needed to change it back, and would
+also stop `arm`, `disarm`, `mode`, and `rtl` reaching the aircraft. There is no way to undo it
+from the agent afterwards.
+
+If you genuinely need a non-default system id, set it with a parameter tool connected directly
+to the flight controller over USB.
 
 ## When the link drops
 
