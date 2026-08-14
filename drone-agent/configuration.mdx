@@ -41,6 +41,9 @@ mavlink:
       host: "0.0.0.0"
       port: 8765
       enabled: true
+  ws_proxy_enforce_auth: true    # Paired node refuses an unauthorized WebSocket
+  raw_proxy_enforce_auth: false  # TCP 5760, UDP 14550/14551: no credential channel
+  aux_uplink_enforce_origin: false  # Refuse an unidentified caller the radio uplink
 
 video:
   mode: "wfb"             # wfb | rtsp | disabled
@@ -134,7 +137,6 @@ pairing:
   convex_url: ""
   beacon_interval: 30
   heartbeat_interval: 60
-  code_ttl: 900
 
 discovery:
   mdns_enabled: true
@@ -146,7 +148,6 @@ vision:
   confidence_threshold: 0.5
   models_dir: "/opt/ados/models/vision"
   models_cache_max_mb: 500
-  auto_download: true
 
 swarm:
   enabled: false
@@ -170,7 +171,6 @@ ground_station:
     oled: {}
     buttons: {}
     screens: {}
-  use_live_state_ipc: true
 
 ui:
   theme: "dark"             # dark | light

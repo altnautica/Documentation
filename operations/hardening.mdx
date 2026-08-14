@@ -44,14 +44,14 @@ The pairing key is the one to be careful with. It is presented as an `X-ADOS-Key
 - **The AP passphrase is generated per unit** on first boot rather than shipped as a shared string. See [WiFi AP Mode](/ground-agent/wifi-ap#the-ap-passphrase).
 
 <Note>
-Two caveats on the AP passphrase. A value set in `network.hotspot.password` takes precedence over the generated one, so an image carrying that key gives every unit built from it the same passphrase. And a shared built-in remains as a fallback for the case where the system cannot produce randomness. Check `ados` on the box to see the passphrase it is actually using rather than assuming it generated one.
+Two caveats on the AP passphrase. A value set in `network.hotspot.password` takes precedence over the generated one, so an image carrying that key gives every unit built from it the same passphrase. And if the system cannot produce randomness the generator fails closed: nothing is written and the access point does not come up, rather than substituting a string every unit would share. Check the passphrase the box is actually using rather than assuming it generated one.
 </Note>
 
 ## Locking down the access point
 
 The ground station's access point is WPA2-PSK with a per-unit passphrase, so it is not open. What to do beyond that:
 
-1. **Read the generated passphrase and keep it.** The installer summary, the `ados` status page, and the on-box panel all show it. The panel also shows a join QR code.
+1. **Read the generated passphrase and keep it.** The installer summary, the `ados` status page, and the on-box panel all show it. The panel also shows a join QR code. `ados network ap-passphrase` prints the value on its own with nothing around it, which is the one to use from a script or a pipe.
 2. **Do not put a shared passphrase in a fleet image.** If `network.hotspot.password` is set, every unit from that image shares one credential.
 3. **Turn the AP off if you do not use it.** Only if you have another way in. Disabling the AP on a box with no Ethernet and no USB tether means a monitor and keyboard to get it back.
 4. **Treat AP clients as trusted.** Devices on the AP reach the agent API, the video stream, and the MAVLink WebSocket. The AP subnet is treated as an operator route even on an unpaired box, which is what makes a fresh unit claimable.
@@ -71,14 +71,16 @@ Clearing or changing the PIN rotates its salt, which revokes every live session.
 | Port | Carries | Authentication |
 |---|---|---|
 | 8080 | Agent REST API and dashboard | Pairing key, or a dashboard session |
-| 8765 | MAVLink WebSocket | Ticket or pairing key, enforcement being enabled |
-| 5760 | Raw MAVLink over TCP | None, by design |
-| 14550 | Raw MAVLink over UDP | None, by design |
+| 8765 | MAVLink WebSocket | Ticket or pairing key. `mavlink.ws_proxy_enforce_auth` defaults on, so a paired node refuses a handshake that carries neither. |
+| 5760 | Raw MAVLink over TCP | Off by default. `mavlink.raw_proxy_enforce_auth` is the gate, and it ships `false`. |
+| 14550, 14551 | Raw MAVLink over UDP | Off by default, same `mavlink.raw_proxy_enforce_auth` flag as 5760. |
 
-The raw MAVLink endpoints are unauthenticated so a desktop GCS can attach to them. They speak to the flight controller.
+The raw MAVLink endpoints admit a connection with no credential by default, so a desktop GCS can attach. They speak to the flight controller.
+
+`mavlink.raw_proxy_enforce_auth` turns that into a refusal, and it ships off rather than on for a reason worth knowing before you flip it: a MAVLink byte stream has no handshake and no headers, so there is nowhere for a caller to carry a credential and the peer address is the only thing the agent learns. With the flag on, a paired node admits loopback and refuses every off-box peer on all three raw ports. An off-box desktop ground station is then locked out with nothing it can present to get back in, so treat the flag as a deliberate lockdown of the third-party GCS path rather than as hardening you turn on and forget. The WebSocket on 8765 enforces by default because it has two channels a caller can actually use, the `X-ADOS-Key` header and the `ados-ws-ticket` subprotocol.
 
 <Warning>
-Do not expose 8080, 8765, 5760, or 14550 to the internet, and do not put a powered-up drone on a network you do not control. Anything that can reach 5760 can command the flight controller.
+Do not expose 8080, 8765, 5760, 14550, or 14551 to the internet, and do not put a powered-up drone on a network you do not control. Anything that can reach 5760 can command the flight controller.
 </Warning>
 
 The API is open when the node is unpaired, but only from a narrow set of peers: loopback, link-local, the access point subnet, and the USB gadget subnet. The public pairing routes stay reachable from the whole LAN so a fresh box can be claimed. Pair a node promptly rather than leaving it unpaired on a shared network.

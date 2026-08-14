@@ -56,26 +56,17 @@ flowchart TB
         DispProbe["ados-display-probe (Rust)<br/>panel detect"]
         PIC["ados-pic (Rust)<br/>panel arbiter"]
         Input["ados-input (Rust)<br/>joystick + touch"]
-        Buttons["ados-buttons (Python)<br/>GPIO input"]
-        Uplink["ados-uplink-router<br/>runs ados-net (Rust)<br/>uplink matrix"]
-        Ethernet["ados-ethernet (Python)<br/>wired uplink"]
-        Modem["ados-modem (Python)<br/>cellular uplink"]
+        Uplink["ados-uplink-router<br/>runs ados-net (Rust)<br/>uplink matrix: wired, WiFi station,<br/>cellular, CDC-NCM tether"]
         HostAP["ados-hostapd (C)<br/>WiFi AP"]
         MediaMTXGS["ados-mediamtx-gs<br/>RTSP + WHEP"]
         Kiosk["ados-kiosk<br/>Chromium HDMI"]
-        USBGadget["ados-usb-gadget<br/>CDC-NCM tether"]
         Captive["ados-setup-captive + ados-dnsmasq-gs<br/>first-boot portal"]
-    end
-
-    subgraph CrossProfile["Cross-Profile (any profile)"]
-        WiFiClient["ados-wifi-client (Python)<br/>WiFi station"]
     end
 
     Supervisor --> Core
     Supervisor --> HW
     Supervisor --> OnDemand
     Supervisor --> GroundOnly
-    Supervisor --> CrossProfile
 ```
 
 Distributed-receive roles add three more ground-station units when enabled: `ados-batman` (mesh carrier), `ados-wfb-relay` (relay role), and `ados-wfb-receiver` (receiver role).
@@ -195,25 +186,21 @@ The result is written to `/etc/ados/profile.conf` with the full fingerprint snap
     - `ados-discovery`, `ados-plugin-host`
 
     Masked (never started):
-    - All ground-station services (hostapd, oled, buttons, kiosk, etc.)
+    - All ground-station services (hostapd, oled, kiosk, etc.)
   </Tab>
   <Tab title="Ground station profile">
     Always started:
     - `ados-supervisor`, `ados-control`, `ados-api`, `ados-cloud`, `ados-health`, `ados-logd`
-    - `ados-hostapd`, `ados-oled`, `ados-buttons`
+    - `ados-hostapd`, `ados-oled`
     - `ados-wfb-rx` (in the `direct` role)
     - `ados-mediamtx-gs`
-    - `ados-uplink-router` (uplink matrix), `ados-pic` (front-panel arbiter)
+    - `ados-uplink-router` (uplink matrix: wired link, WiFi station, cellular, USB tether), `ados-pic` (front-panel arbiter)
     - `ados-display-probe` (panel detect)
     - `ados-setup-captive`, `ados-dnsmasq-gs` (first boot)
 
     Hardware-dependent:
     - `ados-kiosk` (if HDMI output detected)
     - `ados-input` (if a joystick or touch device is present)
-    - `ados-ethernet` (if a wired link is present)
-    - `ados-wifi-client` (cross-profile; if joining a WiFi network)
-    - `ados-usb-gadget` (if USB gadget enabled in config)
-    - `ados-modem` (if 4G modem detected and enabled)
     - `ados-batman`, `ados-wfb-relay`, `ados-wfb-receiver` (mesh roles only)
 
     Masked (never started):
@@ -285,11 +272,10 @@ Memory use is dominated by the Python residual (FastAPI), the video encoder buff
 | ados-mediamtx-gs | ~30 MB |
 | ados-hostapd | ~5 MB |
 | ados-oled (Rust) | ~10 MB |
-| ados-buttons (Python) | ~5 MB |
 | ados-health (Python) | ~10 MB |
 | ados-kiosk (Chromium) | 280-520 MB |
-| **Total (no kiosk)** | **~155 MB** |
-| **Total (with kiosk 720p)** | **~435 MB** |
+| **Total (no kiosk)** | **~150 MB** |
+| **Total (with kiosk 720p)** | **~430 MB** |
 
 On a 4 GB Pi 4B this leaves multiple GB free with or without the kiosk. A lean flight node can run a zero-Python core (the MAVLink router, camera encode, radio, and the `ados-control` front) for a much smaller footprint.
 

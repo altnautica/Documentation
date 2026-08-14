@@ -77,7 +77,7 @@ journalctl -u ados-wfb-rx -n 30  # WFB-ng receiver logs
 | Possible cause | How to check | Fix |
 |---------------|-------------|-----|
 | Power-only cable | Try a known data cable | Replace with a cable explicitly rated for USB data |
-| USB gadget service not running | `systemctl status ados-usb-gadget` | Check that `dtoverlay=dwc2` is in `/boot/firmware/config.txt` and reboot |
+| USB gadget not composed | `systemctl status ados-uplink-router` (the `ados-net` daemon owns the tether) | Check that `dtoverlay=dwc2` is in `/boot/firmware/config.txt` and reboot |
 | Old Windows 10 build | Device Manager shows yellow exclamation | Install the RNDIS driver from the setup webapp help page |
 | Laptop providing insufficient power | Ground Agent brownouts under load | Use a separate wall adapter or USB-C power bank |
 

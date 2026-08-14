@@ -120,8 +120,10 @@ pairing:
   state_path: "/etc/ados/pairing.json"
   beacon_interval: 30    # Seconds between cloud poll attempts
   heartbeat_interval: 60  # Seconds between heartbeat pings
-  code_ttl: 900           # Pairing code validity in seconds (15 min)
 ```
+
+A pairing code is valid for 15 minutes. That window belongs to the backend that
+issues the code, not to the agent, so there is no agent-side setting for it.
 
 ## mDNS discovery
 

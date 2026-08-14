@@ -111,7 +111,7 @@ Same as WiFi: if your browser loaded Mission Control from `https://command.altna
 | Problem | Cause | Fix |
 |---------|-------|-----|
 | No new network interface | Power-only cable | Try a data-capable USB-C cable |
-| No new network interface | USB gadget service not running | SSH in and check `systemctl status ados-usb-gadget` |
+| No new network interface | Tether not composed | SSH in and check `systemctl status ados-uplink-router` (the `ados-net` daemon owns the gadget) |
 | No new network interface | `dwc2` not loaded | Check that `dtoverlay=dwc2` is in `/boot/firmware/config.txt` |
 | Windows yellow exclamation | RNDIS driver not installed | Install the INF from the setup webapp help page |
 | Intermittent disconnects | Brownout from laptop power | Use a separate wall adapter or USB-C power bank |

@@ -285,11 +285,11 @@ iwconfig wlan1  # or whatever the RTL8812EU is assigned
 
 **USB tether not working:**
 ```bash
-# Check if the USB gadget is set up
-ls /sys/kernel/config/usb_gadget/ados-ncm 2>/dev/null
+# Check if the USB gadget is composed (the ados-net daemon builds it in-process)
+ls /sys/kernel/config/usb_gadget/ados_gs 2>/dev/null
 
-# Enable USB tether from the setup webapp Network page if needed
-sudo systemctl restart ados-usb-gadget-setup
+# Restart the daemon that owns the tether
+sudo systemctl restart ados-uplink-router
 ```
 
 ## Next Steps

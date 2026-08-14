@@ -48,18 +48,17 @@ This architecture gives you per-service restart, resource isolation via cgroups,
 | `ados-display-probe` | `ados-display-probe` | Rust | Display panel detection |
 | `ados-pic` | `ados-pic` | Rust | Panel-in-charge input arbiter |
 | `ados-input` | `ados-input` | Rust | Bluetooth and USB gamepad input manager |
-| `ados-buttons` | `ados.services.ui.button_service` | Python | GPIO button handler |
+| `ados-buttons` | superseded | Python | Retired. `ados-pic` reads the front-panel buttons in-process, the packaged button module is gone, and the install prunes this unit from disk on every run. |
 | `ados-uplink-router` | `ados-net` | Rust | Internet uplink priority and data cap |
-| `ados-ethernet` | `ground_station.ethernet_manager` | Python | Ethernet connection manager |
-| `ados-wifi-client` | `ground_station.wifi_client_manager` | Python | WiFi client connection manager |
-| `ados-modem` | `ground_station.modem_manager` | Python | Cellular modem manager |
+| `ados-ethernet` | superseded | Python | Retired. `ados-net` owns the wired uplink in-process under `ados-uplink-router`, the packaged manager is gone, and the install prunes this unit from disk on every run. |
+| `ados-wifi-client` | superseded | Python | Retired. `ados-net` owns the WiFi station in-process, and the install stops and disables this unit on every ground-station run (and tears it down on every other profile). |
+| `ados-modem` | superseded | Python | Retired. `ados-net` owns the cellular uplink in-process, the packaged manager is gone, and the install prunes this unit and its modem udev rule on every run. |
 | `ados-hostapd` | `ground_station.hostapd_manager` | Python | WiFi hotspot (manages hostapd) |
 | `ados-mediamtx-gs` | `ground_station.mediamtx_manager` | Python | MediaMTX for ground-side video relay |
 | `ados-kiosk` | kiosk service | Python | HDMI kiosk mode (Chromium + cage Wayland) |
 | `ados-dnsmasq-gs` | dnsmasq | C | DHCP and DNS for the hotspot |
 | `ados-setup-captive` | captive DNS | Python | Captive portal DNS responder |
-| `ados-usb-gadget` | USB gadget | Python | USB CDC-NCM/RNDIS gadget for laptop tether |
-| `ados-usb-gadget-setup` | gadget setup | shell | One-shot USB gadget configuration |
+| `ados-usb-gadget` | superseded | Python | Retired. The USB CDC-NCM/RNDIS tether is composed in-process by `ados-net` under `ados-uplink-router`, and the install always stops this unit. |
 | `ados-batman` | `ground_station.mesh_manager` | Python | batman-adv mesh carrier (gated) |
 | `ados-wfb-relay` / `ados-wfb-receiver` | `ados-groundlink` | Rust | Mesh relay / receiver roles (gated) |
 | `ados-mesh-pairing` | pairing daemon | Python | Mesh tap-to-pair daemon (gated) |
@@ -85,7 +84,7 @@ ados-supervisor
   └── ados-peripherals    (after ados-control)
 ```
 
-Hardware-dependent services (video, wfb, modem) only start when the relevant hardware is detected.
+Hardware-dependent services (video, wfb) only start when the relevant hardware is detected. The cellular uplink is hardware-gated too, but it is a probe inside `ados-net` rather than a unit of its own.
 
 ## Resource limits
 
