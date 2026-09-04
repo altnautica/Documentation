@@ -7,7 +7,8 @@
   "scripts": {
     "capture": "tsx capture-dashboard-screenshots.ts",
     "capture:drone": "tsx capture-dashboard-screenshots.ts --target drone",
-    "capture:ground": "tsx capture-dashboard-screenshots.ts --target ground"
+    "capture:ground": "tsx capture-dashboard-screenshots.ts --target ground",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
