@@ -54,9 +54,17 @@ WebSerial (USB connections) only works in Chromium-based browsers. Safari and Fi
 | `npm run build` | Production build. |
 | `npm run start` | Start the production server on port 4000. |
 | `npm run lint` | Run ESLint. |
-| `npm run test` | Run Vitest unit tests. |
-| `npm run test:e2e` | Run Playwright end-to-end tests (demo mode). |
-| `npm run test:e2e:sitl` | Run Playwright tests against a real SITL instance. |
+| `npm run typecheck` | Type-check the app, Convex functions, Electron main process and the bundled tools. |
+| `npm run test` | Run the Vitest suite. |
+| `npm run test:node` | Run the `*.node-test.ts` files under the Node test runner. |
+| `npm run test:coverage` | Vitest with a coverage report. |
+| `npm run convex:dev` | Start the Convex dev backend and codegen. |
+| `npm run convex:deploy` | Deploy Convex functions. |
+| `npm run deploy` | Run `ados-deploy`, the Rust deployment tool at `tools/deploy/`. See [Deploy tool](/developers/self-hosting/deploy-tool). |
+| `npm run desktop:dev` | Electron app against the dev server. |
+| `npm run desktop:build` | Package the desktop app for the current platform. |
+
+There is no Playwright harness in the repo, so there is no `test:e2e` script.
 
 ## Demo Mode
 
@@ -66,7 +74,7 @@ Demo mode is the fastest way to explore Mission Control without hardware.
 npm run demo
 ```
 
-This sets `NEXT_PUBLIC_DEMO_MODE=true` and starts the dev server. Seven simulated drones (ArduPilot, PX4, and iNav) appear on the dashboard with realistic telemetry, GPS tracks, and flight modes. All configuration panels work with mock parameters.
+This sets `NEXT_PUBLIC_DEMO_MODE=true` and starts the dev server. Fourteen simulated aircraft appear on the dashboard alongside a workstation node and a ground-station node, with telemetry, GPS tracks and flight modes. The fixture spans ArduPilot (copter, plane, VTOL, tailsitter, tiltrotor, rover, boat, sub, heli), PX4 (copter and VTOL), Betaflight and iNav, so the firmware-specific panels all have something to render. All configuration panels work with mock parameters.
 
 You can also activate demo mode by adding `?demo=true` to any URL:
 
@@ -76,19 +84,45 @@ http://localhost:4000?demo=true
 
 ## Environment Variables
 
-Create a `.env` file in the project root for optional features. A `.env.example` file is included in the repo.
+Every variable is optional. Mission Control runs standalone with none of them
+set. A `.env.example` in the repo is the source of truth; the split below matters
+because the two halves are read by different runtimes.
+
+### Next.js variables
+
+Set these in `.env.local` in the project root.
+
+| Variable | Effect |
+|---|---|
+| `NEXT_PUBLIC_DEMO_MODE` | `true` starts in demo mode. `npm run demo` sets it for you. |
+| `NEXT_PUBLIC_CONVEX_URL` | Your Convex deployment URL. Setting it enables cloud fleet, auth and community features. |
+| `GITHUB_TOKEN` | Raises the PX4 releases API budget from 60 to 5000 requests an hour. No scopes needed for public repos. |
+| `GROQ_API_KEY` | Enables AI PID tuning suggestions. |
+| `CESIUM_BASE_URL` | Where the Cesium JS build lives. Unset falls back to the CDN. Only needed when self-hosting the library. |
+| `NEXT_PUBLIC_ANALYTICS_SCRIPT_URL` | Script URL for any cookieless script-tag analytics. |
+| `NEXT_PUBLIC_ANALYTICS_WEBSITE_ID` | Site id for the same. Both analytics variables must be set or the script does not load. |
+
+### Convex server variables
+
+These run **inside Convex functions**, not in Next.js, so a `.env` entry does
+nothing for them. Set them from the Convex dashboard under Settings then
+Environment Variables, or from the CLI:
 
 ```bash
-# Required only for cloud features (auth, fleet sync, community)
-NEXT_PUBLIC_CONVEX_URL=https://your-convex-deployment.convex.cloud
-CONVEX_DEPLOY_KEY=your_deploy_key
-
-# Optional: Cesium token for 3D simulation globe
-NEXT_PUBLIC_CESIUM_TOKEN=your_cesium_ion_token
-
-# Demo mode (alternative to npm run demo)
-NEXT_PUBLIC_DEMO_MODE=true
+npx convex env set KEY value
 ```
+
+| Variable | Effect |
+|---|---|
+| `JWT_PRIVATE_KEY` | RSA private key for signing JWTs. `npx @convex-dev/auth` sets it. |
+| `JWKS` | JSON Web Key Set for token verification. Same setter. |
+| `SITE_URL` | Your app's public origin, for example `https://command.altnautica.com`. |
+| `CESIUM_ION_TOKEN` | 3D terrain for simulation. This is the Cesium token, and it is a Convex variable, not a `NEXT_PUBLIC_` one. |
+| `GROQ_API_KEY` | AI changelog summaries and PID tuning. |
+| `GITHUB_TOKEN` | GitHub API auth for changelog sync. |
+| `AI_PID_WEEKLY_LIMIT` | Maximum AI PID analyses per user per week. Default 3. |
+| `MQTT_BROKER_URL` | MQTT WebSocket URL for cloud telemetry, for example `wss://mqtt.example.com/mqtt`. |
+| `VIDEO_RELAY_URL` | Video relay WebSocket URL, for example `wss://video.example.com`. |
 
 <Tip>
 Cloud features are entirely optional. Mission Control works fully offline for direct USB and WebSocket connections. The Convex backend adds fleet sync, authentication, and community features.

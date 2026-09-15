@@ -1,0 +1,249 @@
+---
+title: "Multi-Camera"
+description: "Declare more than one video leg on one airframe: which leg rides the radio, which are LAN-only, and how the camera roster reconciles them."
+icon: "camera-rotate"
+lastUpdated: "2026-09-15"
+---
+
+# Multi-Camera
+
+One airframe can carry several cameras: an EO, a wide EO, a thermal, a
+down-facing landing cam. Each one is a **leg**, and each leg is served as its own
+mediamtx path.
+
+Exactly one leg is the **primary**. It is the leg that rides the radio and the
+cloud relay. Every other leg is served over the LAN only.
+
+## One camera, or legs
+
+The legacy single-camera shape is still the whole config for a one-camera node:
+
+```yaml
+video:
+  camera:
+    source: "csi"
+    codec: "h264"
+    width: 1280
+    height: 720
+    fps: 30
+    bitrate_kbps: 4000
+```
+
+Declaring `video.cameras` replaces it. When `video.cameras` is **absent** the
+agent resolves the single `video.camera` block verbatim as one primary leg with
+the id `main`, so an existing config is byte-identical after the multi-leg
+support landed.
+
+```yaml
+video:
+  cameras:
+    - id: main-eo
+      source: "/dev/video0"
+      role: primary
+      name: "EO"
+      orientation: forward
+      purpose: [feed, detect]
+      width: 1280
+      height: 720
+      fps: 30
+      bitrate_kbps: 4000
+    - id: ir
+      source: "rtsp://192.168.1.60/ir"
+      role: ir
+      name: "Thermal"
+      orientation: gimbal
+      purpose: [thermal, detect]
+    - id: belly
+      source: "/dev/video2"
+      name: "Belly cam"
+      orientation: down
+      purpose: [precision-landing]
+      width: 640
+      height: 480
+      fps: 15
+      bitrate_kbps: 1500
+```
+
+<Warning>
+Do not hand-edit the generated `mediamtx.yml`. Change `video.*` in
+`/etc/ados/config.yaml` (or write the roster through the API) and let the agent
+regenerate it.
+</Warning>
+
+## Per-leg fields
+
+### Identity and transport
+
+| Key | Default | Meaning |
+|---|---|---|
+| `id` | `main` | The leg's immutable logical identity, its mediamtx path name and its WHEP id. |
+| `source` | `csi` | A device hint (`csi`, `usb`, `ip`), a device path, or a network URL. |
+| `role` | absent | `primary` designates the WFB and cloud stream. Any other value, or absent, is a LAN-WHEP-only secondary. |
+| `match` | absent | A physical fingerprint (`usb`, `csi_sensor`, `csi_port`) that re-pins `source` back to `id` when a hot-plug renames the device node. |
+
+A `source` starting `rtsp://`, `rtsps://`, `http://` or `https://` is a network
+capture URL. Everything else is a local device.
+
+### Encode
+
+These are read by the encode pipeline and reach the encoder command builder.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `codec` | `h264` | Wire codec: `h264`, `h265`, `hevc` or `mjpeg`. |
+| `width` | `1280` | Capture and encode width. |
+| `height` | `720` | Capture and encode height. |
+| `fps` | `30` | Frame rate. |
+| `bitrate_kbps` | `4000` | Target bitrate. |
+| `rotation` | `0` | Clockwise image rotation before encode: `0`, `90`, `180` or `270`. An image transform, distinct from the physical `orientation` metadata. |
+| `hflip` | `false` | Mirror horizontally before encode. |
+| `vflip` | `false` | Mirror vertically before encode. |
+| `encoder` | `auto` | Encoder override: `auto`, `omx`, `v4l2m2m` or `software`. |
+| `keyframe_interval` | `0` | Keyframe interval in frames. `0` lets the encoder pick a short low-latency GOP. |
+
+### Roster metadata
+
+These are surfaced through the camera roster and consumed by extensions. The
+encode and radio pipeline reads none of them.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `name` | absent | Operator-facing display name, for example `Belly cam`. |
+| `orientation` | absent | Coarse physical mount: `forward`, `down`, `back`, `left`, `right`, `up`, `gimbal`, `custom`. Enough for extension binding; not full extrinsics. |
+| `purpose` | empty | What the leg is for, one or more of `feed`, `detect`, `navigation`, `precision-landing`, `thermal`, `mapping`, `recording`. |
+| `enabled` | `true` | Whether the operator has this leg on. Metadata today; the pipeline does not gate on it yet. |
+| `owner` | absent | Who declared the leg: `operator`, or a plugin id such as `com.altnautica.siyi-pod`. Absent means operator-owned. |
+| `fov_deg` | absent | Horizontal field of view in degrees, when known. |
+| `mount_pitch_deg` | absent | Mount pitch offset, for example a 45-degree-down inspection cam. |
+| `calibration` | absent | A calibration reference: a profile name or a stored intrinsics id. |
+
+`role` and `purpose` are complementary, not alternatives. `role` is the
+**transport** plane (which leg rides the radio). `purpose` is the **consumer**
+plane (what an extension binds to). A leg can be the primary transport and also
+be the detect source.
+
+## What primary means
+
+| | Primary leg | Secondary leg |
+|---|---|---|
+| mediamtx path | Always `main`, whatever `id` you wrote | Its declared `id` |
+| WHEP URL | `:8889/main/whep` | `:8889/<id>/whep` |
+| Rides the WFB radio | Yes | No |
+| Rides the cloud relay | Yes | No |
+| Carries the SEI metadata | Yes | No |
+| Attention switching | Yes | No |
+| Encoder | Agent-owned | Agent-owned for a local device; a mediamtx on-demand pull for a network URL |
+
+Selection rules, in order:
+
+1. The first leg whose `role` is exactly `primary` wins, wherever it sits in the
+   list.
+2. If no leg declares `role: primary`, the **first** leg in the list is the
+   primary.
+
+The primary's path id is rewritten to `main` so the radio, the cloud relay and
+every downstream consumer keep one fixed path name. Its *declared* role string is
+preserved for the Mission Control label map, so a primary declared as `role: eo`
+still renders as an EO leg while being served at `main`.
+
+A secondary with a network source becomes a mediamtx `sourceOnDemand` pull: no
+agent-owned encoder process, and mediamtx only connects upstream when a viewer
+asks. A secondary on a local device does get its own agent-owned encoder, using
+the same command builder as the primary.
+
+## Airtime and the thumbnail profile
+
+One fleet shares one 20 MHz channel, so exactly one aircraft streams full video
+at a time. The primary leg's top-level `width` / `height` / `fps` /
+`bitrate_kbps` are the **hero** profile. The `thumbnail` sub-block is the
+non-hero profile the drone falls back to while the operator's attention is on a
+different aircraft:
+
+```yaml
+video:
+  camera:
+    thumbnail:
+      width: 320
+      height: 180
+      fps: 1
+      bitrate_kbps: 50
+```
+
+Those four values are the defaults. Only the primary leg rides the shared
+channel, so only the primary is attention-switched; the `thumbnail` block is
+unread on a secondary leg. Mission Control drives the switch through
+`POST /api/video/profile`.
+
+## The camera roster
+
+`GET /api/video/roster` is the one place an operator sees every camera the node
+knows about. It reconciles three sources into one list:
+
+- the legs declared in `video.cameras` (or the legacy `video.camera` block,
+  synthesised as `main`),
+- the devices the hardware enumeration discovered
+  (`/run/ados/cameras-discovered.json`),
+- the live stream state (`/run/ados/video-streams.json`).
+
+Each row carries the leg's logical identity, its management metadata and a
+`state`:
+
+| State | Meaning |
+|---|---|
+| `assigned` | Declared and serving a stream. |
+| `offline` | Declared, but not currently live. |
+| `plugin_owned` | Declared by an extension rather than the operator. |
+| `discovered_unassigned` | A device the enumeration found that no leg claims. |
+
+The read is guaranteed `200` and degrades to `{"cameras": []}` when the sidecars
+are absent. A ground station carries no onboard camera, so it serves an **empty**
+roster rather than a phantom `main`.
+
+```bash
+curl -s -H "X-ADOS-Key: $ADOS_KEY" http://192.168.1.50:8080/api/video/roster
+```
+
+<Note>
+`/api/video/roster` is not `/api/video/cameras`. The latter is the ground
+station's switchable-camera enumeration (`{cameras, assignments}`) that the
+camera-switch control uses, and it is a different surface.
+</Note>
+
+### Writing the roster
+
+`PUT /api/video/roster` persists the operator's leg list. It validates before it
+writes:
+
+- ids must be unique and path-safe,
+- `orientation` and `purpose` must be known values,
+- no non-primary leg may claim the reserved id `main`.
+
+A validation failure is a `400`. The write then forwards a `video.cameras.set`
+op to the supervisor's video command socket (`/run/ados/video-cmd.sock`), which
+is the config-write and restart authority. An unreachable supervisor is a `503`;
+a saved-but-not-restarted result is a `502`.
+
+The persist is a **merge by owner**. An operator write preserves the legs an
+extension declared and an extension write preserves the operator's, so a driver
+extension that declares a pod's legs does not lose them the next time you edit
+the roster in Mission Control. A client-supplied `owner` on a leg is ignored;
+the supervisor stamps `operator` on an operator write.
+
+A ground station returns `404` for the write: there is no onboard camera to
+manage there.
+
+## Ports
+
+| Port | Surface |
+|---|---|
+| `8554` | mediamtx RTSP. The encoder publishes to `rtsp://localhost:8554/main`. |
+| `8889` | mediamtx WebRTC and WHEP. `:8889/<id>/whep` per leg. |
+| `9997` | mediamtx control API, loopback only. |
+
+## Related
+
+- [Video pipeline](/drone-agent/video-pipeline)
+- [Configuration reference](/drone-agent/configuration)
+- [Camera driver extensions](/developers/camera-driver)
+- [Video stack architecture](/architecture/video-stack)
+- [Diagnostics with `ados diag`](/drone-agent/diagnostics)

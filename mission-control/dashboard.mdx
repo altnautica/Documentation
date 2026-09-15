@@ -61,19 +61,30 @@ Select a drone to see expanded information:
 
 ## Demo Mode
 
-In demo mode (`npm run demo`), the dashboard populates with seven simulated drones across three firmware families:
+In demo mode (`npm run demo`), the dashboard populates with fourteen simulated
+aircraft, plus a workstation node and a ground-station node. The fixture is
+chosen so every vehicle-gated configuration panel is reachable without hardware:
 
-| Drone | Firmware | Status |
-|-------|----------|--------|
-| Alpha-1 | ArduPilot (Copter) | Flying a security patrol loop in Auto |
-| Bravo-2 | ArduPilot (Copter) | Flying a survey grid in Auto |
-| Echo-5 | ArduPilot (Copter) | Flying a search-and-rescue pattern in Guided |
-| Charlie | ArduPilot (Copter) | Idle on the ground |
-| Delta | PX4 (Copter) | Offline for maintenance |
-| Foxtrot (iNav) | iNav (Copter) | Flying an iNav survey loop in Auto |
-| Golf (iNav FW) | iNav (Fixed-wing) | Flying an iNav fixed-wing circuit in Auto |
+| Drone | Firmware and class | Companion agent |
+|-------|--------------------|-----------------|
+| Alpha-01 | ArduPilot copter, running a security patrol suite | Yes |
+| Bravo-02 | ArduPilot copter, survey grid | No. This is the FC-only baseline, so the overview shows the "add a companion computer" path |
+| Charlie-03 | PX4 copter | Yes |
+| Delta-04 | PX4 VTOL | Yes |
+| Echo-05 | ArduPilot plane | Yes |
+| Foxtrot-06 | ArduPilot plane VTOL | Yes |
+| Golf-07 | ArduPilot plane tailsitter | Yes |
+| Hotel-08 | ArduPilot plane tiltrotor | Yes |
+| India-09 | ArduPilot rover | Yes |
+| Juliet-10 | ArduPilot boat | Yes |
+| Kilo-11 | ArduPilot sub | Yes |
+| Lima-12 | ArduPilot heli | Yes |
+| Mike-13 | Betaflight | Yes |
+| November-14 | iNav plane | Yes |
 
-Each flying drone generates realistic telemetry, including GPS noise, battery discharge, and radio signal variation. The idle and maintenance drones show how grounded and offline states render. This is useful for testing the UI, building dashboards, or learning the interface.
+Each one generates telemetry with GPS noise, battery discharge and radio signal
+variation. Useful for exercising the UI, building dashboards, or learning the
+interface.
 
 ## Top Navigation
 

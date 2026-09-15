@@ -1,6 +1,6 @@
 ---
 title: "CLI Reference"
-description: "Everyday ados commands plus the hardware, logs, network, plugin, profile, radio, and runtime subgroups."
+description: "Everyday ados commands plus the config, diag, hardware, logs, mcp, network, plugin, profile, radio, record, and rust subgroups."
 icon: "terminal"
 lastUpdated: "2026-06-18"
 ---
@@ -23,10 +23,16 @@ setup, remote access) lives in the local setup webapp or ADOS Mission Control.
 | `ados status` | Print setup, MAVLink, video, network, remote access, and service status. |
 | `ados status --json` | Print the full setup status payload for scripts and support tools. |
 | `ados version` | Print the installed agent version. Works even when the service is down. |
+| `ados help` | List the primitive operator commands. |
+| `ados pair` | Show this node's pairing information for Mission Control. |
+| `ados pair --role <drone\|gs>` | Bind the WFB radio in that role instead of showing pairing info. |
+| `ados unpair` | Release the node from Mission Control. Add `--radio` to also wipe the WFB bind, or `--all` for both. |
+| `ados support-bundle` | Collect one redacted archive for a support request. Nothing is sent anywhere; add `-o <path>` to choose where it lands. |
 | `ados update` | Update the agent to the latest version by re-running the installer in upgrade mode. |
 | `ados update --check-only` | Report the current and latest version without installing. |
 | `ados update --yes` | Update without an interactive confirmation. |
 | `ados update --json` | Print the current version, latest version, and update-available flag as JSON. |
+| `ados update --profile <drone\|ground-station\|workstation\|compute>` | Re-run the upgrade against a different node profile. |
 | `ados install --status` | Show the last install result and which checkpoints are done or missing. |
 | `ados install --resume` | Resume an interrupted install. |
 | `ados uninstall` | Remove ADOS Drone Agent from the system. |
@@ -37,14 +43,23 @@ setup, remote access) lives in the local setup webapp or ADOS Mission Control.
 
 | Subgroup | Use it for |
 |---|---|
+| `ados config` | Inspect and migrate the on-disk agent config. |
 | `ados diag` | Per-hop verdicts on the video pipeline, the radio link, and storage wear. |
 | `ados hardware` | Inspect the persisted hardware snapshot and bust the hardware-check cache. |
 | `ados logs` | Query, tail, aggregate, export, and push the black-box log store. |
+| `ados mcp` | Manage AI-control (MCP) access tokens. |
 | `ados network` | Inspect and manage networking: stable-MAC pinning, the operating-region posture, and the access point passphrase. |
-| `ados plugin` | Manage the plugin host (install, enable, disable, remove, inspect, logs). |
-| `ados profile` | Show or override the agent profile (drone or ground station). |
-| `ados radio` | Inspect and tune the WFB-ng radio link, including pairing. |
+| `ados plugin` | Manage the plugin host (install, enable, disable, remove, pin, sign, inspect, logs). |
+| `ados profile` | Show or override the agent profile. |
+| `ados radio` | Inspect and tune the WFB-ng radio link, including pairing and the driver build. |
+| `ados record` | Start, stop, list, and clip ground-station recordings. |
 | `ados rust` | Switch services between the native and packaged implementations. |
+
+<Note>
+Every subgroup except `ados logs` is hidden from `ados --help` by design, so the
+first-run surface stays short. They are all fully supported; `ados <group> --help`
+works for each one.
+</Note>
 
 ## `ados`
 
@@ -79,18 +94,19 @@ ados status
 Example output:
 
 ```text
-ADOS Drone Agent 0.89.2
-Device:  ADOS Agent (ados-1234)
-Profile: drone
-Setup:   67%
+▌ ADOS  my-drone · drone   v<version>
+  setup         67%    ● code 4F2K9B (enter in Mission Control)
 
-Open setup: http://ados.local:8080
-MAVLink: False
-Video:   running http://ados.local:8889/main/whep
-Remote:  disabled
+▌ Reach this agent
+  ➜  http://my-drone.local:8080
+  ➜  http://192.168.1.50:8080
+
+  MAVLink FC    not connected
+  Video         running  encoder=v4l2m2m  http://127.0.0.1:8889/main/
+  Cloud relay   configured (https://convex-site.altnautica.com, awaiting pair)
+  Cloudflare    disabled
 
 Next: Connect or configure the flight controller
-```
 
 For scripts:
 
@@ -159,15 +175,21 @@ The `ados plugin` subgroup manages the agent plugin host: install, enable, disab
 | Command | What it does |
 |---|---|
 | `ados plugin list` | Show every installed plugin with state, version, and risk level. |
-| `ados plugin install <archive>` | Install a signed `.adosplug` archive from a local file or URL. |
-| `ados plugin enable <id>` | Start a previously installed plugin and add it to the supervisor's restart set. |
+| `ados plugin install <archive>` | Install a signed `.adosplug` archive from a local file path. It does not fetch a URL; `curl -LO` the release asset first, or use the URL path in Mission Control. |
+| `ados plugin enable <id>` | Start a previously installed plugin and add it to the supervisor's restart set. Takes effect at runtime, with no agent restart. |
 | `ados plugin disable <id>` | Stop the plugin and remove it from the restart set. The plugin stays installed. |
-| `ados plugin remove <id>` | Stop and uninstall the plugin. State on disk is purged. |
+| `ados plugin remove <id>` | Stop and uninstall the plugin. On-disk state is purged unless `--keep-data` is passed. |
 | `ados plugin info <id>` | Print the manifest, declared permissions, signer, and last-known status. |
-| `ados plugin perms <id>` | Show permission grants. Add `--revoke <perm>` to drop one. |
+| `ados plugin perms <id>` | Show permission grants. Add `--revoke <perm>` to drop one; a revocation takes effect at runtime. |
 | `ados plugin logs <id>` | Tail the plugin's structured logs. |
+| `ados plugin pin <id>` | Pin a plugin to its current version so auto-update skips it. |
+| `ados plugin unpin <id>` | Clear the pin so auto-update can run again. |
+| `ados plugin auto-update <id>` | Toggle auto-update on or off for one plugin. |
+| `ados plugin check-updates` | Run the auto-update poll once and print the outcome per plugin. |
 | `ados plugin lint <archive>` | Static-analyze an archive: signature, manifest schema, banned imports, permission shape. |
-| `ados plugin test <plugin_dir>` | Run the plugin's pytest suite against the test harness. |
+| `ados plugin test <plugin_dir>` | Run the plugin's pytest suite against the SDK test harness. |
+| `ados plugin sign <plugin_dir>` | Pack a plugin directory into a signed `.adosplug`, signing the canonical payload hash with an Ed25519 private key. |
+| `ados plugin keygen` | Generate a fresh Ed25519 keypair for plugin signing. A developer aid, not a way to mint a production publisher key. |
 
 `install`, `enable`, `disable`, `remove`, and `perms --revoke` prompt for confirmation by default. Pass `--yes` to skip prompts in scripts.
 
@@ -194,10 +216,7 @@ zero loss it did not observe.
 to check on a node that has been rebooting on its own, because undervoltage and thermal
 throttling both show up there.
 
-<Note>
-`ados diag` does not appear in `ados help`. It is a working diagnostic group rather than a
-first-run command, and it is fully supported.
-</Note>
+Each of these is covered in depth on [Diagnostics](/drone-agent/diagnostics).
 
 ## `ados hardware`
 
@@ -220,9 +239,16 @@ Query the black-box logging store. The store keeps logs, telemetry history, disc
 | `ados logs sessions` | List recorded boot/run sessions. |
 | `ados logs status` | Show store health and capture state. |
 | `ados logs export` | Export a slice of the store. |
-| `ados logs push` | Push a captured slice to a support endpoint. |
+| `ados logs push` | Export a window of the store to your paired cloud account. |
 
 Add `--json` for machine-readable output where supported.
+
+`ados logs push` uploads to **your** paired cloud account, not to Altnautica.
+For a support case use `ados support-bundle`, which writes one redacted archive
+locally and sends nothing anywhere.
+
+The store, its record kinds, and the off-box query plane are documented on
+[Black Box](/drone-agent/black-box).
 
 ## `ados network`
 
@@ -243,12 +269,16 @@ Inspect and manage networking. Two nested groups and one leaf command.
 
 ## `ados profile`
 
-Show or override which profile the node runs.
+Show or override which profile the node runs. The installer accepts four
+profiles (`drone`, `ground_station`, `workstation`, `compute`); `ados profile set`
+persists only the two flight profiles, so a workstation or compute node is
+chosen at install time with `--profile` and not switched afterwards. See
+[Node profiles](/getting-started/node-profiles).
 
 | Command | What it does |
 |---|---|
 | `ados profile show [--json]` | Print the resolved agent profile. |
-| `ados profile set` | Persist a profile choice (drone or ground station) for this node. |
+| `ados profile set <drone\|ground_station>` | Persist a profile choice for this node. Add `--role <direct\|relay\|receiver>` for a ground station, or `--no-restart` to skip the automatic restart of profile-sensitive units. |
 
 ## `ados radio`
 
@@ -267,6 +297,7 @@ Inspect and tune the WFB-ng radio link, including pairing.
 | `ados radio pair unpair [--yes]` | Wipe pair keys and clear pair state. |
 | `ados radio pair auto on` | Re-arm auto-pair (only when unpaired). |
 | `ados radio pair auto off` | Disable auto-pair. |
+| `ados radio install-driver` | Build and install the RTL8812EU (WFB) kernel driver if it is missing. Add `--force` to rebuild when the module is already present. |
 
 ## `ados rust`
 
@@ -277,6 +308,48 @@ Switch individual services between the native (Rust) and packaged implementation
 | `ados rust status` | Show the native-vs-packaged state per service. |
 | `ados rust enable <service>...` | Run the native implementation for one or more services. |
 | `ados rust disable <service>...` | Fall back to the packaged service for one or more services. |
+
+## `ados config`
+
+Inspect and migrate the on-disk config at `/etc/ados/config.yaml`. A migration
+runs under the config lock and preserves keys the current schema does not know
+about.
+
+| Command | What it does |
+|---|---|
+| `ados config status [--json]` | Show pending migrations without writing anything. |
+| `ados config migrate [--check] [--json]` | Bring `/etc/ados/config.yaml` to the current shape. `--check` reports what would change and writes nothing. |
+
+## `ados mcp`
+
+Manage AI-control (MCP) access tokens. Token acceptance at the LAN auth edge is
+**off by default**; a minted token is honoured only after `ados mcp enable`.
+
+| Command | What it does |
+|---|---|
+| `ados mcp status [--json]` | Show the token-acceptance posture and the minted tokens. |
+| `ados mcp enable` | Accept scoped MCP tokens at the LAN auth edge. Needs sudo. |
+| `ados mcp disable` | Stop honouring scoped MCP tokens at the auth edge. Needs sudo. |
+| `ados mcp mint --scope <scope>` | Mint a scoped token, shown once. `--scope` is required and repeatable; `--label` names it, `--ttl-days` sets the lifetime (default 30), `--node` adds an advisory fleet-connector allowlist. |
+| `ados mcp revoke <id>` | Revoke one token. `--all` revokes every token by rotating the salt. |
+
+Scopes are `read`, `safe_write`, `admin`, `flight`, `destructive` and
+`secret_read`. Full detail is on [MCP server](/developers/mcp-server).
+
+## `ados record`
+
+Start, stop, list and clip ground-station recordings.
+
+| Command | What it does |
+|---|---|
+| `ados record start [--hint <name>] [--json]` | Begin a capture. `--hint` appends a name fragment to the filename. |
+| `ados record stop [--json]` | End the in-flight capture. |
+| `ados record list [--path <stream>]` | List on-disk captures, or one stream's playback segments. |
+| `ados record clip --path <stream> --start <rfc3339> --duration <seconds>` | Cut an fMP4 clip out of the recorded segments. |
+
+Recording is continuous and segmented, so `clip` cuts out of the segments
+already on disk rather than starting a new capture. See
+[Video pipeline](/drone-agent/video-pipeline).
 
 ## Where the old commands went
 

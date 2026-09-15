@@ -1,0 +1,259 @@
+---
+title: "MCP Server and AI Control"
+description: "Give an AI client scoped, revocable, audited control of a node or a fleet. Token acceptance is off until you turn it on."
+icon: "robot"
+lastUpdated: "2026-09-15"
+---
+
+# MCP Server and AI Control
+
+ADOS ships a Model Context Protocol connector so an MCP-capable client (Claude
+Code, Claude Desktop, Cursor, VS Code, or a plain HTTP client) can read a node,
+administer it, and, when you explicitly grant it, fly it.
+
+Two halves, and they are separate decisions:
+
+1. **The connector** is a Node server you run on your own machine, from the
+   [ADOS-MCP](https://github.com/altnautica/ADOS-MCP) repo. It is the MCP
+   server your AI client talks to, and a client of the agent's HTTP API.
+2. **The agent-side token edge** is the scoped credential an agent will accept
+   in place of the full pairing key. It is **off by default** and stays inert
+   until you set `mcp.token_accept_enabled`.
+
+No model runs on the drone. The connector holds no telemetry buffers and runs
+no inference; it calls interfaces that already exist and presents them through
+MCP.
+
+<Warning>
+Token acceptance ships off. `mcp.token_accept_enabled` defaults to `false`, and
+`ados mcp status` reports the posture. A token you mint before flipping the flag
+is a valid token the auth edge will not honour yet.
+</Warning>
+
+## The trust boundary
+
+The agent's auth edge accepts three credentials on the LAN: the pairing key
+(`X-ADOS-Key`), a dashboard-PIN session, and, behind the accept flag, a scoped
+MCP token on the `x-ados-mcp-token` header.
+
+| Property | Behaviour |
+|---|---|
+| Default posture | Acceptance off. The whole surface is inert until the flag flips. |
+| Token store | `/etc/ados/mcp-token.json`, mode `0600`. |
+| What the store holds | The bulk-revocation salt, a per-token denylist, and a registry of minted tokens for the status view. The secret is **not** stored. |
+| When the store is read | Only on a would-be `401`. An authenticated request never touches the record. |
+| Route classification | Fail-closed. Every `GET` needs `read`; a write with no explicit class is denied to a token, so the caller must fall back to the full pairing key. |
+| Scope stamping | The front strips `x-ados-mcp-scopes` from every inbound request, then sets it only for a verified token, so a client cannot spoof its own scopes in. |
+| Relay posture | `POST /api/mcp/tokens` and `POST /api/mcp/revoke` are relay-forbidden: they are refused when the request arrives through a ground station's relay proxy. |
+
+A new agent route is unreachable by token until it is classified, which is the
+intended direction: an unclassified route is denied rather than silently
+over-granted.
+
+## Scopes
+
+Six scope groups. A token carries one or more; a route carries exactly one
+required class.
+
+| Scope | Covers |
+|---|---|
+| `read` | Every `GET`. |
+| `safe_write` | Writes that do not move an aircraft or destroy state. |
+| `admin` | Platform administration: rename, update, service restart, pairing and network writes. |
+| `flight` | Arm, mode change, goto, mission run, land, return, stop. |
+| `destructive` | Actions that discard state or stop an aircraft abruptly. |
+| `secret_read` | Reads that would return secret material. |
+
+`flight` and `destructive` are never granted implicitly. On the connector side,
+a tool whose class is `flight` (or that otherwise affects flight) is refused
+outright while the MAVLink proxy enforce flag is off.
+
+## Enable the token edge on a node
+
+`ados mcp enable` writes the config key and restarts the control front so the
+new posture takes effect. It is a local root operation, not a REST call, so it
+needs `sudo`. Never hand-edit `/etc/ados/config.yaml` for this; the command is
+the sanctioned path.
+
+```bash
+sudo ados mcp enable
+```
+
+```bash
+# Write the flag but leave the control front alone (restart it yourself later).
+sudo ados mcp enable --no-restart
+```
+
+```bash
+sudo ados mcp disable
+```
+
+Check the posture and the minted tokens at any time:
+
+```bash
+ados mcp status
+```
+
+```
+MCP access
+  token acceptance: disabled (tokens can be minted but are not honored at the edge yet)
+  no tokens minted
+```
+
+`ados mcp status --json` prints the raw `/api/mcp/status` body, which carries
+`accept_enabled` and a `tokens` array. Each token entry carries `token_id`,
+`label`, `scopes`, and the `revoked` / `expired` flags.
+
+## Mint a scoped token
+
+```bash
+ados mcp mint --label "fleet-readonly" --scope read --ttl-days 30
+```
+
+```bash
+# Repeat --scope to grant more than one group.
+ados mcp mint --label "bench-ops" --scope read --scope safe_write --scope admin \
+  --ttl-days 7
+```
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--label <text>` | empty | A human label carried in the status view. |
+| `--scope <group>` | **required**, repeatable | One of `read`, `safe_write`, `admin`, `flight`, `destructive`, `secret_read`. An unknown value is rejected by the CLI choice list. |
+| `--ttl-days <n>` | `30` | Lifetime in days. Converted to a millisecond TTL on the wire; a value below 1 is clamped to 1. |
+| `--node <id>` | none, repeatable | An **advisory** node allowlist carried inside the token. The token is already bound to the issuing node; this list is a hint for a fleet connector, not an extra agent-side restriction. |
+
+The command prints a "shown once" banner followed by the token on its own line.
+The secret is never written to the store, so if you lose it you mint a new one.
+
+Store it in your MCP client's environment, not in your shell history. On-box,
+the mint / status / revoke routes are admitted without a key because loopback
+is inside the trust boundary; off-box they take the front's normal auth lane.
+
+## Revoke
+
+```bash
+# One token by id.
+ados mcp revoke <token_id>
+```
+
+```bash
+# Every token, by rotating the store salt.
+ados mcp revoke --all
+```
+
+A single revoke adds the id to the denylist. `--all` rotates the 128-bit salt
+folded into every derived token key, so every previously-minted token fails
+verification at once. That is the incident response: rotate, then re-mint the
+tokens you still want. See [Revocation and incidents](/developers/revocation-and-incidents)
+for the wider playbook.
+
+## Agent routes
+
+| Method | Path | Notes |
+|---|---|---|
+| `GET` | `/api/mcp/status` | The acceptance posture plus the minted-token registry. |
+| `POST` | `/api/mcp/tokens` | Mint. Authorized on-box or with a valid key. Relay-forbidden. |
+| `POST` | `/api/mcp/revoke` | Revoke one id or all. Needs the `admin` scope class. Relay-forbidden. |
+
+## Run the connector
+
+The connector is not published as a package. Clone and build it:
+
+```bash
+git clone https://github.com/altnautica/ADOS-MCP.git
+cd ADOS-MCP
+./scripts/setup.sh          # installs, builds, prints the exact client add command
+```
+
+Prerequisites: Node 20 or newer, git, and pnpm. `pnpm install && pnpm build` is
+the manual equivalent.
+
+Three deployment modes, selected with `--target`. All three expose the identical
+tool set; only the reach differs.
+
+| Mode | Invocation | Reaches | Needs |
+|---|---|---|---|
+| Agent (default) | `--target agent <host>` | one node on your LAN | that node's pairing key |
+| Local fleet | `--target local-fleet [<fleet.json>]` | many LAN nodes, no cloud | each node's host and key, inline in one env var or in a file |
+| Fleet | `--target fleet --gcs prod` | your fleet from anywhere, through Mission Control | a signed-in operator and a minted machine credential |
+
+Add one LAN node to Claude Code, with the key in the client environment rather
+than your shell:
+
+```bash
+claude mcp add ados -e ADOS_MCP_AGENT_KEY=<pairing-key> -- \
+  node "$(pwd)/dist/index.js" --target agent 192.168.1.50
+```
+
+Check reach without starting a server. `--verify` connects, checks auth and
+reachability, prints the result, and exits `0` or `1`:
+
+```bash
+ADOS_MCP_AGENT_KEY=<pairing-key> node dist/index.js --target agent 192.168.1.50 --verify
+```
+
+### Connector flags
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--target <agent\|local-fleet\|fleet>` | required | Deployment mode. |
+| `--transport <auto\|stdio\|http\|unix>` | `auto` | `auto` picks stdio when a client launched the process. |
+| `--http-port <port>` | `8091` | Streamable HTTP port in agent mode. |
+| `--fleet-file <path>` | `~/.ados/mcp/fleet.json` | The local-fleet file. |
+| `--gcs <local\|prod\|url>` | none | The Mission Control Convex backend, fleet mode. |
+| `--token <token>` | none | The bearer for the launch principal. |
+| `--node-id <id>` | none | This node's device id, agent mode. |
+| `--audit-path <file>` | `~/.ados/mcp/audit.ndjson` | Local audit file. |
+| `--sim` | off | Opt in to the SITL safety waiver. |
+| `--flight-enforced` | off | Declares the MAVLink proxy enforce flag is confirmed on. |
+| `--discover` | off | Local fleet: browse the LAN and auto-adopt unpaired nodes. |
+| `--no-mdns` | off | Disable mDNS advertisement in agent mode. |
+| `--verify` | off | Check and exit without serving. |
+
+Environment equivalents include `ADOS_MCP_AGENT_KEY`, `ADOS_AGENT_HOST`,
+`ADOS_NODE_ID`, `ADOS_MCP_HTTP_PORT`, `ADOS_MCP_FLEET`, `ADOS_MCP_FLEET_PATH`,
+`ADOS_MCP_DISCOVER`, `ADOS_MCP_OWNER`, `ADOS_MCP_TOKEN`, `ADOS_CONVEX_URL`,
+`ADOS_MQTT_URL`, `ADOS_MCP_AUDIT_PATH` and `ADOS_MCP_LOG_LEVEL`.
+
+### Transports
+
+- **Streamable HTTP**: one endpoint, `POST /mcp`, with an SSE upgrade for
+  streams. The primary networked transport.
+- **stdio**: the local one-liner a client launches. Its principal holds every
+  scope except `flight` and `destructive`, passes the scope check like any other
+  token, and declares that a human must be present. Presence on your laptop is
+  not presence on the aircraft, so reaching the flight tools needs a
+  flight-scoped `--token`.
+- **Unix socket**: `/run/ados/mcp.sock`, on-box in agent and local-fleet modes.
+  Presence on that socket is the credential, so this principal skips the scope
+  check. It does **not** skip the safety gate.
+
+### The safety gate
+
+Every principal passes the class-specific safety gate, including the on-box
+socket principal. Presence on a socket is not a human confirming an action, so
+an `admin` call still needs its confirmation and a `flight` call still needs a
+fresh operator-present signal or a signed confirm bound to that call. Every
+call, allowed or denied, produces one redacted audit event.
+
+`--sim` only opts in to the SITL waiver. The server asks the target whether its
+flight controller is a simulator and refuses to start if it is not, so the
+waiver cannot be asserted onto real hardware.
+
+`readOnlyHint` and `destructiveHint` annotations are advertised honestly, but
+they are hints. The server is the enforcement point.
+
+## Extensions that contribute MCP tools
+
+An extension can contribute MCP `tools`, `resources` and `prompts` on both its
+agent and GCS halves. That contribution class needs `schema_version: 3` in
+`manifest.yaml`; `1` is the baseline and `2` unlocks the additional agent
+fields. See the [manifest reference](/developers/manifest).
+
+## Related
+
+- [Security model](/developers/security-model)
+- [Revocation and incidents](/developers/revocation-and-incidents)
+- [Hardening](/operations/hardening)
+- [Manifest reference](/developers/manifest)

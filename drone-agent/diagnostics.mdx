@@ -1,0 +1,235 @@
+---
+title: "Diagnostics with ados diag"
+description: "Per-hop verdicts on the video pipeline, the radio link and storage wear, from counters that can be trusted. Run this before you hand-probe anything."
+icon: "stethoscope"
+lastUpdated: "2026-09-15"
+---
+
+# Diagnostics with `ados diag`
+
+`ados diag` is the first thing to run on a misbehaving node. It is three thin
+renderers over the agent's own REST surface, so the CLI shows exactly what
+Mission Control sees.
+
+```bash
+ados diag video      # per-hop verdict on the video pipeline
+ados diag link       # WFB radio link diagnosis
+ados diag storage    # storage-wear verdict and the agent's footprint
+```
+
+Every subcommand takes `--json` for scripted use.
+
+<Note>
+`ados diag` does not appear in `ados help`. The advanced groups are hidden so the
+common path stays uncluttered; `ados diag` is a working diagnostic group rather
+than a first-run command, and it is fully supported.
+</Note>
+
+## Run the node's own diagnostics first
+
+A wrong diagnostic conclusion on a flight system is worse than no conclusion, so
+the rule is: reach for the agent's own verdicts before hand-probing a pipeline.
+
+The reason is measurement quality. `ados diag video` reads **only** reliable
+cumulative and rate counters on **canonical** objects (the mediamtx `main` path,
+the wfb-stats sidecar, the WHEP endpoint) and samples each of them **twice over
+a 2 second window**, so a hop is judged by data actually moving between the two
+reads rather than by a process being alive.
+
+### Signals that are not primary evidence
+
+| Signal | Why it misleads |
+|---|---|
+| `tcpdump` on a monitor interface | A monitor-mode capture of an injecting radio does not see what a receiver decoded. A single radio cannot capture its own transmitted frames. |
+| `tcpdump` on loopback | Catches the hop you happened to point it at, not the hop that stopped, and tells you nothing about error correction or decryption downstream. |
+| `/proc/net/udp` queue depth | A depth reading is a snapshot of a buffer, not a throughput measurement. It moves for reasons unrelated to whether frames are flowing. |
+| Netdev byte counters on an RTL monitor interface | An advancing transmit byte counter only proves the driver accepted frames into its ring. It never proves the energy reached a receiver. |
+| A single counter snapshot | A cumulative counter read once carries no rate. Two reads a window apart do. |
+
+The link verdict solves the same problem differently: `channel_locked` comes
+from the radio's own `rx_proven`, and `rf_unverified` is its explicit
+"transmitting with zero confirmed reception" state. Both are derived from
+decoded peer traffic, frames that passed error correction **and** decryption,
+which is why they can prove delivery when a byte counter cannot. The
+`rf_unverified` condition must hold continuously for 10 seconds before the agent
+records an entry event, so a single missed beacon does not flap it.
+
+## `ados diag video`
+
+```bash
+ados diag video
+```
+
+The response envelope carries `profile`, `role`, `canonical_path` (always
+`main`), `window_s`, the `hops` array and `video_dies_at`. The hop set is
+profile-aware, because a drone is the video source and a ground station is the
+sink.
+
+### Drone hops
+
+| Hop | Label | Judged by |
+|---|---|---|
+| `camera_to_mediamtx` | `Camera → encoder → mediamtx` | The mediamtx `main` path's cumulative `bytesReceived`, as a delta over the window. |
+| `mediamtx_to_radio_tx` | `Tap → wfb_tx (radio injection)` | The WFB transmit bitrate. A drone injects only what the tap feeds it. |
+
+### Ground-station hops
+
+| Hop | Label | Judged by |
+|---|---|---|
+| `rf_to_decode` | `RF → wfb_rx decode` | `wfb_rx` decoded packets per second, plus the `link_diag` cause. |
+| `decode_to_fanout` | `wfb_rx → fan-out` | The `fanout_forwarded` cumulative total, as a delta. |
+| `fanout_to_served` | `Fan-out → mediamtx → WHEP` | The mediamtx ingest byte delta, or WHEP-serving liveness when the ground mediamtx management API is auth-gated. |
+
+### Verdicts
+
+| Verdict | Meaning |
+|---|---|
+| `flowing` | The counter advanced across the window. |
+| `stalled` | The counter did not advance, and its upstream did. This is the break. |
+| `no_upstream` | An upstream hop already stalled, so this one has nothing to carry. Not a fault of its own. |
+| `unknown` | The counter could not be read. Reported as a warning, never as an `ok`. |
+
+`video_dies_at` names the first real break. When every hop is `flowing` the
+renderer prints `all hops flowing`; when no hops come back at all it says so
+rather than inventing a verdict.
+
+## `ados diag link`
+
+```bash
+ados diag link
+```
+
+Reads `/api/wfb`. Two things are reported side by side and deliberately not
+merged.
+
+**The decode verdict** (`link_diag`) answers "can this radio decode its peer at
+all":
+
+| Verdict | Meaning |
+|---|---|
+| `healthy` | Decoding. |
+| `searching` | Not locked yet. |
+| `deaf` | Hearing nothing. Antenna, band, or a dead peer. |
+| `mis_keyed` | Hearing frames it cannot decrypt. Wrong pairing key. |
+| `jammed` | Hearing RF energy it cannot turn into packets. |
+
+**The pairing state** is the lifecycle record. The two legitimately disagree: a
+link decoding hundreds of packets a second can sit behind a lifecycle record
+nothing has refreshed. Printed bare, "HEALTHY (state=stale)" reads as a surface
+contradicting itself, so the renderer labels which word is answering which
+question.
+
+### Packet loss and delivered frames
+
+`link_diag` is not a delivery verdict. A link that decodes fine while dropping a
+fifth of the stream still answers `healthy` to "can you decode", and that is
+true and beside the point. So the diagnostic leads with `LOSSY` once measured
+loss reaches **2%**.
+
+A video frame needs *every* one of its packets, so loss compounds across the
+frame. At roughly 10 RTP packets per frame:
+
+| Packet loss | Frames arriving complete (estimate) |
+|---|---|
+| 1% | about 90% |
+| 2% | about 82% |
+| 5% | about 60% |
+| 20% | about 11% |
+
+That is why "2% packet loss" and "a frozen picture" describe the same link. The
+figure is an estimate under an independent-loss assumption and is always printed
+with the assumption stated; bursty loss is kinder to it.
+
+### Who measured the loss
+
+A transmit-only drone has **no** local loss figure and never will: it injects
+its own downlink and a single radio in monitor mode cannot capture its own
+frames, so `packets_received` is a permanent zero. The measurement does exist,
+because the receiving ground station counts exactly what arrived and sends it
+back up the link, so the diagnostic prefers the radio's resolved sample and
+labels its provenance:
+
+| Provenance | Printed as |
+|---|---|
+| `local` | `(measured here)` |
+| `peer` | `(measured by the receiving station)` |
+| none | `- (not measured)` |
+
+A number with invisible provenance is a number an operator cannot act on: "3%
+loss" means something different when this node's own receiver counted it than
+when the far end did. And when nobody measured, the diagnostic says which
+measurements are missing rather than printing a bare dash next to a clean-looking
+link. A measured zero and an unmeasured link are different facts and are reported
+differently.
+
+### Counters
+
+The readout carries `RSSI`, `Channel`, `Decoded pkt/s`, `RF frames (all)`,
+`Decrypt errors`, `Bad packets`, `Packets lost`, `FEC recovered`, `FEC failed`,
+`Loss` and `Bitrate`. The three FEC and loss rows are what decide whether video
+actually arrives.
+
+## `ados diag storage`
+
+```bash
+ados diag storage
+```
+
+This is the first check on a node that reboots on its own or has stopped booting
+reliably. Space, not wear, is what usually breaks these boxes: the card fills, a
+rewrite cannot get its scratch, a write tears, and the node will not come back.
+So the footprint is printed first and the wear verdict second.
+
+| Verdict | Meaning |
+|---|---|
+| `ok` | Within budget. |
+| `wearing` | Elevated write rate or footprint. |
+| `critical` | Act now. |
+| `unknown` | The store did not answer. Reported as a **warning**: a node whose store did not answer has not been proven healthy. |
+
+### Write rate and its provenance
+
+The write rate is reported with a window and a source, because five seconds of
+kernel counter and hours of stored history answer different questions:
+
+| Source | Printed as |
+|---|---|
+| `direct` | `sampled from the kernel's own counter just now` |
+| `store` | `averaged over the logging store's retained history` |
+
+The direct reading needs nothing but the kernel, so it is the one that still
+works with the Black Box store off; the stored one reaches much further back.
+Neither is "the" rate on its own. An unmeasured rate is never printed as a zero:
+the reason it is missing is printed instead.
+
+### Power and thermal
+
+On a board that reports it, the throttle bitfield's sticky "has occurred" bits
+are surfaced: `undervoltage`, `frequency capped`, `throttled`, `soft temp limit`.
+These are recorded *at some point in the retained window*, not necessarily now,
+which is exactly what makes them useful for a node that misbehaves
+intermittently. A board that does not report them says so.
+
+### Store footprint
+
+The log store's own live and WAL sizes are reported, along with any quarantined
+database. With the store off, the row reads
+`log store    disabled (journal is the record)` rather than `0 B live`, because
+"a store that exists and is empty" is a different and more alarming thing than
+"a store nobody asked to run".
+
+## When diag is not enough
+
+Only after the agent's own verdicts have named a hop should you reach for
+anything else, and then with the blocklist above in mind. Measure cumulative
+counters as a delta over a 2 to 6 second window, confirm from the source which
+object is canonical before you probe it, and cross-check each hop with two
+independent reliable methods before changing a conclusion.
+
+## Related
+
+- [Black Box log store](/drone-agent/black-box)
+- [Troubleshooting](/drone-agent/troubleshooting)
+- [Video pipeline](/drone-agent/video-pipeline)
+- [WFB-ng long-range link](/drone-agent/wfb-ng)
+- [Recovery](/operations/recovery)

@@ -24,19 +24,19 @@ Your laptop picks whichever it supports. You get a new network interface with a 
 | Ground station IP | `192.168.7.1` |
 | Laptop / phone IP | `192.168.7.2` (DHCP assigned) |
 | Subnet | `192.168.7.0/24` |
-| mDNS hostname | `ground-station.local` |
+| mDNS hostname | `<node-name>.local`, from the name you gave the node at install |
 | Protocol | CDC-NCM + RNDIS composite |
 
 ## Platform support
 
 <Tabs>
   <Tab title="macOS">
-    **macOS Sonoma and later.** Plug the cable. System Settings shows a new "ADOS Ground Station" network interface. Open your browser and go to `http://192.168.7.1:4000` or `http://ground-station.local:4000`. No driver install needed.
+    **macOS Sonoma and later.** Plug the cable. System Settings shows a new "ADOS Ground Station" network interface. Open your browser and go to `http://192.168.7.1:8080`. No driver install needed.
 
     macOS selects CDC-NCM automatically.
   </Tab>
   <Tab title="Windows 11">
-    **Windows 11.** Plug the cable. A new Ethernet adapter appears in Network Connections. Navigate to `http://192.168.7.1:4000` in your browser.
+    **Windows 11.** Plug the cable. A new Ethernet adapter appears in Network Connections. Navigate to `http://192.168.7.1:8080` in your browser.
 
     Windows 11 has native CDC-NCM support since 2022.
   </Tab>
@@ -57,21 +57,21 @@ All the same endpoints as WiFi, but at `192.168.7.1` instead of `192.168.4.1`:
 
 | Endpoint | URL |
 |----------|-----|
-| Mission Control | `http://192.168.7.1:4000` |
-| Setup webapp | `http://ground-station.local/` |
-| WebRTC WHEP | `http://192.168.7.1:8889/ados/whep` or the WHEP URL reported by the Agent |
+| Node dashboard and setup webapp | `http://192.168.7.1:8080` |
+| Cockpit | `http://192.168.7.1:8080/cockpit/` |
+| WebRTC WHEP | `http://192.168.7.1:8889/main/whep` or the WHEP URL the agent reports |
 | MAVLink WebSocket | `ws://192.168.7.1:8765/` |
-| Agent REST API | `http://192.168.7.1:8080/api/v1/` |
+| Agent REST API | `http://192.168.7.1:8080/api/` |
 
 ## Why USB tether
 
 | Advantage | Details |
 |-----------|---------|
-| Lower latency | 40-70 ms glass-to-glass vs 80-100 ms over WiFi |
+| Lower latency | No airtime contention, no retries, no interference to add jitter |
 | Zero spectrum contention | No 2.4 GHz competition with the WiFi AP or nearby networks |
 | Wired reliability | No packet loss from WiFi interference |
 | Charging | Android phones charge while tethered |
-| Sub-1 ms ping | Measured on Pi 4B to Mac mini M2 |
+| Sub-1 ms ping | Wired link RTT, so the tether itself adds nothing measurable |
 
 ## Throughput
 
@@ -104,7 +104,7 @@ The two subnets do not bridge by default. A client on `192.168.7.x` (USB) cannot
 
 ## HTTPS caveat
 
-Same as WiFi: if your browser loaded Mission Control from `https://command.altnautica.com`, it blocks `http://192.168.7.1` connections. Use the local build at `http://192.168.7.1:4000` or run Mission Control on your laptop at `http://localhost:4000`.
+Same as WiFi: if your browser loaded Mission Control from `https://command.altnautica.com`, it blocks `http://192.168.7.1` connections. Use the on-box surfaces at `http://192.168.7.1:8080` or run Mission Control on your laptop at `http://localhost:4000`.
 
 ## Troubleshooting
 

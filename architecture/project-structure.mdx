@@ -76,7 +76,7 @@ ADOSMissionControl/
 │   │   ├── use-visible-tabs.ts     # Capability-driven tab visibility
 │   │   └── use-ground-station-subscriptions.ts
 │   │
-│   ├── mock/                       # Demo-mode mock engine + 7 simulated drones
+│   ├── mock/                       # Demo-mode mock engine + the simulated fleet
 │   │
 │   └── ... (locales live at the repo root)
 │
@@ -157,18 +157,22 @@ ADOSDroneAgent/
 │       ├── __init__.py             # Version (single source of truth)
 │       ├── core/                   # IPC helpers, config models, identity, pairing, health probe
 │       ├── services/               # Python-backed units and driver/manager glue
-│       │   ├── api/                # Residual FastAPI (internal socket, behind ados-control)
+│       │   ├── api/
+│       │   │   └── __main__.py     # The ados-api unit entry point, nothing else
 │       │   ├── health/             # CPU / RAM / temperature monitor
 │       │   ├── peripherals/        # USB and sensor manager
 │       │   ├── discovery/          # mDNS advertisement
-│       │   ├── ground_station/     # Ethernet, WiFi-client, modem managers
+│       │   ├── ground_station/     # Hostapd, mediamtx-gs, USB gadget, mesh managers
 │       │   ├── setup_webapp/       # First-boot setup and captive portal
 │       │   └── ...
-│       ├── api/
+│       ├── api/                    # Residual FastAPI itself (internal socket, behind ados-control)
+│       │   ├── server.py           # The FastAPI application
 │       │   ├── runtime.py          # API runtime facade
-│       │   └── routes/             # FastAPI route modules (config, pairing, plugins, ...)
+│       │   ├── dual_bind.py        # Dual-stack listener helper
+│       │   ├── telemetry_source.py
+│       │   └── routes/             # Route modules (config, pairing, plugins, ...)
 │       ├── hal/
-│       │   └── boards/             # Board profile YAMLs (17 profiles)
+│       │   └── boards/             # Board profile YAMLs, one per supported SBC
 │       ├── plugins/                # Plugin manifest, signing, IPC (Python plugin runtime)
 │       ├── sdk/                    # Python plugin-author SDK (driver, vision, testing)
 │       ├── setup/                  # Universal setup facade and models

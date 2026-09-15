@@ -10,16 +10,16 @@ Documentation for the ADOS open-source drone platform, powered by [Mintlify](htt
 
 ## Local development
 
-Install the [Mintlify CLI](https://www.npmjs.com/package/mintlify):
+Install the [Mintlify CLI](https://www.npmjs.com/package/mint):
 
 ```bash
-npm i -g mintlify
+npm i -g mint
 ```
 
 Run the docs locally:
 
 ```bash
-mintlify dev
+mint dev
 ```
 
 ## Contributing

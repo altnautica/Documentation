@@ -1,0 +1,213 @@
+---
+title: "Node Profiles"
+description: "One install script, four profiles. What a drone, ground station, workstation and compute node each run, and how the profile is chosen."
+icon: "layer-group"
+lastUpdated: "2026-09-15"
+---
+
+# Node Profiles
+
+Every box running the ADOS Drone Agent is a **node**, and every node has a
+**profile**. The profile is not a separate build: one install script, one
+upgrade path, one binary set. It decides which services start and which surfaces
+the agent serves.
+
+The profile is chosen at install time and persisted to `/etc/ados/profile.conf`.
+
+## The four profiles
+
+| Profile | Runs on | What it is for |
+|---|---|---|
+| `drone` | The companion computer bolted to an airframe | Flight controller link, camera encode, radio TX, onboard vision, world-model capture. |
+| `ground_station` | The operator's ground box | Radio RX, video republish, physical UI, Wi-Fi AP, HDMI cockpit, mesh relay or receiver roles. |
+| `workstation` | The operator's laptop, desktop or GPU box | The compute engine plus whatever UI you run locally. The macOS default. |
+| `compute` | A headless worker, a spare box or a cluster slave | The compute engine only. No UI, no flight controller. |
+
+The installer accepts `ground-station` and `ground_station` as the same value
+and normalizes to the underscore form; every other value passes through
+unchanged.
+
+## What each profile starts
+
+The supervisor holds one service registry with a profile gate per entry. A
+service with no gate runs everywhere; a gated one runs only on the profiles it
+names.
+
+### Cross-profile
+
+| Service | Category | Notes |
+|---|---|---|
+| `ados-api` | Core | The residual Python surface behind the front's proxy. |
+| `ados-cloud` | Core | Cloud relay and heartbeat. |
+| `ados-health` | Core | Health reporting. |
+| `ados-logd` | Core | The Black Box store. Additionally gated on `logging.store.enabled`, which ships off. |
+| `ados-control` | On-demand | The native HTTP front. Owns `:8080` by default on a fresh install. |
+| `ados-discovery` | On-demand | mDNS advertisement. |
+| `ados-peripherals` | Hardware | Peripheral registry. |
+| `ados-gpio` | Hardware | Status buzzer and LED. Ships disabled. |
+
+### `drone` and `ground_station`
+
+| Service | Notes |
+|---|---|
+| `ados-mavlink` | The single command-and-control path to the flight controller. The FC-less `workstation` and `compute` profiles never fetch the router binary, so they do not start it: an unconditional start would crash-loop. |
+| `ados-swarmbus` | The swarm state bus. Core on both flight-capable profiles so a receive-only ground station still gets a local-first fleet view. |
+| `ados-crsf` | The CRSF / ExpressLRS RC control lane. Gated on `/etc/ados/crsf-enabled`. |
+| `ados-tunnel-config` | Config-over-radio. Gated on `/etc/ados/tunnel-enabled`. |
+
+### `drone` only
+
+| Service | Notes |
+|---|---|
+| `ados-video` | The camera encode pipeline. |
+| `ados-wfb` | WFB-ng TX manager. |
+| `ados-vision` | The onboard vision engine. Self-gates on `vision.enabled`, off by default. |
+| `ados-vision-rknn` | NPU inference sidecar. Self-gates on the NPU runtime library. |
+| `ados-atlas` | World-model capture. Self-gates on `atlas.enabled`, off by default. |
+
+### `ground_station` only
+
+| Service | Notes |
+|---|---|
+| `ados-wfb-rx` | Single-node RX. Gated to the `direct` role. |
+| `ados-mediamtx-gs` | Republishes the received stream. |
+| `ados-oled`, `ados-oled-i2c` | Front-panel and I2C status panels. |
+| `ados-hostapd`, `ados-dnsmasq-gs` | The Wi-Fi AP. |
+| `ados-setup-captive` | First-boot captive portal. On-demand. |
+| `ados-kiosk`, `ados-input`, `ados-pic` | The standalone flight stack. |
+| `ados-uplink-router` | The uplink matrix. |
+| `ados-batman` | Mesh carrier. Roles `relay` and `receiver`. |
+| `ados-wfb-relay` | Fragment forwarder. Role `relay`. |
+| `ados-wfb-receiver` | Aggregator. Role `receiver`. |
+
+### `workstation` and `compute`
+
+| Service | Notes |
+|---|---|
+| `ados-compute` | Core on both. The job store, the scheduler and the REST job API. |
+
+`ados-compute` runs on the operator's workstation (a GPU box, a Mac, or any
+spare box that also carries the UI) and on a headless `compute` worker. It never
+runs on a drone or a ground station.
+
+## The lean headless set
+
+A node that boots headless runs only the Rust core. That set is exactly:
+`ados-mavlink`, `ados-swarmbus`, `ados-logd`, `ados-video`, `ados-wfb`,
+`ados-control`. Everything else, including the Python surface, the cloud service,
+health and every ground-station unit, is blocked by the headless gate.
+
+## How the profile is chosen
+
+Resolution order, identical on both the Python and the Rust halves:
+
+1. `agent.profile` in `/etc/ados/config.yaml`, when it is an explicit value.
+2. `/etc/ados/profile.conf`, when the config field is `auto`, empty or absent.
+   The installer writes this file, and `ados profile set` flips it.
+3. `drone` as the final fallback.
+
+Pin the profile at install time:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/altnautica/ADOSDroneAgent/main/scripts/install.sh \
+  | sudo bash -s -- --profile ground-station
+```
+
+<Note>
+There is no `--board` flag. The board auto-detects.
+</Note>
+
+### macOS defaults to `workstation`
+
+On macOS the bootstrap runs the installer from source and passes
+`--profile workstation` unless you pinned a profile yourself. It refuses to run
+under `sudo`: a Mac node installs as per-user LaunchAgents under `$HOME/.ados`,
+not into `/opt` and `/etc`.
+
+```bash
+# On macOS, no sudo.
+curl -sSL https://raw.githubusercontent.com/altnautica/ADOSDroneAgent/main/scripts/install.sh | bash
+```
+
+### Inspect and change it
+
+```bash
+ados profile show
+```
+
+```
+config.yaml agent.profile: auto
+/etc/ados/profile.conf:    ground_station
+resolved profile (wire):   ground-station
+resolved role:             direct
+```
+
+```bash
+sudo ados profile set ground-station --role receiver
+```
+
+`ados profile set` accepts `drone`, `ground_station` and `ground-station` only.
+It writes both `/etc/ados/profile.conf` and `agent.profile` in
+`/etc/ados/config.yaml`, then restarts `ados-wfb`, `ados-wfb-rx` and
+`ados-supervisor` so the new gate takes effect. Pass `--no-restart` to skip that
+and restart yourself:
+
+```bash
+sudo systemctl restart ados-supervisor
+```
+
+<Warning>
+`workstation` and `compute` are install-time values. `ados profile set` will not
+set them; re-run the installer with `--profile` to move a node onto one of those
+two.
+</Warning>
+
+## What a workstation node does not have
+
+A macOS workstation node is rootless and Rust-only. The control surface serves
+the native routes (`/api/status`, `/api/pairing/*`) but **not** the proxied setup
+facade, because there is no Python upstream there: `/api/v1/setup/status` has
+nothing to answer it. The `ados` CLI reads the native routes on macOS for exactly
+that reason.
+
+So on a workstation node there is no setup wizard, no captive portal, no
+Wi-Fi AP, no radio and no flight controller link. What you get is the compute
+engine, the pairing surface and the status surface.
+
+A `compute` node is the same minus the UI: the engine, headless.
+
+## Profiles on the wire, and in Mission Control
+
+The agent reports its profile on the wire in the hyphenated form. The Rust
+resolver passes `workstation` and `compute` through unchanged and maps
+`ground_station` to `ground-station`; anything unrecognised reports `drone`.
+
+Mission Control resolves **three** profiles for its node surfaces:
+`drone`, `ground-station` and `workstation`. A node reporting a profile outside
+that set, `compute` included, resolves to the Agent page alone: it appears in the
+fleet and you can administer it, but no profile-specific surfaces are registered
+for it.
+
+Ground-station role (`direct`, `relay`, `receiver`) is read from
+`/etc/ados/mesh/role` and defaults to `direct`. It is null on every other
+profile.
+
+## Profiles in an extension manifest
+
+An extension declares which node kinds it installs on:
+
+```yaml
+agent:
+  target_profiles: ["drone", "workstation"]
+```
+
+The validator accepts `drone`, `ground-station` and `workstation`, and requires
+at least one. See the [manifest reference](/developers/manifest).
+
+## Related
+
+- [Install paths](/getting-started/install-paths)
+- [Drone Agent installation](/drone-agent/installation)
+- [Set up a ground station](/ground-agent/setup)
+- [Systemd services](/drone-agent/systemd-services)
+- [Configuration reference](/drone-agent/configuration)

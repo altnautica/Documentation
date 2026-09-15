@@ -112,15 +112,22 @@ The CesiumJS viewer supports several camera modes:
 | **Overhead** | Top-down view following the drone |
 | **First person** | Camera positioned at the drone, looking forward |
 
-## Cesium Token
+## Cesium token
 
-CesiumJS requires an API token for terrain data and 3D tiles. Set the `NEXT_PUBLIC_CESIUM_TOKEN` environment variable with your Cesium ion token. Without a token, the globe still works but terrain elevation may be flat.
+CesiumJS needs an API token for terrain data and 3D tiles. Without one the globe
+still works, but terrain elevation may be flat.
+
+The token is a **Convex** server variable named `CESIUM_ION_TOKEN`, not a
+Next.js `NEXT_PUBLIC_` variable, so putting it in `.env` does nothing:
 
 ```bash
-NEXT_PUBLIC_CESIUM_TOKEN=your_cesium_ion_token_here
+npx convex env set CESIUM_ION_TOKEN your_cesium_ion_token
 ```
 
-Get a free token at [cesium.com/ion](https://cesium.com/ion).
+Get a free token at [cesium.com/ion](https://cesium.com/ion). If you self-host
+the Cesium JS build itself, point `CESIUM_BASE_URL` at it in `.env.local`;
+unset falls back to the CDN. See
+[Installation](/mission-control/installation#convex-server-variables).
 
 ## History Integration
 

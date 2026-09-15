@@ -28,7 +28,7 @@ cat /etc/ados/profile.conf
 
 # If the flag is still false after plugging the second dongle in,
 # re-run the installer to trigger a profile_detect rescan.
-sudo ./install.sh
+curl -sSL https://raw.githubusercontent.com/altnautica/ADOSDroneAgent/main/scripts/install.sh | sudo bash -s -- --upgrade
 ```
 
 If the second dongle is plugged in but not enumerating, check `dmesg` for driver bind messages and confirm the dongle's chipset has Linux mesh-mode (`802.11s` or `IBSS`) driver support.
@@ -56,7 +56,7 @@ If the second dongle is plugged in but not enumerating, check `dmesg` for driver
 
 **Cause:** `mesh_capable` is `false` in `/etc/ados/profile.conf`. The second USB WiFi adapter was not present when `profile_detect` ran last.
 
-**Recovery:** plug in the second USB WiFi adapter and rerun `profile_detect` by re-running the installer (`sudo ./install.sh`), or manually flip the flag if the dongle is already up:
+**Recovery:** plug in the second USB WiFi adapter and rerun `profile_detect` by re-running the installer (`curl -sSL https://raw.githubusercontent.com/altnautica/ADOSDroneAgent/main/scripts/install.sh | sudo bash -s -- --upgrade`), or manually flip the flag if the dongle is already up:
 
 ```bash
 sudo sed -i 's/^mesh_capable:.*/mesh_capable: true/' /etc/ados/profile.conf
@@ -161,6 +161,6 @@ Then retry the Accept window.
 
 ## Where to next
 
-- [Field Tap-to-Pair](/ground-agent/field-pairing) - the protocol.
+- [Field Tap-to-Pair](/ground-agent/setup#field-pairing-on-the-oled) - the protocol.
 - [Local Mesh (batman-adv)](/ground-agent/batman-adv) - the carrier.
 - [Troubleshooting](/ground-agent/troubleshooting) - for non-mesh issues.

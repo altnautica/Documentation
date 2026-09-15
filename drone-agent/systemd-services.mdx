@@ -21,8 +21,9 @@ This architecture gives you per-service restart, resource isolation via cgroups,
 |---------|------|------|-------------|
 | `ados-supervisor` | supervisor | Rust | Parent orchestrator, starts and monitors children |
 | `ados-mavlink` | `ados-mavlink-router` | Rust | FC serial connection and MAVLink router (WS on `:8765`) |
-| `ados-control` | `ados-control` | Rust | HTTP front on port 8080 (proxies the residual API) |
+| `ados-control` | `ados-control` | Rust | HTTP front on port 8080. The installer enables it by default, so it is the LAN surface and it proxies the residual Python API behind itself. |
 | `ados-api` | `ados.services.api` | Python | Residual FastAPI behind the front, on an internal socket |
+| `ados-swarmbus` | `ados-swarmbus` | Rust | Decentralized swarm state bus. Every drone broadcasts a 20-byte position and velocity beacon at 2 Hz and every node hears every other node. Drone and ground-station profiles only. |
 | `ados-cloud` | `ados-cloud` | Rust | MQTT and Convex cloud relay |
 | `ados-logd` | `ados-logd` | Rust | Black-box logging store and query API |
 | `ados-health` | `ados.services.health` | Python | CPU, RAM, disk, temperature monitoring |
@@ -38,6 +39,8 @@ This architecture gives you per-service restart, resource isolation via cgroups,
 | `ados-wfb` | `ados-radio` | Rust | WFB-ng video transmitter |
 | `ados-vision` | `ados-vision` | Rust | Vision host (on capable boards) |
 | `ados-gpio` | `ados-gpio` | Rust | GPIO output substrate (ships disabled until enabled) |
+| `ados-atlas` | `ados-atlas` | Rust | World-model capture: pose-tagged keyframe selection for a compute node to reconstruct from. Self-gates on `atlas.enabled`, which is off by default. |
+| `ados-vision-rknn` | `ados.services.vision.rknn_sidecar` | Python | NPU inference sidecar (RKNN). Self-gates on the NPU runtime library, so it is a clean no-op on a board without one. |
 
 ### Ground station services (ground_station profile only)
 
@@ -47,6 +50,7 @@ This architecture gives you per-service restart, resource isolation via cgroups,
 | `ados-oled` | `ados-display` | Rust | OLED/LCD display UI |
 | `ados-display-probe` | `ados-display-probe` | Rust | Display panel detection |
 | `ados-pic` | `ados-pic` | Rust | Panel-in-charge input arbiter |
+| `ados-oled-i2c` | `ados-oled-i2c` | Rust | Optional I2C status OLED. Coexists with the HDMI cockpit and self-skips cleanly when no panel answers on the bus. |
 | `ados-input` | `ados-input` | Rust | Bluetooth and USB gamepad input manager |
 | `ados-buttons` | superseded | Python | Retired. `ados-pic` reads the front-panel buttons in-process, the packaged button module is gone, and the install prunes this unit from disk on every run. |
 | `ados-uplink-router` | `ados-net` | Rust | Internet uplink priority and data cap |
@@ -62,6 +66,33 @@ This architecture gives you per-service restart, resource isolation via cgroups,
 | `ados-batman` | `ground_station.mesh_manager` | Python | batman-adv mesh carrier (gated) |
 | `ados-wfb-relay` / `ados-wfb-receiver` | `ados-groundlink` | Rust | Mesh relay / receiver roles (gated) |
 | `ados-mesh-pairing` | pairing daemon | Python | Mesh tap-to-pair daemon (gated) |
+
+### Cross-profile hardware services (drone and ground station)
+
+| Service | Runs | Lang | Description |
+|---------|------|------|-------------|
+| `ados-crsf` | `ados-crsf` | Rust | CRSF / ExpressLRS RC control lane. Gates on the `/etc/ados/crsf-enabled` marker, which mirrors `radio.crsf.enabled`. |
+| `ados-tunnel-config` | `ados-tunnel-config` | Rust | Config-over-radio channel: a MAVLink-TUNNEL request and response lane so a node reachable only over the radio can have its `/api/config` read and written from the ground. Gates on `/etc/ados/tunnel-enabled`. |
+
+`ados-gpio` and `ados-peripherals` are cross-profile too; they are listed above.
+
+### Workstation and compute profile services
+
+| Service | Runs | Lang | Description |
+|---------|------|------|-------------|
+| `ados-compute` | `ados-compute` | Rust | The compute engine: job store, scheduler and the REST job API that a drone or the GCS submits reconstruction and perception-offload work to. Runs on `workstation` and `compute` profiles only, never on a drone or ground station. |
+
+### The headless KEEP set
+
+A lean headless node boots only the Rust core. The supervisor's headless gate
+permits exactly six units and blocks everything else, including `ados-api`:
+
+`ados-mavlink`, `ados-swarmbus`, `ados-logd`, `ados-video`, `ados-wfb`,
+`ados-control`.
+
+`ados-control` is in the set because the headless profile binds it on `:8080` in
+place of FastAPI. `ados-logd` is in it because a lean flight node is the node an
+operator cannot reach, so it is the one that most needs its own flight recorder.
 
 ## Startup order
 

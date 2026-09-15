@@ -79,11 +79,11 @@ ADOS supports three deployment models depending on what you need.
 
 ### Field mode (Tier 1 + Tier 2)
 
-The drone and ground station communicate directly over WFB-ng radio. No internet. No cloud. Latency is 50-100 ms glass-to-glass. This is the default for field operations.
+The drone and ground station communicate directly over WFB-ng radio. No internet. No cloud. This is the default for field operations and the lowest-latency path ADOS has. See [what is measured](/architecture/video-stack#what-is-measured-and-what-is-not) before quoting a number for it.
 
 ### Cloud mode (Tier 1 + Tier 3)
 
-The drone has its own 4G modem and pushes telemetry and video to the cloud. A remote operator uses Mission Control at `command.altnautica.com` to monitor or control. Latency is 200-500 ms. No ground station needed, but you lose the low-latency WFB-ng path.
+The drone has its own 4G modem and pushes telemetry and video to the cloud. A remote operator uses Mission Control at `command.altnautica.com` to monitor or control. It adds a carrier network and a relay to the path, so it is the slowest of the three. No ground station needed, but you lose the direct WFB-ng path.
 
 ### Hybrid mode (Tier 1 + Tier 2 + Tier 3)
 
@@ -104,7 +104,7 @@ Each connection between components uses a specific protocol:
 | FC to Agent | UART MAVLink v2 | Binary, CRC-16 | 10-50 Hz per message |
 | Agent IPC (MAVLink) | Unix socket `/run/ados/mavlink.sock` | 4-byte length prefix + binary | All FC messages |
 | Agent IPC (state) | Unix socket `/run/ados/state.sock` | JSON | 10 Hz |
-| Agent to WFB-ng | Pipe to `wfb_tx` | Raw H.264 NAL units | 4-8 Mbps |
+| Agent to WFB-ng | RTP (RFC 6184) on UDP 5600, read by `wfb_tx -u 5600` | H.264 in RTP | 4-8 Mbps |
 | WFB-ng air to ground | 5 GHz monitor mode (IEEE 802.11) | FEC-encoded packets | 4-8 Mbps |
 | Ground to browser (video) | WebRTC WHEP | H.264 RTP | 4-8 Mbps |
 | Ground to browser (telemetry) | WebSocket | JSON MAVLink | 10-30 Kbps |
@@ -134,25 +134,22 @@ The agent is Rust-first. The long-running and safety-critical services (MAVLink 
 
 **Web over native.** Mission Control is a browser app, not a desktop application. WebSerial for FC communication, WebRTC for video, Web Gamepad API for flight controls. Electron wraps it for desktop distribution with full Chromium capabilities. See [State Management](/architecture/state-management).
 
-**WFB-ng over WiFi.** The radio link uses WFB-ng (WiFi Broadcast next generation), which puts the radio in monitor mode and broadcasts FEC-encoded packets. This is not standard WiFi. There is no association, no handshake, no retransmission. The result is consistent low latency at ranges up to 50 km. See [Video Stack](/architecture/video-stack).
+**WFB-ng over WiFi.** The radio link uses WFB-ng (WiFi Broadcast next generation), which puts the radio in monitor mode and broadcasts FEC-encoded packets. This is not standard WiFi. There is no association, no handshake, no retransmission. Nothing waits on a retransmission, so the link has no latency tail to absorb, and the range reaches tens of kilometres with directional antennas. See [Video Stack](/architecture/video-stack).
 
 **Profile over fork.** The ground station is not a separate codebase. It is the same ADOS Drone Agent with a different profile selected at boot. This means one install script, one upgrade path, and one test matrix. See [Agent Services](/architecture/agent-services).
 
-## Latency budget
+## Latency
 
-End-to-end latency from camera sensor to browser pixel:
+ADOS has one measured latency figure and it is publish-side only: 74 ms mean,
+61 to 152 ms across samples, stamped after the encoder and read back from the
+drone's own RTSP endpoint. It covers the publish mux, the RTSP publish, MediaMTX
+on the drone and the readback demux. It excludes capture, encode, the radio, the
+ground half and the browser.
 
-| Stage | Duration |
-|-------|----------|
-| V4L2 capture | 5-10 ms |
-| ffmpeg H.264 encode | 10-20 ms |
-| WFB-ng TX + air | 2-5 ms |
-| WFB-ng RX + reassembly | 2-5 ms |
-| MediaMTX RTSP ingest | 1-2 ms |
-| WebRTC WHEP to browser | 10-20 ms |
-| Browser decode and render | 10-15 ms |
-| **Total (LAN/USB)** | **40-77 ms** |
-| **Total (WiFi AP)** | **60-100 ms** |
+**No glass-to-glass figure exists for ADOS.** Do not treat the publish-side
+number as end to end, and do not build a total by adding estimates to it. The
+full accounting, including what measuring the rest would take, is on
+[Video Stack](/architecture/video-stack#what-is-measured-and-what-is-not).
 
 ## What is next
 

@@ -21,7 +21,7 @@ lastUpdated: "2026-06-23"
 | **Vendor binary** | A third-party executable or library bundled inside the agent half (for example a model runtime). When `agent.contains_vendor_binary` is true the manifest must list at least one `agent.vendor_attribution` entry (name, license, source URL) or the manifest fails validation. |
 | **Per-drone plugin** | A plugin whose agent half is installed per connected drone, each with its own `ctx.agent_id` and its own settings. Enabled by `agent.per_drone_config: true`, surfaced through the `node.detail.tab` slot. The default is fleet-wide. |
 | **Permission** | A request the plugin makes for one slice of authority. Declared in the manifest, granted by the operator at install. |
-| **Operator** | The human running ADOS. Approves permissions, grants and revokes them through the Settings -> Plugins UI. |
+| **Operator** | The human running ADOS. Approves permissions, grants and revokes them through the node's Extensions tab. A grant or a revocation takes effect at runtime, with no agent restart. |
 | **Publisher** | The Ed25519 keypair the plugin is signed with. Pre-trusted publishers (Altnautica's keys) get a verified-publisher badge. |
 | **Signer id** | The name that identifies a publisher key. It is the filename stem of the public key on the agent (`<signer-id>.pem`) and is written into the archive's `SIGNATURE` file. The first-party Altnautica signer is `altnautica-2026-A`. Pass it with `ados plugin sign --signer-id` and create a new one with `ados plugin keygen <signer_id>`. |
 | **Trust list** | The agent's local set of accepted publisher keys, stored as PEM files under `/etc/ados/plugin-keys/`, keyed by signer id. Edited explicitly; new publisher keypairs are created with `ados plugin keygen`. |

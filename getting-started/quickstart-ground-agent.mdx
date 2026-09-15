@@ -136,27 +136,35 @@ ados status
 You should see:
 
 ```
-ADOS Drone Agent v0.89.2
-Board: Raspberry Pi 4 Model B
-Profile: ground-station
+▌ ADOS  gs-rooftop · ground-station   v<version>
+  setup         100%    ● paired
 
-Services:
-  ados-supervisor      active (running)
-  ados-api             active (running)
-  ados-health          active (running)
-  ados-wfb-rx          active (waiting for signal)
-  ados-hostapd         active (running)  [SSID: ADOS-GS-abc123]
+▌ Reach this agent
+  ➜  http://ground-station.local:8080
+  ➜  http://192.168.4.1:8080
 
-WFB-ng:
-  Mode: RX
-  Channel: 161 (5805 MHz)
-  Signal: waiting for drone
+  MAVLink FC    not connected
+  Video         idle
+  Cloud relay   paired (https://convex-site.altnautica.com)
+  Cloudflare    disabled
 
-WiFi AP:
-  SSID: ADOS-GS-abc123
-  IP: 10.0.0.1
-  Clients: 0
+Next: Open Mission Control or continue optional remote access setup
 ```
+
+The reach block lists every address the node answers on, best first. The
+`▌` bars and `➜` arrows fall back to `|` and `->` when the terminal
+locale is not UTF-8, and colour drops out under `NO_COLOR`.
+
+For the unit-by-unit view, ask systemd:
+
+```bash
+systemctl list-units 'ados-*'
+```
+
+On a fresh ground station that shows `ados-supervisor`, `ados-api`,
+`ados-health`, `ados-wfb-rx`, `ados-hostapd`, `ados-dnsmasq-gs`,
+`ados-mediamtx-gs` and `ados-oled` running. The full inventory is in
+[systemd services](/drone-agent/systemd-services).
 
 The WiFi AP is already running. The WFB-ng receiver is listening for a drone signal.
 
@@ -167,10 +175,14 @@ You have four ways to connect to the Ground Agent.
 ### Option 1: Laptop over WiFi
 
 1. On your laptop, join the WiFi network `ADOS-GS-abc123` (the SSID includes your device ID)
-2. Open your browser and go to `http://10.0.0.1:4000`
+2. Open your browser and go to `http://192.168.4.1:8080`
 3. A captive portal / setup wizard may appear on first connection
-4. Mission Control loads with the Ground Agent's Hardware tab visible
+4. The node dashboard loads on the Ground Agent's Hardware tab
 5. When the drone is in range, video appears automatically
+
+Nothing on the ground station listens on port 4000. That port belongs to a
+Mission Control dev server or a self-hosted GCS container, which you run on
+your laptop or a server, not on the node.
 
 ### Option 2: Laptop over USB Tether
 
@@ -181,7 +193,7 @@ Plug a USB-C cable from the Ground Agent SBC to your laptop. The SBC exposes a C
 - **Windows 10:** Falls back to RNDIS. May need a one-time driver install.
 - **Linux:** Works natively. Run `ip addr` to find the new interface.
 
-Open `http://192.168.7.1:4000` in your browser.
+Open `http://192.168.7.1:8080` in your browser.
 
 <Tip>
 USB tether is the most reliable data path. It does not depend on WiFi signal quality, and latency is consistently low. Use separate wall power or a USB-C power bank when video, WiFi AP, HDMI, or extra radios are active.
@@ -195,13 +207,13 @@ Pair a USB or Bluetooth gamepad for manual flight control. The HUD shows the vid
 
 This is the "backpack ground station" setup. SBC in a case, USB-C power bank, portable monitor, and gamepad. No laptop required.
 
-<Frame caption="Ground Agent OLED display showing link status, signal strength, and connected client count">
-  <img src="/images/placeholder-ground-agent-oled.png" alt="1.3 inch OLED display on the ground station showing WFB-ng signal strength and connected clients" />
+<Frame caption="Link screen on the ground station display: radio signal, FEC recovery and lost packets.">
+  <img src="/images/ground-agent/display/carousel/link.png" alt="Ground station display link screen showing WFB-ng signal strength and packet recovery" />
 </Frame>
 
 ### Option 4: Phone or Tablet
 
-Connect your phone to the Ground Agent's WiFi AP and open the browser. Mission Control is responsive and works on mobile screens.
+Connect your phone to the Ground Agent's WiFi AP and open `http://192.168.4.1:8080`. The node dashboard is responsive and works on mobile screens. For flying, the on-box cockpit is at `http://192.168.4.1:8080/cockpit/`.
 
 A native ADOS Android app with lower-latency video decoding is on a separate track. The browser path is the supported way to view from a phone today.
 
@@ -234,7 +246,7 @@ Four GPIO buttons with short-press and long-press actions:
 
 ## Setup Wizard
 
-On first boot (or after factory reset), the Ground Agent serves a captive portal setup wizard at `http://10.0.0.1`. This webapp walks you through:
+On first boot (or after factory reset), the Ground Agent serves a captive portal setup wizard at `http://192.168.4.1:8080`. This webapp walks you through:
 
 1. Setting the WFB-ng channel (must match the drone's TX channel)
 2. Connecting to an existing WiFi network for internet access (optional)
@@ -242,10 +254,6 @@ On first boot (or after factory reset), the Ground Agent serves a captive portal
 4. Changing the WiFi AP passphrase (the agent generates one per unit on first boot)
 
 The wizard is vanilla HTML and JS, about 50KB gzipped. It works on any device with a browser.
-
-<Frame caption="Ground Agent setup wizard showing WFB-ng channel selection">
-  <img src="/images/placeholder-ground-agent-setup.png" alt="Web-based setup wizard with WFB-ng channel selector and WiFi configuration form" />
-</Frame>
 
 ## Uplink Matrix
 
@@ -310,7 +318,7 @@ sudo systemctl restart ados-uplink-router
   <Card title="Mesh & Distributed Receive" icon="share-nodes" href="/ground-agent/mesh-overview">
     Run two or three Ground Agents together for obstructed flight areas.
   </Card>
-  <Card title="Three Deployment Roles" icon="shapes" href="/ground-agent/three-roles">
+  <Card title="Three Deployment Roles" icon="shapes" href="/ground-agent/setup#pick-a-role">
     direct, relay, receiver. When to pick which.
   </Card>
 </CardGroup>

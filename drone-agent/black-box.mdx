@@ -1,0 +1,276 @@
+---
+title: "Black Box Log Store"
+description: "The durable on-node log, telemetry, event and hardware store: what it records, how to query it, and why it ships off."
+icon: "database"
+lastUpdated: "2026-09-15"
+---
+
+# Black Box Log Store
+
+The Black Box is one WAL-mode SQLite database on the node that holds logs from
+every agent process plus telemetry history, discrete events and hardware
+samples. It survives a reboot and it answers when the network is down, which is
+exactly when `journalctl` over SSH is least useful.
+
+`ados-logd` is the sole writer. Every other reader opens it read-only.
+
+<Warning>
+**The store ships off.** `logging.store.enabled` defaults to `false` and the
+installer masks the unit while it is off. This is a deliberate capability
+regression, not an oversight: measured on a drone, the node wrote 904 KB/s with
+the store running and 49 KB/s with it stopped, so the store accounted for roughly
+96% of everything reaching the card. Cards were filling and corrupting.
+
+While the store is off the node has **no durable flight recorder** and
+`journalctl` is the log of record. That is why the systemd journal is kept
+`Storage=persistent`: with the store gone it is the only thing that survives a
+reboot.
+</Warning>
+
+## Turn it on
+
+One config key plus a reconcile. Never a reinstall from scratch: the binary is
+fetched and placed either way.
+
+```yaml
+# /etc/ados/config.yaml
+logging:
+  store:
+    enabled: true
+```
+
+Then re-run the installer so the unit is unmasked and enabled:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/altnautica/ADOSDroneAgent/main/scripts/install.sh \
+  | sudo bash -s -- --upgrade
+```
+
+The reconcile is idempotent and runs on every install, so a partial state heals
+itself. With the key `false` (or absent, or malformed) the unit is stopped,
+disabled **and masked**: `disable` alone only drops the wants-symlinks, and the
+supervisor would pull the unit back in as a dependency.
+
+There is no marker that forces the store on. A second way to enable something is
+a second thing to check when a node misbehaves, and this one has a measured cost
+that makes "why is this on?" worth answering from the config alone.
+
+Confirm the posture from the storage diagnostic, which reports `off` rather than
+treating an absent store as a fault:
+
+```bash
+ados diag storage
+```
+
+With the store off that prints `log store    disabled (journal is the record)`.
+
+## What it holds
+
+Four record kinds, and a session model over the top.
+
+| Kind | What it is |
+|---|---|
+| `logs` | Structured log lines from every agent process. |
+| `events` | Discrete events: state changes, link transitions, pairing outcomes, radio episodes. |
+| `metrics` | Named numeric series, the input to charts. |
+| `hw` | Hardware samples from the collector: CPU, memory, temperatures, disk. |
+
+Sessions group rows into a window you can name. Three kinds: `boot`, `flight`,
+`manual`.
+
+```bash
+ados logs sessions --since -1d
+```
+
+```bash
+# Only the sessions still open.
+ados logs sessions --open
+```
+
+## Paths and ports
+
+| Surface | Where | Notes |
+|---|---|---|
+| Store file | `/var/ados/logd/logs.db` | Override with `ADOS_LOGD_DB`. A rootless install (the macOS workstation) points it under a writable home. |
+| Ingest socket | `/run/ados/logd.sock` | Producers write length-prefixed msgpack frames here. Absent until the store is installed and started; producers then degrade to stderr and the journal, and retry on a backoff. |
+| Query socket | `/run/ados/logd-query.sock` | The trusted local read plane, mode `0660` on tmpfs. No auth: anything on-box that can open it is already inside the trust boundary. |
+| Query TCP | `:8090` | The LAN read plane. Authenticated and rate-limited. |
+
+Both socket paths resolve under `ADOS_RUN_DIR` when it is set, defaulting to
+`/run/ados`.
+
+The operator account is put in the socket's group at install time, so on-box
+analysis works without `sudo`.
+
+## Query it
+
+Every subcommand takes the same three transport flags: `--host`, `--key` and
+`--json`.
+
+| Flag | Meaning |
+|---|---|
+| `--host <ip>` | Query a remote agent over the LAN on TCP `:8090`. Default is the on-box unix socket. |
+| `--key <key>` | API key for `--host`. Falls back to the `ADOS_KEY` env var, then the local pairing key, in that order. |
+| `--json` | Print the raw query-API envelope. |
+
+<Note>
+`--json` is the stable contract. The colorized table is the human default and is
+explicitly **not** a contract, so script against `--json`.
+</Note>
+
+### `ados logs query`
+
+Keyset-paginated rows across one of the four tables.
+
+```bash
+ados logs query --since -5m --level warn
+```
+
+```bash
+ados logs query --kind events --event-kind radio.rf_unverified --since -2h --json
+```
+
+```bash
+ados logs query --kind metrics --metric video.bitrate_kbps --session 42 --limit 500
+```
+
+| Flag | Meaning |
+|---|---|
+| `--since <rel>` | Relative lower bound, for example `-5m`, `-2h`, `-1d`. |
+| `--from <v>` / `--to <v>` | Window bounds as epoch microseconds, an ISO timestamp, or a relative value. |
+| `--kind <logs\|events\|metrics\|hw>` | Which table to read. |
+| `--source <s>` | Filter by emitting source. Repeatable. |
+| `--metric <k>` | Filter by metric key. Repeatable, for the metrics table. |
+| `--event-kind <k>` | Filter by event kind. Repeatable. |
+| `--level <l>` | Minimum level: `trace`, `debug`, `info`, `warn`, `error`. |
+| `--text <s>` | Substring match on the message. |
+| `--session <id>` | Restrict to one session id. |
+| `--limit <n>` | Page size. |
+| `--cursor <c>` | Pagination cursor returned by the previous page. |
+
+### `ados logs tail`
+
+Follow new rows until interrupted. Served over SSE from `/v1/tail`.
+
+```bash
+ados logs tail --level warn
+```
+
+```bash
+# Print the last 200 rows, then follow.
+ados logs tail --replay 200 --kind events
+```
+
+`tail` takes the same `--kind`, `--source`, `--metric`, `--event-kind`,
+`--level` and `--text` filters as `query`, plus `--replay <n>`.
+
+### `ados logs aggregate`
+
+Downsampled series for charts.
+
+```bash
+ados logs aggregate --metric cpu.load --since -1h --bucket 1m --agg p95
+```
+
+`--metric` is required and repeatable. `--bucket` is `auto`, `1s`, `1m` or `1h`.
+`--agg` is `avg`, `min`, `max`, `p50`, `p95`, `last` or `count`.
+
+### `ados logs status`
+
+Store health, ingest and drop rates, and the sync watermark.
+
+```bash
+ados logs status
+```
+
+```bash
+# Print the query-API OpenAPI schema instead.
+ados logs status --openapi
+```
+
+## Get data off the box
+
+### `ados logs export`
+
+Stream a window to a file or stdout.
+
+```bash
+ados logs export --since -1h --format jsonl.zst -o /tmp/window.jsonl.zst
+```
+
+`--format` is `jsonl` or `jsonl.zst`. The same `--since` / `--from` / `--to` /
+`--kind` / `--source` / `--metric` / `--session` filters apply, plus `--host`
+and `--key` for an off-box export.
+
+### `ados logs push`
+
+Export a window to the paired cloud account. This is a thin front door: it
+records the request and the cloud service does the export, upload and mark.
+
+```bash
+ados logs push --since -30m
+```
+
+```bash
+ados logs push --session 42 --kinds logs,events --no-wait
+```
+
+| Flag | Meaning |
+|---|---|
+| `--session <id>` | Restrict the window to one session. |
+| `--since <v>` | Lower bound: relative `-5m` / `-2h` / `-1d`, epoch microseconds, or ISO. |
+| `--kinds <list>` | Comma-separated subset of `logs,metrics,events,hw`. Default is all four. |
+| `--no-wait` | Return as soon as the request is recorded. |
+| `--json` | Print the raw result envelope. |
+
+The cloud service **refuses** the push when the agent is in local mode, is not
+cloud-paired, or has cloud log push disabled. That is the correct state for an
+agent with nothing to sync, not an error to work around.
+
+The request file lives under the root-owned runtime dir
+(`/run/ados/logd-push-request.json`, with the outcome at
+`logd-push-result.json`). Root records it directly; a non-root operator hands
+the write to the running agent over loopback via `POST /api/logs/push`, and only
+falls back to the direct seam if the agent is unreachable.
+
+## The query API
+
+A separate listener on its own port, dialled directly by Mission Control's
+`direct` log tier and by `ados logs`. It is not reachable through either HTTP
+front.
+
+| Method | Path |
+|---|---|
+| `GET` | `/v1/query` |
+| `GET` | `/v1/tail` |
+| `GET` | `/v1/aggregate` |
+| `GET` | `/v1/export` |
+| `GET` | `/v1/sessions` |
+| `GET` | `/v1/stats` |
+| `GET` | `/v1/healthz` |
+| `GET` | `/v1/openapi.json` |
+
+The same key works against `:8090` as against `:8080`, so a tool that already
+holds the pairing key needs no second credential.
+
+## Supervision
+
+`ados-logd` is registered with the supervisor so it gets the liveness check, the
+auto-restart, the parked retry and, most importantly, the `systemctl reset-failed`
+that clears a `failed (start-limit-hit)` latch. Five restarts in a minute (a
+store that re-quarantines, a full `/var`, a writer wedged against the unit's
+`WatchdogSec`) used to leave the store permanently dead with nothing in-process
+able to clear it: `ados logs query` and `ados logs tail` returned nothing and
+every producer's log layer dropped silently.
+
+The store is in the lean headless keep set. It is Rust, so it holds no Python
+dependency, and a lean flight node is exactly the node an operator cannot reach,
+which makes it the one that most needs its own recorder.
+
+## Related
+
+- [Diagnostics with `ados diag`](/drone-agent/diagnostics)
+- [CLI reference](/drone-agent/cli-reference)
+- [Dashboard logs view](/drone-agent/dashboard-logs)
+- [Recovery](/operations/recovery)
+- [System overview](/architecture/system-overview)

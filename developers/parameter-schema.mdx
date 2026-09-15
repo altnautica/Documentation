@@ -23,7 +23,7 @@ A parameter has three parts:
 `schema` drops the parameter at parse time (with a console warning); the
 rest of the manifest still loads.
 
-## `schema` — the data contract
+## `schema`: the data contract
 
 `schema` is a Draft-07 JSON-Schema subset, deliberately scoped to what a
 drone-plugin parameter needs. Unknown keywords are ignored
@@ -76,7 +76,7 @@ render with the `number` (or `range`) widget; `integer` adds the
 round-to-whole rule on commit.
 </Note>
 
-## `ui` — the presentation layer
+## `ui`: the presentation layer
 
 `ui` never affects validation. It only controls how a parameter is shown
 and grouped.
@@ -138,14 +138,14 @@ contributes:
         visible_if: { key: vio_enabled, equals: true }
 ```
 
-## `binding` — where the value is written
+## `binding`: where the value is written
 
 The `binding` field routes the committed value. It defaults to
 `plugin.config` when absent.
 
 | Binding | Writes to | Read-back |
 |---------|-----------|-----------|
-| `plugin.config` | The per-drone plugin config, over the LAN agent (local-first). | The agent exposes a config write but no config read, so the GCS seeds from the schema default and badges it "Default — not read from drone" until a value is committed this session. |
+| `plugin.config` | The per-drone plugin config, over the LAN agent (local-first). | The agent exposes a config write but no config read, so the GCS seeds from the schema default and badges it as a default that was not read from the drone, until a value is committed this session. |
 | `engine.detector` | The shared, engine-wide vision detector. Every vision consumer on that drone shares one detector. | The model picker owns the write and reports the new active model back, so the form tracks the live detector. |
 | `agent.config` | A whitelisted system config key on the agent. | Read-only on this surface; its write router is a separate surface. |
 
@@ -171,7 +171,7 @@ freshly-loaded `plugin.config` control shows the schema default until the
 operator commits a value.
 </Warning>
 
-## The `model` parameter — switch the vision detector
+## The `model` parameter: switch the vision detector
 
 A `model` (or `model_upload`) parameter binds to `engine.detector` and
 renders the board-filtered model picker. Selecting a model switches the
@@ -273,10 +273,10 @@ gcs:
 
 ## See also
 
-- [Contribution points](/developers/contribution-points) — the
+- [Contribution points](/developers/contribution-points): the
   `settings` and `parameters` contributions in context.
-- [Scaffolder walkthrough](/developers/scaffolder-walkthrough) — a
+- [Scaffolder walkthrough](/developers/scaffolder-walkthrough): a
   plugin that contributes parameters and a model end to end.
-- [Vision plugins](/developers/vision-plugins) — how the engine detector
+- [Vision plugins](/developers/vision-plugins): how the engine detector
   is consumed on the agent side.
-- [Manifest reference](/developers/manifest) — every manifest field.
+- [Manifest reference](/developers/manifest): every manifest field.

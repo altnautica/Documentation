@@ -7,7 +7,7 @@ lastUpdated: "2026-06-18"
 
 # WFB-ng Video Link
 
-WFB-ng (WiFi Broadcast next generation) is the protocol the agent uses for long-range HD video. It is not standard WiFi. Instead, it broadcasts raw 802.11 frames in monitor mode with forward error correction (FEC). This gives you 10-50+ km range at 30-70 ms latency.
+WFB-ng (WiFi Broadcast next generation) is the protocol the agent uses for long-range HD video. It is not standard WiFi. Instead, it broadcasts raw 802.11 frames in monitor mode with forward error correction (FEC). That is what buys the range: 10-50+ km with the right antennas and line of sight.
 
 The agent manages WFB-ng directly as the `ados-wfb` systemd service (the native Rust `ados-radio` binary). No OpenHD or other wrapper is required.
 
@@ -22,7 +22,7 @@ Key differences from standard WiFi:
 | Mode | Managed (STA/AP) | Monitor mode (raw injection) |
 | Connection | Two-way handshake | One-way broadcast |
 | Range | ~100-300 m | 10-50+ km with directional antennas |
-| Latency | 5-50 ms | 30-70 ms |
+| Latency | Variable, retransmission adds tail latency | Fixed one-way, no retransmission to wait on |
 | Error handling | TCP retransmission | FEC (forward error correction) |
 | Encryption | WPA2/WPA3 | Custom key-based |
 
@@ -159,7 +159,7 @@ The drone always transmits with `wfb_tx`. On the ground side, ADOS supports thre
 
 The same WFB-ng key works across all three modes; the receiver handles dedup and FEC across the combined inputs.
 
-[Read the Mesh & Distributed Receive overview](/ground-agent/mesh-overview) and the [Three Deployment Roles](/ground-agent/three-roles) page for the full picture on the ground side.
+[Read the Mesh & Distributed Receive overview](/ground-agent/mesh-overview) and the [role breakdown](/ground-agent/setup#pick-a-role) for the full picture on the ground side.
 
 ## Troubleshooting
 

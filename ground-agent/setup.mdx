@@ -1,0 +1,598 @@
+---
+title: "Set Up a Ground Station"
+description: "Install, reach and pair a ground station, then grow it into a relay and receiver mesh. One page, in the order you do it."
+icon: "list-checks"
+lastUpdated: "2026-09-15"
+---
+
+# Set Up a Ground Station
+
+This is the whole setup arc in the order an operator does it. Work down the
+page; stop when you have what you need.
+
+| You want | Read to |
+|---|---|
+| One ground station receiving one drone | [Pair the air link](#pair-the-air-link) |
+| A multi-node deployment with relays | the end |
+
+<Steps>
+  <Step title="Install the agent">
+    [Install the agent](#install-the-agent) on the flashed SBC.
+  </Step>
+  <Step title="Reach the node">
+    [Reach the node](#reach-the-node) over the AP, USB, or the LAN.
+  </Step>
+  <Step title="Pick a role">
+    [Pick a role](#pick-a-role): direct, relay, or receiver.
+  </Step>
+  <Step title="Run the setup wizard">
+    [Run the setup wizard](#run-the-setup-wizard) through to finalization.
+  </Step>
+  <Step title="Pair with Mission Control">
+    [Pair with Mission Control](#pair-with-mission-control), or stay local-only.
+  </Step>
+  <Step title="Pair the air link">
+    [Pair the air link](#pair-the-air-link) to the drone.
+  </Step>
+  <Step title="Build a mesh (optional)">
+    [Bring up a receiver](#bring-up-a-receiver), then [add a relay](#add-a-relay), pairing them with [field pairing on the OLED](#field-pairing-on-the-oled).
+  </Step>
+</Steps>
+
+## Before you start
+
+- A flashed SBC with a supported board. See [Supported hardware](/ground-agent/supported-hardware).
+- One RTL8812EU USB Wi-Fi adapter for the air link.
+- A second USB Wi-Fi adapter if this node will be a relay or a receiver. It does
+  not have to be an RTL8812EU; any adapter that supports 802.11s or IBSS works.
+- Antennas: a 5 GHz omni on UNII-3 (channel 149 or 153) for the drone link, and
+  a 2.4 GHz omni on the mesh radio (channel 1 by default). Keep at least 30 cm
+  between antennas on the same chassis.
+- The pairing key from the drone you want to receive from.
+- Power, case and cabling. See [Power and runtime](/ground-agent/power-and-runtime).
+
+An OLED and four buttons are optional for a single node and required for field
+pairing without a laptop.
+
+## Install the agent
+
+Every documented install is the curl bootstrap. There is no local `install.sh`
+to run unless you cloned the repo yourself.
+
+```bash
+curl -sSL https://raw.githubusercontent.com/altnautica/ADOSDroneAgent/main/scripts/install.sh \
+  | sudo bash -s -- --profile ground-station
+```
+
+Set the mDNS name at the same time if you want a predictable reach name:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/altnautica/ADOSDroneAgent/main/scripts/install.sh \
+  | sudo bash -s -- --profile ground-station --name gs-alpha
+```
+
+Upgrade in place later with the same command plus `--upgrade`. Full flag surface
+and the flash-tool alternative are on [Installation](/ground-agent/installation).
+
+On the ground-station profile the install also:
+
+1. Pulls the mesh dependencies (`batctl`, `avahi-daemon`, `wpasupplicant`, and
+   an 802.11s SAE backend). No flag is required; the profile always pulls them.
+2. Scans for a second USB-attached Wi-Fi adapter and writes `mesh_capable: true`
+   to `/etc/ados/profile.conf` when it finds one.
+3. Creates `/etc/ados/mesh/` so the role-transition flow has somewhere to write
+   identity files.
+4. Lays down the three role-gated units, all masked and inactive until the role
+   sentinel says otherwise:
+
+| Unit | Role | What it does |
+|---|---|---|
+| `ados-batman` | `relay`, `receiver` | Brings the second adapter up in 802.11s or IBSS mode, joins the mesh by id and PSK, attaches the interface to `bat0`, and watches batman-adv neighbours and gateway state. |
+| `ados-wfb-relay` | `relay` | Runs the fragment forwarder against the RTL8812EU and writes counters to `/run/ados/wfb-relay.json`. |
+| `ados-wfb-receiver` | `receiver` | Runs the aggregator, accepting UDP forwards from relays. |
+
+The single-node RX unit, `ados-wfb-rx`, is gated to the `direct` role so it
+never grabs the adapter a relay or receiver unit drives.
+
+## Reach the node
+
+Three ways in. All of them reach the agent on port `8080`.
+
+| Path | URL |
+|---|---|
+| Ground station Wi-Fi AP | `http://192.168.4.1:8080` |
+| USB tether | `http://192.168.7.1:8080` |
+| Your LAN | `http://<hostname>.local:8080` |
+
+The AP broadcasts as `ADOS-GS-<short-id>` and hands out DHCP leases from
+`192.168.4.10` to `192.168.4.100`. Joining it on a phone usually raises the
+operating system's captive-portal prompt, because the agent answers the standard
+Android, iOS, macOS, Windows and Samsung connectivity probes with the expected
+responses. If the prompt does not appear, open `http://192.168.4.1:8080`
+directly.
+
+<Note>
+The captive responder runs only during the first-time setup phase. Once setup is
+finalized it deactivates, so it does not re-trigger on every reconnect.
+</Note>
+
+The AP passphrase is generated per unit on first use and stored `0600` at
+`/etc/ados/ap-passphrase`. Read it on the box:
+
+```bash
+ados network ap-passphrase
+```
+
+`<hostname>` is the node's system hostname, which is what avahi publishes as an
+A-record. Set it with `--name` at install time, or read it with `hostname`. A
+constructed name is not published and will not resolve.
+
+For USB, plug a USB-C cable from your laptop to the node's OTG port: the node
+brings up `usb0` at `192.168.7.1/24` and a single-host DHCP server hands your
+laptop `192.168.7.2`. See [USB tether](/ground-agent/usb-tether) and
+[Wi-Fi AP mode](/ground-agent/wifi-ap).
+
+## Pick a role
+
+Every ground station runs in one of three roles. The role is one config key,
+`ground_station.role`, and it decides which services start and what the OLED,
+the CLI and Mission Control show.
+
+<CardGroup cols={3}>
+  <Card title="direct" icon="circle-dot">
+    Single-node receive. The default. No mesh services.
+  </Card>
+  <Card title="relay" icon="arrow-right-arrow-left">
+    Forwards the drone's fragments to a receiver over a local mesh.
+  </Card>
+  <Card title="receiver" icon="tower-cell">
+    The hub. Combines fragments from itself and every paired relay, and
+    publishes the clean stream.
+  </Card>
+</CardGroup>
+
+| | `direct` | `relay` | `receiver` |
+|---|---|---|---|
+| Mesh services | off | on | on |
+| Needs a second USB adapter | no | yes | yes |
+| Needs prior pairing | no | yes, with a receiver | no |
+| Drone-facing radio runs | the RX path | the forwarder | the aggregator |
+| Publishes mDNS `_ados-receiver._tcp` | no | no | yes |
+| Distributed RX surface in Mission Control | hidden | shown | shown |
+| Default | yes | no | no |
+
+**Pick `direct`** when you have one ground station, the flight area is small,
+and one ground point sees everything. Hardware: the SBC, one RTL8812EU, antennas
+and the optional front panel.
+
+**Pick `relay`** to extend the receive footprint across an obstructed area:
+behind a hill, across a field, on the far side of a building. A relay listens to
+the drone with its own RTL8812EU and forwards the fragments it heard over the
+mesh instead of decoding locally. A receiver must already exist in the
+deployment; a fresh box cannot become a relay until it has paired with one and
+received a mesh invite.
+
+**Pick `receiver`** for the node where the pilot and Mission Control sit. The
+receiver accepts fragments from two sources at once, its own radio and the UDP
+forwards from every paired relay, and runs the Reed-Solomon FEC combine across
+the merged stream. If a packet is missed locally but heard by a relay, the
+receiver recovers it. There is exactly one receiver per deployment.
+
+### Mesh capability gating
+
+Setting the role config is not enough. A node will not bring mesh services up
+unless it is **mesh-capable**, which requires:
+
+- A second **USB-attached** Wi-Fi adapter present at runtime. The detector walks
+  `/sys/class/net/wlan*` and checks each interface is behind a USB bus, so an
+  onboard SDIO or PCIe radio is not mistaken for the mesh carrier. A Pi 4B's
+  built-in Wi-Fi does not count.
+- The mesh dependencies installed on the host. The ground-station install path
+  pulls them by default.
+
+Without `mesh_capable=true`, Mission Control hides the Distributed RX and Mesh
+surfaces, the OLED Mesh submenu disappears, and a role change to `relay` or
+`receiver` returns `409 E_MESH_NOT_CAPABLE`.
+
+## Run the setup wizard
+
+Open the reach URL and work down the step list. On a ground station with a cloud
+posture there are eleven steps; local-only hides the Mission Control pairing
+step, leaving ten. A step marked optional never blocks the finish.
+
+<Steps>
+  <Step title="Welcome">
+    Confirms the device name, board and version, and shows a chip row for the
+    local network (Wi-Fi, hotspot, USB tether or LAN). If no usable local
+    network is up, this step asks you to bring one up before continuing.
+  </Step>
+  <Step title="Profile">
+    Pick **Ground station**, then pick the role from the table above. The
+    recommended role appears as a hint based on the hardware fingerprint.
+  </Step>
+  <Step title="Operating region">
+    Optional, and never blocks the wizard. The agent defaults to an unrestricted
+    RF posture. Pin a region here if you want your local jurisdiction's channel
+    and power limits enforced. While unpinned, local RF compliance is your
+    responsibility.
+  </Step>
+  <Step title="Hardware check">
+    Sweeps every component the chosen role requires: SBC, RTL8812EU, kiosk
+    display, gamepad, and the second adapter for mesh roles. Resolve anything
+    reported `missing` before continuing; optional items can be skipped.
+  </Step>
+  <Step title="Cloud posture">
+    ADOS is local-first, so the default is **local-only**: Mission Control
+    reaches the agent over the LAN by hostname or IP and stores the key locally,
+    with no cloud round-trip. Pick cloud or a self-hosted backend only when you
+    need cross-network access. Local-only is a correct, fully working state.
+  </Step>
+  <Step title="Pair with Mission Control">
+    Shown only when you chose a cloud or self-hosted posture. See
+    [Pair with Mission Control](#pair-with-mission-control).
+  </Step>
+  <Step title="Video">
+    Confirms WHEP video is live. On a ground station that means the received
+    stream is being republished. Skippable if you do not need video on this node.
+  </Step>
+  <Step title="Ground receiver">
+    Configure the WFB receiver and the mesh role, then bind to a drone. This is
+    the air link, separate from Mission Control pairing. See
+    [Pair the air link](#pair-the-air-link).
+  </Step>
+  <Step title="Local display">
+    Offered when a kiosk display is attached: driver install plus calibration. A
+    touch screen prompts a four-corner calibration.
+  </Step>
+  <Step title="Remote access">
+    Optional. Configure a tunnel for reaching the node from outside the local
+    network. Skip it for an offline or LAN-only setup.
+  </Step>
+  <Step title="Finish">
+    Marks setup finalized, which is the flag the webapp uses to gate the rest of
+    its surface, and hands you off to Mission Control. The sidebar then shows the
+    role-aware entries and page visibility follows the profile.
+  </Step>
+</Steps>
+
+You can also do all of this from the OLED and the four buttons, with nothing but
+the node itself: B3 opens the menu, B1 and B2 move, B3 confirms. It is slower
+than the webapp. See [Physical UI](/ground-agent/physical-ui).
+
+Once a browser is connected, the node-detail panel in Mission Control is the
+richest setup surface: Overview, Radio, Network, Display and Physical UI,
+Peripherals, and the Distributed RX and Mesh tabs on a mesh-capable node.
+
+## Pair with Mission Control
+
+**Local-only** (the default): pair from Mission Control's add-a-node card using
+the ground station's hostname or IP over the LAN. No code is needed.
+
+**Cloud or self-hosted**: the agent shows a six-character pairing code. Enter it
+in Mission Control to accept the device, or accept a code issued by Mission
+Control.
+
+See [Connecting](/mission-control/connecting) and
+[Pairing](/drone-agent/pairing).
+
+## Pair the air link
+
+This is the WFB-ng key exchange between the drone and the ground station. It is
+a different thing from Mission Control pairing, and you need both.
+
+On the wizard's ground-receiver step (or Mission Control's Radio tab), paste the
+drone's pairing key, pick the radio channel, and pair. The agent stores the key,
+configures the RX service, and starts receiving. Live RSSI and bitrate appear
+once the air side is in range.
+
+After pairing:
+
+- This ground station receives video only from the paired drone.
+- Another ground station cannot intercept the stream.
+- The pairing survives reboots and power cycles.
+- You pair once, unless you factory-reset either side.
+
+The agent **refuses a second pairing while a drone is already paired**. Mission
+Control handles that by asking you to unpair first, then retrying.
+
+To pair with a different drone: unpair the current one from the setup webapp,
+the OLED menu or the Mission Control panel, then pair with the new key and
+confirm the new pairing on the Link screen.
+
+See [WFB pairing](/drone-agent/wfb-pairing) for the key material and the
+channel plan.
+
+## Bring up a receiver
+
+Do the receiver first. A relay cannot join a deployment that has no hub.
+
+Unlike a relay, **a receiver needs no prior pairing**. A fresh box comes up cold
+and generates its own mesh identity on first start.
+
+Set the role from the OLED (Mesh, Set role, `receiver`), from the setup webapp
+(Ground Station, Role, Receiver), or over REST:
+
+```bash
+curl -X PUT http://localhost:8080/api/v1/ground-station/role \
+  -H "Content-Type: application/json" \
+  -d '{"role": "receiver"}'
+```
+
+The transition stops the previous role's units, masks all three mesh units, then
+unmasks `ados-batman` and `ados-wfb-receiver`, writes `receiver` to
+`/etc/ados/mesh/role`, clears the stale mesh and WFB runtime state files, and
+starts the new units in order. `ados-batman` always comes up first, because the
+WFB side binds to the batman-adv interface. The whole thing takes a couple of
+seconds.
+
+`ados-wfb-rx`, the single-node RX unit, is gated by the supervisor to the
+`direct` role, so it does not start here.
+
+What then runs on the box:
+
+| Unit | What it does |
+|---|---|
+| `ados-batman` | batman-adv on the second adapter. |
+| `ados-wfb-receiver` | The aggregator, listening on port `5800`. With `accept_local_nic` true (the default) it also reads the local RTL8812EU directly. |
+| `ados-mediamtx-gs` | Republishes the combined stream as WHEP, unchanged from a single-node setup. |
+
+The receiver is also the mDNS publisher on the mesh: it advertises
+`_ados-receiver._tcp` on `bat0` so relays resolve it with no manual
+configuration.
+
+### FEC combine
+
+The Reed-Solomon FEC combine runs at the receiver. The radio defaults are
+`fec_k = 8` data fragments per block and `fec_n = 12` total, so 4 parity. The
+receiver recovers the original block from any 8 of the 12 fragments, whichever
+radio saw which fragment.
+
+```bash
+curl http://localhost:8080/api/v1/ground-station/wfb/receiver/combined
+```
+
+```bash
+curl http://localhost:8080/api/v1/ground-station/wfb/receiver/relays
+```
+
+### Cloud uplink election
+
+The receiver runs batman-adv as a gateway client. If any node on the mesh
+advertises a cloud gateway (because it has a modem, Ethernet or a Wi-Fi client
+connection), the receiver picks the best one by TQ and routes cloud-bound
+traffic over it. When a gateway dies, batman-adv evicts it and the receiver picks
+the next best. No operator action needed.
+
+Pin one from the Mesh tab, or over REST:
+
+```bash
+curl -X PUT http://localhost:8080/api/v1/ground-station/mesh/gateway_preference \
+  -H "Content-Type: application/json" \
+  -d '{"mode": "pinned", "pinned_mac": "AA:BB:CC:DD:EE:01"}'
+```
+
+Send `{"mode": "auto"}` to release the pin. See
+[Uplink matrix](/ground-agent/uplink-matrix).
+
+## Add a relay
+
+A relay needs to know which receiver to forward to, and it learns that during
+pairing. So the order is: pair first, then transition the role.
+
+<Warning>
+Transitioning to `relay` before pairing returns `409 E_NOT_PAIRED`. That is the
+agent protecting you from a restart loop: the mesh manager would crash
+repeatedly with no mesh id or PSK on disk.
+</Warning>
+
+Pair the relay to the receiver using [field pairing on the
+OLED](#field-pairing-on-the-oled), then transition:
+
+```bash
+curl -X PUT http://localhost:8080/api/v1/ground-station/role \
+  -H "Content-Type: application/json" \
+  -d '{"role": "relay"}'
+```
+
+Or from the OLED (Mesh, Set role, `relay`) or the setup webapp (Ground Station,
+Role, Relay).
+
+Same shape as the receiver transition: the previous role's units stop, all three
+mesh units are masked, then `ados-batman` and `ados-wfb-relay` are unmasked,
+`relay` is written to `/etc/ados/mesh/role`, the stale runtime state files are
+cleared, and the new units start with `ados-batman` first.
+
+A relay forwards fragments rather than decoding them locally, so the FEC combine
+and the clean stream belong to the receiver. Point Mission Control and your
+browser at the receiver for video, not at a relay.
+
+### Verify the relay
+
+```bash
+curl http://localhost:8080/api/v1/ground-station/wfb/relay/status
+```
+
+Expect `receiver_ip`, `receiver_port`, `fragments_seen`, `fragments_forwarded`
+and `up: true`. If `up` is still false after a few seconds, the relay has not
+resolved the receiver over mDNS: check the receiver is up and reachable on the
+mesh.
+
+On the setup webapp's Ground Station page the role state should read
+`current: relay`, `configured: relay`, `mesh_capable: true`, and the Mesh
+section should show the receiver with a non-zero TQ.
+
+### Going back to direct
+
+From the OLED (Mesh, Leave mesh) or the setup webapp (Ground Station, Role,
+Direct). The transition stops the relay units, masks all three mesh units,
+writes `direct` to `/etc/ados/mesh/role`, and clears the stale runtime
+snapshots so a freshly-direct node cannot serve old mesh data. The supervisor's
+`direct` role gate then brings `ados-wfb-rx` back up.
+
+The mesh identity files stay on disk, so a later switch back to `relay` resumes
+without re-pairing. To wipe the identity entirely, factory-reset.
+
+## Field pairing on the OLED
+
+A field crew can drop a relay onto a deployment with no laptop, no phone app and
+no cloud service. The whole flow runs on the OLED and the four buttons of both
+nodes.
+
+<Steps>
+  <Step title="On the receiver: open the Accept window">
+    B3 to enter the menu, then **Mesh, Accept relay**. The screen flips to a
+    60 second countdown and an empty pending list. The receiver binds a UDP
+    listener on `bat0` port `5801`.
+  </Step>
+  <Step title="On the relay: send a join request">
+    B3 to enter the menu, then **Mesh, Join mesh**. The relay scans for
+    receivers over mDNS on `bat0` and shows what it found. If nothing shows, the
+    receiver is out of reach or its Accept window is not open. Press B1 to send
+    the join request.
+  </Step>
+  <Step title="On the receiver: approve">
+    The pending list shows the relay's device id. Highlight it with B2 and B3 if
+    more than one is pending, then press B1 to approve.
+  </Step>
+  <Step title="On the relay: it writes to disk">
+    The relay decrypts the invite bundle with its ephemeral key and writes
+    `/etc/ados/mesh/id`, `/etc/ados/mesh/psk.key` (mode `0600`),
+    `/etc/ados/mesh/receiver.json` and the drone-paired WFB receive key. The
+    OLED flips to the Joined Status screen with the mesh id, the receiver host
+    and the live fragment count.
+  </Step>
+</Steps>
+
+The relay still needs its role transitioned from `direct` to `relay` before the
+mesh services start. See [Add a relay](#add-a-relay).
+
+The same flow is available over REST when you do have a laptop:
+
+```bash
+# On the receiver: open the window (5 to 300 seconds, default 60).
+curl -X POST http://localhost:8080/api/v1/ground-station/pair/accept \
+  -H "Content-Type: application/json" \
+  -d '{"duration_s": 60}'
+```
+
+```bash
+# On the receiver: approve a pending relay.
+curl -X POST http://localhost:8080/api/v1/ground-station/pair/approve/<device_id>
+```
+
+```bash
+# On the receiver: close the window early.
+curl -X POST http://localhost:8080/api/v1/ground-station/pair/close
+```
+
+### The protocol
+
+| Element | Value |
+|---|---|
+| Transport | UDP port `5801` |
+| Bind interface | `bat0` |
+| Request | One JSON datagram |
+| Reply | One opaque encrypted blob |
+| Key exchange | X25519 |
+| Symmetric cipher | ChaCha20-Poly1305 with HKDF key derivation |
+| Accept window | 60 seconds default, 5 to 300 configurable |
+| Invite bundle TTL | 120 seconds from issue |
+| Invite retransmit | 2 sends, 100 ms apart |
+| mDNS service | `_ados-receiver._tcp`, receiver port `5800` |
+
+The request is `{"type": "join", "device_id": "<id>", "pubkey_hex": "<32 bytes hex>"}`.
+The relay generates a fresh ephemeral keypair for every attempt and discards it
+once it has decrypted the reply.
+
+The reply is one binary blob: 32 bytes of receiver ephemeral public key, then a
+12-byte nonce, then the ciphertext and its 16-byte authentication tag. The
+plaintext is a JSON object carrying the mesh id, the mesh PSK, the drone
+channel, the WFB receive key, the receiver's mDNS host and port, and
+`issued_at_ms` plus `expires_at_ms`.
+
+The receiver sends the blob **twice**, 100 ms apart, because UDP on a lossy mesh
+drops packets and a single loss should not force the operator to redo the flow.
+The relay uses the first copy and tears down its keypair, so the second fails to
+decrypt and is dropped silently.
+
+A bundle whose `expires_at_ms` has already passed is dropped and the relay falls
+back to a re-request.
+
+### Security model
+
+The threat model is "an operator with physical access to both nodes for one
+minute". Out of scope: hostile actors on the same channel, capture-and-replay
+against historical pairings, side channels. In scope:
+
+- **Mutual authentication via ECDH.** The encrypted reply only opens with the
+  relay's ephemeral private key, so a passive listener holding the same SSID and
+  PSK cannot read the bundle.
+- **Authenticated encryption.** ChaCha20-Poly1305 detects any tampering.
+- **Bundle expiry.** 120 seconds. A captured bundle replayed later is rejected.
+- **Revocation.** Revoke a relay's device id from Mission Control or the setup
+  webapp. Revoked ids persist in `/etc/ados/mesh/revocations.json` (mode `0600`),
+  and a future join request from that device is dropped before it reaches the
+  approval queue.
+
+```bash
+curl -X POST http://localhost:8080/api/v1/ground-station/pair/revoke/<device_id>
+```
+
+## Verify
+
+| Surface | What to look at |
+|---|---|
+| OLED | The status header carries the role badge. Mesh, Neighbors lists every paired relay with its TQ. |
+| Mission Control | Distributed RX renders a card per paired relay with fragment counts, plus combined-stream stats with FEC-repaired fragments and output kbps. Mesh shows health, neighbours and gateways. |
+| Setup webapp | Ground Station and System show role, mesh health, neighbours, gateways, relays and combined stream stats. |
+| REST | `/api/v1/ground-station/status`, `/api/v1/ground-station/role`, `/api/v1/ground-station/mesh`, `/api/v1/ground-station/wfb/relay/status`, `/api/v1/ground-station/wfb/receiver/relays`, `/api/v1/ground-station/wfb/receiver/combined` |
+| CLI | `ados diag link` for the radio verdict and `ados diag video` for the per-hop video verdict. |
+
+On a working deployment, power on the drone and the ground station and video and
+telemetry appear within about 5 to 10 seconds of both sides being up. No setup
+steps are needed on later flights.
+
+If a relay does not see the receiver, go to
+[Mesh troubleshooting](/ground-agent/mesh-troubleshooting).
+
+## Re-run setup and reset
+
+### Re-run the wizard
+
+From **Settings, Profile, Re-run setup**, or:
+
+```bash
+curl -X POST http://localhost:8080/api/v1/setup/reset
+```
+
+Pairing keys and Mission Control links survive a wizard reset unless you unpair
+first.
+
+### Factory reset
+
+Factory reset clears the pairing keys, the network config and all settings.
+
+- **OLED**: hold B4 for 10 seconds, then confirm by holding B4 again for
+  3 seconds.
+- **Setup webapp**: Advanced, Factory Reset.
+- **Mission Control**: the node panel's Physical UI tab, Factory Reset. Requires
+  a typed confirmation.
+- **REST**: `POST /api/v1/ground-station/factory-reset`. Requires a fingerprint
+  confirmation token, so a stray request cannot wipe the node.
+
+The reset, in order: transitions the role back to `direct` (stopping and masking
+the mesh services), clears the WFB drone pair and the AP passphrase, then wipes
+`/etc/ados/mesh/id`, `psk.key`, `receiver.json`, `revocations.json` and `role`.
+
+The node reboots into the first-boot state and can be paired into a different
+deployment.
+
+## Related
+
+- [Installation](/ground-agent/installation)
+- [Mesh and distributed receive](/ground-agent/mesh-overview)
+- [Local mesh with batman-adv](/ground-agent/batman-adv)
+- [Mesh troubleshooting](/ground-agent/mesh-troubleshooting)
+- [Transitive enrollment](/ground-agent/transitive-enrollment)
+- [HDMI kiosk](/ground-agent/hdmi-kiosk)
+- [Uplink matrix](/ground-agent/uplink-matrix)

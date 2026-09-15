@@ -58,7 +58,8 @@
             "group": "Introduction",
             "pages": [
               "getting-started/introduction",
-              "getting-started/how-it-works"
+              "getting-started/how-it-works",
+              "getting-started/node-profiles"
             ]
           },
           {
@@ -197,10 +198,14 @@
               "drone-agent/mavlink-proxy",
               "drone-agent/mavlink-signing",
               "drone-agent/video-pipeline",
+              "drone-agent/multi-camera",
               "drone-agent/cloud-relay",
+              "drone-agent/swarm-bus",
+              "drone-agent/world-model",
               "drone-agent/wfb-ng",
               "drone-agent/wfb-pairing",
-              "drone-agent/rest-api"
+              "drone-agent/rest-api",
+              "drone-agent/black-box"
             ]
           },
           {
@@ -217,6 +222,7 @@
               "drone-agent/hal-and-tiers",
               "drone-agent/systemd-services",
               "drone-agent/setup-webapp",
+              "drone-agent/diagnostics",
               "drone-agent/troubleshooting"
             ]
           },
@@ -254,7 +260,7 @@
               "ground-agent/supported-hardware",
               "ground-agent/power-and-runtime",
               "ground-agent/installation",
-              "ground-agent/setup-walkthrough"
+              "ground-agent/setup"
             ]
           },
           {
@@ -288,11 +294,7 @@
             "group": "Distributed Receive & Mesh",
             "pages": [
               "ground-agent/mesh-overview",
-              "ground-agent/three-roles",
-              "ground-agent/relay-mode",
-              "ground-agent/receiver-mode",
               "ground-agent/batman-adv",
-              "ground-agent/field-pairing",
               "ground-agent/mesh-troubleshooting"
             ]
           },
@@ -308,7 +310,6 @@
             "pages": [
               "ground-agent/physical-ui",
               "ground-agent/display",
-              "ground-agent/setup-and-pairing",
               "ground-agent/uplink-matrix",
               "ground-agent/hardware-tab",
               "ground-agent/troubleshooting"
@@ -449,7 +450,8 @@
               "developers/vision-plugins",
               "developers/mission-and-suite-plugins",
               "developers/performance-and-budgets",
-              "developers/versioning-and-updates"
+              "developers/versioning-and-updates",
+              "developers/mcp-server"
             ]
           },
           {
@@ -461,6 +463,7 @@
               "developers/self-hosting/mqtt-bridge",
               "developers/self-hosting/video-relay",
               "developers/self-hosting/all-in-one",
+              "developers/self-hosting/deploy-tool",
               "developers/self-hosting/troubleshooting-and-ports"
             ]
           }

@@ -51,10 +51,18 @@ Plugins ship as `.adosplug` archives signed with an Ed25519 key.
 ```bash
 # from a local file
 ados plugin install ./geofence-1.4.2.adosplug
-
-# from a URL the agent can reach
-ados plugin install https://example.com/plugins/geofence-1.4.2.adosplug
 ```
+
+`ados plugin install` takes a path that already exists on the node. It does not
+fetch a URL. To install from a release asset, download it first:
+
+```bash
+curl -LO https://example.com/plugins/geofence-1.4.2.adosplug
+ados plugin install ./geofence-1.4.2.adosplug
+```
+
+The URL path runs through Mission Control instead. See
+[Distribution: install from a URL](/developers/distribution-url-install).
 
 The CLI verifies the signature against the agent's trusted-key list, parses `manifest.yaml`, and shows two prompts:
 

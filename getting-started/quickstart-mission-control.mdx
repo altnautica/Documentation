@@ -7,7 +7,7 @@ lastUpdated: "2026-06-18"
 
 ## What You Will Build
 
-By the end of this page, you will have ADOS Mission Control running in your browser with 7 simulated drones. You can explore the dashboard, plan missions, try the configuration panels, and fly a simulated drone with your keyboard or gamepad. No hardware needed.
+By the end of this page, you will have ADOS Mission Control running in your browser with a simulated fleet. You can explore the dashboard, plan missions, try the configuration panels, and fly a simulated drone with your keyboard or gamepad. No hardware needed.
 
 ## Prerequisites
 
@@ -26,7 +26,7 @@ Mission Control uses WebSerial for USB flight controller connections and WebUSB 
 
 The fastest way to try ADOS Mission Control is the hosted demo at [command.altnautica.com](https://command.altnautica.com).
 
-It loads with 7 simulated drones, demo telemetry, and all features enabled. Nothing to install. Just open the link.
+It loads with the full simulated fleet, demo telemetry, and every feature enabled. Nothing to install. Just open the link.
 
 ## Option B: Run Locally
 
@@ -54,12 +54,12 @@ It loads with 7 simulated drones, demo telemetry, and all features enabled. Noth
     This starts the development server on port 4000 with demo mode enabled. Open [http://localhost:4000](http://localhost:4000) in your browser.
 
     <Tip>
-    Demo mode sets `NEXT_PUBLIC_DEMO_MODE=true` and populates the dashboard with 7 simulated drones showing live-updating telemetry. It requires no Convex backend, no SITL, and no hardware.
+    Demo mode sets `NEXT_PUBLIC_DEMO_MODE=true` and populates the dashboard with fourteen simulated aircraft plus a workstation node and a ground-station node, all showing live-updating telemetry. It requires no Convex backend, no SITL, and no hardware.
     </Tip>
   </Step>
 
   <Step title="Explore the dashboard">
-    You should see the main dashboard with 7 simulated drones. Each drone shows:
+    You should see the main dashboard with the simulated fleet. Each drone shows:
 
     - Attitude indicator (artificial horizon)
     - GPS coordinates and altitude
@@ -67,8 +67,8 @@ It loads with 7 simulated drones, demo telemetry, and all features enabled. Noth
     - Flight mode (Stabilize, Loiter, Auto, etc.)
     - Connection status
 
-    <Frame caption="Mission Control dashboard with 7 simulated drones in demo mode">
-      <img src="/images/dashboard/dashboard-demo.png" alt="Mission Control dashboard showing 7 drone cards with telemetry data" />
+    <Frame caption="Mission Control dashboard in demo mode">
+      <img src="/images/dashboard/dashboard-demo.png" alt="Mission Control dashboard showing drone cards with telemetry data" />
     </Frame>
   </Step>
 </Steps>
@@ -252,10 +252,17 @@ The desktop app is the same codebase with an Electron wrapper. It uses about 200
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `NEXT_PUBLIC_DEMO_MODE` | `false` | Enable demo mode with 7 simulated drones |
+| `NEXT_PUBLIC_DEMO_MODE` | `false` | Start with the simulated fleet |
 | `PORT` | `4000` | Dev server port |
 | `NEXT_PUBLIC_CONVEX_URL` | (none) | Convex backend URL for cloud features |
-| `NEXT_PUBLIC_MQTT_URL` | (none) | MQTT broker URL for real-time telemetry |
+| `GITHUB_TOKEN` | (none) | Raises the PX4 releases API budget |
+| `GROQ_API_KEY` | (none) | AI PID tuning suggestions |
+| `CESIUM_BASE_URL` | (none) | Self-hosted Cesium JS build location. Unset falls back to the CDN. |
+
+The MQTT broker URL and the Cesium Ion token are **Convex** server variables,
+not Next.js ones, so setting them in `.env` does nothing. The full list and the
+`npx convex env set` form are on
+[Installation](/mission-control/installation#convex-server-variables).
 
 Cloud features (fleet management, cloud relay, community changelog) require a Convex backend. For local development and direct connections, no backend is needed.
 

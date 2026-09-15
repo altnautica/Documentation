@@ -29,7 +29,7 @@ App latencies are targets for the in-development client. Browser figures reflect
     Android will show a "No internet" notification because the ground station is a local network. Tap "Stay connected" or "Use without internet." The ground station is working, it just does not provide internet access.
   </Step>
   <Step title="Open the browser">
-    **Chrome browser (today):** Navigate to `http://192.168.4.1:4000` (Mission Control) or `http://setup.ados.local/` (setup webapp).
+    **Chrome browser (today):** Navigate to `http://192.168.4.1:8080` for the node dashboard and setup webapp, or `http://setup.ados.local:8080/` (the AP's DNS maps that name to the node). The cockpit is at `http://192.168.4.1:8080/cockpit/`.
 
     **ADOS Android app (planned):** The app will discover the ground station automatically via mDNS so video and telemetry start in a few seconds. It is not yet available as a download.
   </Step>
@@ -50,7 +50,7 @@ Android 11 and later supports CDC-NCM USB Ethernet natively.
     Tap "Allow." Android creates a USB Ethernet interface and assigns your phone the IP `192.168.7.2`.
   </Step>
   <Step title="Open the browser">
-    In Chrome, navigate to `http://192.168.7.1:4000`. The planned ADOS Android app will detect the USB connection and switch to it automatically.
+    In Chrome, navigate to `http://192.168.7.1:8080`. The planned ADOS Android app will detect the USB connection and switch to it automatically.
   </Step>
 </Steps>
 
@@ -126,4 +126,4 @@ When no gamepad is connected, Mission Control in Chrome shows a virtual sticks o
 
 - [WiFi AP](/ground-agent/wifi-ap) for laptop connection details
 - [USB Tether](/ground-agent/usb-tether) for the full USB-C reference
-- [Setup and Pairing](/ground-agent/setup-and-pairing) for first-time setup
+- [Set Up a Ground Station](/ground-agent/setup) for first-time setup

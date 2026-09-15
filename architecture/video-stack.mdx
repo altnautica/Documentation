@@ -1,185 +1,330 @@
 ---
 title: "Video Stack"
-description: "The full video pipeline from camera sensor to browser pixel, including WFB-ng, MediaMTX, and WebRTC."
+description: "The video path from camera sensor to browser, hop by hop: encode, WFB-ng radio, MediaMTX, WebRTC."
 icon: "video"
-lastUpdated: "2026-06-18"
+lastUpdated: "2026-09-15"
 ---
 
 # Video Stack
 
-The ADOS video pipeline carries live HD video from the drone's camera to your browser with 40-100 ms latency, depending on the connection. It uses standard open-source tools at every stage: V4L2 for capture, ffmpeg for encoding, WFB-ng for radio transport, MediaMTX for local serving, and WebRTC for browser delivery. On the aircraft, the native Rust video service (`ados-video`, the `ados-video` unit) supervises the encoder and the local MediaMTX instance; the ground station receives the stream through `ados-mediamtx-gs`.
+ADOS carries live HD video from the drone's camera to a browser using open-source
+parts at every stage: V4L2 for capture, ffmpeg for encode, WFB-ng for the radio
+hop, MediaMTX for serving, WebRTC for delivery.
 
-## Full pipeline
+On the aircraft the `ados-video` unit supervises the encoder and the local
+MediaMTX instance. On the ground station `ados-wfb-rx` owns the radio receiver
+and the fan-out, and `ados-mediamtx-gs` owns the ingest and the ground MediaMTX
+instance.
 
-```mermaid
-%%{init: {'theme': 'dark'}}%%
-sequenceDiagram
-    participant Camera as Camera (CSI/USB)
-    participant V4L2 as V4L2 Driver
-    participant FFmpeg as ffmpeg Encoder
-    participant MTX_Air as MediaMTX (Air)
-    participant WFB_TX as wfb_tx (5 GHz)
-    participant WFB_RX as wfb_rx (5 GHz)
-    participant MTX_GS as MediaMTX (Ground)
-    participant Browser as Browser (WebRTC)
+## The hop map
 
-    Camera->>V4L2: Raw frames
-    V4L2->>FFmpeg: YUV420p via V4L2 device
-    FFmpeg->>MTX_Air: H.264 RTSP push
-    MTX_Air->>WFB_TX: RTSP read + raw NALs
-    Note over WFB_TX,WFB_RX: 5 GHz monitor mode<br/>FEC encoded packets<br/>No WiFi association
-    WFB_TX->>WFB_RX: Radio link (50 km range)
-    WFB_RX->>MTX_GS: Decoded NALs
-    MTX_GS->>Browser: WebRTC WHEP
-    Note over Browser: Hardware H.264 decode<br/>MediaSource or WebRTC
+This is the list to measure against. Numbers in brackets are the hop labels used
+by `ados diag video`.
+
 ```
+DRONE
+  [1]  camera (/dev/video0, CSI or USB UVC) via V4L2
+  [2]  encoder: one ffmpeg process, H.264, GOP = fps/2
+       ├─ [3]  tee branch A: RTSP publish to the drone's own MediaMTX `main` path, :8554
+       └─ [4]  tee branch B: RTP (RFC 6184) to UDP 5600 on loopback
+  [5]  wfb_tx -p 0 -u 5600  (FEC k=8/n=12, 20 MHz)
+  [6]  RTL8812EU in monitor mode, 5 GHz
+GROUND
+  [7]  wfb_rx -p 0 -u 5599 -l 1000   decodes and FEC-recovers
+  [8]  fan-out :5599 -> :5600 (MediaMTX ingest) + :5605 (on-box display)
+  [9]  ingest ffmpeg: -f sdp -i /etc/ados/wfb/video.sdp, -c:v copy
+  [10] ground MediaMTX `main` path
+  [11] :8889/main/whep -> cockpit or Mission Control
+```
+
+Telemetry does not share this path. It rides its own radio port (`wfb_tx -p 1` to
+`wfb_rx -p 1`, UDP 5803 at both ends), so a dark video feed and a live telemetry
+link are a normal combination and point at hops 2 to 10.
+
+`main` is the canonical path name on both nodes. WHEP is served at
+`:8889/main/whep`. Nothing publishes to `/ados`, so a zero byte count on that
+path is not evidence of a video fault.
 
 ## Stage 1: Capture
 
-The drone agent detects cameras at boot by scanning `/dev/video*` devices. It supports:
+The agent scans `/dev/video*` at boot and supports MIPI CSI cameras and USB UVC
+cameras through V4L2. It sets resolution, framerate and pixel format before
+starting the encoder. The shipped default is 1280x720 at 30 fps.
 
-- **MIPI CSI cameras** via V4L2 (Radxa Camera 4K, Arducam modules)
-- **USB UVC cameras** via V4L2 (any standard webcam)
-
-The video service configures resolution, framerate, and pixel format before starting the encoder. Default: 1080p at 30 fps, YUV420p.
-
-The encoder choice comes from the board's HAL profile. On boards with a Rockchip media engine (RK3588, RK3576), the agent can use `rkmpp` (Rockchip Media Process Platform) for zero-copy encode directly from the camera ISP. Boards that expose a V4L2 hardware encoder use it through ffmpeg. On boards without a usable hardware encoder, it falls back to `libx264`.
+The encoder choice comes from the board's HAL profile. Rockchip boards with a
+media engine can use `mpph264enc` through GStreamer. Boards exposing a V4L2
+hardware encoder use `h264_v4l2m2m` through ffmpeg. Everything else falls back to
+`libx264`.
 
 ## Stage 2: Encode
 
-ffmpeg encodes the raw camera output to H.264:
+One process does the encode and both publishes. The default path (USB and IP
+cameras) is a single ffmpeg whose output is ffmpeg's `tee` muxer: branch A is the
+RTSP publish into the local MediaMTX, branch B is the RTP copy the radio reads.
 
 ```bash
-ffmpeg \
-  -f v4l2 -input_format yuyv422 -video_size 1920x1080 -framerate 30 \
-  -fflags nobuffer -flags low_delay \
+ffmpeg -fflags nobuffer -flags low_delay \
   -probesize 32 -analyzeduration 0 \
+  -f v4l2 -input_format mjpeg -video_size 1280x720 -framerate 30 \
   -i /dev/video0 \
-  -c:v libx264 -preset ultrafast -tune zerolatency \
-  -profile:v high -level 4.1 \
-  -b:v 6000k -maxrate 6000k -bufsize 3000k \
-  -g 30 -keyint_min 30 \
-  -f rtsp rtsp://localhost:8554/ados
+  -c:v libx264 -b:v 4000k \
+  -pix_fmt yuv420p -profile:v high -level:v 4.1 \
+  -preset ultrafast -tune zerolatency \
+  -g 15 -bf 0 -refs 1 -threads 4 -flush_packets 1 \
+  -x264-params no-mbtree=1:sync-lookahead=0:rc-lookahead=0:sliced-threads=1:slices=4:scenecut=0 \
+  -bsf:v h264_mp4toannexb,dump_extra=freq=keyframe \
+  -max_delay 0 -muxdelay 0 -muxpreload 0 \
+  -map 0:v -f tee \
+  '[f=rtsp:rtsp_transport=tcp:max_delay=0:flush_packets=1]rtsp://127.0.0.1:8554/main|[f=rtp:payload_type=96:ssrc=0xCAFE:max_delay=0:flush_packets=1]rtp://127.0.0.1:5600?pkt_size=1316'
 ```
 
-Key flags for low latency:
+| Flag | Why it is there |
+|------|-----------------|
+| `-fflags nobuffer -flags low_delay` | No input buffering, minimum encoder delay |
+| `-probesize 32 -analyzeduration 0` | Skip format analysis on a source whose format is already known |
+| `-preset ultrafast -tune zerolatency` | Fastest x264 path, no B-frames, no lookahead |
+| `-profile:v high -level:v 4.1 -pix_fmt yuv420p` | `avc1.640029`, which the browser MSE player pins |
+| `-g 15` | GOP is `fps/2`, so an IDR arrives every 500 ms at 30 fps |
+| `-threads 4` plus `sliced-threads=1:slices=4` | Sliced threading emits a frame whole. Frame-level threading holds four frames in flight, which is about 133 ms of pure pipeline delay at 30 fps. Boards with fewer than four probed cores keep the two-thread frame-threaded form instead. |
+| `-bsf:v ...,dump_extra=freq=keyframe` | Re-inserts SPS/PPS in-band before every IDR |
+| `-max_delay 0 -muxdelay 0 -muxpreload 0` | ffmpeg's defaults here are about 0.7 s of mux delay plus 0.5 s of preload, in front of every downstream hop |
+| `-map 0:v -f tee` | One encode, two muxers. The RTP copy costs no second encode. |
 
-| Flag | Purpose |
-|------|---------|
-| `-fflags nobuffer` | Disable input buffering |
-| `-flags low_delay` | Minimize encoder latency |
-| `-probesize 32` | Tiny probe size (faster startup) |
-| `-analyzeduration 0` | Skip format analysis |
-| `-preset ultrafast -tune zerolatency` | Fastest possible x264 encode |
-| `-g 30 -keyint_min 30` | Keyframe every 1 second (30 fps / 30 GOP) |
+### Parameter sets repeat before every IDR
 
-The encoded stream pushes to a local MediaMTX instance over RTSP.
+The RTSP muxer advertises `AVFMT_GLOBALHEADER`, which makes libx264 put SPS and
+PPS only in extradata (the SDP) and never in the stream. A browser that loses
+sync then has nothing in-band to re-bootstrap from and freezes on its last
+decoded frame while the PeerConnection still reads `connected`.
+
+Every encode arm repeats the parameter sets in-band per IDR to close that:
+`dump_extra=freq=keyframe` on `libx264` and `h264_v4l2m2m`, `--inline` on
+`rpicam-vid`, `h264parse config-interval=1` on the GStreamer arms plus
+`mpph264enc header-mode=1` at the encoder. The ground ingest re-applies the same
+bitstream filter, which is a no-op against a current drone and a repair against
+an older one.
+
+### There is no keyframe-on-demand, by design
+
+The GOP is the recovery mechanism. A decoder that loses sync re-bootstraps at the
+next IDR, which is at most 500 ms away at 30 fps with `-g 15`.
+
+There is no PLI or keyframe-request path, and adding one is not on the roadmap.
+The shipped encoder leaves (`ffmpeg` CLI, `rpicam-vid`, `gst-launch-1.0`) expose
+no runtime control channel an IDR could be requested through, and MediaMTX does
+not forward a WebRTC receiver's PLI to an RTSP publisher. The most a request
+could save is the 0 to 500 ms a decoder waits, so about 250 ms expected, on an
+event that only happens after loss the FEC did not recover. Respawning the
+encoder to force an IDR costs a 1 to 2 second blackout, which is strictly worse
+than waiting.
+
+### H.265 is not the launch codec
+
+H.264 is the shipped wire codec. H.265 saves bandwidth at the same quality, and
+`video.camera.codec` accepts it, but browser WebRTC support for H.265 is not
+consistent enough to ship as a default and Mission Control's player pins
+`avc1.640029`. Test your playback path before switching.
 
 ## Stage 3: WFB-ng transport
 
-WFB-ng (WiFi Broadcast next generation) uses an RTL8812EU adapter in monitor mode to broadcast FEC-encoded packets on 5 GHz. This is not standard WiFi. There is no association, no handshake, no retransmission, and no CSMA/CA backoff.
-
-Key properties:
+WFB-ng puts an RTL8812EU adapter in monitor mode and injects FEC-encoded packets
+on 5 GHz. This is not standard WiFi: no association, no handshake, no
+retransmission, no CSMA/CA backoff.
 
 | Property | Value |
 |----------|-------|
 | Radio mode | 802.11 monitor mode (injection) |
-| Frequency | 5 GHz (channels 36-165) |
-| FEC | Reed-Solomon, configurable ratio |
-| Encryption | WFB-ng key exchange (AES) |
-| Max range | 50+ km (with directional antennas) |
-| Typical latency | 2-5 ms one-way |
+| Frequency | 5 GHz |
+| Channel width | 20 MHz |
+| FEC | Reed-Solomon, `k=8` data of `n=12` total by default |
+| Encryption | WFB-ng key exchange |
+| Adaptive MCS | Capped at MCS 3 (`video.wfb.adaptive_mcs_max`, hard ceiling 5) |
 
-On the air side, `wfb_tx` reads the RTSP stream from MediaMTX and broadcasts it. On the ground side, `wfb_rx` receives and reassembles the stream, feeding it back into a ground-side MediaMTX instance.
+The framing between the encoder and the radio is RTP (RFC 6184), payload type 96,
+SSRC `0xCAFE`, `pkt_size` 1316, on UDP 5600. RTP is the contract, not a detail: a
+lost RTP packet costs at most one NAL fragment, where a lost chunk of a raw byte
+stream corrupts everything up to the next start code. The receiver depayloads
+against the SDP at `/etc/ados/wfb/video.sdp`.
 
-The agent supervises `wfb_tx` and `wfb_rx` from native Rust services: the radio TX service (`ados-radio`, the `ados-wfb` unit) on the drone and the receiver service (`ados-groundlink`, the `ados-wfb-rx` unit) on the ground station. It does not use OpenHD as a runtime dependency. WFB-ng is the transport protocol, and the agent controls the underlying `wfb_tx` / `wfb_rx` binaries directly.
+<Note>
+On CSI boards the encoder is `rpicam-vid` or `gst-launch-1.0` publishing through a
+shell pipeline, and there the RTP copy is still produced by a separate tap process
+with its own watchdog. Check which encoder is running (the `encoder` field in
+`camera-state.json`, or the `Video` row of `ados status`) before reasoning about
+hop 4.
+</Note>
 
-## Stage 4: Ground serving
+The MCS ladder cap is a statement of what has been measured, not of what the
+radio can do. The rung table is arithmetic from standard 802.11n 20 MHz
+required-SNR figures, and nothing in the tree has measured what the vendored
+`rtl8812eu` driver actually applies. Raising the cap without a range sweep is how
+a link that looks perfect on a bench dies at 150 m.
 
-The ground-side MediaMTX instance ingests the reassembled stream from WFB-ng RX and serves it to clients over WebRTC WHEP (WebRTC-HTTP Egress Protocol).
+## Stage 4: Ground receive and serve
 
-WHEP is an HTTP-based WebRTC signaling protocol. The browser sends a POST to the WHEP endpoint, and MediaMTX responds with an SDP answer. No custom signaling server needed.
+`wfb_rx -p 0` decodes the radio packets and FEC-recovers gaps, then the fan-out
+forwards them to the MediaMTX ingest on UDP 5600 and to the on-box display on
+5605. The ingest is one ffmpeg in copy mode:
+
+```bash
+ffmpeg -protocol_whitelist file,udp,rtp \
+  -probesize 20M -analyzeduration 20M \
+  -max_delay 200000 -reorder_queue_size 16 \
+  -f sdp -i /etc/ados/wfb/video.sdp \
+  -c:v copy -bsf:v dump_extra=freq=keyframe \
+  -muxdelay 0 -muxpreload 0 -flush_packets 1 \
+  -f rtsp -rtsp_transport tcp rtsp://127.0.0.1:8554/main
+```
+
+The reorder window is deliberately small. `wfb_rx` emits fragments in
+block and fragment order and recovers a gap before forwarding, so the demuxer
+never sees genuine reordering, only genuine loss. A deep queue buys nothing and
+costs the one thing this path cannot afford: at the old 256-packet depth the
+demuxer held roughly 170 ms on any gap, and up to the full 2 s `max_delay` in the
+pathological case. That is the "video is a second behind after a link blip"
+symptom. 200 ms and 16 packets absorbs a scheduler hiccup and nothing more; a
+genuine stall is caught by the delta-counter watchdogs, which are a detector
+rather than a buffer.
+
+The probe window is large for the opposite reason. The SDP carries only the
+encoding name and clock rate, so width, height, profile and level arrive in the
+first IDR. A cold restart under load can wait past 5 s for one, and a tighter
+window produced an `unspecified size` death loop with a mandatory 5 s backoff
+between retries. The probe exits as soon as an IDR is found, so 20 s is invisible
+on a healthy boot.
 
 | Endpoint | URL | Protocol |
 |----------|-----|----------|
-| WHEP | `http://<ground-node>:8889/ados/whep` | WebRTC (H.264 RTP) |
-| RTSP | `rtsp://<ground-node>:8554/ados` | RTSP (for tools like VLC) |
+| WHEP | `http://<ground-node>:8889/main/whep` | WebRTC (H.264 RTP) |
+| RTSP | `rtsp://<ground-node>:8554/main` | RTSP, for tools like VLC |
 
-MediaMTX uses copy-codec (zero transcoding). The H.264 stream from WFB-ng passes through to WebRTC without re-encoding. CPU overhead is minimal: ~15% of one core on Pi 4B.
+MediaMTX does no transcoding. The H.264 stream passes through to WebRTC as it
+arrived.
+
+Both MediaMTX instances are rendered from one config generator, so the air and
+ground documents cannot drift apart silently. The file is written to
+`/etc/ados/mediamtx.yml`.
+
+<Warning>
+Do not hand-edit `/etc/ados/mediamtx.yml`. MediaMTX rejects an unrecognised key
+outright, so a typo does not degrade the node, it leaves the node with no media
+server at all. Change `video.*` in `/etc/ados/config.yaml` and let the agent
+regenerate the file.
+</Warning>
+
+### WebRTC and ICE
+
+The relevant MediaMTX keys, with the values the LAN profiles get:
+
+```yaml
+webrtcLocalUDPAddress: ":8189"
+webrtcLocalTCPAddress: ""          # LAN profiles offer no TCP ICE candidate
+webrtcIPsFromInterfaces: true
+webrtcIPsFromInterfacesList: []
+webrtcHandshakeTimeout: 10s
+webrtcSTUNGatherTimeout: 2s
+webrtcICEServers2: []              # LAN profiles gather no STUN
+```
+
+UDP ICE is pinned to a single port, 8189, so a firewall rule is one line.
+
+STUN is configured only on the cloud-relay profile. On a LAN session the browser
+connects on host candidates, so every STUN entry would be pure handshake latency
+before the first frame. The relay profile carries five STUN servers and a TCP ICE
+candidate on 8189, because a relay can face a network that blocks UDP.
 
 ## Stage 5: Browser decode
 
-The browser receives H.264 RTP over WebRTC and decodes it using the platform's hardware decoder. Chrome, Edge, Firefox, and Safari all support hardware H.264 decode on modern hardware.
+The browser receives H.264 RTP over WebRTC and decodes with the platform hardware
+decoder. Mission Control's `src/lib/video/webrtc-client.ts` handles WHEP
+negotiation, ICE gathering, track attachment and connection health.
 
-The `webrtc-client.ts` module in Mission Control handles:
-
-- WHEP negotiation (POST to the endpoint, receive SDP answer)
-- ICE candidate gathering (STUN servers for NAT traversal)
-- Track attachment to a `<video>` element
-- Health monitoring (connection state, packet loss, jitter)
+WebRTC directly from the drone is not the launch path. Video reaches a browser
+either from the ground station over the radio hop above, or over the cloud relay.
 
 ## Video transport modes
 
-Mission Control supports four video transport modes, selectable from the transport switcher in the video feed:
+Mission Control's transport switcher offers four modes:
 
-| Mode | How it works | Latency | When to use |
-|------|-------------|---------|-------------|
-| Auto | Tries LAN first, falls back to P2P MQTT | Varies | Default, works everywhere |
-| LAN Direct | WebRTC WHEP to ground station on local network | 40-100 ms | WiFi AP, USB tether, Ethernet |
-| P2P MQTT | WebRTC with SDP signaling relayed over MQTT | 50-150 ms | Remote access without port forwarding |
-| Off | No video | N/A | Telemetry-only monitoring |
+| Mode | How it works | When to use |
+|------|-------------|-------------|
+| `auto` | Tries LAN WHEP first, falls back to MQTT-signalled WebRTC | Default |
+| `lan-whep` | WebRTC WHEP straight to the ground station's LAN address | WiFi AP, USB tether, Ethernet |
+| `p2p-mqtt` | WebRTC with the SDP exchange relayed over MQTT | Remote access with no port forwarding |
+| `off` | No video | Telemetry-only monitoring |
 
-### LAN Direct
-
-The browser connects directly to the MediaMTX WHEP endpoint on the ground station's local IP. Lowest latency, simplest path. Works when the browser and ground station are on the same network.
-
-### P2P MQTT
-
-For connections across the internet (home network to field drone), the browser and ground station exchange WebRTC SDP offers and answers over MQTT topics:
+Under `p2p-mqtt` the browser and the agent exchange SDP over two topics:
 
 ```
-ados/{deviceId}/webrtc/offer   → browser publishes
-ados/{deviceId}/webrtc/answer  ← agent publishes
+ados/{deviceId}/webrtc/offer    browser publishes
+ados/{deviceId}/webrtc/answer   agent publishes
 ```
 
-The MQTT broker is reached over a secure WebSocket behind a reverse-proxy tunnel (the hosted deployment fronts it with TLS; a self-hosted deployment points at its own broker). Once the SDP exchange completes, the WebRTC media stream flows peer-to-peer through STUN-negotiated NAT traversal. The MQTT broker is only used for signaling, not for the video data itself.
+The broker is reached over a secure WebSocket. Once the exchange completes the
+media flows peer-to-peer through STUN-negotiated NAT traversal; the broker
+carries signalling only, never video.
 
 <Note>
-P2P MQTT requires both sides to have internet access. Users behind symmetric NAT (some cellular carriers) may fail the ICE negotiation. The transport switcher shows the specific failure stage and error code in a tooltip.
+`p2p-mqtt` needs internet access on both sides. Behind symmetric NAT, which some
+cellular carriers use, ICE negotiation can fail outright. The transport switcher
+reports the failing stage.
 </Note>
 
-## Latency budget breakdown
+## What is measured, and what is not
 
-| Stage | LAN Direct | P2P MQTT |
-|-------|-----------|----------|
-| Camera capture | 5-10 ms | 5-10 ms |
-| ffmpeg encode | 10-20 ms | 10-20 ms |
-| WFB-ng air path | 2-5 ms | 2-5 ms |
-| WFB-ng ground reassembly | 2-5 ms | 2-5 ms |
-| MediaMTX RTSP ingest | 1-2 ms | 1-2 ms |
-| WebRTC WHEP / ICE | 10-20 ms | 20-50 ms |
-| Browser decode | 10-15 ms | 10-15 ms |
-| **Total** | **40-77 ms** | **50-107 ms** |
+One latency number in this stack has been measured, and it is not the number an
+operator means by "latency".
 
-Over WiFi AP (adds a wireless hop between ground station and laptop), add 20-30 ms.
+**Publish-side, stamp to readback, sim bench, 2026-09-15.** The SEI probe injects
+a timestamp after the encoder and reads it back from the drone's own
+`rtsp://localhost:8554/main`.
 
-## STUN and ICE
+| Figure | Value |
+|---|---|
+| Mean | 74 ms |
+| Range across samples | 61 to 152 ms |
+| Samples | 6 |
+| Bench | 1280x720 at 30 fps, 4000 kbps synthetic RTSP source, agent binaries as installed |
 
-The agent's MediaMTX config includes four public STUN servers for ICE candidate discovery:
+That number covers four things: the publish mux, the RTSP publish, MediaMTX on
+the drone, and the readback demux.
 
-- `stun.l.google.com:19302`
-- `stun2.l.google.com:19302`
-- `stun.cloudflare.com:3478`
-- `global.stun.twilio.com:3478`
+It excludes capture, encode, the radio hop, the ground receive, the ground
+MediaMTX and the browser. Those are most of what an operator experiences.
 
-ICE mux is pinned to UDP+TCP on port 8189 for predictable NAT behavior. TCP fallback handles networks that block UDP.
+**There is no glass-to-glass figure for ADOS, and this is not one.** Do not read
+the 74 ms as end to end, and do not add per-stage guesses to it to manufacture a
+total. A real air-to-ground figure needs the same probe run on the ground node
+against its own `rtsp://127.0.0.1:8554/main` with clock-aligned nodes. A real
+glass-to-glass figure needs a camera-side marker and a photograph of the viewer.
+Neither has been done.
+
+Two things to know before quoting any reading from the probe:
+
+- It is off by default and gated on `video.wfb.sei_latency`, because it splices a
+  Python stage into the byte path. Bench profiles only.
+- `/api/video/latency` reads the tap's sidecar file with no freshness gate, so a
+  stale reading can look live. Confirm an injector is actually in the byte path
+  before trusting a number.
+
+For per-hop health rather than latency, `ados diag video` samples the reliable
+cumulative counters at each hop twice and attributes a stall to the hop that
+stopped. That is the supported first move on a dark feed. See
+[Diagnostics](/drone-agent/diagnostics).
 
 ## Recording
 
-The ground station can record the incoming video stream to the SD card. Recording happens at the MediaMTX level (raw H.264 to MP4 container) with zero additional CPU overhead. Files are accessible from the Hardware tab Storage sub-view or via the REST API.
+Recording happens inside MediaMTX, writing fMP4 segments with no extra encode
+pass. It is off by default; `video.recording.enabled` turns it on and
+`video.recording.retention` bounds how long segments are kept. The segment set on
+disk is the pre-roll ring, and clips are cut out of it after the fact with
+`ados record clip`. See
+[Video pipeline](/drone-agent/video-pipeline#recording).
 
 ## What is next
 
+- [Video pipeline](/drone-agent/video-pipeline) for the operator-facing configuration
+- [Diagnostics](/drone-agent/diagnostics) for the per-hop verdict tooling
 - [Cloud Infrastructure](/architecture/cloud-infrastructure) for the MQTT and Convex relay layers
 - [Agent Services](/architecture/agent-services) for the systemd service architecture
 - [System Overview](/architecture/system-overview) for the full three-tier diagram

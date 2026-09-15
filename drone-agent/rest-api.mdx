@@ -11,7 +11,7 @@ Port 8080 is owned by the native Rust front (`ados-control`, an axum server). It
 
 The API is the backbone that the CLI, TUI, and Mission Control all talk to.
 
-The split between native and proxied routes moves over time as more routes migrate into the Rust front. Callers do not need to know which process answers a given route. A route that has not yet migrated is forwarded transparently to the FastAPI upstream; on a zero-Python build with no upstream present, an un-migrated route returns `501` rather than `404`.
+Callers do not need to know which process answers a given route. Treat `:8080` as one API; the internal boundary behind it is not a contract and it moves.
 
 ## Base URL
 
@@ -34,30 +34,39 @@ A few endpoints are exempt from auth (like `/api/pairing/info`) so that unpaired
 
 ## Route domains
 
-The API is organized by domain. The "Served by" column shows where a domain currently lives: the Rust front, the residual FastAPI (proxied through the front), or a mix while migration is in progress.
+The API is organized by domain.
 
-| Domain | Prefix | Served by | Purpose |
-|--------|--------|-----------|---------|
-| Status | `/api/status`, `/api/status/full` | Rust front | Agent status, board, FC, health |
-| Configuration | `/api/config` | FastAPI (proxied) | Read/write configuration |
-| Commands | `/api/command`, `/api/commands` | Rust front | Send MAVLink commands and list supported commands |
-| Telemetry | `/api/telemetry` | Rust front | Cached telemetry snapshot |
-| Parameters | `/api/params`, `/api/params/{name}` | Rust front | FC parameter reads and writes through the cache |
-| Video | `/api/video` | Mixed | Pipeline config, snapshot, recording (live device enumeration stays Python) |
-| WFB-ng | `/api/wfb` | Rust front | Link stats, channel, pairing |
-| MAVLink signing | `/api/mavlink/signing` | Rust front | MAVLink2 signing capability and FC enrollment |
-| Pairing | `/api/pairing` | Mixed | Pair, unpair, info, code |
-| Plugins | `/api/plugins` | FastAPI (proxied) | Plugin lifecycle, install, list, perms |
-| Services | `/api/services` | Rust front | Systemd service control |
-| System | `/api/system`, `/api/v1/diagnostics` | Rust front | Reboot, shutdown, diagnostics, resource reads |
-| Fleet | `/api/fleet` | Rust front | Fleet enrollment and peers |
-| Peripherals | `/api/peripherals` | FastAPI (proxied) | USB devices, sensors |
-| Vision | `/api/vision`, `/api/vision/models` | FastAPI (proxied) | Vision state, detections, model registry |
-| Logs | `/api/logs`, `/api/observability` | FastAPI (proxied) | Log retrieval (see also the `ados-logd` query API) |
-| Network | `/api/v1/network` | Rust front | MAC pinning, WiFi client |
-| Ground station | `/api/v1/ground-station` | Rust front | Ground-station status, network, PIC, mesh, UI, recording |
-| WHEP | `/whep` | FastAPI (proxied) | WebRTC video playback signaling |
-| Setup | `/api/setup`, `/setup` | FastAPI (proxied) | First-boot setup wizard webapp |
+| Domain | Prefix | Purpose |
+|--------|--------|---------|
+| Status | `/api/status`, `/api/status/full` | Agent status, board, FC, health |
+| Configuration | `/api/config` | Read and write configuration |
+| Config schema | `/api/config/schema` | The build-time-embedded shape of the whole config surface. Build a settings UI against this. |
+| Commands | `/api/command`, `/api/commands` | Send MAVLink commands and list supported commands |
+| Telemetry | `/api/telemetry` | Cached telemetry snapshot |
+| Parameters | `/api/params`, `/api/params/{name}` | FC parameter reads and writes through the cache |
+| Video | `/api/video` | Pipeline config, snapshot, recording |
+| Diagnostics | `/api/diag/video` | Per-hop video pipeline verdict |
+| WFB-ng | `/api/wfb` | Link stats, channel, pairing |
+| MAVLink signing | `/api/mavlink/signing` | MAVLink2 signing capability and FC enrollment |
+| Pairing | `/api/pairing` | Pair, unpair, info, code |
+| Plugins | `/api/plugins` | Extension lifecycle, install, list, perms |
+| Services | `/api/services` | Systemd service control |
+| System | `/api/system`, `/api/v1/diagnostics` | Reboot, shutdown, diagnostics, resource reads |
+| Fleet | `/api/fleet` | Fleet enrollment and peers |
+| Swarm | `/api/swarm/neighbors` | The swarm neighbour table |
+| Atlas | `/api/atlas/readiness`, `/api/atlas/config`, `/api/atlas/capture/*` | World-model capture control |
+| MCP | `/api/mcp/status`, `/api/mcp/tokens`, `/api/mcp/revoke` | AI-control token posture and lifecycle |
+| Peripherals | `/api/peripherals` | USB devices, sensors |
+| Vision | `/api/vision`, `/api/vision/models` | Vision state, detections, model registry |
+| Logs | `/api/logs`, `/api/observability` | Log retrieval (see also the `ados-logd` query API) |
+| Network | `/api/v1/network` | MAC pinning, WiFi client |
+| Ground station | `/api/v1/ground-station` | Ground-station status, network, PIC, mesh, UI, recording |
+| WHEP | `/whep` | WebRTC video playback signaling |
+| Setup | `/api/setup`, `/setup` | First-boot setup wizard webapp |
+
+The generated route table lives at `docs/api-surface.md` in the agent repo and a
+repository check resolves every client path literal against it, so a route that
+is documented here and absent there is a bug in one of the two.
 
 ## Common endpoints
 
@@ -73,7 +82,7 @@ Response:
 
 ```json
 {
-  "version": "0.89.2",
+  "version": "<agent version>",
   "uptime_seconds": 3847,
   "board": {
     "name": "Radxa ROCK 5C Lite (RK3582)",
@@ -209,15 +218,26 @@ security:
 
 The effective allowlist is the union of the built-in defaults, `cors_origins`, and `cors_origins_extra`.
 
-## OpenAPI docs
+## Interactive API docs
 
-The residual FastAPI generates interactive API documentation, served through the front. When the agent is running with the Python API present, open:
+A standard install serves interactive documentation:
 
 - **Swagger UI:** `http://localhost:8080/docs`
 - **ReDoc:** `http://localhost:8080/redoc`
 
-These pages list the FastAPI endpoints with request/response schemas and a "Try it out" button. On a zero-Python build (where the residual API is not present), these paths are not available.
+Both are present on a standard install and absent on a headless node. Check with
+one request rather than reasoning about the build:
 
-<Tip>
-The Swagger UI is a fast way to explore the proxied endpoints. It shows the available endpoints, required parameters, and response shapes, and you can send test requests directly from the browser.
-</Tip>
+```bash
+curl -o /dev/null -w '%{http_code}\n' http://localhost:8080/docs
+```
+
+`200` means they are there, `404` means this node does not serve them.
+
+<Warning>
+Do not build an integration against the shape of `/docs`. It documents one
+internal process and its coverage moves. `GET /api/config/schema` is the stable,
+always-present machine-readable surface: it returns the committed,
+build-time-embedded shape of the config surface, so a schema-driven settings UI
+renders without hand-written forms.
+</Warning>

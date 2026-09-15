@@ -31,7 +31,7 @@ The install script requires root access. It installs to `/opt/ados/`, creates co
 
 <Steps>
   <Step title="Detect the board">
-    Reads `/proc/device-tree/model` and matches against the 17 built-in board profiles. Sets the tier and enables the right features for your hardware.
+    Reads `/proc/device-tree/model` and matches against the built-in board profiles (one YAML per supported SBC). Sets the tier and enables the right features for your hardware. There is no `--board` flag; detection is the only path.
   </Step>
 
   <Step title="Install system packages">
@@ -39,7 +39,7 @@ The install script requires root access. It installs to `/opt/ados/`, creates co
   </Step>
 
   <Step title="Create the virtual environment">
-    Sets up a Python venv at `/opt/ados/venv/` and installs the `ados-drone-agent` package from PyPI along with its dependencies (pymavlink, FastAPI, uvicorn, paho-mqtt, structlog, Rich, and more). The prebuilt Rust service binaries (supervisor, MAVLink router, control front, cloud relay, video, logging, and others) are fetched and placed in `/opt/ados/bin/`.
+    Sets up a Python venv at `/opt/ados/venv/` for the Python-backed services, and fetches the prebuilt Rust service binaries (supervisor, MAVLink router, control front, cloud relay, video, logging store, and the rest) into `/opt/ados/bin/`.
   </Step>
 
   <Step title="Generate device identity">
@@ -85,6 +85,90 @@ ados update
 
 Both preserve `/etc/ados/config.yaml` and your pairing state. See [Updating the Agent](/drone-agent/updating) for details.
 
+## Installer flags
+
+The bootstrap passes everything after `bash -s --` straight to the installer.
+The parser rejects an unrecognised flag and aborts before touching the box, so
+a guessed flag fails the install rather than being ignored.
+
+**Identity**
+
+| Flag | Effect |
+|---|---|
+| `--profile <drone\|ground_station\|workstation\|compute>` | Pin the node profile instead of auto-detecting. |
+| `--name <hostname>` | Set the node's hostname, which is also its `.local` mDNS name. |
+| `--pair <code>` | Pair to a Mission Control account during install. A bare positional argument is the same thing. On a box that is already installed, a bare code does a fast re-pair rather than a reinstall. |
+
+**Install mode**
+
+| Flag | Effect |
+|---|---|
+| `--upgrade` | Upgrade in place, keeping config and pairing state. |
+| `--force` | Clear checkpoints and reinstall from scratch. |
+| `--uninstall` | Remove the agent. |
+| `--status` | Print install status and exit. |
+| `--no-reboot` | Never take the single automatic reboot. Staged work (a camera or display overlay, an I2C dtparam) is then reported as `degraded` and named, instead of applying silently. |
+
+**Source**
+
+| Flag | Effect |
+|---|---|
+| `--branch <name>` | Install from a git branch. Development path. |
+| `--channel <stable\|edge>` | Release channel. |
+| `--version <ver>` | Pin an explicit agent version. |
+| `--ref <commit>` | Pin the agent package and the prebuilt binaries to one revision, fetched from that commit's `rev-<sha>` release. Requires `--channel edge`. |
+| `--artifacts <dir>` | Install service binaries from a directory of locally built artifacts instead of fetching them. Each file needs its `<name>.sha256` beside it; a service the directory does not carry still comes from the release. Requires `--channel edge`, not combinable with `--ref`, Linux only. |
+
+<Warning>
+`--ref` with `--channel stable` is refused with exit code 2 before any download. The stable channel resolves a wheel from a `v<X.Y.Z>` tag, which addresses a version and not a commit, so there is no per-revision wheel to pin. Use `--channel edge --ref <commit>`.
+</Warning>
+
+**Hardware**
+
+| Flag | Effect |
+|---|---|
+| `--display <hint>` | Display hardware hint. |
+| `--camera <hint>` | Camera hardware hint. |
+| `--no-rtl-driver` | Skip the RTL8812EU radio driver build. Use this on a node with no long-range radio: the build takes minutes and fails on missing kernel headers. |
+
+**Unattended**
+
+| Flag | Effect |
+|---|---|
+| `-y`, `--yes` | Accept the detected defaults and skip the interactive onboarding wizard. |
+| `--non-interactive` | Never prompt. Forces the silent, flag-driven install. |
+| `--wifi-ssid <ssid>` | Join this Wi-Fi network during the install, so the wired cable can be unplugged afterwards. The join never touches the interface your SSH session rides on. |
+| `--wifi-pass <password>` | Password for `--wifi-ssid`. Omit for an open network. |
+| `-k`, `--plugin-key <path>` | Copy an operator or OEM extension trust key into `/etc/ados/plugin-keys/`. Repeatable. |
+
+**Output**
+
+| Flag | Effect |
+|---|---|
+| `--plain` | Escape-free line output, no animation or colour. |
+| `--quiet` | Only the final summary, plus errors. |
+| `--json` | Machine output on stdout, no progress UI. |
+| `--no-color` | Disable colour in the progress UI. |
+| `--ascii` | ASCII glyph fallback instead of Unicode box drawing. |
+| `-h`, `--help` | Print usage and exit. |
+
+On a fresh interactive install with none of the identity flags set, an
+onboarding wizard walks through setup. It is skipped automatically when a
+decisive flag is given, under `--json` or `--quiet`, or when no terminal is
+attached.
+
+A fully unattended provisioning run looks like this:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/altnautica/ADOSDroneAgent/main/scripts/install.sh \
+  | sudo bash -s -- \
+    --non-interactive --yes \
+    --profile drone --name field-01 \
+    --wifi-ssid mycompany-fleet --wifi-pass '<passphrase>' \
+    --plugin-key /root/example-oem-signing.pem \
+    --json
+```
+
 ## Install from source
 
 For contributors and developers who want to modify the agent code:
@@ -109,19 +193,21 @@ ados --help
 For deployment on actual hardware, always use the install script instead of `pip install -e`. The install script catches packaging bugs (missing data files, broken entry points) that editable installs skip silently. Editable installs are for local development on your laptop only.
 </Warning>
 
-## Install on macOS (for development)
+## Install on macOS
 
-You can install the package on macOS for development and packaging checks. It will not have systemd, WFB-ng, or hardware GPIO, so hardware behavior must be verified on Linux hardware.
-
-```bash
-pip install ados-drone-agent
-```
-
-Or with pipx for an isolated install:
+macOS gets a rootless, per-user workstation node. Run the same bootstrap
+**without** `sudo`; the script refuses a root run with exit code 2 and explains
+why. There is no prebuilt Mach-O installer, so the Mac path builds the installer
+from source (it ensures the Rust toolchain first) and defaults to
+`--profile workstation`.
 
 ```bash
-pipx install ados-drone-agent
+curl -sSL https://raw.githubusercontent.com/altnautica/ADOSDroneAgent/main/scripts/install.sh | bash
 ```
+
+The Rust installer registers per-user LaunchAgents under `$HOME/.ados`. A
+workstation node has no systemd, no WFB radio and no GPIO, so hardware behaviour
+must be verified on Linux hardware.
 
 ## Uninstall
 
@@ -150,6 +236,7 @@ The CLI auto-detects whether you installed with pip, pipx, or uv and uses the ma
 ```
 /opt/ados/                  # Installation root
   venv/                     # Python virtual environment
+  bin/                      # Prebuilt Rust service binaries
   models/                   # Vision engine models (if Tier 4)
 
 /etc/ados/                  # Configuration

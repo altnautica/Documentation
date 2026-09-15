@@ -1,0 +1,285 @@
+---
+title: "Swarm Bus"
+description: "A 20-byte beacon twice a second, every node hearing every node, no ground station in the path. The neighbour table, the config block, and the separation layer."
+icon: "share-nodes"
+lastUpdated: "2026-09-15"
+---
+
+# Swarm Bus
+
+Every drone in a fleet broadcasts a 20-byte position and velocity beacon twice a
+second, and every node, drone and ground station alike, hears every other node.
+That is the whole contract, and the important part is what it does not need: no
+ground station in the path, no leader, no session, no negotiation. Power the
+ground station off and each drone's neighbour table is unchanged.
+
+`ados-swarmbus` is the service. It is a Core service on both flight-capable
+profiles (`drone` and `ground_station`), gated the same way `ados-mavlink` is,
+because the two are the same seam seen from either end: a drone fills its beacon
+from the router's state socket, and a ground station listens so the operator's
+fleet view is local-first.
+
+A ground station holds slot 0 and never emits a beacon. It is not an aircraft.
+
+## The beacon
+
+20 bytes on the air. Position and velocity use the MAVLink
+`GLOBAL_POSITION_INT` encodings verbatim (degrees times 1e7, decimetres, cm/s),
+so filling a beacon from the flight controller's fused state is a shift rather
+than a lossy re-quantisation.
+
+| Element | Value |
+|---|---|
+| Wire length | 20 bytes |
+| Rate | 2 Hz, with up to 100 ms of per-transmission jitter |
+| Period | 500 ms |
+| Modulation | MCS 0 (BPSK 1/2, 20 MHz, long guard interval) |
+| Seal | ChaCha20-Poly1305 under one fleet-wide key |
+| Heading | Not transmitted. Derived as `atan2(v_east, v_north)`. |
+| Epoch | `seq_ms`, the sender's uptime truncated to 16 bits. No wall clock. |
+
+Heading is not carried because every reference implementation derives it from
+velocity, and 2 bytes to restate information the velocity already holds is
+2 bytes of airtime. `seq_ms` deliberately carries no wall clock: two drones with
+unsynchronised clocks must still agree on which of two beacons is newer, and a
+65.5 second wrap is far longer than the staleness window.
+
+### Status bits
+
+One byte packs five independent conditions plus the active mode-precedence
+level. Each bit is a separate condition and they are never blended: an armed
+drone with a bad GPS fix and an armed drone in emergency are different
+situations.
+
+| Bit | Condition |
+|---|---|
+| 0 | `armed`: the flight controller reports the vehicle armed. |
+| 1 | `guided`: the vehicle is in a mode that accepts offboard setpoints. |
+| 2 | `emergency`: the separation layer has taken over. |
+| 3 | `gps_ok`: the fix is 3D or better. A beacon with this clear carries a position no other drone may separate against. |
+| 4 | `hero`: this drone is the operator-selected aircraft streaming full video. Exclusive fleet-wide. |
+| 5-7 | The sender's currently-active mode-precedence level. |
+
+## Airtime
+
+This is the number the design lives on, so here is the arithmetic rather than
+the assertion.
+
+One beacon on the air at MCS 0:
+
+```text
+802.11 MPDU   = 24 B header + 50 B payload + 4 B FCS      = 78 B
+coded bits    = 16 service + 8 x 78 + 6 tail              = 646
+OFDM symbols  = ceil(646 / 26 bits per symbol)            = 25
+data time     = 25 x 4 us                                 = 100 us
+HT-mixed preamble                                         =  40 us
+DIFS (no ACK, so no SIFS+ACK follows)                     =  34 us
+------------------------------------------------------------------
+per beacon                                                = 174 us
+```
+
+At 24 drones and 2 Hz that is 48 frames per second:
+
+```text
+48 x 174 us = 8.35 ms/s = 0.84% airtime
+```
+
+At MCS 1 the same frame costs 126 microseconds and the bus is 0.60%. MCS 0 buys
+about 3 dB of link margin for a quarter of a percent of airtime, and the beacon
+is the input to collision avoidance: the one message that must still decode when
+the video link is already failing. Even at 50 nodes the bus is 1.7%.
+
+## The neighbour table
+
+| Property | Value |
+|---|---|
+| Staleness window | 3 seconds, six missed transmissions |
+| Table cap | 64 entries |
+| Legal fleet size | Slots 1 to 24 for drones, slot 0 for the ground station |
+
+Three seconds rather than one because outages of about a second are normal in
+real formation flight, and dropping a neighbour that is still there is worse
+than carrying a slightly old one: the separation layer would stop avoiding an
+aircraft that has not gone anywhere.
+
+The 64-entry cap is not reachable by a legal fleet. It bounds the table against
+a garbage or hostile slot flood, since the slot field is a byte and 255 distinct
+values are expressible.
+
+### `GET /api/swarm/neighbors`
+
+```bash
+curl -s -H "X-ADOS-Key: $ADOS_KEY" http://192.168.1.50:8080/api/swarm/neighbors
+```
+
+This route is **profile-agnostic on purpose**, and that is the decentralization
+proof: query a drone with the ground station powered off and it still lists every
+other drone. A route that only existed on the ground station would be a fan-out,
+not a bus.
+
+The response carries `fleet_id`, `slot`, a `neighbors` array, a `slots` table and
+a counter block.
+
+| Field | Meaning |
+|---|---|
+| `neighbors` | Who is **heard**: only slots this node's radio has actually received a beacon from since it started. |
+| `slots` | Who is **registered**: the fleet's whole slot-to-device-id table, whether or not that slot is currently beaconing. |
+
+The two differ exactly when a drone is lost, which is the operator-facing fact
+`slots` exists to carry. A slot present in `slots` but absent from `neighbors` is
+an aircraft the fleet issued a slot to and has since stopped hearing.
+
+Each neighbour row carries `slot`, `device_id`, `seq_ms`, `lat`, `lon`, `alt_m`,
+`vx_ms`, `vy_ms`, `vz_ms`, `heading_deg`, `armed`, `guided`, `emergency`,
+`gps_ok`, `hero`, `mode_precedence`, `age_ms` and `rssi_dbm`. The counter block
+carries `beacons_tx`, `beacons_rx`, `beacons_bad_magic`, `beacons_bad_tag`,
+`beacons_stale_dropped` and `neighbors_now`.
+
+Two rules the shape follows throughout:
+
+- **A missing reading is `null`, never a plausible number.** `rssi_dbm` is null
+  when the capture carried no signal field, and `device_id` is null when the slot
+  cannot be joined to an identity. A fabricated `-100 dBm` would render as a real
+  value.
+- **Derived fields are computed on the node**, so every consumer agrees on them.
+  `heading_deg` and `age_ms` are emitted rather than left to the client.
+
+The route is guaranteed `200`. When the bus has published nothing (an absent
+socket, a profile that does not run it, a radio that has not come up) the body is
+the degraded shape: an empty neighbour array, zeroed counters, and `fleet_id` and
+`slot` as **null**. Null rather than the config defaults, because a reader cannot
+know the fleet identity of a service that is not running, and reporting `1` and
+`0` would make an unprovisioned node indistinguishable from a correctly
+provisioned fleet-1 node with no neighbours.
+
+The publish socket comes up first and unconditionally, so a bus with no radio
+still answers with an empty table and zeroed counters. That is distinguishable
+from an absent service, which answers with a null fleet id.
+
+## Fleet addressing
+
+The bus rides the fleet identity the radio plane already uses. Nothing new is
+invented for it, so a node cannot be addressed differently on the two planes.
+
+```yaml
+video:
+  wfb:
+    fleet_id: 1        # the fleet every node on this bus shares
+    fleet_slot: 3      # 0 on a ground station, 1..=24 on a drone
+```
+
+Every drone's slot must be unique within a fleet. Two transmitters sharing a
+derived channel id thrash each other's FEC decoder.
+
+The payload seal uses one fleet-wide key, derived from `/etc/drone.key`. That
+file is the only shared-content key on disk: the bind protocol delivers it
+byte-for-byte to both the drone and the ground station. The wfb-ng `tx.key` and
+`rx.key` are the two *different* halves of a crypto_box pair, so a symmetric key
+derived from either diverges across the two rigs and every frame is silently
+dropped at the far end.
+
+One symmetric key for the whole fleet is the point: every drone must be able to
+decrypt every *other* drone's beacon, which is what makes the neighbour table
+work with the ground station off. A fleet is one trust domain.
+
+## The autonomy layer
+
+The `swarm:` config block drives the onboard autonomy that consumes the
+neighbour table. It is **off by default**.
+
+```yaml
+swarm:
+  enabled: false
+  role: "auto"
+  mode: "hold"                # hold | flocking | formation
+  default_formation: "line"   # line | column | wedge | grid | circle
+  default_spacing: 10
+  wifi_direct:
+    enabled: false
+    interface: ""
+  flock:
+    cohesion: 40              # integer percent of the float weight
+    alignment: 60
+    separation_gain: 150
+    radius_m: 30
+    neighbors: 7
+  separation:
+    radius_m: 8
+    hard_m: 4
+  tasks:
+    enabled: false
+```
+
+| Key | Default | Meaning |
+|---|---|---|
+| `enabled` | `false` | The operator switch. With it false the setpoint loop returns immediately. |
+| `mode` | `hold` | The operator-commandable behaviour mode. Hard separation and operator direct command are precedence *levels* the runtime arbitrates into, not modes anyone commands, so neither is a value here. |
+| `default_formation` | `line` | A closed set matching the built-in generators. An unknown name is rejected at config load rather than silently producing no formation. |
+| `default_spacing` | `10` | Metres between slots. |
+| `flock.cohesion` / `.alignment` / `.separation_gain` | `40` / `60` / `150` | Olfati-Saber alpha-lattice weights, as integer **percentages** of the underlying float weight (`40` means 0.40). Expressed as bounded integers because the Mission Control config primitives carry no float field. |
+| `flock.radius_m` | `30` | Neighbours beyond this contribute nothing to the flocking terms. |
+| `flock.neighbors` | `7` | Caps how many of the nearest neighbours are weighted, so a dense cluster cannot dominate the solution. |
+| `separation.radius_m` | `8` | Where repulsion starts. |
+| `separation.hard_m` | `4` | Where the horizontal solution is abandoned for a deterministic climb and hold. Must stay below `radius_m` or repulsion never engages before the hard floor does; the config model rejects it otherwise. |
+| `tasks.enabled` | `false` | Consensus-based task allocation participation. `assigned_task_id` and `bundle_position` in the same block are agent-written status mirrors and stay null until a runtime writes them. |
+
+### The setpoint loop
+
+The loop runs inside `ados-mavlink`, at 10 Hz, against the last neighbour
+payload, dead-reckoning each neighbour forward by its age plus the time since
+that payload arrived. That predict-and-correct split is why a 2 Hz beacon can
+drive a 10 Hz controller: the loop never sees a staircase, and the correction
+arrives before the prediction has drifted.
+
+It lives in the router because the setpoint has to leave through the process
+that holds the FC link, the sequence counter and the writer. Putting it in the
+bus would mean a second command path to the autopilot.
+
+It commands the flight controller through
+`SET_POSITION_TARGET_GLOBAL_INT` and adds **no** radio traffic of its own: every
+input is already on the air for other reasons, so a 24-drone swarm costs exactly
+the beacon bandwidth.
+
+### Precedence
+
+Highest authority first: **hard separation**, **operator direct command**,
+**formation**, **flocking**, **hold**.
+
+What rides bits 5 to 7 of the beacon is the **active** level, not the commanded
+one. A drone whose separation layer has taken over reads `hard-separation` on the
+operator's screen, never the mode somebody asked for. Mode-transition ambiguity,
+an operator believing one mode governs a vehicle while another actually does, is
+implicated in a long series of supervisory-control losses, so the active level is
+broadcast by the aircraft itself and every reader derives it from the same byte.
+
+A node with no autonomy layer running radiates `000` there and every reader
+honestly decodes `hold`.
+
+### What the layer never does
+
+- **No leader election.** The operator screen is the single authority by
+  construction. Electing a leader among drones over a lossy broadcast invites a
+  split brain, a leader that still hears its peers but has lost the operator, for
+  no benefit.
+- **No failsafe of its own.** ArduPilot's `FS_GCS_ENABLE` and `FS_LONG_ACTN` and
+  the geofence are the backstop and act independently.
+- **It stops rather than substitutes.** When the swarm is disabled, the vehicle
+  is disarmed, the flight controller is out of GUIDED, or the neighbour table has
+  been empty for the 3 second staleness window, the loop emits nothing and the
+  flight controller holds on its own terms. It never competes with the
+  autopilot's failsafes.
+
+<Warning>
+Read [Safety](/operations/safety) and [Operating limits](/operations/operating-limits)
+before flying more than one aircraft. The separation layer is a safety function,
+not a behaviour, and `separation.hard_m` is the distance at which the horizontal
+solution is abandoned.
+</Warning>
+
+## Related
+
+- [World model and compute offload](/drone-agent/world-model)
+- [WFB-ng long-range link](/drone-agent/wfb-ng)
+- [Safety](/operations/safety)
+- [Node profiles](/getting-started/node-profiles)
+- [Systemd services](/drone-agent/systemd-services)

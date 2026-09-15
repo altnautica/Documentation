@@ -45,7 +45,7 @@ journalctl -u ados-wfb-rx -n 30  # WFB-ng receiver logs
 
 ## Laptop cannot reach the ground station after joining WiFi
 
-**Symptom:** You joined the AP but `http://192.168.4.1:4000` does not load.
+**Symptom:** You joined the AP but `http://192.168.4.1:8080` does not load.
 
 <Steps>
   <Step title="Check your IP">
@@ -66,7 +66,7 @@ journalctl -u ados-wfb-rx -n 30  # WFB-ng receiver logs
     If ping works but the browser does not load, try `http://192.168.4.1:8080/api/status` to see if the REST API is responding.
   </Step>
   <Step title="Check Mission Control">
-    If the REST API responds but port 4000 does not, Mission Control may not be installed locally on the ground node. Use `http://192.168.4.1:8080/` (the agent API) or `http://setup.ados.local/` (the setup webapp) instead.
+    Nothing on the ground station listens on port 4000. The node's own surfaces are at `http://192.168.4.1:8080/` (dashboard and setup webapp) and `http://192.168.4.1:8080/cockpit/` (fly). Mission Control is separate software you run on your laptop or a server.
   </Step>
 </Steps>
 

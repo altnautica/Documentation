@@ -1,0 +1,200 @@
+---
+title: "The ados-deploy tool"
+description: "A guided deployer that drives the same tools/selfhost Compose stack for you: wizard, dry-run plan, upgrade, status and teardown."
+icon: "wand-magic-sparkles"
+lastUpdated: "2026-09-15"
+---
+
+# The `ados-deploy` tool
+
+`ados-deploy` is a Rust terminal tool in the Mission Control repo at
+`tools/deploy/`. It brings up the self-hosted stack (Convex backend and
+dashboard, the Mission Control web GCS, Mosquitto, the MQTT bridge and the video
+relay) through a guided flow, then keeps the lifecycle commands in one place.
+
+It is not a second stack. It drives the **same** Compose project documented on
+[All-in-one stack](/developers/self-hosting/all-in-one):
+`tools/selfhost/docker-compose.yml`. What it adds is the ordering, the generated
+config, the secret handling and the verification, so you do not run the ten
+steps by hand.
+
+## When to use which path
+
+| Use | When |
+|---|---|
+| `ados-deploy` | You want the stack up with the admin key, the pushed Convex functions, the Convex env vars and the MQTT password file all handled and verified in one ordered pass. |
+| Hand-run Compose | You are changing the stack itself, debugging one service, or you want to understand each step. Start from [All-in-one stack](/developers/self-hosting/all-in-one). |
+
+`ados-deploy` operates on a **repo checkout**, because it builds the Mission
+Control image from the repo and pushes Convex functions from it. There is no
+checkout-free mode.
+
+## Invoke it
+
+From a checkout, through the npm script:
+
+```bash
+npm run deploy -- deploy --host 192.168.1.50
+```
+
+Everything after `--` goes to `ados-deploy`. The script is
+`cargo run --release --quiet --manifest-path tools/deploy/Cargo.toml --`.
+
+Directly with cargo:
+
+```bash
+cargo run --manifest-path tools/deploy/Cargo.toml -- status
+```
+
+Through the bootstrap, which will fetch a checkout if you do not have one:
+
+```bash
+./tools/deploy/deploy.sh
+```
+
+```bash
+curl -sSL https://raw.githubusercontent.com/altnautica/ADOSMissionControl/main/tools/deploy/deploy.sh | sh
+```
+
+The bootstrap uses the current checkout when it finds
+`tools/selfhost/docker-compose.yml`, otherwise it clones to
+`$HOME/ADOSMissionControl`. Override with `ADOS_DIR` and `ADOS_REPO_URL`. It
+then launches in preference order: a cached or committed `./ados-deploy` binary,
+a best-effort fetch of the matching release asset, then a `cargo` build. Extra
+arguments pass through.
+
+Running with no action opens the interactive menu. On a non-terminal (CI, or a
+piped invocation) the menu is unavailable and the tool tells you to pass an
+action instead.
+
+## Actions
+
+| Action | What it does |
+|---|---|
+| `deploy` | Run the wizard (or build the config from flags), then execute the deploy state machine. |
+| `reconfigure` | Re-open the wizard pre-filled from an existing deploy: host, ports, secrets and the Convex provisioning recovered from the generated `.env`. |
+| `upgrade` | Pull newer images, then re-run the idempotent deploy graph so the image is rebuilt, functions are re-pushed and env vars are re-set. |
+| `restart` | `docker compose restart`. |
+| `teardown` (alias `down`) | `docker compose down`, with an opt-in volume purge. |
+| `status` | Print the deployed stack's status and its reach links. |
+
+An unrecognised action falls through to the menu.
+
+## Dry-run first
+
+```bash
+npm run deploy -- deploy --host 192.168.1.50 --plan
+```
+
+`--plan` (alias `--dry-run`) prints the exact files the deploy would write and
+the exact commands it would run, in order, then exits without touching
+anything. Secrets are always redacted in the plan output.
+
+This is the right way to review a deploy before you let it run, and it is the
+same ordering the real state machine executes.
+
+## Flags
+
+### Rendering and interactivity
+
+| Flag | Meaning |
+|---|---|
+| `--no-color` | Disable ANSI colour. |
+| `--ascii` | ASCII glyphs, no Unicode box drawing or spinner. |
+| `--plain` | Escape-free line output, for a non-tty or CI log. |
+| `--quiet` | Only the final summary. |
+| `--json` | Machine output, no UI. |
+| `--non-interactive` | Never prompt. Use flags, environment and defaults. |
+| `--yes`, `-y` | Accept the detected default at every prompt. |
+| `--plan`, `--dry-run` | Print the plan and exit. |
+
+### Deploy answers
+
+Supply these to run the whole flow without prompts.
+
+| Flag | Meaning |
+|---|---|
+| `--host <ip\|domain>` | The address browsers and agents reach the stack at. |
+| `--mqtt-password <pw>` | The MQTT principal password. Generated when omitted. |
+| `--convex-managed-url <url>` | Use an existing Convex deployment instead of spinning one up. |
+| `--mqtt-managed-url <url>` | Use an existing MQTT broker. |
+| `--video-managed-url <url>` | Use an existing video relay. |
+| `--tunnel-token <token>` | A Cloudflare Tunnel token, for the TLS path. |
+| `--no-video` | Do not deploy the video relay. |
+| `--no-mqtt` | Do not deploy the MQTT relay. |
+
+An unknown flag is ignored rather than rejected, so a newer wrapper script stays
+forward-compatible with an older binary.
+
+## What a deploy runs
+
+The state machine is ordered and idempotent:
+
+1. Preflight checks (Docker, Node, toolchain).
+2. Write the generated config files.
+3. Bring up the Convex backend.
+4. Wait for it to answer.
+5. Generate the admin key.
+6. Push the Convex functions.
+7. Write the auth keys.
+8. Write the MQTT password file.
+9. Bring up the rest of the stack.
+10. Verify, then print the reach links.
+
+Because it is idempotent, `upgrade` reuses the same graph: it reconstructs the
+config from the deployed `.env` and runs the whole thing again.
+
+## Files it writes
+
+All paths are relative to the repo root; commands run with the root as their
+working directory.
+
+| Path | What it is |
+|---|---|
+| `tools/selfhost/docker-compose.yml` | The Compose file it drives. Not generated; it is the repo's. |
+| `tools/selfhost/.env` | The generated environment for the stack. |
+| `tools/selfhost/docker-compose.override.yml` | The generated override. |
+| `tools/selfhost/passwd` | The generated Mosquitto password file. |
+
+## Services and default ports
+
+These mirror `tools/selfhost/docker-compose.yml`. The tool detects a port
+conflict before it starts anything.
+
+| Compose service | Default port | Used by |
+|---|---|---|
+| `convex-backend` (client API) | `3210` | The GCS browser bundle, and `convex deploy`. |
+| `convex-backend` (site / HTTP actions) | `3211` | The agent heartbeat and the MQTT bridge. |
+| `convex-dashboard` | `6791` | The admin dashboard UI. |
+| `mission-control` | `4000` | The web GCS. |
+| `mosquitto` | `1883` TCP, `9001` WebSocket | MQTT. |
+| `mqtt-bridge` | no host port | Bridges MQTT to Convex. |
+| `video-relay` | `3001` | RTSP to WebSocket video. |
+
+## Check and tear down
+
+```bash
+npm run deploy -- status
+```
+
+```bash
+npm run deploy -- restart
+```
+
+```bash
+npm run deploy -- teardown
+```
+
+`teardown` runs `docker compose down`. Purging the volumes is a separate opt-in,
+so a teardown does not silently destroy your Convex data.
+
+To roll back a bad upgrade, check out the previous commit of the repo and run
+`upgrade` again: the image is rebuilt from the checkout and the functions are
+re-pushed from it, so the checkout is the version you are running.
+
+## Related
+
+- [Self-hosting overview](/developers/self-hosting/overview)
+- [All-in-one stack](/developers/self-hosting/all-in-one)
+- [Mission Control and Convex](/developers/self-hosting/mission-control-and-convex)
+- [Troubleshooting and ports](/developers/self-hosting/troubleshooting-and-ports)

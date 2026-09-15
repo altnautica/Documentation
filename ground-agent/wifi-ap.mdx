@@ -22,10 +22,10 @@ sequenceDiagram
     GS->>GS: Decode and serve via MediaMTX
     Note over GS: WiFi AP on 2.4 GHz<br/>SSID: ADOS-GS-XXXX
     Laptop->>GS: Join WiFi AP
-    Laptop->>GS: HTTP GET setup.ados.local
-    GS-->>Laptop: Setup webapp or Mission Control
+    Laptop->>GS: HTTP GET 192.168.4.1:8080
+    GS-->>Laptop: Setup webapp or node dashboard
     Laptop->>GS: WebRTC WHEP (video)
-    GS-->>Laptop: H.264 stream, 80-100 ms
+    GS-->>Laptop: H.264 stream
     Laptop->>GS: WebSocket (MAVLink telemetry)
     GS-->>Laptop: Real-time telemetry
 ```
@@ -39,16 +39,16 @@ The onboard WiFi radio hosts the access point on 2.4 GHz. The dedicated video-li
     Look for `ADOS-GS-XXXX` in your WiFi list. The `XXXX` suffix is derived from the ground station's device ID. The passphrase is generated for that unit on first boot. See [The AP passphrase](#the-ap-passphrase) below for where to read it.
   </Step>
   <Step title="Open the browser">
-    Navigate to `http://192.168.4.1:4000` for Mission Control, or `http://setup.ados.local/` for the setup webapp. If Mission Control is not installed on the ground node, the setup webapp is the default landing page.
+    Navigate to `http://192.168.4.1:8080`. That is the node dashboard on a set-up node and the setup webapp on a fresh one. `http://setup.ados.local:8080/` reaches the same listener through the AP's own DNS. Mission Control is separate software you run on your laptop or a server; nothing on the ground station serves it.
   </Step>
   <Step title="Start flying">
-    Video and telemetry appear automatically. If a gamepad is connected to your laptop, Mission Control picks it up via the Web Gamepad API. Press any button on the gamepad to register it.
+    Video and telemetry appear automatically. Fly from the on-box cockpit at `http://192.168.4.1:8080/cockpit/`, which reads a USB or Bluetooth gamepad through the Web Gamepad API. Press any button on the gamepad to register it.
   </Step>
 </Steps>
 
 ## Connecting from a phone
 
-The flow is the same. Join the WiFi, open a browser (Chrome on Android, Safari on iOS), and navigate to `http://192.168.4.1:4000` or `http://setup.ados.local/`.
+The flow is the same. Join the WiFi, open a browser (Chrome on Android, Safari on iOS), and navigate to `http://192.168.4.1:8080` or `http://setup.ados.local:8080/`.
 
 For Android users, the ADOS Android app provides a better experience with auto-discovery and native video decoding. See [Android Client](/ground-agent/android-client) for details.
 
@@ -65,7 +65,7 @@ Android may show a "No internet" warning when you join the AP. This is expected.
 | Security | WPA2 |
 | Subnet | `192.168.4.0/24` |
 | Ground station IP | `192.168.4.1` |
-| DHCP range | `192.168.4.10` to `192.168.4.200` |
+| DHCP range | `192.168.4.10` to `192.168.4.100`, 12 h leases |
 | Client limit | ~3-4 video viewers comfortably on 2.4 GHz |
 
 ## Endpoints available over WiFi
@@ -74,11 +74,11 @@ Once connected to the AP, your browser can reach:
 
 | Endpoint | URL | Purpose |
 |----------|-----|---------|
-| Mission Control | `http://192.168.4.1:4000` | Full GCS (if installed on the node) |
-| Setup webapp | `http://setup.ados.local/` | First-time setup and config |
-| WebRTC WHEP | `http://192.168.4.1:8889/ados/whep` or the WHEP URL reported by the Agent | Direct video stream |
+| Node dashboard and setup webapp | `http://192.168.4.1:8080` | Status, config, logs, diagnostics |
+| Cockpit | `http://192.168.4.1:8080/cockpit/` | Fly from the browser |
+| WebRTC WHEP | `http://192.168.4.1:8889/main/whep` or the WHEP URL the agent reports | Direct video stream |
 | MAVLink WebSocket | `ws://192.168.4.1:8765/` | Raw MAVLink telemetry |
-| Agent REST API | `http://192.168.4.1:8080/api/v1/` | Agent management |
+| Agent REST API | `http://192.168.4.1:8080/api/` | Agent management |
 
 ## Multiple clients
 
@@ -147,11 +147,11 @@ If you load Mission Control from `https://command.altnautica.com` (the hosted ve
 
 Two workarounds:
 
-1. **Use the local build.** Open `http://192.168.4.1:4000` instead. All traffic stays HTTP on the local network.
-2. **Run Mission Control on your laptop.** Clone the repo, run `npm run dev`, and open `http://localhost:4000`. Dev mode uses HTTP.
+1. **Use the on-box surfaces.** Open `http://192.168.4.1:8080` for the node dashboard and `http://192.168.4.1:8080/cockpit/` to fly. All traffic stays HTTP on the local network.
+2. **Run Mission Control on your laptop.** Clone the repo, run `npm run dev`, and open `http://localhost:4000`. Dev mode uses HTTP, so it can talk to the ground station directly.
 
 <Tip>
-For field use, the local build on the ground station is the recommended approach. No internet, no HTTPS issues, lowest latency.
+For field use, the on-box cockpit is the recommended approach. No internet, no HTTPS issues, lowest latency.
 </Tip>
 
 ## Power
@@ -165,4 +165,4 @@ WiFi AP mode is usually powered from a wall adapter on the bench or a USB-C powe
 - [USB Tether](/ground-agent/usb-tether) for a wired alternative
 - [Power and Runtime](/ground-agent/power-and-runtime) for field power sizing
 - [HDMI Kiosk](/ground-agent/hdmi-kiosk) to fly with no laptop at all
-- [Setup and Pairing](/ground-agent/setup-and-pairing) for the first-time walkthrough
+- [Set Up a Ground Station](/ground-agent/setup) for the first-time walkthrough

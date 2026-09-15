@@ -171,9 +171,9 @@ ADOSDroneAgent/
 │   ├── plugins/         # Plugin host, signing, manifest
 │   ├── sdk/             # Python plugin SDK
 │   ├── hal/
-│   │   ├── boards/      # Board profile YAMLs (17 profiles)
+│   │   ├── boards/      # Board profile YAMLs, one per supported SBC
 │   │   └── detect.py    # Hardware auto-detection
-│   └── config/          # Configuration management
+│   └── core/config/     # Configuration models and the on-disk writer
 └── scripts/
     └── install.sh       # One-line installer bootstrap
 ```

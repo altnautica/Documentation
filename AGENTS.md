@@ -26,14 +26,21 @@ behavior.
 - Local development:
 
 ```bash
-mintlify dev
+mint dev
 ```
 
 - Validation:
 
 ```bash
-mintlify broken-links
+mint broken-links
 ```
+
+`mint broken-links` walks every markdown file on disk, including any
+`node_modules/` a local tool has installed under `scripts/`. Those files are
+untracked, so a hosted build never sees them, but locally one malformed
+vendored README makes the command exit 1 while reporting no broken links at
+all. `.mintignore` is not honoured. Move the vendored tree aside for the run,
+or read the output rather than the exit code.
 
 If validation is blocked by an unrelated MDX parse error, report the blocker and
 do not claim full validation success.
@@ -107,7 +114,7 @@ contains before committing.
   once.
 - API, CLI, or config docs: verify against the current source repo or generated
   API where practical.
-- Broad docs change: run `mintlify broken-links`.
+- Broad docs change: run `mint broken-links`.
 
 Before finalizing, run `git diff --check` and report any skipped checks.
 

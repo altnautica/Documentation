@@ -76,7 +76,7 @@ After the reboot, you should see:
 
 1. **OLED** shows the Link screen with "No drone" (if not yet paired) or signal strength (if paired during install)
 2. **WiFi AP** broadcasts `ADOS-GS-XXXX`, where `XXXX` is derived from the device ID
-3. **Setup webapp** is reachable at `http://setup.ados.local/` from any device on the AP
+3. **Setup webapp** is reachable at `http://192.168.4.1:8080` from any device on the AP, or at `http://setup.ados.local:8080/` through the AP's own DNS
 
 <Note>
 The AP passphrase is generated for that unit on first boot, so it differs from unit to unit and is not printed anywhere in advance. The installer prints it on its completion summary. Write it down there, or read it back later from the `ados` status page or the on-box panel. See [WiFi AP Mode](/ground-agent/wifi-ap#the-ap-passphrase).
@@ -93,7 +93,7 @@ ados status
 You should see output like:
 
 ```
-ADOS Drone Agent v0.89.2
+ADOS Drone Agent v0.99.374
 Profile: ground-station
 Board: pi4b (Raspberry Pi 4B)
 
@@ -169,7 +169,7 @@ agent:
 
 ## What is next
 
-- [Setup and Pairing](/ground-agent/setup-and-pairing) for the first-time walkthrough
+- [Set Up a Ground Station](/ground-agent/setup) for the first-time walkthrough
 - [WiFi AP](/ground-agent/wifi-ap) to connect your laptop
 - [USB Tether](/ground-agent/usb-tether) for a wired connection
 - [Power and Runtime](/ground-agent/power-and-runtime) to size field power

@@ -159,7 +159,7 @@ The protocol adapters do not care how bytes arrive. A `Transport` abstraction ha
 | WebSocket | Remote connection to drone agent or ground station. Default for LAN and cloud. The agent serves the MAVLink WebSocket on `:8765` with HMAC-ticket auth |
 | WebSerial | Direct USB connection to a flight controller from the browser. Used for configuration and firmware flashing |
 | SITL TCP-to-WS bridge | ArduPilot SITL simulator for development. The bundled `tools/sitl/` bridges TCP to WebSocket |
-| Mock | Demo mode. Generates synthetic telemetry from 7 simulated drones |
+| Mock | Demo mode. Generates synthetic telemetry for the simulated fleet |
 
 ## The agent-side router
 

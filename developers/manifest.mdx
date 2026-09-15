@@ -20,7 +20,7 @@ Identity and configuration live as flat top-level keys. There is no
 `plugin:` wrapper.
 
 ```yaml
-schema_version: 1     # 1 or 2
+schema_version: 1     # 1, 2, or 3
 id: com.example.thermal
 version: "1.0.0"
 name: "Example Thermal"
@@ -41,7 +41,7 @@ for example, is GCS-only.
 
 | Field | Type | Notes |
 |-------|------|-------|
-| `schema_version` | int | `1` baseline, `2` unlocks the v2 agent fields (`vendor_attribution`, `subprocess_spawn`, `per_drone_config`). |
+| `schema_version` | int | `1` baseline. `2` unlocks the v2 agent fields (`vendor_attribution`, `subprocess_spawn`, `per_drone_config`, `target_profiles`). `3` unlocks the MCP `tools` / `resources` / `prompts` contributions on both halves. Values outside 1 to 3 are rejected. Every version parses an identical-shape older manifest, so the field is informational: it lets tooling route on schema generation. |
 | `id` | string | Reverse-DNS, lowercase, dotted. Validated against the plugin-id pattern. |
 | `version` | string | Semver. |
 | `name` | string | Operator-facing display name. |
@@ -83,7 +83,7 @@ agent:
     max_ram_mb: 96               # default 96, range 8 to 4096
     max_cpu_percent: 25          # default 25, range 1 to 100
     max_pids: 12                 # default 12, range 1 to 256
-  target_profiles: ["drone"]     # subset of drone, ground-station
+  target_profiles: ["drone"]     # subset of drone, ground-station, workstation
   contributes:
     services: []                 # optional, plugin-declared extra systemd services
 ```
@@ -109,7 +109,7 @@ its own binary (rust always runs subprocess).
 | `resources` | object | see below | Hard limits the supervisor enforces. |
 | `contributes` | object | `{}` | Agent-side contributions: `services`, `drivers`, `vision`. |
 | `mavlink_components` | list | `[]` | MAVLink components the plugin registers. |
-| `target_profiles` | list | `["drone"]` | Subset of `drone`, `ground-station`. Must list at least one. |
+| `target_profiles` | list | `["drone"]` | Subset of `drone`, `ground-station`, `workstation`. Must list at least one. `drone` is an aircraft node, `ground-station` a ground node, `workstation` the operator's own machine (a GPU box or a Mac). There is no `compute` value: a headless compute worker carries no plugin surface. See [Node profiles](/getting-started/node-profiles). |
 | `contains_vendor_binary` | bool | `false` | Set true when the archive ships a pre-compiled vendor binary; requires `vendor_attribution`. Schema v2. |
 | `vendor_attribution` | list | `[]` | Source-offer records. Required (non-empty) when `contains_vendor_binary` is true. Schema v2. |
 | `subprocess_spawn` | list | absent | Allowlist of binary basenames the plugin may exec via `ctx.process.spawn`. Requires the `process.spawn` permission. Schema v2. |
@@ -160,7 +160,7 @@ so an experimental manifest still parses. See the
 
 - **`per_drone_config: true`** runs one process per connected drone, each
   with its own `ctx.agent_id` and config at
-  `/var/lib/ados/plugins/<plugin_id>/config/<agent_id>.yaml`.
+  `/var/ados/plugin-data/<plugin_id>/config/<agent_id>.yaml`.
 - **`subprocess_spawn`** is an allowlist of binary basenames the plugin
   may exec. The plugin host rejects any spawn whose basename is not on
   the list, and the manifest validator requires the `process.spawn`
@@ -175,22 +175,64 @@ so an experimental manifest still parses. See the
 ```yaml
 agent:
   runtime: rust
-  entrypoint: "bin/vision-nav"
+  entrypoint: "bin/example-detector"
   isolation: subprocess
   per_drone_config: true
   contains_vendor_binary: true
   vendor_attribution:
-    - name: "OpenVINS"
+    - name: "example-upstream"
       license: "GPL-3.0-only"
-      source_url: "https://github.com/rpng/open_vins"
+      source_url: "https://github.com/example-oem/example-upstream"
       upstream_version: "v2.7"
-      notice: "Used by the VIO mode."
+      notice: "Used by the detector mode."
   permissions:
     - id: vision.frame.read
     - id: process.spawn
   subprocess_spawn:
-    - ados_openvins_shim
+    - ados_example_shim
 ```
+
+#### Schema-3 fields: MCP tools, resources and prompts
+
+Schema 3 adds three contribution lists, on `agent.contributes` and on
+`gcs.contributes`. They are what makes a plugin reachable by an AI agent through
+the MCP surface. A schema-2 manifest with no `tools` block loads exactly as
+before, so the platform stays inert for every existing plugin.
+
+Exposure requires the `mcp.expose` capability. Without it the lists parse and
+nothing is registered.
+
+```yaml
+agent:
+  permissions:
+    - id: mcp.expose
+  contributes:
+    tools:
+      - name: "example_read_state"
+        description: "Read the current detector read-back."
+        safety_class: read
+        inputSchema:
+          type: object
+          properties: {}
+      - name: "example_stop"
+        description: "Stop the behaviour."
+        safety_class: safe_write
+        inputSchema:
+          type: object
+          properties: {}
+    resources: []
+    prompts: []
+```
+
+The entries are free-form maps and additive. The agent reads `name`,
+`inputSchema` and `safety_class` to build the tool registry and to route a
+host-to-plugin `tool.invoke`; it does not interpret the rest of the body. Be
+conservative with what you expose: a tool that commands the aircraft should be
+the operator's decision, not an assistant's, so first-party plugins expose a stop
+tool and no start tool.
+
+See [MCP server](/developers/mcp-server) for the scopes an assistant's token
+carries and how they gate a tool call.
 
 ## `gcs`
 

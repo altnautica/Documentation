@@ -20,14 +20,18 @@ When the agent starts, it looks for config in this order:
 
 ## Full config structure
 
-The config is organized into 16 top-level sections. Here is the complete structure with defaults:
+The excerpt below covers the sections operators touch. The full model also
+carries `radio:`, `atlas:` and `perception:`, documented with the subsystems
+that read them. Keys the running schema does not recognise are preserved on
+write rather than dropped, so a config from a newer or older build survives a
+round trip.
 
 ```yaml
 agent:
   device_id: ""           # Auto-generated on first boot
   name: "my-drone"        # Human-readable name
   tier: "auto"            # auto | 1 | 2 | 3 | 4
-  profile: "auto"         # auto | drone | ground_station
+  profile: "auto"         # auto | drone | ground_station | workstation | compute
 
 mavlink:
   serial_port: ""         # Autodetected if empty
@@ -46,7 +50,7 @@ mavlink:
   aux_uplink_enforce_origin: false  # Refuse an unidentified caller the radio uplink
 
 video:
-  mode: "wfb"             # wfb | rtsp | disabled
+  mode: "auto"            # auto | wfb | cloud | disabled
   wfb:
     interface: ""          # RTL8812EU interface, auto-detected
     channel: 149           # 5 GHz channel
@@ -54,7 +58,7 @@ video:
     fec_k: 8              # FEC data blocks
     fec_n: 12             # FEC total blocks (data + parity)
   camera:
-    source: "csi"         # csi | usb | test
+    source: "csi"         # csi | usb | ip, or a device path (/dev/video0) or RTSP URL
     codec: "h264"         # h264 | h265
     width: 1280
     height: 720
@@ -63,7 +67,7 @@ video:
   recording:
     enabled: false
     path: "/var/ados/recordings"
-    max_duration_minutes: 30
+    retention: "24h"      # how long segments are kept before mediamtx deletes them
   cloud_relay_url: ""
 
 network:
@@ -77,7 +81,7 @@ network:
   hotspot:
     enabled: false
     ssid: "ADOS-{device_id}"
-    password: "altnautica"
+    password: ""          # empty = per-unit passphrase generated on first use, stored 0600 at /etc/ados/ap-passphrase
     channel: 6
 
 server:
@@ -104,7 +108,7 @@ remote_access:
 
 security:
   tls:
-    enabled: true
+    enabled: false
     cert_path: "/etc/ados/certs/device.crt"
     key_path: "/etc/ados/certs/device.key"
     ca_path: "/etc/ados/certs/ca.crt"
@@ -134,7 +138,7 @@ logging:
 
 pairing:
   state_path: "/etc/ados/pairing.json"
-  convex_url: ""
+  convex_url: "https://convex-site.altnautica.com"
   beacon_interval: 30
   heartbeat_interval: 60
 
@@ -182,12 +186,65 @@ ui:
 
 ```yaml
 agent:
-  profile: "auto"  # auto | drone | ground_station
+  profile: "auto"  # auto | drone | ground_station | workstation | compute
 ```
 
 When set to `auto`, the agent fingerprints the hardware at boot. If it finds an OLED on I2C, GPIO buttons, an RTL8812EU in receive mode, and no flight controller, it picks `ground_station`. Otherwise it picks `drone`.
 
+`workstation` and `compute` are never auto-detected. They are chosen at install
+time with `--profile`, and the macOS installer defaults to `workstation`.
+`ados profile set` persists only `drone` and `ground_station`. See
+[Node profiles](/getting-started/node-profiles).
+
 Force a specific profile by setting it explicitly.
+
+### Hotspot passphrase
+
+```yaml
+network:
+  hotspot:
+    password: ""
+```
+
+Empty is the shipped default and it means "generate a per-unit passphrase on
+first use". The generated value is written mode 0600 to
+`/etc/ados/ap-passphrase` and shown on the OLED access-point page, in the on-box
+console, and on the installer's completion card. Read it with
+`ados network ap-passphrase`.
+
+<Warning>
+A configured value takes precedence over the generated one, so naming a
+passphrase here gives every unit in your fleet the same key. Set it only to pin
+a deliberate shared passphrase.
+</Warning>
+
+### Device TLS
+
+```yaml
+security:
+  tls:
+    enabled: false
+```
+
+Device TLS ships **off**. The effective default comes from the agent's
+`defaults.yaml`, not from the Pydantic class default (which reads `true` and is
+overridden at load), so a code reading can mislead here. The shipped LAN posture
+is plain HTTP on port 8080 with the pairing key at the auth edge. Turn TLS on
+deliberately, with certificates you provide at the three `*_path` keys. See
+[Hardening](/operations/hardening).
+
+### Pairing backend URL
+
+```yaml
+pairing:
+  convex_url: "https://convex-site.altnautica.com"
+```
+
+This ships populated with the hosted backend origin. A self-hosted deployment
+MUST overwrite it: setting `server.mode: self_hosted` and filling
+`server.self_hosted` is not enough, because the beacon and heartbeat read
+`pairing.convex_url` and will keep talking to the hosted origin. See
+[Self-hosting the agent](/developers/self-hosting/agent).
 
 ### MAVLink serial port
 
@@ -260,12 +317,30 @@ REST API.
 curl http://localhost:8080/api/config \
   -H "X-ADOS-Key: your_key"
 
-# Write a value
+# Write a value. The body is one dot-separated key path plus its value;
+# a native JSON scalar (true, 25) and a string ("25") are both accepted.
 curl -X PUT http://localhost:8080/api/config \
   -H "X-ADOS-Key: your_key" \
   -H "Content-Type: application/json" \
-  -d '{"key": "video.camera.fps", "value": "25"}'
+  -d '{"key": "video.camera.fps", "value": 25}'
 ```
+
+The response carries `persisted`. A write that mutated the running model but
+could not reach `/etc/ados/config.yaml` answers `"persisted": false` with a
+`persist_error` string naming the reason, so a change that will not survive a
+restart is visible instead of silently reported as saved:
+
+```json
+{ "status": "ok", "key": "video.camera.fps", "value": 25, "persisted": true }
+```
+
+Reading a secret path returns `***`. Writing that sentinel back is rejected with
+a 400, so a read-display-edit-write round trip cannot overwrite a real secret
+with the placeholder.
+
+`GET /api/config/schema` returns the build-time-embedded shape of the whole
+config surface. Build a settings UI against that rather than against a
+hand-written form.
 
 ### Editing the file
 

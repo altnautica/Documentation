@@ -9,10 +9,6 @@ lastUpdated: "2026-06-18"
 
 Plug a monitor and a gamepad into the ground station SBC. The agent launches Chromium in kiosk mode, rendering the Mission Control HUD route at full screen. You get video, telemetry overlays, and stick control without a laptop, phone, or internet connection.
 
-<Frame caption="HDMI kiosk showing the cockpit: video background, attitude indicator, and telemetry overlays">
-  <img src="/images/placeholder-hdmi-kiosk.png" alt="Ground station HDMI output showing fullscreen video with HUD overlay" />
-</Frame>
-
 ## What you need
 
 - Micro-HDMI to HDMI cable (Pi 4B uses micro-HDMI)
@@ -25,7 +21,7 @@ The agent serves the cockpit itself, on its own HTTP surface. Nothing else needs
 
 When a display is connected, the kiosk path comes up. The DRM node is not assumed to be `card0`: the service scans every card for a connected connector, because on a Pi 4 the render node and the display are different cards, and it waits for one to appear rather than checking once (the driver probes asynchronously, so a one-shot check loses the boot race).
 
-1. The agent serves the cockpit at `http://localhost:8080/cockpit/` — a light single-page app served by the agent's own front. The kiosk waits for that URL to answer before launching, so the panel never lands on an error page it will not retry from.
+1. The agent serves the cockpit at `http://localhost:8080/cockpit/`. It is a light single-page app served by the agent's own front. The kiosk waits for that URL to answer before launching, so the panel never lands on an error page it will not retry from.
 2. **`ados-kiosk`** launches Chromium pointed at it, either inside the `cage` Wayland compositor (when the board has no desktop, the appliance case) or as a fullscreen window inside a running desktop session (cage needs the DRM master, which a running compositor already holds).
 3. **Chromium** renders it fullscreen, with no address bar, no tabs, no browser chrome. Its profile and cache are kept in a RAM-backed directory with a bounded cache, so a panel running for months does not wear out the card.
 
@@ -117,4 +113,4 @@ If any of these conditions are not met, the kiosk service does not start. The OL
 
 - [Physical UI](/ground-agent/physical-ui) for the OLED and button system
 - [WiFi AP](/ground-agent/wifi-ap) to add laptop observers while flying on HDMI
-- [Setup and Pairing](/ground-agent/setup-and-pairing) for the first-time walkthrough
+- [Set Up a Ground Station](/ground-agent/setup) for the first-time walkthrough
