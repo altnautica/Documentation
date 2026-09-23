@@ -138,7 +138,7 @@ permission).
 
 | Capability | Risk | Lets the plugin... |
 |------------|------|-----|
-| `network.outbound` | Medium | Open outbound TCP, UDP, and HTTP connections. |
+| `network.outbound` | Medium | Open outbound TCP, UDP, and HTTP connections. The agent's own loopback services stay closed, and the grant is refused while the plugin host's loopback guard is unavailable. |
 | `recording.write` | Low | Write into the agent recording store. |
 | `filesystem.host` | Medium | Read and write files outside its own data dir. |
 | `process.spawn` | High | Launch subprocesses from its manifest spawn allowlist. |

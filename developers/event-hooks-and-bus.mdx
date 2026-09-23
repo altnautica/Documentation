@@ -43,8 +43,9 @@ be allowed for this plugin. The allowlist is the union of:
 - The plugin's own `plugin.<id>.*` namespace (always allowed).
 - A fixed set of public topics any plugin may subscribe to:
   `vehicle.armed`, `vehicle.disarmed`, `vehicle.mode_changed`,
-  `vehicle.battery_low`, `vehicle.geofence_breach`, `mission.started`,
-  `mission.completed`, `mission.aborted`, `agent.ready`, `agent.shutdown`.
+  `vehicle.battery_low`, `vehicle.geofence_breach`, `agent.ready`,
+  `agent.shutdown`. The host derives the vehicle topics from the flight
+  controller's own MAVLink stream.
 - Any extra topics the supervisor seeds from the plugin's manifest.
 
 Publishing requires `event.publish` (the plugin's own `plugin.<id>.*`

@@ -58,8 +58,24 @@ RestrictSUIDSGID=yes
 | Write under `/var/ados/plugin-data`, its logs, and its run dir | Write anywhere else on disk (only the `ReadWritePaths` list is writable) |
 | Use up to its declared RAM, CPU, and PID budget | Exceed that budget (the kernel OOM-kills on memory, throttles on CPU, refuses new threads on PIDs) |
 | Call a privileged host surface it was granted a capability for | Call a surface it was not granted (the IPC server rejects with `permission_denied` before the handler runs) |
-| Open outbound network connections if it declared `network.outbound` | Open arbitrary sockets without that capability |
+| Open outbound network connections if it was granted `network.outbound` | Open arbitrary sockets without that capability, or reach the agent's own services on loopback (ports such as 8080, 5760, 8765 and the media server stay closed to the plugin slice even with the grant) |
 | Share `/tmp` with the host or other plugins | See a shared `/tmp` (`PrivateTmp=yes` gives it a private one) |
+
+### The loopback guard
+
+The agent's own services treat a caller on loopback as part of the box. A
+plugin with `network.outbound` must not inherit that trust, so the plugin
+host loads an nftables rule at startup that drops traffic from the `ados`
+plugin user to the agent's TCP and UDP listeners on `127.0.0.0/8` and
+`::1`. Every plugin process runs as that user and nothing else on the box
+does. Other loopback traffic, such as a plugin's own listener or a local
+DNS resolver, is unaffected.
+
+If the rule cannot load (for example `nft` is missing), the agent fails
+closed: a `network.outbound` grant is refused,
+a unit that already holds one is rendered with the no-network sandbox, and
+`/api/status/full` reports `"plugin_loopback_guard": "unavailable"`. When
+the rule is in place the field reads `"active"`.
 
 ### Blast radius if the agent half is malicious
 

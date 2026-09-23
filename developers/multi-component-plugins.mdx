@@ -101,7 +101,7 @@ and to subscribe to. Any other topic falls under the `event.publish` and
 `event.subscribe` capabilities and is checked against the allowlist:
 reserved namespaces (`vehicle.`, `mavlink.`, `mission.`, `safety.`,
 `agent.`, `swarm.`, `gps.`) cannot be published into, and a small set of
-public safety and lifecycle topics (`vehicle.armed`, `mission.started`,
+public safety and lifecycle topics (`vehicle.armed`, `vehicle.geofence_breach`,
 `agent.ready`, and similar) can be subscribed to without a per-topic
 allowlist entry. The GCS half receives host-pushed events through
 `ctx.events.subscribe`, so it does not open a network connection of its
