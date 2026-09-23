@@ -37,7 +37,7 @@ The agent publishes telemetry to an MQTT broker over WebSocket transport (port 4
 server:
   telemetry_rate: 2    # Hz
   mqtt_transport: "websockets"
-  mqtt_username: "ados"
+  mqtt_username: ""    # empty = the device id
 ```
 
 Mission Control subscribes to these topics via browser MQTT.js and updates the dashboard in real-time. The MQTT bridge also writes to Convex for persistence (debounced at 3 seconds per device).

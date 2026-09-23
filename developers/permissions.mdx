@@ -179,12 +179,11 @@ other nine are fleet-level.
 | Capability | Risk | Lets the plugin... |
 |------------|------|-----|
 | `telemetry.subscribe` | Low | Read live telemetry for paired drones. |
-| `command.send` | Medium | Send commands to a paired drone through the GCS bridge. |
+| `command.send` | Medium | Ask for takeoff, land or return-to-launch (or a follow-target change) on its bound drone. The operator confirms each one in a prompt naming the drone; every other command is refused. |
 | `recording.write` | Low | Save recordings to the GCS library. |
 | `mission.read` | Low | Read mission plans loaded in the GCS. |
 | `mission.write` | High | Upload, edit, or replace missions in the GCS planner. |
 | `cloud.read` | Low | Read shared fleet data from the cloud backend. |
-| `cloud.write` | Medium | Write fleet data to the cloud backend. |
 
 ## Two-stage install
 

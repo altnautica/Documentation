@@ -64,9 +64,9 @@ A three-node linear deployment (one receiver plus two relays along a corridor) c
 
 Pairing is **field-only**. There is no laptop, no QR code, no cloud service involved.
 
-- The receiver operator presses a button on the OLED to open a 60 second Accept window.
-- Each relay operator presses a button on their OLED to send a join request over the mesh.
-- The receiver shows the request, the operator presses approve, and an encrypted invite bundle (mesh ID, shared key, drone WFB key) flies back over the same wire.
+- The receiver operator presses a button on the OLED to open a 60 second Accept window. The receiver shows a six-digit join code.
+- Each relay operator enters that code and sends a join request over the mesh.
+- The receiver shows the request, the operator presses approve, and an encrypted invite bundle (mesh ID, shared key, drone WFB key) flies back over the same wire. The bundle only opens under the join code, so a node that overheard the request cannot answer it.
 - The relay writes the bundle to disk, brings up its mesh services, and starts forwarding.
 
 [Read the field tap-to-pair walkthrough](/ground-agent/setup#field-pairing-on-the-oled)

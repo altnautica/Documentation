@@ -40,7 +40,7 @@ The pairing key is the one to be careful with. It is presented as an `X-ADOS-Key
 
 - **SSH is not managed by ADOS at all.** The agent does not configure sshd, does not set a password, and does not touch root login or password authentication. Whatever your OS image shipped with is what you have. If that image has a default account and password, change it. This is the most likely default credential on your box and it is not one ADOS can fix for you.
 - The installer creates a system account with no login shell and no home directory, and sets no password on it.
-- **The dashboard has no default PIN.** With no PIN file present, the first visitor from the LAN sets one. Set it yourself, from the box, before the box goes anywhere.
+- **The dashboard has no default PIN.** On an unpaired node with no PIN file present, the first visitor from the LAN sets one. Once the node is paired, setting the first PIN needs the pairing key or a caller on the box itself. Set it yourself, from the box, before the box goes anywhere.
 - **The AP passphrase is generated per unit** on first boot rather than shipped as a shared string. See [WiFi AP Mode](/ground-agent/wifi-ap#the-ap-passphrase).
 
 <Note>
@@ -72,18 +72,18 @@ Clearing or changing the PIN rotates its salt, which revokes every live session.
 |---|---|---|
 | 8080 | Agent REST API and dashboard | Pairing key, or a dashboard session |
 | 8765 | MAVLink WebSocket | Ticket or pairing key. `mavlink.ws_proxy_enforce_auth` defaults on, so a paired node refuses a handshake that carries neither. |
-| 5760 | Raw MAVLink over TCP | Off by default. `mavlink.raw_proxy_enforce_auth` is the gate, and it ships `false`. |
-| 14550, 14551 | Raw MAVLink over UDP | Off by default, same `mavlink.raw_proxy_enforce_auth` flag as 5760. |
+| 5760 | Raw MAVLink over TCP | No credential channel. Unpaired: open to any caller. Paired: the box itself only, unless `mavlink.raw_proxy_lan_access` is set. |
+| 14550, 14551 | Raw MAVLink over UDP | Same posture and flags as 5760. |
 
-The raw MAVLink endpoints admit a connection with no credential by default, so a desktop GCS can attach. They speak to the flight controller.
+The raw MAVLink endpoints speak to the flight controller, and a MAVLink byte stream has no handshake and no headers, so there is nowhere for a caller to carry a credential and the peer address is the only thing the agent learns. Their posture follows the pairing state. An unpaired node admits any caller, so a desktop GCS can attach to a fresh unit. A paired node serves them to the box itself only, and refuses every off-box peer, the access point and USB gadget networks included.
 
-`mavlink.raw_proxy_enforce_auth` turns that into a refusal, and it ships off rather than on for a reason worth knowing before you flip it: a MAVLink byte stream has no handshake and no headers, so there is nowhere for a caller to carry a credential and the peer address is the only thing the agent learns. With the flag on, a paired node admits loopback and refuses every off-box peer on all three raw ports. An off-box desktop ground station is then locked out with nothing it can present to get back in, so treat the flag as a deliberate lockdown of the third-party GCS path rather than as hardening you turn on and forget. The WebSocket on 8765 enforces by default because it has two channels a caller can actually use, the `X-ADOS-Key` header and the `ados-ws-ticket` subprotocol.
+`mavlink.raw_proxy_lan_access` (default `false`) reopens a paired node's raw ports to off-box peers, which is what a desktop ground station on your LAN needs. `mavlink.raw_proxy_enforce_auth` (default `false`) is the lockdown in the other direction: on an unpaired node it narrows the raw ports to the box and its first-boot lifelines (loopback, link-local, the access point and the USB gadget link), and on a paired node it keeps off-box peers refused even with LAN access on. The posture in force is reported as `mavlink_proxy_posture` in the agent's status telemetry. The WebSocket on 8765 enforces by default because it has two channels a caller can actually use, the `X-ADOS-Key` header and the `ados-ws-ticket` subprotocol; while unpaired it admits only the box and its first-boot lifelines.
 
 <Warning>
 Do not expose 8080, 8765, 5760, 14550, or 14551 to the internet, and do not put a powered-up drone on a network you do not control. Anything that can reach 5760 can command the flight controller.
 </Warning>
 
-The API is open when the node is unpaired, but only from a narrow set of peers: loopback, link-local, the access point subnet, and the USB gadget subnet. The public pairing routes stay reachable from the whole LAN so a fresh box can be claimed. Pair a node promptly rather than leaving it unpaired on a shared network.
+The API is open when the node is unpaired, but only from a narrow set of peers: loopback, link-local, a device on the node's own access point, and a host on the USB gadget link. Another host on your LAN gets data only behind a dashboard PIN session. The public pairing routes answer the LAN so a fresh box can be claimed, but the claim itself, which hands out the node's key, is refused to a remote caller: a public-internet host, or any request that arrives through a proxy or tunnel. Pair a node promptly rather than leaving it unpaired on a shared network.
 
 Loopback traffic is treated as on-box and bypasses API authentication, on the reasoning that a local shell already exceeds anything the API could grant. A forwarding header disqualifies a request from that treatment, so a tunnel terminating on localhost cannot impersonate a local operator.
 

@@ -47,6 +47,7 @@ mavlink:
       enabled: true
   ws_proxy_enforce_auth: true    # Paired node refuses an unauthorized WebSocket
   raw_proxy_enforce_auth: false  # TCP 5760, UDP 14550/14551: no credential channel
+  raw_proxy_lan_access: false    # Paired node serves the raw ports off-box only when true
   aux_uplink_enforce_origin: false  # Refuse an unidentified caller the radio uplink
 
 video:
@@ -98,8 +99,9 @@ server:
   telemetry_rate: 2       # Hz, MQTT publish rate
   heartbeat_interval: 5   # Seconds
   mqtt_transport: "websockets"  # websockets | tcp
-  mqtt_username: "ados"
+  mqtt_username: ""       # Empty authenticates as the device id
   mqtt_password: ""
+  mqtt_plaintext_dev: false  # Dev brokers only: connect without TLS
 
 remote_access:
   provider: "none"        # none | cloudflare
@@ -107,14 +109,6 @@ remote_access:
   cloudflare: {}          # Cloudflare Tunnel quick-install settings
 
 security:
-  tls:
-    enabled: false
-    cert_path: "/etc/ados/certs/device.crt"
-    key_path: "/etc/ados/certs/device.key"
-    ca_path: "/etc/ados/certs/ca.crt"
-  wireguard:
-    enabled: false
-    config_path: "/etc/wireguard/ados.conf"
   api:
     api_key: ""
     cors_enabled: true
@@ -218,20 +212,20 @@ passphrase here gives every unit in your fleet the same key. Set it only to pin
 a deliberate shared passphrase.
 </Warning>
 
-### Device TLS
+### LAN transport
 
-```yaml
-security:
-  tls:
-    enabled: false
-```
-
-Device TLS ships **off**. The effective default comes from the agent's
-`defaults.yaml`, not from the Pydantic class default (which reads `true` and is
-overridden at load), so a code reading can mislead here. The shipped LAN posture
-is plain HTTP on port 8080 with the pairing key at the auth edge. Turn TLS on
-deliberately, with certificates you provide at the three `*_path` keys. See
+The agent's HTTP API on port 8080 is plain HTTP on the LAN, with the pairing
+key at the auth edge. There is no device TLS or WireGuard setting: keep the node
+on a network you trust, or reach it through the cloud relay or a tunnel. See
 [Hardening](/operations/hardening).
+
+### MQTT broker TLS
+
+The telemetry gateway always connects to the broker over TLS, verified against
+the system trust store, and authenticates as the device id unless
+`server.mqtt_username` names another user. `server.mqtt_plaintext_dev: true`
+turns TLS off for a development broker; the password then crosses the network in
+clear text.
 
 ### Pairing backend URL
 

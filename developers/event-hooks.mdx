@@ -48,8 +48,9 @@ args)` for anything else.
 The host registry also recognizes `telemetry.unsubscribe`, `recording.start`
 and `recording.stop` (capability `recording.write`), `events.subscribe` and
 `events.publish` (`event.subscribe` / `event.publish`, both require a
-`topic` arg), `cloud.read` and `cloud.write`, plus three always-allowed
-methods that need no capability: `ping`, `notify`, and `i18n.t`. A method
+`topic` arg), `cloud.read`, `notify` (`ui.slot.notification-channel`),
+plus two always-allowed methods that need no capability: `ping` and
+`i18n.t`. A method
 that is not in the registry is rejected with `method_unknown`.
 
 The host re-resolves the required capability from the method (and, for

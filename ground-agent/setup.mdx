@@ -441,21 +441,23 @@ nodes.
 <Steps>
   <Step title="On the receiver: open the Accept window">
     B3 to enter the menu, then **Mesh, Accept relay**. The screen flips to a
-    60 second countdown and an empty pending list. The receiver binds a UDP
-    listener on `bat0` port `5801`.
+    60 second countdown, a six-digit join code and an empty pending list. The
+    receiver binds a UDP listener on `bat0` port `5801`. Mission Control's
+    Distributed RX pairing card shows the same code.
   </Step>
   <Step title="On the relay: send a join request">
     B3 to enter the menu, then **Mesh, Join mesh**. The relay scans for
     receivers over mDNS on `bat0` and shows what it found. If nothing shows, the
-    receiver is out of reach or its Accept window is not open. Press B1 to send
-    the join request.
+    receiver is out of reach or its Accept window is not open. Enter the join
+    code the receiver shows, then press B1 to send the join request.
   </Step>
   <Step title="On the receiver: approve">
     The pending list shows the relay's device id. Highlight it with B2 and B3 if
     more than one is pending, then press B1 to approve.
   </Step>
   <Step title="On the relay: it writes to disk">
-    The relay decrypts the invite bundle with its ephemeral key and writes
+    The relay decrypts the invite bundle with its ephemeral key and the join
+    code, and writes
     `/etc/ados/mesh/id`, `/etc/ados/mesh/psk.key` (mode `0600`),
     `/etc/ados/mesh/receiver.json` and the drone-paired WFB receive key. The
     OLED flips to the Joined Status screen with the mesh id, the receiver host
@@ -470,9 +472,17 @@ The same flow is available over REST when you do have a laptop:
 
 ```bash
 # On the receiver: open the window (5 to 300 seconds, default 60).
+# The response carries the window's six-digit "code".
 curl -X POST http://localhost:8080/api/v1/ground-station/pair/accept \
   -H "Content-Type: application/json" \
   -d '{"duration_s": 60}'
+```
+
+```bash
+# On the relay: join with the code the receiver shows.
+curl -X POST http://localhost:8080/api/v1/ground-station/pair/join \
+  -H "Content-Type: application/json" \
+  -d '{"code": "482910"}'
 ```
 
 ```bash
@@ -494,15 +504,16 @@ curl -X POST http://localhost:8080/api/v1/ground-station/pair/close
 | Request | One JSON datagram |
 | Reply | One opaque encrypted blob |
 | Key exchange | X25519 |
-| Symmetric cipher | ChaCha20-Poly1305 with HKDF key derivation |
+| Symmetric cipher | ChaCha20-Poly1305, key derived from the X25519 secret and the join code |
+| Join code | Six digits, new for every Accept window |
 | Accept window | 60 seconds default, 5 to 300 configurable |
 | Invite bundle TTL | 120 seconds from issue |
 | Invite retransmit | 2 sends, 100 ms apart |
 | mDNS service | `_ados-receiver._tcp`, receiver port `5800` |
 
 The request is `{"type": "join", "device_id": "<id>", "pubkey_hex": "<32 bytes hex>"}`.
-The relay generates a fresh ephemeral keypair for every attempt and discards it
-once it has decrypted the reply.
+The join code never goes on the wire. The relay generates a fresh ephemeral
+keypair for every attempt and discards it once it has decrypted the reply.
 
 The reply is one binary blob: 32 bytes of receiver ephemeral public key, then a
 12-byte nonce, then the ciphertext and its 16-byte authentication tag. The
@@ -512,21 +523,27 @@ channel, the WFB receive key, the receiver's mDNS host and port, and
 
 The receiver sends the blob **twice**, 100 ms apart, because UDP on a lossy mesh
 drops packets and a single loss should not force the operator to redo the flow.
-The relay uses the first copy and tears down its keypair, so the second fails to
-decrypt and is dropped silently.
+The relay persists the first copy that opens and stops listening.
 
-A bundle whose `expires_at_ms` has already passed is dropped and the relay falls
-back to a re-request.
+A unicast join takes replies only from the receiver address it resolved. A reply
+that does not open under the code is counted, and after five the join stops with
+`E_INVITE_REJECTED`; check the code and join again. A bundle whose
+`expires_at_ms` has already passed does not open either.
 
 ### Security model
 
 The threat model is "an operator with physical access to both nodes for one
-minute". Out of scope: hostile actors on the same channel, capture-and-replay
-against historical pairings, side channels. In scope:
+minute". Out of scope: capture-and-replay against historical pairings, side
+channels. In scope:
 
-- **Mutual authentication via ECDH.** The encrypted reply only opens with the
-  relay's ephemeral private key, so a passive listener holding the same SSID and
-  PSK cannot read the bundle.
+- **Receiver authentication via the join code.** The join request falls back to
+  broadcast, so any node on the mesh can learn the relay's public key and seal
+  an invite to it. The session key also binds the six-digit code shown on the
+  receiver, so only the receiver whose code the relay's operator typed can seal
+  an invite that opens. A wrong guess costs one of five attempts.
+- **Confidentiality via ECDH.** The encrypted reply only opens with the relay's
+  ephemeral private key, so a passive listener holding the same SSID and PSK
+  cannot read the bundle.
 - **Authenticated encryption.** ChaCha20-Poly1305 detects any tampering.
 - **Bundle expiry.** 120 seconds. A captured bundle replayed later is rejected.
 - **Revocation.** Revoke a relay's device id from Mission Control or the setup

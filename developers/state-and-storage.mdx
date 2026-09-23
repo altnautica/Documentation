@@ -127,10 +127,8 @@ the fleet-wide default the other instances fall back to.
 
 ## Cloud-visible state
 
-The GCS capability catalog includes `cloud.read` and `cloud.write` for
-plugins that need fleet-visible state. A dedicated cloud-storage facade
-is not yet part of the plugin SDK, so cloud-backed plugin state is a
-forward-looking surface rather than a current API. For now, keep durable
+The GCS capability catalog includes `cloud.read`, which reads a small set
+of public cloud queries. There is no plugin cloud write, so keep durable
 plugin state in the per-plugin data directory and surface readings to the
 operator through telemetry and notifications.
 

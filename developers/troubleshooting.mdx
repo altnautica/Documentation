@@ -219,15 +219,12 @@ reach the parent document, cannot read the GCS cookies or storage, and
 all host access goes through the postMessage bridge, never a direct
 DOM reach. Two consequences for plugin authors:
 
-- **An outbound `fetch()` from the iframe is governed by the page's
-  Content-Security-Policy `connect-src`.** If your panel calls a
-  third-party HTTP endpoint and the browser console shows a CSP
-  violation naming `connect-src`, that origin is not on the allowed
-  list. Route the request through a host capability where one exists
-  (`command.send`, `cloud.read`, `cloud.write`) instead of fetching
-  directly, or document the endpoint so a self-hoster can widen their
-  own policy. Do not assume an arbitrary origin is reachable from the
-  sandbox.
+- **The plugin iframe has no network egress.** Its document carries
+  `connect-src 'none'`, and WebRTC and nested frames are removed, so a
+  `fetch()`, WebSocket or peer connection from the panel fails with a
+  CSP violation or a missing constructor. Route the work through a host
+  capability (`command.send`, `mission.write`, `cloud.read`) or through
+  your plugin's agent half instead.
 - **No same-origin tricks.** Because `allow-same-origin` is absent, the
   iframe cannot read `window.parent`, `localStorage`, or the host's
   `document`. Anything you need from the GCS comes over the bridge under
