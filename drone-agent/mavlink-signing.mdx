@@ -2,14 +2,14 @@
 title: "MAVLink Signing"
 description: "HMAC-SHA256 authentication of every command sent to the flight controller, with the key held in the GCS browser."
 icon: "lock"
-lastUpdated: "2026-06-18"
+lastUpdated: "2026-09-23"
 ---
 
 # MAVLink Signing
 
-MAVLink v2 includes an optional message-signing layer that stamps every outgoing frame with an HMAC-SHA256 tag keyed to a 32-byte shared secret. A vehicle configured with `SIGNING_REQUIRE=1` rejects any unsigned command. This closes a real attack surface: a peer on the same WiFi, a compromised cloud relay, or a rogue user on the local network cannot inject arm, takeoff, or parameter-write commands even if they reach the MAVLink stream.
+MAVLink v2 includes an optional message-signing layer that stamps every outgoing frame with an HMAC-SHA256 tag keyed to a 32-byte shared secret. Once an ArduPilot flight controller holds a key, it rejects unsigned commands on every link except USB. This closes a real attack surface: a peer on the same WiFi, a compromised cloud relay, or a rogue user on the local network cannot inject arm, takeoff, or parameter-write commands even if they reach the MAVLink stream.
 
-In ADOS, the signing key lives in the GCS browser (ADOS Mission Control) as a non-extractable Web Crypto key. The agent never persists the key. It exposes a small REST surface so the GCS can detect capability, push the key to the flight controller once, and toggle the FC's `SIGNING_REQUIRE` parameter.
+In ADOS, the signing key lives in the GCS browser (ADOS Mission Control) as a non-extractable Web Crypto key. The agent never persists the key. It exposes a small REST surface so the GCS can detect capability, push the key to the flight controller once, and clear it again.
 
 <Info>
 The key never touches the agent's disk. Raw key bytes exist in the browser only during generation and the one-shot enrollment call. From then on the browser holds a CryptoKey handle that can sign and verify but cannot be exported back to raw bytes, even by the same JavaScript.
@@ -23,7 +23,7 @@ The key never touches the agent's disk. Raw key bytes exist in the browser only 
 4. The GCS imports the raw bytes as a non-extractable `CryptoKey`, stores the handle in IndexedDB keyed by drone id, and zeroizes its own buffer.
 5. Every outgoing MAVLink v2 frame from this drone gets a 13-byte signature tail appended: 1-byte link id, 6-byte timestamp, 6-byte truncated HMAC-SHA256.
 6. The agent passes signed frames through the IPC socket to the flight controller unchanged.
-7. The flight controller validates each frame. When `SIGNING_REQUIRE=1`, unsigned or invalid frames are silently dropped.
+7. The flight controller validates each frame and silently drops unsigned or invalid ones, except unsigned frames arriving on its USB port.
 
 ## Enabling signing
 
@@ -32,7 +32,7 @@ The key never touches the agent's disk. Raw key bytes exist in the browser only 
 In the GCS, select your drone, open the Configure tab, and pick the Security section. Choose MAVLink Signing.
 </Step>
 <Step title="Check capability">
-The panel reads the flight controller's firmware and parameter dump to confirm signing is available. ArduPilot 4.0 and newer is supported today. If the panel shows "not available", see the [Firmware support](#firmware-support) table below.
+The panel asks the agent which autopilot the flight controller reports in its heartbeat. ArduPilot is supported. If the panel shows "not available", see the [Firmware support](#firmware-support) table below.
 </Step>
 <Step title="Click Enable signing">
 The browser generates a fresh 32-byte key and enrolls it with the flight controller. Enrollment usually completes in under two seconds.
@@ -42,14 +42,14 @@ The panel shows an 8-character key id (the first bytes of SHA-256 over the key).
 </Step>
 </Steps>
 
-After enrollment, signed and unsigned commands both work. The flight controller accepts either until you enable require mode.
+## What the flight controller enforces
 
-## Requiring signed commands
+ArduPilot has no parameter that switches enforcement on or off. A non-zero key in its signing store is the switch: from the moment it holds one, it accepts unsigned frames only on its USB port (plus `RADIO_STATUS` from a telemetry radio) and drops them on every other link. Sending an all-zero key clears the store and turns signing off.
 
-Flip `Require signed commands` from the Signing panel to set `SIGNING_REQUIRE=1` on the flight controller. From that moment the flight controller silently drops any frame without a valid signature.
+The flight controller never acknowledges `SETUP_SIGNING`. The agent reports that it sent the frame, not that the flight controller took it. When a request is interrupted after a frame may have gone out, the GCS keeps both the new key and the previous one and asks the operator which one the flight controller holds. A disable is handled the same way: the GCS keeps the key until the operator confirms unsigned commands are accepted.
 
 <Warning>
-Require mode can lock you out of your own drone. If every browser that holds the key gets wiped or replaced and you have not exported a copy, the flight controller will reject every command. Recovery requires local access: on the companion computer, call the `disable-on-fc` endpoint to send a zero-key `SETUP_SIGNING`, then re-enroll from a fresh GCS session.
+Signing can lock you out of your own drone. If every browser that holds the key gets wiped or replaced and you have not exported a copy, the flight controller rejects every command on every link except USB. Recovery: connect over USB and re-enroll, or, from the companion computer, call the `disable-on-fc` endpoint to send a zero-key `SETUP_SIGNING` and then re-enroll from a fresh GCS session.
 
 ```bash
 curl -X POST http://localhost:8080/api/mavlink/signing/disable-on-fc \
@@ -59,7 +59,7 @@ curl -X POST http://localhost:8080/api/mavlink/signing/disable-on-fc \
 
 ## Rotating keys
 
-Click `Rotate key` in the Signing panel to generate a new 32-byte key, enroll it with the flight controller, and evict the old one. Any other browser still holding the previous key loses its ability to sign until you re-enroll it.
+Click `Rotate key` in the Signing panel to generate a new 32-byte key and enroll it with the flight controller. The old key is replaced once the agent reports the new one sent; an interrupted rotation keeps both until you confirm which one the flight controller holds. Any other browser still holding the previous key loses its ability to sign until you re-enroll it.
 
 Rotation is a per-browser action today. Each browser that needs to keep working with the rotated key has to re-enroll separately, or import the new key from a browser that already has it.
 
@@ -67,13 +67,12 @@ Rotation is a per-browser action today. Each browser that needs to keep working 
 
 | Firmware | Supported | Why |
 |---|---|---|
-| ArduPilot 4.0+ | Yes | Exposes `SIGNING_*` parameters and a persistent EEPROM key store. |
-| ArduPilot < 4.0 | No | Pre-dates signing. Upgrade the firmware. |
+| ArduPilot | Yes | Keeps the key in a persistent on-board store. |
 | PX4 | No (for now) | Supports the signing protocol but has no persistent on-board key store. The operator would have to re-provision on every reboot. |
 | Betaflight | Not applicable | Uses MSP, not MAVLink. |
 | iNav | Not applicable | Uses MSP, not MAVLink. |
 
-The `supportsMavlinkSigning` capability flag in the GCS flips to true only when the autopilot is ArduPilot and at least one `SIGNING_*` parameter appears in the cached parameter dump. Custom ArduPilot builds that stripped signing will correctly report unsupported.
+Support is decided from the autopilot type in the flight controller's heartbeat. The signing key store is not exposed as parameters, so a parameter dump says nothing about it.
 
 ## Agent REST surface
 
@@ -84,9 +83,7 @@ All routes live under `/api/mavlink/signing/` and are gated by the existing `X-A
 | `/capability` | GET | Returns whether the connected FC supports signing, with the firmware name and reason code. |
 | `/enroll-fc` | POST | Body: `{ key_hex, link_id }`. Sends `SETUP_SIGNING` to the FC, zeroizes the key buffer, returns the fingerprint. |
 | `/disable-on-fc` | POST | Sends `SETUP_SIGNING` with an all-zero key, clearing the FC's signing store. |
-| `/require` | GET | Returns the current `SIGNING_REQUIRE` value cached from the FC. |
-| `/require` | PUT | Body: `{ require }`. Writes `SIGNING_REQUIRE` on the FC. |
-| `/counters` | GET | Returns `{ tx_signed_count, rx_signed_count, last_signed_rx_at }` from the passive IPC observer. |
+| `/counters` | GET | Returns `{ observed, tx_signed_count, rx_signed_count, last_signed_rx_at }`. No observer counts signed frames today, so `observed` is `false` and the counts are `null`. |
 
 Request-body redaction strips `key_hex` from structured logs. The fingerprint (`key_id`) is safe to log and appears in audit entries.
 
@@ -96,12 +93,10 @@ These routes are served natively by the Rust front. Signing is managed from the 
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| Panel shows "not available" on ArduPilot 4.5 | Parameters not yet dumped | Click Refresh in the parameters panel, then reopen Signing. |
-| Panel shows "Key missing" | Another browser enabled signing but this browser never had the key | Rotate from the other browser, or clear the FC and re-enroll from this browser. |
-| Every command silently fails after enabling require | Second GCS connected with stale key, or FC was reset externally | Check the signed-frame counters; if rx valid is climbing for one browser and tx is climbing for another, a second GCS is connected with a different key. |
-| Fingerprint changed after a reboot | Another browser rotated the key while this one was offline | Re-enroll this browser by clicking Enable signing again. |
-
-The FC logs `bad signing` messages when it rejects a frame. `journalctl -u ados-mavlink` on the companion computer shows them alongside normal MAVLink traffic.
+| Panel shows "not available" | The flight controller is not ArduPilot, or it has not sent a heartbeat yet | Check the FC connection on the node Overview, then reopen Signing. |
+| Panel shows "Unconfirmed" | An enrollment, rotation, or disable was sent but not confirmed | Send a command from this browser. If it is accepted, settle on the new key (or confirm signing is off); if it is rejected, settle on the previous key (or keep the key). |
+| Commands work over USB but not over the radio | The flight controller holds a key this browser does not sign with | Import the key from the browser that enrolled it, or re-enroll from this browser over USB. |
+| Fingerprint changed after a reboot | Another browser rotated the key while this one was offline | Import the new key from that browser, or re-enroll from this one. |
 
 ## Security posture
 
