@@ -1,27 +1,31 @@
 ---
 title: "MAVLink Signing"
-description: "HMAC-SHA256 authentication of every command sent to the flight controller, with the key held in the GCS browser."
+description: "SHA-256 signatures on every command sent to the flight controller, with the key held in the GCS browser."
 icon: "lock"
 lastUpdated: "2026-09-23"
 ---
 
 # MAVLink Signing
 
-MAVLink v2 includes an optional message-signing layer that stamps every outgoing frame with an HMAC-SHA256 tag keyed to a 32-byte shared secret. Once an ArduPilot flight controller holds a key, it rejects unsigned commands on every link except USB. This closes a real attack surface: a peer on the same WiFi, a compromised cloud relay, or a rogue user on the local network cannot inject arm, takeoff, or parameter-write commands even if they reach the MAVLink stream.
+MAVLink v2 includes an optional message-signing layer that stamps every outgoing frame with a 48-bit signature: the first 6 bytes of SHA-256 over a 32-byte shared secret, the frame, a link id and a timestamp. Once an ArduPilot flight controller holds a key, it rejects unsigned commands on every link except USB. This closes a real attack surface: a peer on the same WiFi, a compromised cloud relay, or a rogue user on the local network cannot inject arm, takeoff, or parameter-write commands even if they reach the MAVLink stream.
 
-In ADOS, the signing key lives in the GCS browser (ADOS Mission Control) as a non-extractable Web Crypto key. The agent never persists the key. It exposes a small REST surface so the GCS can detect capability, push the key to the flight controller once, and clear it again.
+In ADOS, the signing key lives in the GCS browser (ADOS Mission Control), as raw bytes in that browser's IndexedDB. The agent never persists the key. It exposes a small REST surface so the GCS can detect capability, push the key to the flight controller once, and clear it again.
 
 <Info>
-The key never touches the agent's disk. Raw key bytes exist in the browser only during generation and the one-shot enrollment call. From then on the browser holds a CryptoKey handle that can sign and verify but cannot be exported back to raw bytes, even by the same JavaScript.
+The key never touches the agent's disk. In the browser it is stored as raw bytes in IndexedDB, because the signature is a SHA-256 hash over the key itself and Web Crypto cannot compute that from a non-extractable key. Any script running on the Mission Control page can read it.
 </Info>
+
+<Warning>
+Mission Control releases before September 2026 signed with HMAC-SHA256 over a region that left out the start byte. No autopilot accepts those signatures, so a flight controller enrolled from one of those releases rejects every command sent over a non-USB link. Re-enroll it over USB from the current release, or clear it with the `disable-on-fc` route below. Keys stored by those releases are discarded, so the browser shows no key until you enroll or import one.
+</Warning>
 
 ## How it works
 
 1. The GCS generates 32 random bytes using `crypto.getRandomValues`.
 2. The GCS POSTs the key as hex to `/api/mavlink/signing/enroll-fc` over the agent's HMAC-authenticated REST channel.
 3. The agent sends a `SETUP_SIGNING` message to the flight controller twice, 200 ms apart, then zeroizes the raw key buffer.
-4. The GCS imports the raw bytes as a non-extractable `CryptoKey`, stores the handle in IndexedDB keyed by drone id, and zeroizes its own buffer.
-5. Every outgoing MAVLink v2 frame from this drone gets a 13-byte signature tail appended: 1-byte link id, 6-byte timestamp, 6-byte truncated HMAC-SHA256.
+4. The GCS stores a copy of the raw bytes in IndexedDB keyed by drone id, and zeroizes its own buffer.
+5. Every outgoing MAVLink v2 frame to this drone is signed: the signed bit is set in `incompat_flags`, the CRC is recomputed, and a 13-byte tail is appended with a 1-byte link id, a 6-byte timestamp (10 µs units since 2015-01-01), and the first 6 bytes of SHA-256(key ‖ frame from the start byte through the CRC ‖ link id ‖ timestamp).
 6. The agent passes signed frames through the IPC socket to the flight controller unchanged.
 7. The flight controller validates each frame and silently drops unsigned or invalid ones, except unsigned frames arriving on its USB port.
 
@@ -109,7 +113,7 @@ What signing protects against:
 What signing does not cover:
 
 - An operator with physical access to the flight controller's UART.
-- A browser whose JavaScript execution is compromised by a same-origin XSS payload. The attacker cannot exfiltrate the key thanks to the non-extractable CryptoKey, but they can use it to sign while the session is open.
+- A browser whose JavaScript execution is compromised by a same-origin script injection. The key is raw bytes in IndexedDB, so injected script can read it, copy it off the machine, and sign with it indefinitely. Rotate the key if you suspect the browser or the Mission Control origin was compromised.
 - Lost-key recovery. Keep a copy of the key fingerprint somewhere you can re-locate.
 
 ## Related

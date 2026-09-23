@@ -7,7 +7,7 @@ lastUpdated: "2026-09-23"
 
 # MAVLink Signing
 
-Every outgoing command to a signing-enabled drone carries an HMAC-SHA256 tag your browser generated. The flight controller rejects anything it cannot verify. Nobody else can impersonate you, and the agent running on the companion computer cannot forge commands either: the key lives only in your browser.
+Every outgoing command to a signing-enabled drone carries a SHA-256 signature your browser computed with its key. The flight controller rejects anything it cannot verify. Nobody else can impersonate you, and the agent running on the companion computer cannot forge commands either: the key lives only in your browser.
 
 This page covers the operator flow. For the protocol detail and agent REST surface, see [MAVLink Signing in the Drone Agent guide](/drone-agent/mavlink-signing).
 
@@ -49,13 +49,15 @@ Other browsers that held the old key stop working for that drone until you re-en
 
 ## Key storage in this browser
 
-Raw key bytes exist in memory only at generation time and during the one-shot POST to the agent. The browser imports the bytes as a Web Crypto `CryptoKey` with `extractable: false`. That handle can sign and verify frames, but `crypto.subtle.exportKey` throws `InvalidAccessError` on it. Even an XSS payload on the same page cannot exfiltrate the raw key, only use it while the session is open.
-
-The CryptoKey handle is stored in IndexedDB under the `signing-keys-v1` object store, tagged with the drone id and the signed-in user id when you are authenticated.
+The key is stored as raw bytes in this browser's IndexedDB, under the `signing-keys-v1` object store, tagged with the drone id and the signed-in user id when you are authenticated. MAVLink signing hashes the key itself with SHA-256, which Web Crypto cannot do with a non-extractable key, so the bytes have to be readable. That means any script running on the Mission Control page can read the key and copy it. Treat the browser profile as holding the key, and rotate it if you suspect the browser or the site was compromised.
 
 <Info>
-If you sign out and someone else signs in on the same browser, the signing records tagged with your user id are purged automatically. Anonymous records (enrolled while signed out) stay on the device.
+If you sign out and someone else signs in on the same browser, the signing records tagged with your user id are purged automatically. Anonymous records (enrolled while signed out) stay on the device. The key is readable by script on this page, so a signed-in session is not a boundary around it.
 </Info>
+
+<Warning>
+Releases before September 2026 produced signatures no autopilot accepts. If a flight controller was enrolled from one of them, it now rejects every command sent over a non-USB link: re-enroll it from this browser over USB, or clear its key with the `disable-on-fc` route under Troubleshooting. Keys saved by those releases are discarded, so the panel shows no browser key until you enroll or import one.
+</Warning>
 
 ## Private browsing
 
@@ -76,11 +78,11 @@ The panel shows a muted card explaining the reason. The fleet sidebar badge rend
 
 ## Bringing your own key
 
-If you already have a MAVLink signing key from another browser, an export, or another ground station, click `Import an existing key` in the Signing panel and paste the 64-character hex string. The browser imports it as a non-extractable CryptoKey and signs with it. No enrollment happens and nothing is tested: the key must already be on the flight controller, and the next command from this browser shows whether it is.
+If you already have a MAVLink signing key from another browser, an export, or another ground station, click `Import an existing key` in the Signing panel and paste the 64-character hex string. The browser stores it as raw bytes in IndexedDB and signs with it. No enrollment happens and nothing is tested: the key must already be on the flight controller, and the next command from this browser shows whether it is.
 
 ## Exporting a key
 
-`Export key` rotates to a fresh key and copies the new key to your clipboard for 60 seconds; it never appears on screen. The new key is stored in this browser before the clipboard is touched. If the browser refuses the clipboard write, the panel keeps the key and offers `Copy again`. Closing that dialog without copying leaves the key working in this browser, but it cannot be exported again without another rotation.
+`Export key` rotates to a fresh key and copies the new key to your clipboard for 60 seconds; it never appears on screen. The new key is stored in this browser before the clipboard is touched. If the browser refuses the clipboard write, the panel keeps the key and offers `Copy again`. Closing that dialog without copying leaves the key working in this browser; the panel only exports by rotating, so exporting again replaces the key.
 
 ## Troubleshooting
 
