@@ -154,8 +154,8 @@ The other eight are advisory metadata: `mavlink.component.camera`,
 
 | Capability | Risk | Lets the plugin... |
 |------------|------|-----|
-| `network.outbound` | Medium | Open outbound TCP, UDP, and HTTP connections. The agent's own loopback services stay closed, and the grant is refused while the plugin host's loopback guard is unavailable. |
-| `network.listen` | High | Let a declared service bind the TCP ports it lists in `listen_ports`. Every other port stays closed, and the plugin's main process never listens. |
+| `network.outbound` | Medium | Open outbound TCP, UDP, and HTTP connections, and find services on the local network over mDNS through the agent (`ctx.mdns.browse`). The agent's own loopback services stay closed, and the grant is refused while the plugin host's loopback guard is unavailable. |
+| `network.listen` | High | Let a declared service bind the TCP ports it lists in `listen_ports`, and advertise those ports on the local network over mDNS through the agent (`ctx.mdns.advertise`). Every other port stays closed, the plugin's main process never listens, and the agent's own service types cannot be advertised. |
 | `cloud.publish` | Medium | Publish messages of at most 64 KiB on its own stream through the agent's cloud relay. Publishing onto the shared detection topic also needs `vision.detection.publish`. |
 | `cloud.records` | Medium | Write JSON records of at most 64 KiB into its own collection in the operator's cloud account, where its GCS half can read them back. |
 | `recording.write` | Low | Write into the agent recording store. |
