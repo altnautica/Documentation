@@ -1,0 +1,284 @@
+---
+title: "Battery health"
+description: "Per-pack cell analysis, voltage sag and temperature alerts, and a time-to-reserve estimate computed on the drone."
+icon: "battery-half"
+lastUpdated: "2026-09-24"
+---
+
+# Battery health
+
+The drone agent watches every battery pack the flight controller reports
+and turns the raw `BATTERY_STATUS` stream into a health view: per-cell
+voltages with the weakest cell called out, pack voltage and current,
+consumed capacity and energy, temperature, a time-to-reserve estimate
+and a set of anomaly rules. The engine runs inside `ados-control` on
+the drone, so the same result reaches Mission Control, the on-box
+dashboard and the REST API.
+
+Battery health is a drone profile feature. It needs a flight controller
+that sends `BATTERY_STATUS` (ArduPilot and PX4 both do). The agent
+advertises it with the `battery.health` capability.
+
+## How it works
+
+Every 500 ms the engine reads the latest vehicle state. A new sample is
+ingested only when the state actually changed, and nothing is ingested
+while the flight controller link is down.
+
+Each pack is tracked by its MAVLink battery `id`. Up to 8 distinct packs
+are tracked; a ninth new id is ignored. When the flight controller sends
+no `BATTERY_STATUS` at all, the engine builds pack `0` from the
+`SYS_STATUS` battery fields.
+
+For each pack the engine keeps up to 300 seconds of samples (600 at
+2 Hz), the live anomaly set and the last 100 raise and clear events.
+
+### Cells and pack voltage
+
+A cell array is **plausible** when it is non-empty and every value is
+between 2.5 V and 4.5 V. Some flight controllers put the whole pack
+voltage into the first cell slot (a 4S pack shows up as a single 16.8 V
+"cell"). That array is implausible, so for that sample:
+
+- no cell rule runs (`cell_critical`, `cell_low`, `cell_divergence`);
+- the pack reports `cells_plausible: false`;
+- `min_cell_v`, `max_cell_v`, `divergence_mv` and `weakest_cell_index`
+  are `null`.
+
+Pack voltage (`voltage_v`) is chosen in this order:
+
+1. The sum of the cells, when the cells are plausible.
+2. The single reported value, when exactly one value is present.
+3. For pack `0` only, the `SYS_STATUS` battery voltage.
+
+When none of these applies, `voltage_v` is `null`. For pack `0`,
+`remaining_pct` falls back to the `SYS_STATUS` remaining value when the
+pack itself does not report one.
+
+### Anomaly rules
+
+The rules run on every new sample, in this order. `dt` is the time
+since the previous sample of the same pack.
+
+| Rule | Fires when | Severity |
+|---|---|---|
+| `cell_critical` | The lowest cell is below `critical_cell_mv`. | critical |
+| `cell_low` | The lowest cell is at or above `critical_cell_mv` and below `low_cell_mv`. | warning |
+| `cell_divergence` | The spread between the highest and lowest cell, in mV, is above `cell_divergence_mv`. | warning |
+| `voltage_drop` | A previous sample exists, `0 < dt ≤ 5 s`, and the pack voltage fell faster than `voltage_drop_mv_per_s`. | warning |
+| `temp_spike` | Both samples carry a temperature, `0 < dt ≤ 5 s`, and the temperature rose faster than `temp_spike_dc_per_s` (in 0.1 °C/s). | warning |
+| `predictive_low` | The prediction state is `normal` or `high` and the time to reserve is under 60 s. | warning |
+
+Each anomaly carries the measured `value` and the `threshold` it was
+compared with, in the same unit:
+
+| Rule | `value` and `threshold` unit |
+|---|---|
+| `cell_critical`, `cell_low` | V (lowest cell against the threshold in volts) |
+| `cell_divergence` | mV |
+| `voltage_drop` | V/s |
+| `temp_spike` | °C/s |
+| `predictive_low` | seconds to reserve, against 60 |
+
+### Clearing
+
+An anomaly clears with a 5 second hold. When a rule stops firing, the
+anomaly stays in the live list with `cleared_at_ms` set. If the rule
+fires again inside 5 seconds the stamp is removed and the anomaly
+carries on as the same event. If 5 seconds pass with no re-fire, the
+anomaly is removed and a `cleared` entry is added to the history. This
+stops a pack that sits right on a threshold from flapping.
+
+### Time to reserve
+
+The prediction uses the samples inside the last `predictive_window_s`
+seconds. It needs at least 2 samples spanning at least 1 second;
+otherwise the state is `idle` with every number `null`.
+
+The engine computes the drop rate in percent per second from the
+remaining-capacity change across the window:
+
+| State | Meaning |
+|---|---|
+| `idle` | Not enough data, or the pack is not discharging (drop rate at or below zero). |
+| `normal` | Discharging at up to 0.5 %/s. `eta_s` is the time until `reserve_percent`. |
+| `high` | Discharging faster than 0.5 %/s. `eta_s` is the time until `reserve_percent`. |
+| `past` | Remaining capacity is already at or below `reserve_percent`. `eta_s` is 0. |
+
+`eta_s` is `(remaining - reserve) / drop rate`, rounded to whole
+seconds. `mean_current_a` is the mean absolute current over the same
+window.
+
+## Configuration
+
+The `battery:` block in `/etc/ados/config.yaml` holds the thresholds.
+Every value is an integer. A value outside its range, or a
+`critical_cell_mv` that is not below `low_cell_mv`, falls back to its
+default and the agent logs a warning.
+
+```yaml
+battery:
+  enabled: true
+  low_cell_mv: 3500
+  critical_cell_mv: 3300
+  cell_divergence_mv: 50
+  voltage_drop_mv_per_s: 500
+  temp_spike_dc_per_s: 50
+  predictive_window_s: 30
+  reserve_percent: 25
+```
+
+| Key | Default | Range | Unit | Meaning |
+|---|---|---|---|---|
+| `enabled` | `true` | | | Turns the engine on or off. Off returns an empty pack list. |
+| `low_cell_mv` | 3500 | 2500 to 4200 | mV | Lowest cell below this raises `cell_low`. |
+| `critical_cell_mv` | 3300 | 2500 to 4000 | mV | Lowest cell below this raises `cell_critical`. Must be below `low_cell_mv`. |
+| `cell_divergence_mv` | 50 | 10 to 500 | mV | Cell spread above this raises `cell_divergence`. |
+| `voltage_drop_mv_per_s` | 500 | 100 to 5000 | mV/s | Pack sag faster than this raises `voltage_drop`. |
+| `temp_spike_dc_per_s` | 50 | 5 to 200 | 0.1 °C/s | Temperature rise faster than this raises `temp_spike`. 50 means 5 °C/s. |
+| `predictive_window_s` | 30 | 5 to 300 | s | Look-back window for the time-to-reserve estimate. |
+| `reserve_percent` | 25 | 5 to 50 | % | The reserve the estimate counts down to. |
+
+The engine checks the config file every tick and reloads the block when
+the file changes, so a threshold edit takes effect without a restart.
+
+## Where to see it
+
+### Mission Control
+
+Open the drone, switch to the **Agent** tab, and pick **Battery** under
+the **Node** section. The page has two views:
+
+- **Live**: one card per pack with the cell bar (weakest cell
+  highlighted), voltage, current, consumed mAh and Wh, temperature, the
+  time-to-reserve strip, active anomalies and recent history. A pack
+  with implausible cells shows "Per-cell data not reported by the FC"
+  in place of the cell bar.
+- **Setup**: the threshold fields from the table above.
+
+A newly raised anomaly also shows a toast (critical anomalies as an
+error, warnings as a warning), and while a recording is running for
+that drone it drops a marker on the recording timeline.
+
+### On-box dashboard
+
+On the drone's own web dashboard, open **Settings** and pick
+**Battery** (listed under System and safety, drone profile only). It
+shows the same live pack cards and the threshold fields, and saves to
+the same `battery:` block.
+
+## REST API
+
+```bash
+curl http://localhost:8080/api/v1/battery \
+  -H "X-ADOS-Key: $KEY"
+```
+
+The route always answers `200`. Example response:
+
+```json
+{
+  "enabled": true,
+  "stale": false,
+  "updated_at_ms": 1790000000000,
+  "thresholds": {
+    "enabled": true,
+    "low_cell_mv": 3500,
+    "critical_cell_mv": 3300,
+    "cell_divergence_mv": 50,
+    "voltage_drop_mv_per_s": 500,
+    "temp_spike_dc_per_s": 50,
+    "predictive_window_s": 30,
+    "reserve_percent": 25
+  },
+  "packs": [
+    {
+      "id": 0,
+      "cells_plausible": true,
+      "cell_voltages_v": [3.91, 3.84, 3.92, 3.92],
+      "weakest_cell_index": 1,
+      "min_cell_v": 3.84,
+      "max_cell_v": 3.92,
+      "divergence_mv": 80,
+      "voltage_v": 15.59,
+      "current_a": 18.4,
+      "remaining_pct": 62,
+      "temperature_c": 34.5,
+      "consumed_mah": 1840,
+      "consumed_wh": 28.6,
+      "prediction": {
+        "state": "normal",
+        "eta_s": 420,
+        "drop_pct_per_s": 0.088,
+        "mean_current_a": 18.1
+      },
+      "anomalies": [
+        {
+          "rule": "cell_divergence",
+          "severity": "warning",
+          "value": 80,
+          "threshold": 50,
+          "first_seen_ms": 1789999990000,
+          "last_seen_ms": 1790000000000,
+          "cleared_at_ms": null
+        }
+      ],
+      "history": [
+        {
+          "rule": "cell_divergence",
+          "severity": "warning",
+          "state": "raised",
+          "at_ms": 1789999990000,
+          "value": 72
+        }
+      ]
+    }
+  ]
+}
+```
+
+Top-level fields:
+
+| Field | Meaning |
+|---|---|
+| `enabled` | Mirrors `battery.enabled`. When `false`, `packs` is empty. |
+| `stale` | `true` when no new sample arrived in the last 5 seconds, including before the first one and after the flight controller link drops. |
+| `updated_at_ms` | Epoch milliseconds of the last ingested sample, `0` before the first. |
+| `thresholds` | The active `battery:` config after validation. |
+| `packs` | One entry per pack, ordered by `id`. |
+
+Pack fields:
+
+| Field | Meaning |
+|---|---|
+| `id` | MAVLink battery instance. |
+| `cells_plausible` | Whether the cell array passed the plausibility check. |
+| `cell_voltages_v` | Reported cell voltages, with unused slots removed. |
+| `weakest_cell_index`, `min_cell_v`, `max_cell_v`, `divergence_mv` | Cell statistics. `null` when cells are absent or implausible. |
+| `voltage_v` | Pack voltage (see [Cells and pack voltage](#cells-and-pack-voltage)). Can be `null`. |
+| `current_a`, `temperature_c`, `consumed_wh` | Floats, `null` when not reported. |
+| `remaining_pct`, `consumed_mah` | Integers, `null` when not reported. |
+| `prediction` | Always present. `state` is `idle`, `normal`, `high` or `past`; the numbers are `null` in `idle`. |
+| `anomalies` | Live anomalies in rule order. `cleared_at_ms` is set while an anomaly is inside its 5 second clear hold. |
+| `history` | Raise and clear events, newest first, up to 100. For a `cleared` entry, `value` is the last value seen while the rule was firing. |
+
+## Log events
+
+Every raise and final clear is written to the node log as a
+`battery.anomaly` event from `ados-control`, with the fields `rule`,
+`pack_id`, `state` (`raised` or `cleared`), `value` and `threshold`. A
+raised critical anomaly logs at `error`, a raised warning at `warn`, and
+a clear at `info`.
+
+With the [Black Box store](/drone-agent/black-box) turned on, query them
+with:
+
+```bash
+ados logs query --kind events --event-kind battery.anomaly --since -1h
+```
+
+## See also
+
+- [Configuration](/drone-agent/configuration)
+- [REST API](/drone-agent/rest-api)
+- [Black Box log store](/drone-agent/black-box)

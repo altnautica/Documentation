@@ -1,27 +1,76 @@
 ---
 title: "Your first plugin"
-description: "Walk through the Battery Health Panel from manifest to packed archive, line by line."
-lastUpdated: "2026-06-23"
+description: "Build a GCS-only node-detail tab that reads battery telemetry and prints the pack voltage, from scaffold to signed archive."
+lastUpdated: "2026-09-24"
 ---
 
-The Battery Health Panel is the first first-party extension on the
-new plugin host. It is a GCS-only plugin that reads the host's
-normalized battery telemetry, runs an anomaly engine, and emits
-notifications when a rule fires. Source lives at
-[`altnautica/ADOSExtensions/extensions/battery-health-panel`](https://github.com/altnautica/ADOSExtensions/tree/main/extensions/battery-health-panel).
+This walkthrough builds `com.example.hello-panel`, the smallest useful
+plugin: a GCS-only tab on a drone's node-detail panel that subscribes to
+the host's normalized battery telemetry and prints the pack voltage.
+There is no agent half. The plugin runs entirely inside Mission Control,
+in a sandboxed iframe, and reads telemetry the drone already publishes.
 
-This page walks through the parts that matter for plugin authors.
+By the end you have a manifest the host accepts, a bundle that mounts, a
+unit test that runs without Mission Control, and a signed `.adosplug`
+archive.
 
-## Manifest
+<Note>
+Battery health (per-cell analysis, sag detection, time-to-reserve and
+anomaly alerts) is built into the drone agent. See
+[Battery health](/drone-agent/battery-health). This tutorial uses the
+battery topic only because every drone publishes it.
+</Note>
+
+## Prerequisites
+
+- Node.js 20+ and pnpm 9+.
+- A Mission Control install with a paired drone (or demo mode) to see
+  the tab.
+
+## 1. Scaffold
+
+The SDK and the `create-ados-plugin` scaffolder live in the
+[`altnautica/ADOSExtensions`](https://github.com/altnautica/ADOSExtensions)
+monorepo. Develop the plugin as a workspace member there:
+
+```sh
+git clone https://github.com/altnautica/ADOSExtensions.git
+cd ADOSExtensions
+pnpm install
+
+node packages/create-ados-plugin/bin/cli.mjs \
+  --target extensions/hello-panel \
+  --id com.example.hello-panel \
+  --half gcs-only \
+  --author "Your Name"
+```
+
+The GCS-only template lays out:
+
+```
+extensions/hello-panel/
+├── manifest.yaml
+├── package.json
+├── README.md
+├── CHANGELOG.md
+├── locales/en.json
+└── gcs/
+    ├── package.json
+    ├── tsconfig.json
+    └── src/plugin.ts
+```
+
+## 2. Manifest
+
+Replace the generated `manifest.yaml` with:
 
 ```yaml
 schema_version: 1
-id: com.altnautica.battery-health-panel
-name: "ADOS Battery Health Panel"
-version: "1.0.2"
-description: "Cell-level battery diagnostics, predictive time-to-min, and anomaly alerts."
-author: "Altnautica"
-homepage: "https://github.com/altnautica/ADOSExtensions/tree/main/extensions/battery-health-panel"
+id: com.example.hello-panel
+name: "Hello Panel"
+version: "0.1.0"
+description: "Prints the drone's battery pack voltage in a node-detail tab."
+author: "Your Name"
 license: "GPL-3.0-or-later"
 risk: low
 
@@ -34,156 +83,212 @@ gcs:
   entrypoint: "gcs/plugin.bundle.js"
   isolation: iframe
   permissions:
-    - id: ui.slot.fc-tab
-    - id: ui.slot.notification-channel
-    - id: ui.slot.settings-section
+    - id: ui.slot.node-detail-tab
     - id: telemetry.subscribe.battery
-    - id: telemetry.subscribe.mavlink
-    - id: recording.write
   contributes:
-    panels:
-      - id: battery-health-tab
-        slot: fc.tab
-        title: "Battery Health"
+    tabs:
+      - id: hello-tab
+        slot: node.detail.tab
+        profile: ["drone"]
+        title: "Hello"
         icon: "battery"
-        order: 30
-    notifications:
-      - id: battery-anomaly
-        title: "Battery anomaly"
-        severity: warning
+        order: 90
   locales:
     - en
 ```
 
-Manifest fields are flat at the root (`id`, `name`, `version`,
-`compatibility`, then the `gcs` half). Permissions are a list of
-`- id: <capability>` entries. Six permissions, two contributes blocks
-(panels and notifications), no agent half. See the
-[permissions](/developers/permissions) reference for the full set of
-GCS slot ids. Risk band: `low` (no `vehicle.command`, no host file
-system, no network).
+What each part does:
 
-## Entry point
+- **No `agent` block.** A manifest needs at least one half; this one
+  ships only the GCS half, so nothing installs on the drone.
+- **`tabs`** mounts the bundle as a tab on the node-detail panel. A tab
+  always lives in the `node.detail.tab` slot. `profile: ["drone"]`
+  offers it on drones only; leave `profile` out to offer it on every
+  node profile.
+- **`ui.slot.node-detail-tab`** is the permission that lets the tab
+  mount. Every visual contribution needs its matching `ui.slot.*`
+  permission, or the host drops it.
+- **`telemetry.subscribe.battery`** is the topic-scoped telemetry grant.
+  The host checks it on every `telemetry.subscribe` call for the
+  `battery` topic, so a plugin cannot read a topic it did not declare.
+- **`risk: low`**: the plugin reads telemetry and draws a tab. It
+  sends no commands, opens no network connections and touches no files.
+
+See [contribution points](/developers/contribution-points) for every
+contribution kind and [permissions](/developers/permissions) for the
+full capability list.
+
+## 3. The panel
+
+Keep the logic in its own module so it can be tested without a browser.
+Create `gcs/src/panel.ts`:
+
+```ts
+import type { BatterySample, PluginContext } from "@altnautica/plugin-sdk";
+
+export function formatPack(sample: BatterySample): string {
+  return `Pack ${sample.packId}: ${sample.totalVoltageV.toFixed(2)} V`;
+}
+
+export async function mountPanel(
+  ctx: PluginContext,
+  el: HTMLElement,
+): Promise<() => void> {
+  el.textContent = "Waiting for battery telemetry";
+  return ctx.telemetry.subscribe<BatterySample>("battery", (sample) => {
+    el.textContent = formatPack(sample);
+  });
+}
+```
+
+`ctx.telemetry.subscribe` asks the host to open the `battery` stream
+for the drone the tab is mounted on. It resolves once the host accepts
+the subscription, and the value it resolves with is an unsubscribe
+function. If the grant is missing, the promise rejects and no handler
+is left behind.
+
+Every frame on the `battery` topic is a `BatterySample`:
+
+| Field | Type | Notes |
+|---|---|---|
+| `timestampMs` | number | Sample time in milliseconds. |
+| `packId` | number | Battery instance reported by the flight controller. |
+| `cellVoltagesV` | number[] | Empty when the flight controller does not report cells. |
+| `totalVoltageV` | number | Pack voltage. |
+| `currentA` | number or null | |
+| `consumedAh` | number or null | |
+| `remainingPercent` | number or null | |
+| `temperatureC` | number or null | |
+| `cellCount` | number or null | |
+
+Values the flight controller does not report arrive as `null`.
+
+## 4. The entry point
+
+Replace `gcs/src/plugin.ts` with:
 
 ```ts
 import { definePlugin } from "@altnautica/plugin-sdk";
-import { createBatteryStore } from "./batteryStore";
-import type { BatterySample } from "./types";
+import { mountPanel } from "./panel";
 
-const store = createBatteryStore();
+let stop: (() => void) | null = null;
 
 definePlugin({
-  id: "com.altnautica.battery-health-panel",
-  version: "1.0.0",
+  id: "com.example.hello-panel",
+  version: "0.1.0",
   async mount(ctx) {
-    await ctx.telemetry.subscribe<BatterySample>(
-      "battery",
-      (sample) => store.ingest(sample),
-    );
-    store.onAnomaly(async (fired) => {
-      for (const event of fired) {
-        await ctx.notifications.publish({
-          channelId: "battery-anomaly",
-          severity: event.severity,
-          title: event.title,
-          body: event.body,
-        });
-        await ctx.recording.mark({ label: event.title });
-      }
-    });
+    const el = document.createElement("div");
+    el.style.font = "14px system-ui, sans-serif";
+    el.style.padding = "12px";
+    document.body.appendChild(el);
+    stop = await mountPanel(ctx, el);
+  },
+  unmount() {
+    stop?.();
+    stop = null;
   },
 });
 ```
 
-`definePlugin` is the only SDK call. Everything else is plain
-TypeScript: a store, a rule engine, a render loop. The SDK gets out
-of the way.
+`definePlugin` is the only call a plugin module must make. The host
+loads the bundle inside the tab's iframe, and the SDK calls `mount` with
+a `PluginContext` wired to the host bridge. `unmount` runs when the tab
+closes or the operator switches node, and releases the telemetry
+stream.
 
-## Anomaly rule
+## 5. Test without a host
 
-```ts
-const ruleCellLow: Rule = ({ curr, config }) => {
-  const min = minDefined(curr.cellVoltagesV);
-  if (min === null || min >= config.lowCellVoltageV) return null;
-  if (min < config.criticalCellVoltageV) return null;
-  return mk("cell_low", curr, "warning", "Cell low", `${min.toFixed(2)} V`);
-};
-```
-
-A rule is a pure function from `(prev, curr, config)` to
-`AnomalyEvent | null`. The store calls every rule on every new
-sample. Hysteresis is the store's job: an anomaly stays in the live
-list until the underlying condition has been clear for at least 5
-seconds.
-
-## Testing without a host
-
-The SDK ships a synthetic-host harness:
+The SDK ships a synthetic host harness at
+`@altnautica/plugin-sdk/harness`. It runs the plugin against an
+in-memory transport, applies the same capability gate as the real host,
+and lets you push telemetry frames by hand. Create
+`gcs/src/panel.test.ts`:
 
 ```ts
+import { describe, expect, it } from "vitest";
 import { createPluginHarness } from "@altnautica/plugin-sdk/harness";
+import { mountPanel } from "./panel";
 
-const harness = createPluginHarness({
-  grantedCapabilities: [
-    "telemetry.subscribe.battery",
-    "ui.slot.notification-channel",
-    "recording.write",
-  ],
-  mount: async (ctx) => {
-    await ctx.telemetry.subscribe("battery", (s) => store.ingest(s));
-    store.onAnomaly(async (fired) => {
-      for (const e of fired) {
-        await ctx.notifications.publish({ ... });
-      }
+describe("hello panel", () => {
+  it("prints the pack voltage", async () => {
+    const el = { textContent: "" } as HTMLElement;
+    const harness = createPluginHarness({
+      grantedCapabilities: ["telemetry.subscribe.battery"],
+      mount: async (ctx) => {
+        await mountPanel(ctx, el);
+      },
     });
-  },
+    await harness.start();
+
+    harness.pushTelemetry("battery", {
+      timestampMs: 0,
+      packId: 0,
+      cellVoltagesV: [4.1, 4.1, 4.1, 4.12],
+      totalVoltageV: 16.42,
+      currentA: null,
+      consumedAh: null,
+      remainingPercent: null,
+      temperatureC: null,
+      cellCount: 4,
+    });
+
+    expect(el.textContent).toBe("Pack 0: 16.42 V");
+    await harness.teardown();
+  });
 });
-
-await harness.start();
-harness.pushTelemetry("battery", { cellVoltagesV: [3.9, 3.4, 3.9, 3.9], ... });
-expect(harness.notifications).toHaveLength(1);
-expect(harness.notifications[0]).toMatchObject({ severity: "warning" });
-await harness.teardown();
 ```
 
-The harness lets a single Vitest run validate the whole plugin
-without spinning up Mission Control or a real drone.
-
-## Packing and installing
+Run it from the GCS package:
 
 ```sh
+cd extensions/hello-panel/gcs
 pnpm test
-scripts/pack.sh battery-health-panel
 ```
 
-`pack.sh` builds the GCS bundle (esbuild into `plugin.bundle.js`),
-computes SHA-256 hashes for every asset, and zips the result into
-`extensions/battery-health-panel/dist/<id>-<version>.adosplug`. The
-version comes from the manifest, so the archive is named
-`com.altnautica.battery-health-panel-1.0.2.adosplug`.
+`harness.calls` records every request the plugin made, including the
+capability it claimed, so you can also assert that the plugin asked for
+`telemetry.subscribe.battery` and nothing more.
 
-Signing is a separate step. With a publisher Ed25519 key in
-`ADOS_SIGNING_KEY`, sign the packed archive:
+## 6. Pack and sign
+
+From the monorepo root:
 
 ```sh
-ADOS_SIGNING_KEY=/path/to/key.ed25519 \
-  scripts/sign.sh dist/com.altnautica.battery-health-panel-1.0.2.adosplug
+scripts/pack.sh hello-panel
 ```
 
-That writes a `*.signed.adosplug` carrying a `SIGNATURE` file (signer
-id plus the base64 Ed25519 signature over the canonical payload hash).
-The signer id defaults to `altnautica-2026-A`; override it with
-`ADOS_SIGNING_KEY_ID`.
+`pack.sh` builds the GCS bundle (esbuild into `gcs/plugin.bundle.js`),
+checks that every entrypoint the manifest declares is present, and zips
+the result into `extensions/hello-panel/dist/com.example.hello-panel-0.1.0.adosplug`.
+The name comes from the manifest `id` and `version`.
 
-Drag the archive into the node's **Extensions** tab in Mission Control, under
-**Install from file**. Approve the six declared permissions. The panel
-mounts under the FC tab.
+Signing is a separate step. With your publisher Ed25519 key in
+`ADOS_SIGNING_KEY` and its id in `ADOS_SIGNING_KEY_ID`:
+
+```sh
+ADOS_SIGNING_KEY=/path/to/key.priv.pem \
+ADOS_SIGNING_KEY_ID=my-publisher-2026-A \
+  scripts/sign.sh extensions/hello-panel/dist/com.example.hello-panel-0.1.0.adosplug
+```
+
+That writes a `*.signed.adosplug` carrying a `SIGNATURE` file: the
+signer id, then the base64 Ed25519 signature over the canonical payload
+hash. See [distribution and local install](/developers/distribution-local-install)
+for key generation and how a node comes to trust your signer.
+
+## 7. Install
+
+Open the drone from the fleet, switch to its **Extensions** tab, and
+choose **Install from file**. Drop in the archive, review the two
+permissions, and approve. The **Hello** tab appears on the drone's
+node-detail panel and updates with every battery frame.
 
 ## What is next
 
-- See [permissions](/developers/permissions) to plan the smallest
-  surface a real plugin needs.
-- See [event hooks](/developers/event-hooks) to learn the host RPC
-  catalog.
-- See [distribution and local install](/developers/distribution-local-install)
-  to publish a signed release on GitHub.
+- [Permissions](/developers/permissions): plan the smallest surface a
+  real plugin needs.
+- [Scaffolder walkthrough](/developers/scaffolder-walkthrough): a
+  hybrid plugin with a flight skill, parameters and a vision model.
+- [Event hooks](/developers/event-hooks): the host RPC catalog.
+- [Distribution and local install](/developers/distribution-local-install):
+  publish a signed release on GitHub.

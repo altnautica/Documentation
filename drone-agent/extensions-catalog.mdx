@@ -11,24 +11,6 @@ These are the first-party extensions Altnautica publishes through the public [`A
 
 Every extension is licensed GPL-3.0-or-later; hardware reference designs ship CC0 1.0.
 
-## ADOS Battery Health Panel
-
-| Field | Value |
-|---|---|
-| Plugin id | `com.altnautica.battery-health-panel` |
-| Version | 1.2.1 |
-| Risk | low |
-| Type | GCS-only (iframe) |
-| Agent half | None. It reads the battery telemetry the node already publishes |
-| Hardware | Any smart battery the FC already reports |
-| Supported boards | any |
-
-Per-cell voltages with the weakest cell called out, pack voltage, current, consumed capacity and temperature, plus a predictive estimate of time remaining until the configured minimum from the recent discharge trend. Anomaly rules flag cell divergence, a sudden voltage sag and over-temperature; each raises a notification and drops a recording marker. The panel is read-only and adds no load to the flight controller.
-
-Contributes a **Battery Health** tab on the node-detail view (`node.detail.tab`) and a warning-severity notification channel.
-
-**Permissions:** battery telemetry subscribe, `STATUSTEXT` MAVLink subscribe, recording write, the node-detail-tab and notification-channel UI slots.
-
 ## ADOS MAVLink Gimbal v2 Controller
 
 | Field | Value |

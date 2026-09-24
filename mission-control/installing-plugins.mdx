@@ -32,7 +32,7 @@ When you pick a plugin to install, Mission Control opens a two-stage dialog so y
 
 The first stage shows the plugin's identity:
 
-- Plugin id (e.g. `com.altnautica.battery-health-panel`)
+- Plugin id (e.g. `com.altnautica.follow-me`)
 - Version + release date
 - Signer key id (first-party plugins are signed by `altnautica-2026-A`)
 - Risk badge (informational / low / medium / high)
@@ -82,7 +82,7 @@ Fleet rollouts are still per-drone under the hood: each drone independently fetc
 
 ## Where the plugin runs
 
-- **GCS-only plugins** (e.g. ADOS Battery Health Panel) load as an `iframe` inside Mission Control. They never touch the drone's agent.
+- **GCS-only plugins** (e.g. the `com.example.hello-panel` sample from [Your first plugin](/developers/your-first-plugin)) load as an `iframe` inside Mission Control. They never touch the drone's agent.
 - **Hybrid plugins** (e.g. ADOS Thermal Camera, ADOS MAVLink Gimbal v2, ADOS Vision Navigation) install both halves: the agent half runs as a subprocess of `ados-supervisor` under a systemd slice with CPU and memory limits; the GCS half loads as an `iframe` and talks to the agent over the standard plugin IPC.
 - **Agent-only plugins** install on the drone but contribute no UI. They surface via the plugin info panel and through any topics they publish.
 

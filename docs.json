@@ -197,6 +197,7 @@
             "pages": [
               "drone-agent/mavlink-proxy",
               "drone-agent/mavlink-signing",
+              "drone-agent/battery-health",
               "drone-agent/video-pipeline",
               "drone-agent/multi-camera",
               "drone-agent/cloud-relay",

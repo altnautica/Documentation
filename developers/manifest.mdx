@@ -36,8 +36,8 @@ gcs:                  # optional, GCS half
 ```
 
 At least one of `agent` or `gcs` must be present. The host accepts
-plugins that ship only one half; the first-party Battery Health Panel,
-for example, is GCS-only.
+plugins that ship only one half; the `com.example.hello-panel` plugin in
+[Your first plugin](/developers/your-first-plugin), for example, is GCS-only.
 
 | Field | Type | Notes |
 |-------|------|-------|
@@ -242,17 +242,18 @@ gcs:
   isolation: "iframe"            # iframe (default), worker, or inline
   permissions:
     - id: ui.slot.fc-tab
+    - id: ui.slot.notification-channel
     - id: telemetry.subscribe.battery
   contributes:
     panels:
-      - id: battery-health-tab
+      - id: power-tab
         slot: fc.tab
-        title: "Battery Health"
-        icon: "battery"
+        title: "Power"
+        icon: "zap"
         order: 30
     notifications:
-      - id: battery-anomaly
-        title: "Battery anomaly"
+      - id: power-alert
+        title: "Power alert"
         severity: warning
   locales:
     - "en"

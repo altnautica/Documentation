@@ -21,9 +21,9 @@ JavaScript and lazy-load:
 
 ```html
 <iframe
-  src="/plugins/com.example.battery/index.html"
+  src="/plugins/com.example.power/index.html"
   sandbox="allow-scripts"
-  title="Battery Health"
+  title="Power"
 ></iframe>
 ```
 
@@ -169,10 +169,10 @@ the manifest:
 gcs:
   contributes:
     panels:
-      - id: battery-health-tab
+      - id: power-tab
         slot: fc.tab
-        title: "Battery Health"
-        icon: "battery"
+        title: "Power"
+        icon: "zap"
         order: 30
 ```
 
