@@ -154,7 +154,8 @@ working directory.
 | `tools/selfhost/docker-compose.yml` | The Compose file it drives. Not generated; it is the repo's. |
 | `tools/selfhost/.env` | The generated environment for the stack. |
 | `tools/selfhost/docker-compose.override.yml` | The generated override. |
-| `tools/selfhost/passwd` | The generated Mosquitto password file. |
+| `tools/selfhost/passwd` | The generated Mosquitto password file. The `mqtt-auth-sync` service adds every paired device to it. |
+| `tools/selfhost/acl.conf` | The broker ACL, seeded once from `tools/mqtt-bridge/deploy/acl.conf` and kept current by `mqtt-auth-sync`. |
 
 ## Services and default ports
 

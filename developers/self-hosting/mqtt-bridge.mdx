@@ -126,59 +126,35 @@ same `apiKey` it received during pairing, the value it also sends as the
 `X-ADOS-Key` HTTP header. So a device's broker credential and its HTTP
 credential are one and the same.
 
-### Create the password file
+### Keep the password file and ACL in sync
 
-On first deploy, the `passwd` file does not exist yet. Bring the broker
-up, then create it. Add the bridge service account and one entry per
-paired device:
+Every paired agent logs in as `ados-<deviceId>` with its `apiKey`, and each
+live operator control grant logs in as its own `gcs-op-*` principal. Both
+come from Convex, so the broker's `passwd` and `acl.conf` are generated, not
+hand-written. `scripts/regenerate-passwd.sh` pulls them from the
+`/admin/mqtt-auth-entries` HTTP action, authenticated with
+`MQTT_AUTH_RELAY_SECRET`. It then rewrites both files in place and sends the
+broker a `SIGHUP`.
 
-<Steps>
-  <Step title="Start the stack">
-    ```bash
-    docker compose up -d
-    ```
-  </Step>
-  <Step title="Create the file with the first entry">
-    The `-c` flag creates a new file. `mosquitto_passwd` prompts for the
-    password.
-    ```bash
-    docker compose exec mosquitto \
-      mosquitto_passwd -c /mosquitto/config/passwd ados
-    ```
-    Use the same password here that you put in `MQTT_PASSWORD`.
-  </Step>
-  <Step title="Append each paired device">
-    For every paired drone, add its `deviceId` as the username and its
-    `apiKey` as the password. Both are on the `cmd_drones` table in your
-    Convex deployment after pairing. Drop the `-c` flag so the file is
-    appended, not overwritten.
-    ```bash
-    docker compose exec mosquitto \
-      mosquitto_passwd /mosquitto/config/passwd <deviceId>
-    ```
-  </Step>
-  <Step title="Reload the broker">
-    Mosquitto re-reads the password file on `SIGHUP`, so you do not need
-    a full restart.
-    ```bash
-    docker compose exec mosquitto kill -HUP 1
-    ```
-  </Step>
-</Steps>
+- **All-in-one stack.** The `mqtt-auth-sync` service in
+  `tools/selfhost/docker-compose.yml` runs the script every 30 seconds. It
+  shares the broker's process namespace to deliver the reload, so no Docker
+  socket is mounted. A newly paired drone can connect within one interval.
+- **Standalone broker.** Run the script from a systemd timer or cron on the
+  broker host, with `BROKER_CONTAINER` naming the broker container.
 
-<Tip>
-`mosquitto_passwd` prompts for each password interactively. To script it,
-pass `-b` and feed the password from a secrets manager. Never read
-passwords from shell history.
-</Tip>
+Set the same `MQTT_AUTH_RELAY_SECRET` on the Convex deployment and in the
+broker host's environment. Before the broker's first start, create the files
+it mounts. Seed `acl.conf` from `tools/mqtt-bridge/deploy/acl.conf`, then
+create `passwd` with the bridge account:
 
-### When you pair a new device
+```bash
+docker run --rm -v "$PWD:/work" eclipse-mosquitto:2 \
+  mosquitto_passwd -b -c /work/passwd ados "$MQTT_PASSWORD"
+```
 
-The broker will not let an agent connect until its
-`(deviceId, apiKey)` pair lands in `passwd`. After a new drone finishes
-pairing, append it with `mosquitto_passwd` and `SIGHUP` the broker, the
-same two steps as above. If you rotate a device's `apiKey` (by
-re-pairing), update its `passwd` entry before the agent reconnects.
+Re-pairing a device rotates its `apiKey`. The next sync picks up the new
+value.
 
 ### Bench mode (no auth)
 

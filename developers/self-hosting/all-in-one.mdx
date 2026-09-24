@@ -169,19 +169,28 @@ everything.
 
     npx convex env set SITE_URL "http://<host>:4000" \
       --url http://<host>:3210 --admin-key <admin-key>
+
+    npx convex env set MQTT_AUTH_RELAY_SECRET "$MQTT_AUTH_RELAY_SECRET" \
+      --url http://<host>:3210 --admin-key <admin-key>
     ```
+
+    `MQTT_AUTH_RELAY_SECRET` is any long random value; put the same one in
+    `.env`.
   </Step>
-  <Step title="Create the MQTT password file">
-    Mosquitto reads a password file mounted into the container. Start the
-    broker on its own, then write the password for the `ados` user:
+  <Step title="Seed the broker credential files">
+    The broker mounts its password file and ACL as files, so both must exist
+    before its first start:
 
     ```bash
-    docker compose up -d mosquitto
-    docker exec -it selfhost-mosquitto-1 \
-      mosquitto_passwd -c /mosquitto/config/passwd ados
+    cp ../mqtt-bridge/deploy/acl.conf ./acl.conf
+    docker run --rm -v "$PWD:/work" eclipse-mosquitto:2 \
+      mosquitto_passwd -b -c /work/passwd ados "$MQTT_PASSWORD"
     ```
 
-    Use the same password you set as `MQTT_PASSWORD` in `.env`.
+    After that, the `mqtt-auth-sync` service keeps both files current. Every
+    30 seconds it pulls paired devices and live operator grants from Convex,
+    rewrites the files and reloads the broker, so a newly paired agent can
+    connect with no manual step.
   </Step>
   <Step title="Bring up everything">
     ```bash

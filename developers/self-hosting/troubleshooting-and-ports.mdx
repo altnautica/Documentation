@@ -218,12 +218,13 @@ box. Going to production, tighten it further:
 - Keep `allow_anonymous false`. The commented bench block that turns
   anonymous on is for a local bench or CI only. Never run an internet-facing
   broker with `allow_anonymous true`.
-- Give each device its own credential: the username is its `deviceId` and
-  the password is its `apiKey`. The ACL then scopes a device to its own
+- Give each device its own credential: the username is `ados-<deviceId>`
+  and the password is its `apiKey`. The ACL then scopes a device to its own
   subtree (`ados/<deviceId>/#`). Do not share one broker account across
-  devices.
-- Rotate a device's `passwd` entry when you re-pair it, before the agent
-  reconnects with the new `apiKey`.
+  devices. The auth sync generates both entries from Convex.
+- Keep the auth sync running (`mqtt-auth-sync` in the all-in-one stack, or a
+  timer running `regenerate-passwd.sh`), so a re-paired device's new `apiKey`
+  reaches the broker within one interval.
 - Put the WebSocket listener behind TLS so credentials never cross a network
   in the clear.
 
@@ -254,8 +255,9 @@ credential:
   `scripts/generate-auth-keys.mjs` and set on the backend. Keep the private
   key off shared hosts.
 - A leaked device `apiKey` is both its broker password and its HTTP
-  credential, so rotate it by re-pairing the device and updating its broker
-  `passwd` entry.
+  credential, so rotate it by re-pairing the device; the next auth sync
+  replaces its broker entry. Treat `MQTT_AUTH_RELAY_SECRET` like the admin
+  key: it reads every device credential.
 
 ## Where to go next
 
