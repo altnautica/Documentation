@@ -11,16 +11,16 @@ verifies the signature, and runs the same install flow as a local file.
 
 ## How it works
 
-URL install is a GCS-driven flow, not a standalone agent command. The
-GCS posts the URL to the agent's `POST /api/plugins/install_from_url`
-endpoint. The agent downloads the archive directly (no intermediate
-storage hop), then hands the bytes to the same installer that local file
-install uses: archive parse, signature verify, manifest validation,
-board-compatibility check, and permission gating all run unchanged. Only
-the transport differs.
+The agent's `POST /api/plugins/install_from_url` endpoint takes the URL.
+The agent downloads the archive directly (no intermediate storage hop),
+then hands the bytes to the same installer that local file install uses:
+archive parse, signature verify, manifest validation, board-compatibility
+check, and permission gating all run unchanged. Only the transport
+differs.
 
-There is no `ados plugin install <url>` command. The agent CLI installs
-from a local path; the URL path is reached through the GCS.
+Mission Control and the agent CLI both reach it. `ados plugin install
+<https-url>` previews the archive through `POST /api/plugins/parse_from_url`,
+then installs pinned to the sha256 of the bytes you just reviewed.
 
 ## When to use it
 
@@ -42,10 +42,10 @@ name, version, signer, risk band, and requested permissions for approval.
 | Rule | Detail |
 |------|--------|
 | HTTPS only | The URL scheme must be `https`. Plain `http://` is rejected. |
-| Host allowlist | The default set is GitHub release assets (`github.com`, `objects.githubusercontent.com`), S3 (`amazonaws.com`), and `localhost` for dev rigs. The match is on the labelled host boundary, so `evil-github.com` does not match `github.com`. |
+| Host allowlist | GitHub release hosts (`github.com`, `objects.githubusercontent.com`, `release-assets.githubusercontent.com`), S3 (`amazonaws.com`), the cloud relay's archive hosts, and `localhost` for dev rigs. The match is on the labelled host boundary, so `evil-github.com` does not match `github.com`. Every redirect hop is checked too, up to five. |
 | Download size | The streamed body is capped at 100 MB and aborts mid-stream once it exceeds the cap. The archive itself must also fit the 50 MB plugin-archive limit at parse time. |
 | Optional hash pin | When the caller supplies an expected SHA-256, the agent compares it against the streamed bytes and aborts on mismatch. |
-| Timeouts | 60 seconds to open the connection, 5 minutes total. |
+| Timeout | 30 minutes end to end. |
 
 A URL whose host is not on the allowlist is rejected before any bytes
 are downloaded.

@@ -1,7 +1,7 @@
 ---
 title: "Manifest reference"
 description: "Every field of plugin manifest.yaml, in dependency order."
-lastUpdated: "2026-06-23"
+lastUpdated: "2026-09-24"
 ---
 
 The manifest is the entire contract between a plugin and the host.
@@ -74,42 +74,54 @@ not here.
 ```yaml
 agent:
   entrypoint: "agent/plugin.py"
-  isolation: "subprocess"        # subprocess (default) or inprocess (first-party)
+  isolation: "subprocess"        # the only mode the agent runs
   runtime: "python"              # python (default) or rust
   permissions:
     - id: event.publish
     - id: mavlink.read
   resources:
-    max_ram_mb: 96               # default 96, range 8 to 4096
-    max_cpu_percent: 25          # default 25, range 1 to 100
-    max_pids: 12                 # default 12, range 1 to 256
-  target_profiles: ["drone"]     # subset of drone, ground-station, workstation
+    class: standard              # standard (default) or heavy (first-party only)
+    max_ram_mb: 96               # default 96, range 8 to 4096 (heavy: 65536)
+    max_cpu_percent: 25          # default 25, range 1 to 100 (heavy: 3200)
+    max_pids: 12                 # default 12, range 1 to 256 (heavy: 4096)
+  target_profiles: ["drone"]     # subset of drone, ground-station, workstation, compute
+  http: false                    # serve an HTTP API under /api/plugins/<id>/x/
+  binaries: {}                   # per-architecture binaries, referenced as bin:<name>
+  payloads: []                   # files fetched at install instead of packed
+  declared_capabilities: []      # capabilities this plugin defines for its own data
   contributes:
-    services: []                 # optional, plugin-declared extra systemd services
+    services: []                 # optional extra service units
+    shared_topics: []            # event-bus topics this plugin owns
 ```
 
 `entrypoint` is a relative path inside the archive (no absolute paths,
 no `..`). For a file-path entrypoint like `agent/plugin.py` the runner
 loads a class named `Plugin`. A `module:Class` entrypoint is also
-accepted and is how built-in plugins declare themselves.
+accepted and is how built-in plugins declare themselves. A `runtime:
+rust` entrypoint may instead be `bin:<name>`, resolved through
+[`binaries`](#per-architecture-binaries).
 
-`isolation: subprocess` is the default and the only mode third-party
-plugins may declare. `inprocess` is reserved for first-party plugins
-that import into the supervisor. `runtime: rust` runs the entrypoint as
-its own binary (rust always runs subprocess).
+`isolation: subprocess` is the default and the only mode the agent runs.
+An `inprocess` manifest parses but is refused at install, whoever signed
+it: every plugin runs as its own unit. `runtime: rust` runs the
+entrypoint as its own binary.
 
 ### Agent field reference
 
 | Field | Type | Default | Notes |
 |-------|------|---------|-------|
-| `entrypoint` | string | required | A `module:Class` id (built-in plugins) or a relative path to the half's entrypoint inside the archive. No `..`, no absolute path. For a Rust plugin this is the binary path, e.g. `bin/<name>`. |
-| `isolation` | enum | `subprocess` | `subprocess` is the only mode third-party plugins may declare. `inprocess` is first-party-only and rejected for `runtime: rust`. |
-| `runtime` | enum | `python` | `python` runs the entrypoint under the shared Python runner; `rust` execs the plugin's own cross-compiled binary directly under systemd. Older manifests without the field load as `python`. |
+| `entrypoint` | string | required | A `module:Class` id (built-in plugins), a relative path to the half's entrypoint inside the archive, or `bin:<name>` naming a `binaries` entry (`runtime: rust` only). No `..`, no absolute path. |
+| `isolation` | enum | `subprocess` | `subprocess` is the only mode the agent runs. `inprocess` is refused at install. |
+| `runtime` | enum | `python` | `python` runs the entrypoint under the shared Python runner; `rust` execs the plugin's own cross-compiled binary directly under the service manager. Older manifests without the field load as `python`. |
 | `permissions` | list | `[]` | Capability requests. See [permission shape](#permission-shape). |
-| `resources` | object | see below | Hard limits the supervisor enforces. |
-| `contributes` | object | `{}` | Agent-side contributions: `services`, `drivers`, `vision`. |
+| `resources` | object | see below | Hard limits the supervisor enforces, and the resource `class`. |
+| `contributes` | object | `{}` | Agent-side contributions: `services`, `shared_topics`, `drivers`, `vision`, and the MCP lists. |
 | `mavlink_components` | list | `[]` | MAVLink components the plugin registers. |
-| `target_profiles` | list | `["drone"]` | Subset of `drone`, `ground-station`, `workstation`. Must list at least one. `drone` is an aircraft node, `ground-station` a ground node, `workstation` the operator's own machine (a GPU box or a Mac). There is no `compute` value: a headless compute worker carries no plugin surface. See [Node profiles](/getting-started/node-profiles). |
+| `target_profiles` | list | `["drone"]` | Subset of `drone`, `ground-station`, `workstation`, `compute` (`ground_station` reads as `ground-station`). Must list at least one. `drone` is an aircraft node, `ground-station` a ground node, `workstation` the operator's own machine (a GPU box or a Mac), `compute` a headless worker. The agent refuses to install the agent half on a node whose profile is not listed (`incompatible: target_profiles excludes <profile>`). A GCS-only plugin has no agent half and is not gated. See [Node profiles](/getting-started/node-profiles). |
+| `binaries` | map | `{}` | Per-architecture binaries, `{<name>: {<arch>-<os>: <path>}}`. See [Per-architecture binaries](#per-architecture-binaries). |
+| `payloads` | list | `[]` | Files the agent downloads at install instead of shipping them in the archive. See [Install-time payloads](#install-time-payloads). |
+| `http` | bool | `false` | Serve an HTTP API for the operator. See [Plugin HTTP](#plugin-http). |
+| `declared_capabilities` | list | `[]` | Capabilities the plugin defines for its own shared data. See [Shared topics and declared capabilities](#shared-topics-and-declared-capabilities). |
 | `contains_vendor_binary` | bool | `false` | Set true when the archive ships a pre-compiled vendor binary; requires `vendor_attribution`. Schema v2. |
 | `vendor_attribution` | list | `[]` | Source-offer records. Required (non-empty) when `contains_vendor_binary` is true. Schema v2. |
 | `subprocess_spawn` | list | absent | Allowlist of binary basenames the plugin may exec via `ctx.process.spawn`. Requires the `process.spawn` permission. Schema v2. |
@@ -118,11 +130,164 @@ its own binary (rust always runs subprocess).
 
 #### `agent.resources`
 
-| Field | Default | Range |
-|-------|---------|-------|
-| `max_ram_mb` | `96` | 8 to 4096 |
-| `max_cpu_percent` | `25` | 1 to 100 |
-| `max_pids` | `12` | 1 to 256 |
+| Field | Default | Range (`standard`) | Range (`heavy`) |
+|-------|---------|--------------------|-----------------|
+| `class` | `standard` | | |
+| `max_ram_mb` | `96` | 8 to 4096 | 8 to 65536 |
+| `max_cpu_percent` | `25` | 1 to 100 | 1 to 3200 |
+| `max_pids` | `12` | 1 to 256 | 1 to 4096 |
+
+`class: heavy` is for a workload such as reconstruction or accelerator
+inference that needs most of a node. Only a first-party signer may declare
+it; any other signer is refused with `refused:
+heavy_resources_first_party_only`. A value outside its class's range fails
+manifest validation.
+
+#### Per-architecture binaries
+
+A Rust plugin that ships for more than one architecture maps a binary name
+to one path per `<arch>-<os>` host. The keys are `aarch64-linux`,
+`x86_64-linux` and `aarch64-macos`.
+
+```yaml
+agent:
+  runtime: rust
+  entrypoint: "bin:example-link"
+  binaries:
+    example-link:
+      aarch64-linux: bin/aarch64-linux/example-link
+      x86_64-linux: bin/x86_64-linux/example-link
+      aarch64-macos: bin/aarch64-macos/example-link
+    example-worker:
+      aarch64-linux: bin/aarch64-linux/example-worker
+  contributes:
+    services:
+      - name: worker
+        command: "bin:example-worker --serve"
+        profiles: [workstation, compute]
+```
+
+`bin:<name>` works as the `entrypoint` and as the first word of a service
+`command`, and resolves to this host's path when the unit is written. Names
+match `[a-z0-9][a-z0-9_-]{0,63}`. Every binary a node would run (the
+entrypoint, plus each service whose `profiles` include this node) must have
+an entry for the node's architecture, or the install is refused with
+`incompatible: no binary for <arch-os>` before anything is unpacked. The
+file itself must be in the archive or in an applicable payload.
+
+#### Install-time payloads
+
+Large files (per-architecture binaries, models, a wasm asset) can stay out
+of the archive. The agent downloads each payload that applies to the node
+during the install, after the signature and compatibility checks.
+
+```yaml
+agent:
+  payloads:
+    - path: bin/aarch64-linux/example-worker
+      source: "https://github.com/example/example/releases/download/v1.0.0/example-worker-aarch64-linux"
+      sha256: "<64 lowercase hex>"
+      size_bytes: 8912344
+      arch_os: aarch64-linux
+      profiles: [workstation, compute]
+```
+
+| Field | Required | Notes |
+|-------|----------|-------|
+| `path` | yes | Destination inside the plugin's install directory. A relative path; each `path` appears once. |
+| `source` | yes | An `https://` URL. It must be on the same host allowlist as a URL install (GitHub release hosts, S3, the cloud relay's archive hosts, `localhost`), and every redirect hop is checked. |
+| `sha256` | yes | 64 lowercase hex characters. |
+| `size_bytes` | yes | The exact size, 1 byte to 1 GiB. |
+| `profiles` | no | Node profiles that fetch it. Absent means every profile. |
+| `arch_os` | no | The one `<arch>-<os>` host that fetches it. Absent means any. |
+
+Because the payload list lives in `manifest.yaml`, the archive signature
+covers every `source`, `sha256` and size. The agent hashes while it
+streams, refuses the install on a mismatch, and only then moves the file
+into place. Payloads do not count toward the archive size caps. The
+install attestation lists each applied payload with its pinned sha256.
+
+#### Plugin HTTP
+
+`http: true` asks the host for an HTTP socket. The host creates a private
+directory for the plugin under the agent's run directory, passes the
+socket path in `ADOS_PLUGIN_HTTP_SOCKET`, and the plugin serves HTTP on
+it. The agent's control surface then forwards
+`/api/plugins/<id>/x/<path>` (`GET`, `POST`, `PUT`, `PATCH`, `DELETE` and
+WebSocket upgrades) to the plugin as `/<path>`, with the query string kept.
+The control surface authenticates the operator first, so a request that
+reaches the socket is already an operator request. When nothing is
+listening the route answers `503`. See the
+[REST API](/drone-agent/rest-api#extension-http-passthrough).
+
+Every plugin process also receives `ADOS_NODE_PROFILE` (`drone`,
+`ground-station`, `workstation` or `compute`), so a plugin that behaves per
+profile never reads the agent's config files.
+
+#### Services
+
+`contributes.services` declares extra service units beside the main
+process. A bare string is a service whose name is its command.
+
+```yaml
+agent:
+  permissions:
+    - id: network.outbound
+    - id: network.listen
+  contributes:
+    services:
+      - name: node
+        command: "bin:example-node --port 8092"
+        restart: always              # on-failure (default), always, or no
+        ready_check: "http://127.0.0.1:8092/healthz"
+        profiles: [workstation, compute]
+        listen_ports: [8092]
+```
+
+| Field | Notes |
+|-------|-------|
+| `name` | Lowercase alphanumeric plus `._-`, starting with an alphanumeric. The unit is `ados-plugin-<id>-<name>.service`, dots in the id as hyphens. |
+| `command` | The argv. The first word may be `bin:<name>`. |
+| `restart` | `always`, `on-failure` or `no`. |
+| `ready_check` | An `http(s)://127.0.0.1:<port>/...` URL or a command, probed by `GET /api/plugins/<id>/readiness`. |
+| `profiles` | Node profiles the service runs on. Absent means every profile the plugin installs on. |
+| `listen_ports` | TCP ports this service may bind, 1024 to 65535, at most four. Declaring any needs both `network.listen` and `network.outbound`. The service unit gets `SocketBindAllow` for exactly these ports; every plugin unit carries `SocketBindDeny=any`, and the main process never listens. |
+
+#### Shared topics and declared capabilities
+
+A plugin can own event-bus topics and share them with other plugins. Its
+topics live under `plugin.<leaf>.`, where `<leaf>` is the last segment of
+the plugin id (`com.example.mapper` owns `plugin.mapper.*`).
+
+```yaml
+id: com.example.mapper
+agent:
+  permissions:
+    - id: event.publish
+  declared_capabilities:
+    - id: plugin.mapper.map.read
+      risk: low
+      description: "Read the occupancy maps this plugin publishes."
+  contributes:
+    shared_topics:
+      - topic: plugin.mapper.pose
+        subscribe_capability: telemetry.read
+      - topic: plugin.mapper.occupancy
+        subscribe_capability: plugin.mapper.map.read
+```
+
+- **`shared_topics[].topic`** must be `plugin.<leaf>.<name>` over
+  `[a-z0-9._-]`, at most 128 characters, each listed once. The owner may
+  `event.publish` it. Two installed plugins cannot claim the same
+  namespace.
+- **`shared_topics[].subscribe_capability`** is what a subscriber needs on
+  top of `event.subscribe`: a catalog capability, or one this plugin
+  declares.
+- **`declared_capabilities[]`** entries take an `id` of the form
+  `plugin.<leaf>.<name>`, a `risk` (`low`, `medium`, `high` or
+  `critical`) and a `description`. Another plugin requests one like any
+  catalog capability, and the install dialog shows it with the declared
+  risk and description.
 
 #### `agent.mavlink_components`
 
@@ -239,7 +404,7 @@ carries and how they gate a tool call.
 ```yaml
 gcs:
   entrypoint: "gcs/plugin.bundle.js"
-  isolation: "iframe"            # iframe (default), worker, or inline
+  isolation: "iframe"            # iframe (default) or inline (first-party only)
   permissions:
     - id: ui.slot.fc-tab
     - id: ui.slot.notification-channel
@@ -261,12 +426,40 @@ gcs:
 
 `contributes` carries `skills`, `tabs`, `parameters`, `settings`,
 `panels`, `overlays`, `notifications`, `missionTemplates`, `mapOverlays`,
-and `models`. The `slot` value in `contributes.panels[].slot` comes from
-the slot taxonomy (`fc.tab`, `hardware.tab`, `settings.section`, and the
-rest; see the [contribution points](/developers/contribution-points)
-reference). Mounting in a slot also requires the matching `ui.slot.*`
-permission listed under `gcs.permissions`. Locales are listed under
-`gcs.locales`, a sibling of `contributes`.
+`models`, `agent_pages` and `node_surfaces`. The `slot` value in
+`contributes.panels[].slot` comes from the slot taxonomy (`fc.tab`,
+`hardware.tab`, `settings.section`, and the rest; see the
+[contribution points](/developers/contribution-points) reference).
+Mounting in a slot also requires the matching `ui.slot.*` permission
+listed under `gcs.permissions`. Locales are listed under `gcs.locales`, a
+sibling of `contributes`.
+
+### `gcs.isolation`
+
+| Value | Who may use it | How the half runs |
+|-------|----------------|-------------------|
+| `iframe` | Everyone (default) | A sandboxed iframe with no same-origin access, talking to Mission Control over the postMessage bridge. |
+| `inline` | First-party signers only | An ES module Mission Control imports into its own page. The agent refuses the install from any other signer, and Mission Control verifies the module before loading it. |
+
+An inline module exports `mount(root, host)` and returns a disposer. The
+types are in `@altnautica/plugin-sdk/inline`; the host passes its own React,
+and the `inlineSharedExternals()` esbuild plugin from
+`@altnautica/plugin-sdk/esbuild` points the module's `react`,
+`react-dom/client` and `react/jsx-runtime` imports at it. The `host` gives
+the module the same capability-gated context an iframe half gets, plus
+`agent.fetch` and `agent.websocket` against the plugin's own
+[HTTP passthrough](#plugin-http), `assetUrl` for files in `gcs/`, the
+plugin's cloud records, and navigation between its pages.
+
+Before importing, Mission Control fetches the node's
+`GET /api/plugins/<id>/attestation` and `GET /api/plugins/<id>/manifest`
+and loads the module only when all of these hold: the signature verifies
+over the attested file list, the signer is an enrolled first-party key, the
+manifest's hash matches its attested digest and it declares
+`isolation: inline`, and the module's hash matches the digest listed for
+`gcs.entrypoint`. A module that fails any check shows an error card; it
+never falls back to an iframe. An inline half loads from the node over the
+LAN or the relay proxy, not from a cloud-stored bundle.
 
 `skills` declares flight Skills that surface in the cockpit Skill Bar
 (toggle, hotkey or gamepad binding, activation through per-drone config,
@@ -286,6 +479,50 @@ entries; the GCS skill registry reads them.
 | `missionTemplates` | A mission template entry (`mission.template`). |
 | `mapOverlays` | A map overlay (`map.overlay`). |
 | `models` | A vision model registration (no UI slot). |
+| `agent_pages` | A page in a node's Agent sidebar (`node.agent.page`). Needs `ui.slot.node-agent-page`. |
+| `node_surfaces` | A top-level tab on a node's detail panel (`node.surface`). Needs `ui.slot.node-surface`. |
+
+### `agent_pages` and `node_surfaces`
+
+These two put a plugin's pages where the built-in node pages live, rather
+than in a generic plugin tab.
+
+```yaml
+gcs:
+  permissions:
+    - id: ui.slot.node-agent-page
+    - id: ui.slot.node-surface
+  contributes:
+    agent_pages:
+      - { id: survey, title: "Survey", section: videoVision, profile: [drone] }
+      - { id: survey-setup, title: "Survey setup", setup_for: survey, profile: [drone] }
+      - { id: survey-live, title: "Live survey", section: videoVision, after: survey, profile: [drone] }
+    node_surfaces:
+      - { id: overview, title: "Survey", profile: [workstation, compute], group: status, order: 10 }
+```
+
+`agent_pages[]`:
+
+| Field | Required | Notes |
+|-------|----------|-------|
+| `id` | yes | `[a-z0-9][a-z0-9_-]{0,63}`, unique in the list. |
+| `title` | yes | 1 to 80 printable characters. |
+| `icon` | no | An icon name. |
+| `section` | no | The sidebar section: `node`, `radioLink`, `networking`, `fleet`, `videoVision`, `cloud`, `system` or `software`. An unknown section falls back to `software`. |
+| `after` | no | Place the page after this page id when the section has it. |
+| `order` | no | Order among plugin pages when `after` does not apply. |
+| `profile` | no | Node profiles the page appears on. Absent means every profile. |
+| `setup_for` | no | The id of another page of this plugin. The page then renders as that page's Setup segment instead of a row of its own. It cannot name itself or another setup page. |
+
+`node_surfaces[]`:
+
+| Field | Required | Notes |
+|-------|----------|-------|
+| `id` | yes | `[a-z0-9][a-z0-9_-]{0,63}`, unique in the list. |
+| `title` | yes | 1 to 80 printable characters. The tab label. |
+| `profile` | yes | Node profiles the tab appears on. At least one. |
+| `group` | no | `status`, `vehicle`, `link`, `device` or `compute`. The tab lands at the end of that group's run, or just before the Agent tab when the node has no such group. |
+| `order` | no | Order among plugin tabs. |
 
 The full contribution reference, with the manifest shape of each kind and
 where it renders, is on the
@@ -302,10 +539,15 @@ the sorted `<path>\n<sha256-hex>\n` lines for every entry except
 signing fails verification.
 
 Archives are size-bounded (50 MB per archive, 25 MB per entry) and
-reject path-traversal entries (`..`, absolute paths, symlinks). A
+reject path-traversal entries (`..`, absolute paths, symlinks).
+[Payloads](#install-time-payloads) do not count toward these caps. A
 manifest that fails validation raises a manifest error; a signature from
 an unknown or revoked signer is rejected (see
 [Signing keys](/developers/signing-keys)).
+
+At install the agent writes an attestation beside the unpacked plugin: the
+archive's `SIGNATURE` text and the sha256 of every attested file, payloads
+marked. `GET /api/plugins/<id>/attestation` serves it.
 
 ## See also
 

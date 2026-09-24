@@ -21,10 +21,14 @@ When the agent starts, it looks for config in this order:
 ## Full config structure
 
 The excerpt below covers the sections operators touch. The full model also
-carries `radio:`, `atlas:` and `perception:`, documented with the subsystems
-that read them. Keys the running schema does not recognise are preserved on
-write rather than dropped, so a config from a newer or older build survives a
-round trip.
+carries `radio:`, documented with the radio link. Keys the running schema does
+not recognise are preserved on write rather than dropped, so a config from a
+newer or older build survives a round trip.
+
+Extensions keep their settings in their own plugin config, not in this file.
+The World Engine's capture, offload and serving keys, for example, live under
+`/api/plugins/com.altnautica.world-engine/config`. See the
+[World Engine](/drone-agent/extensions/world-engine) page.
 
 ```yaml
 agent:
@@ -187,8 +191,9 @@ When set to `auto`, the agent fingerprints the hardware at boot. If it finds an 
 
 `workstation` and `compute` are never auto-detected. They are chosen at install
 time with `--profile`, and the macOS installer defaults to `workstation`.
-`ados profile set` persists only `drone` and `ground_station`. See
-[Node profiles](/getting-started/node-profiles).
+`ados profile set` persists only `drone` and `ground_station`. `workstation`
+and `compute` are core shells, and the installer adds the World Engine
+extension on them by default. See [Node profiles](/getting-started/node-profiles).
 
 Force a specific profile by setting it explicitly.
 

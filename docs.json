@@ -202,7 +202,6 @@
               "drone-agent/multi-camera",
               "drone-agent/cloud-relay",
               "drone-agent/swarm-bus",
-              "drone-agent/world-model",
               "drone-agent/wfb-ng",
               "drone-agent/wfb-pairing",
               "drone-agent/rest-api",
@@ -213,7 +212,8 @@
             "group": "Extensions",
             "pages": [
               "drone-agent/plugins",
-              "drone-agent/extensions-catalog"
+              "drone-agent/extensions-catalog",
+              "drone-agent/extensions/world-engine"
             ]
           },
           {

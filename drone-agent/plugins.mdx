@@ -22,14 +22,14 @@ A plugin extends the agent with new behavior without forking the codebase. Commo
 - Attach to a hardware peripheral the core agent does not handle (an exotic camera, a custom gimbal, a payload servo) and expose it as a first-class capability.
 - Add a small REST surface that Mission Control or other clients can call.
 
-Each plugin runs as a separate subprocess under a systemd slice. CPU and memory limits, restart policy, and the circuit breaker are managed by the supervisor.
+Each plugin runs as its own service unit: a systemd unit under the `ados-plugins.slice` on Linux, a per-user LaunchAgent on macOS. The plugin host (`ados-plugin-host`) runs on every node profile, and the agent's native control surface serves the install and lifecycle routes, so a workstation or compute node takes extensions the same way a drone does.
 
 ## The `ados plugin` CLI
 
 | Command | What it does |
 |---|---|
 | `ados plugin list` | Show every installed plugin with state, version, and risk level. |
-| `ados plugin install <archive>` | Install a signed `.adosplug` archive from a local file or URL. |
+| `ados plugin install <source>` | Install from a local `.adosplug`, an HTTPS archive URL, a built-in plugin id, or a first-party catalog id. |
 | `ados plugin enable <id>` | Start a previously installed plugin and add it to the supervisor's restart set. |
 | `ados plugin disable <id>` | Stop the plugin and remove it from the restart set. The plugin stays installed. |
 | `ados plugin remove <id>` | Stop and uninstall the plugin. State on disk is purged. |
@@ -39,7 +39,7 @@ Each plugin runs as a separate subprocess under a systemd slice. CPU and memory 
 | `ados plugin lint <archive>` | Static-analyze an archive: signature, manifest schema, banned imports, permission shape. |
 | `ados plugin test <plugin_dir>` | Run the plugin's test suite against the test harness. Useful for OEMs verifying a build before signing. |
 | `ados plugin pin <id> <version>` / `ados plugin unpin <id>` | Pin a plugin to a version (or release the pin) so updates do not move it. |
-| `ados plugin auto-update <id> <on\|off>` / `ados plugin check-updates` | Toggle per-plugin auto-update, or check for newer published versions. |
+| `ados plugin auto-update <id> <on\|off>` | Toggle per-plugin auto-update. |
 | `ados plugin sign <archive>` / `ados plugin keygen` | Sign an archive with a local Ed25519 key, or generate a signing keypair. For OEMs shipping their own plugins. |
 
 `install`, `enable`, `disable`, `remove`, and `perms --revoke` prompt for confirmation by default. Pass `--yes` to skip prompts in scripts.
@@ -109,7 +109,7 @@ Subscribes to vehicle state, folds it into an in-memory snapshot, and republishe
 
 ## Resource isolation
 
-Each plugin runs as a subprocess of `ados-supervisor` under a systemd slice with cgroup-enforced CPU and memory limits taken from the manifest's `resource_limits` block (or the agent's defaults if the manifest does not set them).
+On Linux each plugin runs as its own systemd unit under a slice, with cgroup-enforced CPU, memory and PID limits taken from the manifest's `agent.resources` block (or the agent's defaults if the manifest does not set them). On macOS each plugin is a per-user LaunchAgent; launchd enforces neither the sandbox nor those limits, so the agent installs only first-party agent halves there.
 
 A plugin that crashes is restarted by the supervisor up to a circuit-breaker threshold. Once the threshold trips, the supervisor disables the plugin until an operator re-enables it. The trip count and last-trip reason are visible in `ados plugin info <id>`.
 

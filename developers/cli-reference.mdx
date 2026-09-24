@@ -1,12 +1,12 @@
 ---
 title: "CLI reference"
 description: "Every ados plugin subcommand, its flags, and the exit-code table."
-lastUpdated: "2026-06-23"
+lastUpdated: "2026-09-24"
 ---
 
 The `ados plugin` subcommand tree is the operator and developer interface
 to the agent's plugin host: install, enable, inspect, sign, and lint
-plugins. This page documents all 16 subcommands, their flags, and the
+plugins. This page documents all 15 subcommands, their flags, and the
 exit codes every command shares.
 
 Run `ados plugin --help` on the agent for the same list, or
@@ -72,23 +72,30 @@ plugins (with `--all`) show status `builtin` and signer `altnautica`.
 
 ### `install`
 
-Install a `.adosplug` archive from a local path.
+Install a plugin from a local archive, an archive URL, a built-in plugin
+id, or a first-party catalog id. The command drives the agent's native
+`/api/plugins` routes: it previews first, asks for approval, then installs
+and grants the permissions you approved.
 
 ```sh
 ados plugin install dist/com.example.thermal-1.0.0.adosplug
+ados plugin install https://github.com/example/thermal/releases/download/v1.0.0/com.example.thermal-1.0.0.adosplug
+ados plugin install com.altnautica.world-engine
 ```
 
 | Argument / flag | Meaning |
 |-----------------|---------|
-| `ARCHIVE` | Path to the `.adosplug` archive (must exist) |
-| `--allow-unsigned` | Skip signature verification. Developer mode only |
+| `SOURCE` | A `.adosplug` path that exists, an `https://` URL on the agent's download allowlist, a built-in plugin id, or a catalog plugin id |
 | `--yes` | Skip the interactive permission-approval prompt. Refuses high-risk and critical-risk plugins |
 | `--json` | Machine-readable output |
 
-Install verifies the signature (unless `--allow-unsigned`), validates the
-manifest, and checks compatibility. It then prints the plugin id, its
-risk level, and the permissions requested, and prompts for approval. If
-you decline, the plugin is uninstalled and the command exits 0.
+The preview verifies the signature and validates the manifest, then prints
+the plugin id, its risk level, and the permissions requested, and prompts
+for approval. If you decline, nothing is installed and the command exits 0.
+The install itself checks compatibility, including the node profile and
+the host architecture, before anything is unpacked. A URL install is pinned
+to the sha256 of the archive you reviewed; a catalog install is pinned to
+the catalog's sha256.
 
 `--yes` approves the listed permissions without a prompt, but it refuses
 any plugin whose `risk` is `high` or `critical` (exit 4); re-run those
@@ -256,31 +263,6 @@ ados plugin auto-update com.example.thermal off
 | `PLUGIN_ID` | The installed plugin id |
 | `STATE` | `on` or `off` |
 | `--json` | Machine-readable output |
-
-### `check-updates`
-
-Run the auto-update poll once and print the outcome per plugin, instead
-of waiting for the daily cadence.
-
-```sh
-ados plugin check-updates
-ados plugin check-updates --json
-```
-
-| Argument / flag | Meaning |
-|-----------------|---------|
-| `--json` | Machine-readable output |
-
-It honours each plugin's pin and auto-update flags. The agent must be
-paired to the cloud relay (the registry credentials live in the pairing
-state); if it is not paired, the command exits 1 and the hint suggests
-running `ados pair` first. Only enabled and running plugins are checked.
-
-<Note>
-The hosted plugin registry is planned, not live. `check-updates` and the
-auto-update flags are wired against it for when it ships. See
-[Distribution: registry](/developers/distribution-registry).
-</Note>
 
 ## Developer commands
 

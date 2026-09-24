@@ -1,0 +1,269 @@
+---
+title: "World Engine"
+description: "The first-party extension that builds 3D world models from drone flights on a LAN compute node, and runs perception offload for drones without an accelerator."
+icon: "cubes"
+lastUpdated: "2026-09-24"
+---
+
+# World Engine
+
+The World Engine is a first-party extension, `com.altnautica.world-engine`. It
+is not part of the agent core: a node without it installed carries no
+world-model or compute code, service, route, config block or page. Install it
+where you want it and every piece arrives together.
+
+It does two jobs:
+
+- **World models.** A drone selects pose-tagged keyframes from its camera
+  stream and sends them to a compute node on the same network (a `workstation`
+  or a `compute` profile node). The node reconstructs a Gaussian splat, a point
+  cloud, a mesh and an occupancy grid, and Mission Control views the result
+  live and after the flight.
+- **Perception offload.** A drone with no on-board accelerator streams its
+  camera to the compute node, the node runs the detector, and the detections
+  return to the drone's own detection bus. Follow-Me, the gimbal and the
+  cockpit overlay work unchanged. A stale or link-lost detection is treated as
+  lost, never extrapolated.
+
+The drone never reconstructs or trains anything. That work stays on the
+compute node.
+
+## Install
+
+The node installer offers the extension as a feature toggle. It is on by
+default for the `workstation` and `compute` profiles and off for `drone` and
+`ground_station`. Pass the flag to choose explicitly:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/altnautica/ADOSDroneAgent/main/scripts/install.sh \
+  | sudo bash -s -- --profile workstation --world-engine
+```
+
+`--no-world-engine` skips it. An upgrade (`--upgrade`) leaves an installed
+extension alone; plugin auto-update keeps it current.
+
+On a node that is already installed, use the CLI. `ados plugin install` accepts
+the catalog id, a release URL or a downloaded archive:
+
+```bash
+ados plugin install com.altnautica.world-engine
+# or
+ados plugin install https://github.com/altnautica/ADOSExtensions/releases/download/world-engine-v<version>/com.altnautica.world-engine-<version>.signed.adosplug
+# or
+ados plugin install ./com.altnautica.world-engine-<version>.signed.adosplug
+
+ados plugin enable com.altnautica.world-engine
+```
+
+The install prompt lists every permission the extension asks for. You can also
+install it from the node's **Extensions** tab in Mission Control.
+
+<Note>
+The archive is small. The per-architecture binaries and the Rerun viewer's
+wasm are install-time payloads: the agent downloads only the files for its own
+architecture and profile from the GitHub release, checks each against the
+sha256 and size pinned in the signed manifest, and refuses the install on any
+mismatch. The node needs outbound HTTPS to GitHub while it installs.
+</Note>
+
+The extension is signed by the Altnautica first-party key. It needs that
+signer for three reasons: its Mission Control pages run as an inline module
+rather than in an iframe, its resource class is `heavy`, and on macOS the
+launchd backend enforces no sandbox. The agent refuses any of those from a
+third-party signer.
+
+### Supported nodes
+
+| Profile | Architectures | What runs |
+|---|---|---|
+| `drone` | `aarch64-linux` | The main process (bearers, offload reconciler, the capture API) plus the `capture` service. |
+| `ground_station` | `aarch64-linux`, `x86_64-linux`, `aarch64-macos` | The main process as the radio relay. Idle until you turn the relay on. |
+| `workstation`, `compute` | `aarch64-linux`, `x86_64-linux`, `aarch64-macos` | The main process plus the `node` service: ingest, reconstruction, artifacts and offload serving on `:8092`. |
+
+A drone on an architecture the capture service does not ship for is refused
+with `incompatible: no binary for <arch-os>`, before anything is unpacked.
+
+### Service names
+
+| Process | Linux unit | macOS LaunchAgent |
+|---|---|---|
+| Main process | `ados-plugin-com-altnautica-world-engine.service` | `co.ados.plugin.com-altnautica-world-engine` |
+| Capture (drone) | `ados-plugin-com-altnautica-world-engine-capture.service` | not shipped |
+| Node (workstation, compute) | `ados-plugin-com-altnautica-world-engine-node.service` | `co.ados.plugin.com-altnautica-world-engine-node` |
+
+```bash
+ados plugin logs com.altnautica.world-engine
+systemctl status ados-plugin-com-altnautica-world-engine-node.service
+```
+
+## Pair a drone with a compute node
+
+Pair the drone and the compute node to the same Mission Control account, with
+the extension installed on both. Mission Control then issues the drone a
+credential scoped to the node's lanes (keyframe ingest, the world-model
+stream, offload, artifacts and job submission) and installs it on the drone
+through the extension. A ground station is issued the ingest lane only. The
+compute node's **Jobs & outputs** page lists these credentials and revokes
+them.
+
+The drone finds the compute node over mDNS, or you pin it with
+`offload.compute_node_addr`.
+
+## How keyframes travel
+
+The drone forwards keyframes over the best bearer it has, in this order:
+
+1. **LAN.** Straight to the compute node on `:8092`.
+2. **Radio relay.** Over the radio link's auxiliary stream to a ground station
+   in the `relay` role, which forwards onto its own LAN. This lane carries pose
+   and status only.
+3. **Cloud relay.** Through the agent's cloud connection.
+
+Forwarding starts only while capture is enabled and the camera pipeline
+reports ready.
+
+## Configuration
+
+The extension keeps its configuration in the plugin config, not in
+`/etc/ados/config.yaml`. Read and write it from Mission Control's setup pages,
+or over REST:
+
+```bash
+curl -s -H "X-ADOS-Key: $ADOS_KEY" \
+  http://192.168.1.50:8080/api/plugins/com.altnautica.world-engine/config
+
+curl -X PUT -H "X-ADOS-Key: $ADOS_KEY" -H "Content-Type: application/json" \
+  http://192.168.1.50:8080/api/plugins/com.altnautica.world-engine/config \
+  -d '{"key": "offload.enabled", "value": "on"}'
+```
+
+| Key | Default | Meaning |
+|---|---|---|
+| `atlas.enabled` | `false` | Run capture on this drone. Off means no keyframes and no forwarding. |
+| `atlas.capture_profile` | `freeform` | `orbit`, `lawnmower`, `freeform` or `inspection`. |
+| `atlas.pose_tier` | `auto` | Pose source. `auto` and `local` use the flight controller's estimate; `offload` and `hybrid` use SLAM on the compute node. |
+| `atlas.reconstruct_steps` | `30000` | Reconstruction detail, in training steps. |
+| `atlas.hfov_deg` | `70` | Horizontal field of view, used when a camera has no intrinsics entry. |
+| `atlas.cameras[]` | empty | The camera set, each `{id, role, enabled, reconstruct}`. Roles: `primary`, `aux`, `down`, `left`, `right`, `back`, `up`. |
+| `atlas.selection.min_translation_m` | `0.5` | Metres of movement before a keyframe is worth taking. |
+| `atlas.selection.min_rotation_rad` | `0.26` | Radians of rotation before a keyframe is worth taking. |
+| `atlas.selection.max_interval_ms` | `2000` | Take a keyframe anyway after this long. |
+| `atlas.selection.max_keyframes` | `0` | Session-wide cap. `0` is unlimited. |
+| `atlas.intrinsics` | empty | Per-camera calibrated pinhole (`fx`, `fy`, `cx`, `cy`, plus an optional distortion model). |
+| `atlas.live_reconstruct` | `false` | Rebuild the world on the compute node while keyframes arrive. |
+| `atlas.pose_max_age_ms` | `500` | The oldest pose a keyframe may be tagged with. |
+| `atlas.pose_publish_interval_ms` | `100` | Interval between published world poses. |
+| `atlas.pose_prior.*` | see the schema | Pose uncertainty priors (GNSS, orientation, SLAM, clock offset). |
+| `offload.enabled` | `auto` | `auto` offloads when the board reports no neural accelerator and a compute node is reachable. `on` forces it, `off` never offloads. |
+| `offload.compute_node_addr` | empty | Pin the compute node as `host:port`. Empty discovers one over mDNS. |
+| `serving.enabled` | `auto` | On a compute node, serve perception offload to paired drones. |
+| `serving.detector_model` | empty | The detector model the node serves. Empty uses the node's default. |
+| `relay.enabled` | `false` | On a ground station in the `relay` role, relay radio keyframes onto the LAN. |
+| `relay.compute_base_url` | empty | The compute node the relay forwards to. |
+
+Capture re-reads its config every 5 seconds, so a change needs no restart.
+
+## The extension's HTTP API
+
+The extension serves its own API through the agent's plugin passthrough,
+`/api/plugins/com.altnautica.world-engine/x/<path>` on `:8080`. The normal
+pairing key applies, and the same path works through a ground station's relay
+proxy.
+
+### On a drone
+
+| Method | Path under `x/` | What it does |
+|---|---|---|
+| `GET` | `atlas/readiness` | `enabled`, `cameras_configured`, `capture_profile`, `pose_source`, `reconstruct_steps`, the live `state`, `capturing`, `session_id`, `service_running`, and the `compute_node_id` the forwarder is streaming to. |
+| `PUT` | `atlas/config` | Patch the capture config: `enabled`, `capture_profile`, `reconstruct_steps`, `cameras`. Only the keys you send are written. An out-of-set profile or camera role is a `400`. |
+| `POST` | `atlas/capture/start`, `pause`, `resume`, `stop` | Drive the capture session and return the resulting status. An unreachable capture service is a `503`. |
+
+```bash
+BASE=http://192.168.1.50:8080/api/plugins/com.altnautica.world-engine/x
+curl -s -H "X-ADOS-Key: $ADOS_KEY" $BASE/atlas/readiness
+curl -X POST -H "X-ADOS-Key: $ADOS_KEY" $BASE/atlas/capture/start
+```
+
+Capture states: `idle`, `capturing`, `paused`, `finalizing`, `bagged`. `stop`
+finalizes and bags the session, which is what makes the compute node
+reconstruct it.
+
+### On a ground station
+
+`GET atlas-relay/status` returns the relay's keyframes seen and forwarded.
+
+### On a compute node
+
+The node service answers drones on its own `:8092` listener, with the
+node credential for auth, and answers the operator through the passthrough.
+
+| Method | Path |
+|---|---|
+| `GET` | `api/compute/status` |
+| `POST` | `api/compute/datasets` |
+| `GET`, `POST` | `api/compute/jobs` |
+| `GET` | `api/compute/jobs/:id` |
+| `POST` | `api/compute/jobs/:id/cancel` |
+| `GET` | `api/compute/jobs/:id/outputs` |
+| `GET` | `api/compute/sessions` |
+| `GET` | `artifacts/<path>` |
+| `WS` | `ws/atlas/:device_id` |
+
+Job kinds are `reconstruct` (a world model from a keyframe bag),
+`perception_offload` (frames in, detections back) and `slam_offload` (frames
+in, poses back). A job moves `queued`, `running`, then `completed`, `failed` or
+`cancelled`. A worker runs the backend without holding the job-store lock, so a
+reconstruction that takes minutes never blocks the API, and a cancel that lands
+during the run wins.
+
+Job records also sync to the operator's cloud account as the extension's own
+records, so Mission Control can list past jobs when the node is offline.
+
+## Host tools on the compute node
+
+The node calls reconstruction tools installed on the host. They are not
+shipped in the extension:
+
+- **COLMAP** for structure-from-motion poses and a sparse point cloud.
+- **Brush** or **msplat** (Apple Silicon) for Gaussian-splat training;
+  **nerfstudio** (`ns-train`) also works.
+- **Python 3** with `numpy`, `Pillow`, `torch` and `transformers` for an
+  optional monocular-depth seed. Without it, splat training starts from a
+  random point cloud.
+- **ffmpeg** for perception offload.
+
+With no reconstruction backend installed, a job completes with a placeholder
+output that Mission Control badges as a placeholder and never shows as a real
+world model.
+
+## Mission Control pages
+
+The extension adds these pages to the node detail panel.
+
+| Page | Nodes | What it shows |
+|---|---|---|
+| World Model | drone | The reconstructed world for a session, with a splat, point-cloud and Rerun viewer switcher. Its Setup segment holds the capture switch and the pose-source preference. |
+| Live World | drone | The live session: keyframe and ingest stats, the bearer in use, the building reconstruction, and the capture controls. |
+| Perception offload | drone, workstation, compute | On a drone, where perception runs and which node it offloads to. On a compute node, the serving switch, the detector model and the GPU. |
+| Atlas relay | ground station | The relay's counters with a staleness badge. |
+| Compute | workstation, compute | A top-level tab: the GPU card, the cluster status and a jobs summary. |
+| Jobs & outputs | workstation, compute | A top-level tab: the job queue, the artifact viewer and the drones and ground stations allowed to use this node. |
+
+## Permissions
+
+| Half | Permissions |
+|---|---|
+| Agent | `telemetry.read`, `telemetry.extend`, `event.publish`, `node.info.read`, `vision.frame.read`, `vision.detection.publish`, `radio.aux_stream`, `network.outbound`, `network.listen`, `hardware.gpu`, `cloud.publish`, `cloud.records` |
+| GCS | `ui.slot.node-agent-page`, `ui.slot.node-surface`, `cloud.records`, `perception.read`, `telemetry.subscribe.status` |
+
+The extension also declares `plugin.world-engine.world.read`, the capability
+another plugin needs to subscribe to its point cloud, occupancy, splat and mesh
+topics. See [Permissions](/developers/permissions).
+
+## Related
+
+- [Extensions catalog](/drone-agent/extensions-catalog)
+- [Node profiles](/getting-started/node-profiles)
+- [Multi-camera](/drone-agent/multi-camera)
+- [Swarm bus](/drone-agent/swarm-bus)
+- [Manifest reference](/developers/manifest)

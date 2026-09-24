@@ -32,9 +32,13 @@ The configuration is organized into task pages rather than a flat parameter tree
 | MAVLink routing | How MAVLink is routed and rate-limited |
 | Security | The node's access and pairing state |
 | Vision / perception | The onboard detection engine and its model |
-| World model and swarm | The mapping and multi-node features, when the node supports them |
+| Swarm | The multi-node coordination features, when the node supports them |
 | Discovery | The reach names the node advertises |
 | Video / camera | The camera sources and stream settings |
+
+An installed extension can add its own pages to the same sidebar. The
+[World Engine](/drone-agent/extensions/world-engine), for example, adds its
+world-model setup and perception offload pages.
 
 ## Reliable writes
 

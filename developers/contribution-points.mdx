@@ -71,13 +71,17 @@ colliding.
 | `notifications` | `notification.channel` | `ui.slot.notification-channel` | GCS notification center |
 | `missionTemplates` | `mission.template` | `ui.slot.mission-template` | Mission template picker |
 | `models` | (no UI slot) | declared via parameters/vision | Vision model catalog |
+| `agent_pages` | `node.agent.page` | `ui.slot.node-agent-page` | A node's Agent sidebar, in the section the entry names |
+| `node_surfaces` | `node.surface` | `ui.slot.node-surface` | A top-level tab on the node detail panel, for the profiles the entry names |
 
 The full slot taxonomy is `fc.tab`, `hardware.tab`, `mission.template`,
 `map.overlay`, `video.overlay`, `notification.channel`,
-`settings.section`, `connection.protocol`, `recording.processor`,
-`node.detail.tab`, `cockpit.panel`, and `flight.skill`. Each slot id
-maps one-to-one to its capability by replacing dots with dashes:
-`node.detail.tab` needs `ui.slot.node-detail-tab`.
+`settings.section`, `node.detail.tab`, `cockpit.panel`, `flight.skill`,
+`node.agent.page`, and `node.surface`. Each slot id maps one-to-one to
+its capability by replacing dots with dashes: `node.detail.tab` needs
+`ui.slot.node-detail-tab`. The `agent_pages` and `node_surfaces` fields
+are documented in the
+[manifest reference](/developers/manifest).
 
 ---
 

@@ -31,8 +31,11 @@ The install flow is deliberately two-stage:
    manifest, verifies the Ed25519 signature, and returns a summary.
    Nothing is written to disk.
 2. **Install**: only after the operator approves the requested
-   permissions does the host commit the install. The agent unpacks the
-   archive into `/var/ados/plugins/<id>/`; the GCS records the install in
+   permissions does the host commit the install. It checks compatibility
+   (version, board, tier, `target_profiles` against the node's profile,
+   and a binary for the host architecture), downloads and verifies any
+   `payloads`, then unpacks the archive into `/var/ados/plugins/<id>/`
+   (`~/.ados/plugins/<id>/` on macOS); the GCS records the install in
    the operator's profile.
 
 A malicious archive cannot leave traces just by being previewed. The
@@ -41,10 +44,14 @@ dialog runs parse; the **Install** button commits.
 ## Enable and disable
 
 Enable is the first time the plugin actually runs. For a subprocess
-plugin the agent generates a systemd unit (`ados-plugin-<id>.service`),
-writes it under `/etc/systemd/system/`, reloads the daemon, and starts
-the unit inside the shared `ados-plugins.slice`. The GCS host sets the
-status to enabled and mounts the iframe in every contributing slot.
+plugin the agent generates a service unit and starts it. On Linux that
+is a systemd unit (`ados-plugin-<id>.service`, one more per declared
+service) written under `/etc/systemd/system/` and started inside the
+shared `ados-plugins.slice`. On macOS it is a per-user LaunchAgent
+(`co.ados.plugin.<id>`, dots as hyphens) under `~/Library/LaunchAgents`.
+The GCS host sets the status to enabled and mounts the GCS half in every
+contributing slot: in an iframe, or inline for a first-party
+`gcs.isolation: inline` module.
 
 Disable stops the unit and unmounts the iframe. State on disk persists.
 Re-enable resumes from where it left off.

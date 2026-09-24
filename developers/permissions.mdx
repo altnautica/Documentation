@@ -1,7 +1,7 @@
 ---
 title: "Permissions"
 description: "The capability catalog, the risk levels, and the install dialog flow."
-lastUpdated: "2026-06-23"
+lastUpdated: "2026-09-24"
 ---
 
 A plugin can only do what its manifest declares and the operator
@@ -11,10 +11,10 @@ approves. The capability catalog is generated from one source of truth
 catalog, the risk levels each capability carries, and how the install
 dialog presents them.
 
-There are 43 agent capabilities and 19 GCS capabilities. Three agent
-capabilities are runtime-enforced (see the note in the agent section);
-the GCS set is 12 UI slot registrations plus 7 data and command
-capabilities.
+There are 52 agent capabilities and 24 GCS capabilities. The GCS set is
+12 UI slot registrations plus 12 data, command, cloud and bus
+capabilities. A plugin can also define capabilities of its own for the
+data it shares (see [Plugin-declared capabilities](#plugin-declared-capabilities)).
 
 ## Risk levels
 
@@ -27,8 +27,8 @@ overall risk for the plugin. The manifest also declares a top-level
 |-------|---------|--------|
 | **Low** | Sandboxed or read-only. No flight or hardware effect. | Plain badge. |
 | **Medium** | Touches shared hardware, opens the network, reads frames, or registers a sensor. | Yellow badge. |
-| **High** | Can command the vehicle, inject into the estimator, drive output hardware, or spawn subprocesses. | Orange badge. |
-| **Critical** | Reserved as the top manifest-level band. | Red badge with warning icon. |
+| **High** | Can command the vehicle, inject into the estimator, drive output hardware, accept inbound connections, or spawn subprocesses. | Orange badge. |
+| **Critical** | Direct attitude and rate control of the aircraft (`flight.rate_setpoint`). Also the top manifest-level band. | Red badge with warning icon. |
 
 ## Declaring permissions
 
@@ -50,27 +50,33 @@ off and the operator flips them on when wanted.
 
 ## Agent capabilities
 
-43 capabilities, grouped by namespace. The risk column is the value
+52 capabilities, grouped by namespace. The risk column is the value
 carried in the catalog.
 
 <Note>
-Three agent capabilities are runtime-enforced at the IPC layer:
-`event.publish`, `event.subscribe`, and `hardware.gpio_out`. The host
-re-resolves the required capability from the method (and, for the event
-bus, from the topic) on every request and rejects an ungranted call.
-The other capabilities gate access at the surface they front (for
-example, a manager refuses to register a driver without the matching
-permission).
+44 of the 52 are enforced: a grant changes what the plugin can actually
+do, through one of three mechanisms. The wire-dispatch gate re-resolves
+the required capability from the method on every request and rejects an
+ungranted call. A handler-side check covers what a method alone cannot
+classify (an event topic, a MAVLink message id). The generated unit's
+sandbox covers the rest: the cgroup device policy, the socket address
+families and bind ports, and the mount namespace.
+
+The other eight are advisory metadata: `mavlink.component.camera`,
+`mavlink.component.gimbal`, `mavlink.component.payload`,
+`mavlink.component.peripheral`, `sensor.depth.register`,
+`sensor.lidar.register`, `sensor.imu.register` and
+`sensor.payload.register`.
 </Note>
 
 ### `event.*` (event bus)
 
 | Capability | Risk | Lets the plugin... |
 |------------|------|-----|
-| `event.publish` | Low | Publish events on topics it has been granted (enforced). |
-| `event.subscribe` | Low | Receive events from granted topics (enforced). |
+| `event.publish` | Low | Publish events on topics it has been granted. |
+| `event.subscribe` | Low | Receive events from granted topics. |
 
-### `mavlink.*` (flight controller link)
+### `mavlink.*` and `msp.*` (flight controller link)
 
 | Capability | Risk | Lets the plugin... |
 |------------|------|-----|
@@ -82,13 +88,15 @@ permission).
 | `mavlink.component.payload` | Medium | Register as a MAVLink payload component. |
 | `mavlink.component.peripheral` | Medium | Claim a generic MAVLink peripheral component id. |
 | `mavlink.component.vio` | High | Register as a visual-inertial-odometry source feeding the EKF. |
+| `msp.read` | Low | Observe the MSP stream from a Betaflight, iNav or KISS flight controller. |
+| `msp.write` | High | Write MSP commands, including the RC channel values that fly the aircraft. |
 
 ### Flight commands
 
 | Capability | Risk | Lets the plugin... |
 |------------|------|-----|
-| `vehicle.command` | High | Send high-level commands (arm, takeoff, RTL, land, mode). |
 | `flight.guided_setpoint` | High | Emit guided-mode position or velocity setpoints. |
+| `flight.rate_setpoint` | Critical | Emit attitude or body-rate setpoints with collective thrust. |
 | `estimator.pose.inject` | High | Push pose samples directly into the autopilot estimator. |
 | `mission.read` | Low | Read the active mission, fences, and rally points. |
 | `mission.write` | High | Upload or modify missions, fences, and rally points. |
@@ -118,72 +126,109 @@ permission).
 | `hardware.i2c` | Medium | Read and write I2C devices. |
 | `hardware.spi` | Medium | Read and write SPI devices. |
 | `hardware.gpio` | Medium | Read input and drive output GPIO pins. |
-| `hardware.gpio_out` | High | Drive a GPIO output line or a bounded buzzer/LED pattern (enforced). |
+| `hardware.gpio_out` | High | Drive a GPIO output line or a bounded buzzer or LED pattern. |
 | `hardware.usb` | Medium | Claim raw USB devices for bulk transfers. |
 | `hardware.usb.uvc` | Medium | Read frames from USB UVC cameras. |
 | `hardware.camera.csi` | Medium | Read frames from MIPI CSI cameras. |
-| `hardware.audio` | Medium | Access audio capture and playback devices. |
+| `hardware.gpu` | Medium | Open the host's GPU and neural-accelerator device nodes (DRM render nodes, Mali, RKNPU, NVIDIA) for inference or rendering. Without it the plugin runs in a private `/dev` with no accelerator. |
 
-### `vision.*`
+### `vision.*` and video
 
 | Capability | Risk | Lets the plugin... |
 |------------|------|-----|
 | `vision.frame.read` | Medium | Subscribe to normalized frames from the vision engine. |
 | `vision.model.register` | Medium | Register an inference model with the vision engine. |
+| `vision.model.read` | Low | Read where its own declared models were delivered, and why one was not. |
 | `vision.detection.publish` | Low | Publish detections (boxes, labels, track ids). |
 | `vision.detection.subscribe` | Low | Receive detection batches plus the tracker's lock state. |
 | `vision.track.designate` | Medium | Choose which object the single-object tracker locks onto. |
+| `video.source.set` | Medium | Declare the camera and stream sources the video pipeline serves. Applying a new list restarts the pipeline. |
 
-### Data, compute, and radio
+### Node
+
+| Capability | Risk | Lets the plugin... |
+|------------|------|-----|
+| `node.info.read` | Low | Read what kind of node it runs on: the profile, the board and whether it has a neural accelerator, the ground-station role, whether the camera pipeline is up, and the main stream's size and frame rate. No telemetry, imagery, credentials or configuration values. |
+
+### Network, cloud, and storage
 
 | Capability | Risk | Lets the plugin... |
 |------------|------|-----|
 | `network.outbound` | Medium | Open outbound TCP, UDP, and HTTP connections. The agent's own loopback services stay closed, and the grant is refused while the plugin host's loopback guard is unavailable. |
+| `network.listen` | High | Let a declared service bind the TCP ports it lists in `listen_ports`. Every other port stays closed, and the plugin's main process never listens. |
+| `cloud.publish` | Medium | Publish messages of at most 64 KiB on its own stream through the agent's cloud relay. Publishing onto the shared detection topic also needs `vision.detection.publish`. |
+| `cloud.records` | Medium | Write JSON records of at most 64 KiB into its own collection in the operator's cloud account, where its GCS half can read them back. |
 | `recording.write` | Low | Write into the agent recording store. |
 | `filesystem.host` | Medium | Read and write files outside its own data dir. |
 | `process.spawn` | High | Launch subprocesses from its manifest spawn allowlist. |
-| `radio.aux_stream` | High | Open an auxiliary stream on the radio link. |
-| `display.oled.page` | Low | Contribute a page to the onboard display. |
-| `button.subscribe` | Medium | Receive front-panel button press events. |
 
-## GCS capabilities
-
-19 capabilities. The GCS half declares 12 UI slot registrations plus 7
-data and command capabilities. UI slot capabilities mount a panel in a
-named slot; the slot value itself goes in `contributes.panels[].slot`
-(see the [Manifest reference](/developers/manifest)).
-
-### UI slots
-
-`ui.slot.node-detail-tab`, `ui.slot.cockpit-panel`, and
-`ui.slot.flight-skill` are scoped to the currently selected node; the
-other nine are fleet-level.
-
-| Capability | Risk |
-|------------|------|
-| `ui.slot.fc-tab` | Low |
-| `ui.slot.hardware-tab` | Low |
-| `ui.slot.mission-template` | Low |
-| `ui.slot.map-overlay` | Low |
-| `ui.slot.video-overlay` | Low |
-| `ui.slot.notification-channel` | Low |
-| `ui.slot.settings-section` | Low |
-| `ui.slot.connection-protocol` | Medium |
-| `ui.slot.recording-processor` | Low |
-| `ui.slot.flight-skill` | Medium |
-| `ui.slot.node-detail-tab` | Low |
-| `ui.slot.cockpit-panel` | Low |
-
-### Data and command
+### Radio, onboard UI, and AI control
 
 | Capability | Risk | Lets the plugin... |
 |------------|------|-----|
-| `telemetry.subscribe` | Low | Read live telemetry for paired drones. |
+| `radio.aux_stream` | High | Open an auxiliary stream on the radio link. |
+| `display.oled.page` | Low | Contribute a page to the onboard display. |
+| `button.subscribe` | Medium | Receive front-panel button press events. |
+| `mcp.expose` | Medium | Publish its declared tools, resources and prompts to an MCP client. Each tool still acts only through the plugin's other grants. |
+
+## GCS capabilities
+
+24 capabilities: 12 UI slot registrations plus 12 data, command, cloud
+and bus capabilities. UI slot capabilities mount a contribution in a
+named slot; the slot value itself goes in the contribution (see the
+[Manifest reference](/developers/manifest)).
+
+### UI slots
+
+`ui.slot.node-detail-tab`, `ui.slot.node-agent-page`,
+`ui.slot.node-surface`, `ui.slot.cockpit-panel`, and
+`ui.slot.flight-skill` are scoped to the currently selected node; the
+other seven are fleet-level.
+
+| Capability | Risk | Mounts |
+|------------|------|--------|
+| `ui.slot.fc-tab` | Low | A tab in the flight controller panel. |
+| `ui.slot.hardware-tab` | Low | A tab on the hardware page. |
+| `ui.slot.mission-template` | Low | A mission template. |
+| `ui.slot.map-overlay` | Low | An overlay on the map. |
+| `ui.slot.video-overlay` | Low | An overlay on the live video. |
+| `ui.slot.notification-channel` | Low | Notifications in the GCS. |
+| `ui.slot.settings-section` | Low | A section on the Settings page. |
+| `ui.slot.flight-skill` | Medium | A flight Skill in the cockpit. |
+| `ui.slot.node-detail-tab` | Low | A tab in the node detail panel. |
+| `ui.slot.cockpit-panel` | Low | A panel in the cockpit quick settings. |
+| `ui.slot.node-agent-page` | Low | A page in a node's Agent sidebar, next to the built-in companion and configuration pages (`gcs.contributes.agent_pages`). |
+| `ui.slot.node-surface` | Low | A top-level tab on a node's detail panel for the profiles it declares (`gcs.contributes.node_surfaces`). |
+
+### Data, command, cloud, and bus
+
+| Capability | Risk | Lets the plugin... |
+|------------|------|-----|
+| `telemetry.subscribe` | Low | Read live telemetry for paired drones. A topic-scoped form such as `telemetry.subscribe.battery` limits it to one topic. |
 | `command.send` | Medium | Ask for takeoff, land or return-to-launch (or a follow-target change) on its bound drone. The operator confirms each one in a prompt naming the drone; every other command is refused. |
 | `recording.write` | Low | Save recordings to the GCS library. |
 | `mission.read` | Low | Read mission plans loaded in the GCS. |
 | `mission.write` | High | Upload, edit, or replace missions in the GCS planner. |
 | `cloud.read` | Low | Read shared fleet data from the cloud backend. |
+| `cloud.records` | Low | List, read, write and delete records in its own cloud collection for the signed-in operator. Records are keyed by plugin, so a plugin never reads another plugin's records. Each record is capped at 64 KiB and each plugin at 5000 records. |
+| `perception.read` | Low | Read the drone's perception state: where detection runs, the bound compute node, and the live session health. |
+| `perception.subscribe` | Low | Subscribe to the live detection stream the cockpit renders. |
+| `event.publish` | Low | Publish on the in-tab GCS event bus that other plugin panels subscribe to. |
+| `event.subscribe` | Low | Receive from the in-tab GCS event bus. |
+| `mcp.expose` | Medium | Publish its GCS-half tools, resources and prompts to an MCP client. |
+
+## Plugin-declared capabilities
+
+A plugin that shares data on the event bus can define a capability for
+it under `agent.declared_capabilities`, with an id of the form
+`plugin.<leaf>.<name>` (the leaf is the last segment of the plugin id), a
+risk and a description. Its `shared_topics` name that capability as the
+one a subscriber needs. Another plugin requests it like any catalog
+capability, and the install dialog shows it with the declared risk and
+description. The World Engine, for example, declares
+`plugin.world-engine.world.read` for its point cloud, occupancy, splat
+and mesh topics. See
+[Shared topics and declared capabilities](/developers/manifest#shared-topics-and-declared-capabilities).
 
 ## Two-stage install
 

@@ -2,7 +2,7 @@
 title: "Node Profiles"
 description: "One install script, four profiles. What a drone, ground station, workstation and compute node each run, and how the profile is chosen."
 icon: "layer-group"
-lastUpdated: "2026-09-15"
+lastUpdated: "2026-09-24"
 ---
 
 # Node Profiles
@@ -18,10 +18,15 @@ The profile is chosen at install time and persisted to `/etc/ados/profile.conf`.
 
 | Profile | Runs on | What it is for |
 |---|---|---|
-| `drone` | The companion computer bolted to an airframe | Flight controller link, camera encode, radio TX, onboard vision, world-model capture. |
+| `drone` | The companion computer bolted to an airframe | Flight controller link, camera encode, radio TX, onboard vision. |
 | `ground_station` | The operator's ground box | Radio RX, video republish, physical UI, Wi-Fi AP, HDMI cockpit, mesh relay or receiver roles. |
-| `workstation` | The operator's laptop, desktop or GPU box | The compute engine plus whatever UI you run locally. The macOS default. |
-| `compute` | A headless worker, a spare box or a cluster slave | The compute engine only. No UI, no flight controller. |
+| `workstation` | The operator's laptop, desktop or GPU box | A core shell: pairing, status, logs and the plugin host, plus whatever UI you run locally. The macOS default. |
+| `compute` | A headless worker, a spare box or a cluster slave | The same shell with no UI and no flight controller. |
+
+Reconstruction and perception offload are not core services on any profile.
+They come with the [World Engine extension](/drone-agent/extensions/world-engine),
+which the installer turns on by default for `workstation` and `compute` and
+leaves off for the other two.
 
 The installer accepts `ground-station` and `ground_station` as the same value
 and normalizes to the underscore form; every other value passes through
@@ -43,6 +48,7 @@ names.
 | `ados-logd` | Core | The Black Box store. Additionally gated on `logging.store.enabled`, which ships off. |
 | `ados-control` | On-demand | The native HTTP front. Owns `:8080` by default on a fresh install. |
 | `ados-discovery` | On-demand | mDNS advertisement. |
+| `ados-plugin-host` | Universal unit | The extension host. Enabled on every profile and started with the supervisor; it runs each installed extension as its own unit. |
 | `ados-peripherals` | Hardware | Peripheral registry. |
 | `ados-gpio` | Hardware | Status buzzer and LED. Ships disabled. |
 
@@ -63,7 +69,6 @@ names.
 | `ados-wfb` | WFB-ng TX manager. |
 | `ados-vision` | The onboard vision engine. Self-gates on `vision.enabled`, off by default. |
 | `ados-vision-rknn` | NPU inference sidecar. Self-gates on the NPU runtime library. |
-| `ados-atlas` | World-model capture. Self-gates on `atlas.enabled`, off by default. |
 
 ### `ground_station` only
 
@@ -82,13 +87,13 @@ names.
 
 ### `workstation` and `compute`
 
-| Service | Notes |
-|---|---|
-| `ados-compute` | Core on both. The job store, the scheduler and the REST job API. |
+No core service is specific to these two profiles. They run the
+cross-profile set, and the installer skips the flight controller router, the
+radio and the camera pipeline.
 
-`ados-compute` runs on the operator's workstation (a GPU box, a Mac, or any
-spare box that also carries the UI) and on a headless `compute` worker. It never
-runs on a drone or a ground station.
+With the World Engine extension installed, its `node` service runs here (the
+job store, the scheduler, reconstruction and offload serving on `:8092`). It
+never runs on a drone or a ground station.
 
 ## The lean headless set
 
@@ -171,10 +176,11 @@ nothing to answer it. The `ados` CLI reads the native routes on macOS for exactl
 that reason.
 
 So on a workstation node there is no setup wizard, no captive portal, no
-Wi-Fi AP, no radio and no flight controller link. What you get is the compute
-engine, the pairing surface and the status surface.
+Wi-Fi AP, no radio and no flight controller link. What you get is the pairing
+surface, the status surface, the logs and the plugin host, which runs
+extensions such as the World Engine as per-user LaunchAgents.
 
-A `compute` node is the same minus the UI: the engine, headless.
+A `compute` node is the same shell with no UI.
 
 ## Profiles on the wire, and in Mission Control
 
@@ -182,11 +188,15 @@ The agent reports its profile on the wire in the hyphenated form. The Rust
 resolver passes `workstation` and `compute` through unchanged and maps
 `ground_station` to `ground-station`; anything unrecognised reports `drone`.
 
-Mission Control resolves **three** profiles for its node surfaces:
-`drone`, `ground-station` and `workstation`. A node reporting a profile outside
-that set, `compute` included, resolves to the Agent page alone: it appears in the
-fleet and you can administer it, but no profile-specific surfaces are registered
-for it.
+Mission Control has built-in node surfaces for `drone`, `ground-station` and
+`workstation`. A `compute` node shows the workstation's surfaces. A node
+reporting any other profile resolves to the Agent page alone: it appears in the
+fleet and you can administer it, but no profile-specific surfaces are
+registered for it.
+
+An installed extension can add top-level surfaces and Agent sidebar pages for
+the profiles it names. The World Engine's Compute and Jobs & outputs tabs on a
+workstation or compute node come from there.
 
 Ground-station role (`direct`, `relay`, `receiver`) is read from
 `/etc/ados/mesh/role` and defaults to `direct`. It is null on every other
@@ -198,11 +208,13 @@ An extension declares which node kinds it installs on:
 
 ```yaml
 agent:
-  target_profiles: ["drone", "workstation"]
+  target_profiles: ["drone", "workstation", "compute"]
 ```
 
-The validator accepts `drone`, `ground-station` and `workstation`, and requires
-at least one. See the [manifest reference](/developers/manifest).
+The validator accepts `drone`, `ground-station`, `workstation` and `compute`
+(`ground_station` reads as `ground-station`), and requires at least one. The
+agent refuses to install an extension whose list excludes the node's own
+profile. See the [manifest reference](/developers/manifest).
 
 ## Related
 

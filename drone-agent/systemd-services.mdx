@@ -2,7 +2,7 @@
 title: "Systemd Services"
 description: "All service units, dependencies, startup order, resource limits, and log access."
 icon: "server"
-lastUpdated: "2026-06-18"
+lastUpdated: "2026-09-24"
 ---
 
 # Systemd Services
@@ -28,7 +28,7 @@ This architecture gives you per-service restart, resource isolation via cgroups,
 | `ados-logd` | `ados-logd` | Rust | Black-box logging store and query API |
 | `ados-health` | `ados.services.health` | Python | CPU, RAM, disk, temperature monitoring |
 | `ados-discovery` | mDNS | Python | mDNS advertisement (`_ados._tcp.local.`) |
-| `ados-plugin-host` | plugin host | Rust | Plugin subprocess supervisor |
+| `ados-plugin-host` | plugin host | Rust | Extension host. Runs each installed extension as its own `ados-plugin-<id>` unit, on every profile. |
 | `ados-peripherals` | peripherals manager | Python | USB hot-plug, sensor manager |
 
 ### Drone profile services
@@ -39,7 +39,6 @@ This architecture gives you per-service restart, resource isolation via cgroups,
 | `ados-wfb` | `ados-radio` | Rust | WFB-ng video transmitter |
 | `ados-vision` | `ados-vision` | Rust | Vision host (on capable boards) |
 | `ados-gpio` | `ados-gpio` | Rust | GPIO output substrate (ships disabled until enabled) |
-| `ados-atlas` | `ados-atlas` | Rust | World-model capture: pose-tagged keyframe selection for a compute node to reconstruct from. Self-gates on `atlas.enabled`, which is off by default. |
 | `ados-vision-rknn` | `ados.services.vision.rknn_sidecar` | Python | NPU inference sidecar (RKNN). Self-gates on the NPU runtime library, so it is a clean no-op on a board without one. |
 
 ### Ground station services (ground_station profile only)
@@ -78,9 +77,18 @@ This architecture gives you per-service restart, resource isolation via cgroups,
 
 ### Workstation and compute profile services
 
-| Service | Runs | Lang | Description |
-|---------|------|------|-------------|
-| `ados-compute` | `ados-compute` | Rust | The compute engine: job store, scheduler and the REST job API that a drone or the GCS submits reconstruction and perception-offload work to. Runs on `workstation` and `compute` profiles only, never on a drone or ground station. |
+No core unit is specific to these two profiles. They run the core services
+above except the MAVLink router and the swarm bus, which need a flight-capable
+profile. The World Engine extension, which the installer adds on them by
+default, brings its own units:
+
+| Unit | Profile | Description |
+|------|---------|-------------|
+| `ados-plugin-com-altnautica-world-engine` | every profile it is installed on | The extension's main process. |
+| `ados-plugin-com-altnautica-world-engine-node` | `workstation`, `compute` | The compute node: ingest, reconstruction jobs, artifacts and perception offload serving on `:8092`. |
+| `ados-plugin-com-altnautica-world-engine-capture` | `drone` | Keyframe capture for the world model. |
+
+See [World Engine](/drone-agent/extensions/world-engine).
 
 ### The headless KEEP set
 

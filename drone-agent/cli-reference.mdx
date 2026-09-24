@@ -2,7 +2,7 @@
 title: "CLI Reference"
 description: "Everyday ados commands plus the config, diag, hardware, logs, mcp, network, plugin, profile, radio, record, and rust subgroups."
 icon: "terminal"
-lastUpdated: "2026-06-18"
+lastUpdated: "2026-09-24"
 ---
 
 # CLI Reference
@@ -170,22 +170,21 @@ ados uninstall --purge --yes
 
 ## `ados plugin`
 
-The `ados plugin` subgroup manages the agent plugin host: install, enable, disable, remove, inspect, and tail logs for installed plugins. Each plugin runs as a subprocess under the agent supervisor with its own cgroup limits and a capability-gated IPC channel.
+The `ados plugin` subgroup manages the agent plugin host: install, enable, disable, remove, inspect, and tail logs for installed plugins. The lifecycle commands call the agent's native `/api/plugins` routes. Each plugin runs as its own unit (a systemd unit with cgroup limits on Linux, a LaunchAgent on macOS) with a capability-gated IPC channel.
 
 | Command | What it does |
 |---|---|
 | `ados plugin list` | Show every installed plugin with state, version, and risk level. |
-| `ados plugin install <archive>` | Install a signed `.adosplug` archive from a local file path. It does not fetch a URL; `curl -LO` the release asset first, or use the URL path in Mission Control. |
+| `ados plugin install <source>` | Install from a local `.adosplug` path, an HTTPS archive URL on the agent's download allowlist, a built-in plugin id, or a first-party catalog id such as `com.altnautica.world-engine`. It shows the permissions for approval and grants the ones you approve. |
 | `ados plugin enable <id>` | Start a previously installed plugin and add it to the supervisor's restart set. Takes effect at runtime, with no agent restart. |
 | `ados plugin disable <id>` | Stop the plugin and remove it from the restart set. The plugin stays installed. |
 | `ados plugin remove <id>` | Stop and uninstall the plugin. On-disk state is purged unless `--keep-data` is passed. |
 | `ados plugin info <id>` | Print the manifest, declared permissions, signer, and last-known status. |
-| `ados plugin perms <id>` | Show permission grants. Add `--revoke <perm>` to drop one; a revocation takes effect at runtime. |
+| `ados plugin perms <id>` | Show permission grants. Add `--grant <perm>` to grant a declared one or `--revoke <perm>` to drop one; both take effect at runtime. |
 | `ados plugin logs <id>` | Tail the plugin's structured logs. |
-| `ados plugin pin <id>` | Pin a plugin to its current version so auto-update skips it. |
+| `ados plugin pin <id> <version>` | Pin a plugin to a version so auto-update skips it. |
 | `ados plugin unpin <id>` | Clear the pin so auto-update can run again. |
-| `ados plugin auto-update <id>` | Toggle auto-update on or off for one plugin. |
-| `ados plugin check-updates` | Run the auto-update poll once and print the outcome per plugin. |
+| `ados plugin auto-update <id> <on\|off>` | Toggle auto-update on or off for one plugin. |
 | `ados plugin lint <archive>` | Static-analyze an archive: signature, manifest schema, banned imports, permission shape. |
 | `ados plugin test <plugin_dir>` | Run the plugin's pytest suite against the SDK test harness. |
 | `ados plugin sign <plugin_dir>` | Pack a plugin directory into a signed `.adosplug`, signing the canonical payload hash with an Ed25519 private key. |

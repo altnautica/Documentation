@@ -92,6 +92,28 @@ Until the pod answers the identity query it is sent nothing at all. The negotiat
 
 **Resources:** 128 MB max RAM, 25% CPU, 4 PIDs.
 
+## ADOS World Engine
+
+| Field | Value |
+|---|---|
+| Plugin id | `com.altnautica.world-engine` |
+| Version | 1.0.0 |
+| Risk | high |
+| Type | Hybrid (Rust agent binaries on every profile + inline GCS module) |
+| Hardware | Any camera the vision engine publishes frames for; a workstation or compute node on the drone's LAN (an NVIDIA or Apple Silicon GPU speeds reconstruction) |
+| Profiles | drone, ground station, workstation, compute |
+| Supported boards | any |
+
+Builds a 3D world model from a flight. The drone selects pose-tagged keyframes and streams them to a compute node on the same network, which reconstructs a Gaussian splat, point cloud, mesh and occupancy grid that Mission Control views live and after landing. The same node runs perception offload for a drone with no on-board accelerator, returning detections to the drone's own detection bus.
+
+The node installer turns it on by default for workstation and compute nodes. Its binaries download at install for the node's own architecture, each checked against a sha256 pinned in the signed manifest.
+
+**Permissions:** telemetry read and extend, node info, event publish, vision frame read and detection publish, the radio auxiliary stream, outbound network and inbound listen (the compute node's `:8092`), GPU access, cloud publish and cloud records.
+
+**Resources:** heavy class, 16 GB max RAM, 800% CPU, 1024 PIDs.
+
+See the [World Engine](/drone-agent/extensions/world-engine) page for setup, configuration and the API.
+
 ## Installing one
 
 From Mission Control:
@@ -102,14 +124,15 @@ From Mission Control:
 
 See [Installing extensions](/mission-control/installing-plugins) for the exact surface.
 
-From the agent CLI, download first and install the local file. `ados plugin install` takes a path that already exists on the node; it does not fetch a URL.
+From the agent CLI, `ados plugin install` takes a first-party catalog id, a release URL or a local archive path. It shows the permission prompt, installs, and grants what you approve.
 
 ```bash
-curl -LO https://github.com/altnautica/ADOSExtensions/releases/download/<release>/<extension>.adosplug
+ados plugin install com.altnautica.world-engine
+ados plugin install https://github.com/altnautica/ADOSExtensions/releases/download/<release>/<extension>.adosplug
 ados plugin install ./<extension>.adosplug
 ```
 
-The URL path runs through the GCS instead. See [Distribution: install from a URL](/developers/distribution-url-install).
+A URL must be HTTPS on the agent's download allowlist (GitHub release hosts included). See [Distribution: install from a URL](/developers/distribution-url-install).
 
 The signature is verified against the keys in `/etc/ados/plugin-keys/` before the archive is unpacked.
 

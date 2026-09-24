@@ -131,6 +131,12 @@ a guessed flag fails the install rather than being ignored.
 | `--camera <hint>` | Camera hardware hint. |
 | `--no-rtl-driver` | Skip the RTL8812EU radio driver build. Use this on a node with no long-range radio: the build takes minutes and fails on missing kernel headers. |
 
+**Extensions**
+
+| Flag | Effect |
+|---|---|
+| `--world-engine`, `--no-world-engine` | Install, or skip, the first-party [World Engine](/drone-agent/extensions/world-engine) extension (3D world model and compute offload). Without either flag the profile decides: on for `workstation` and `compute`, off for `drone` and `ground_station`. The last of the two flags wins. A failed extension install warns with the manual command and does not abort the node install. |
+
 **Unattended**
 
 | Flag | Effect |
@@ -205,9 +211,11 @@ from source (it ensures the Rust toolchain first) and defaults to
 curl -sSL https://raw.githubusercontent.com/altnautica/ADOSDroneAgent/main/scripts/install.sh | bash
 ```
 
-The Rust installer registers per-user LaunchAgents under `$HOME/.ados`. A
-workstation node has no systemd, no WFB radio and no GPIO, so hardware behaviour
-must be verified on Linux hardware.
+The Rust installer registers per-user LaunchAgents under `$HOME/.ados`,
+including the plugin host, which runs each extension as its own LaunchAgent in
+`~/Library/LaunchAgents`. The World Engine is installed by default, as on any
+workstation. A workstation node has no systemd, no WFB radio and no GPIO, so
+hardware behaviour must be verified on Linux hardware.
 
 ## Uninstall
 

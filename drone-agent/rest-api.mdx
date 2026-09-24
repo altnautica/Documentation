@@ -2,7 +2,7 @@
 title: "REST API"
 description: "HTTP API on port 8080, served by the native Rust front with a residual FastAPI behind it."
 icon: "code"
-lastUpdated: "2026-06-18"
+lastUpdated: "2026-09-24"
 ---
 
 # REST API
@@ -49,12 +49,11 @@ The API is organized by domain.
 | WFB-ng | `/api/wfb` | Link stats, channel, pairing |
 | MAVLink signing | `/api/mavlink/signing` | MAVLink2 signing capability and FC enrollment |
 | Pairing | `/api/pairing` | Pair, unpair, info, code |
-| Plugins | `/api/plugins` | Extension lifecycle, install, list, perms |
+| Plugins | `/api/plugins`, `/api/v1/plugins/catalog` | Extension lifecycle, install, list, perms, config, state, and each extension's own API under `/api/plugins/{id}/x/` |
 | Services | `/api/services` | Systemd service control |
 | System | `/api/system`, `/api/v1/diagnostics` | Reboot, shutdown, diagnostics, resource reads |
 | Fleet | `/api/fleet` | Fleet enrollment and peers |
 | Swarm | `/api/swarm/neighbors` | The swarm neighbour table |
-| Atlas | `/api/atlas/readiness`, `/api/atlas/config`, `/api/atlas/capture/*` | World-model capture control |
 | MCP | `/api/mcp/status`, `/api/mcp/tokens`, `/api/mcp/revoke` | AI-control token posture and lifecycle |
 | Peripherals | `/api/peripherals` | USB devices, sensors |
 | Vision | `/api/vision`, `/api/vision/models` | Vision state, detections, model registry |
@@ -67,6 +66,53 @@ The API is organized by domain.
 The generated route table lives at `docs/api-surface.md` in the agent repo and a
 repository check resolves every client path literal against it, so a route that
 is documented here and absent there is a bug in one of the two.
+
+## Extension lifecycle
+
+The native front serves the whole extension lifecycle on every profile,
+including a macOS workstation. There is no Python behind these routes.
+Errors use one envelope, `{"ok": false, "code": N, "kind": "...", "detail": "..."}`.
+
+| Method | Path | What it does |
+|---|---|---|
+| `GET` | `/api/v1/plugins/catalog` | The first-party catalog bundled with this agent build. |
+| `GET` | `/api/plugins` | Installed extensions: `{installs: [...]}`. |
+| `POST` | `/api/plugins/parse` | Preview an uploaded archive (multipart `file`): manifest, signer, risk, permissions. Nothing is written. |
+| `POST` | `/api/plugins/install` | Install an uploaded archive. `?requested_permissions=a,b` grants what the operator approved; `?job_id=` streams progress. |
+| `POST` | `/api/plugins/parse_from_url` | Preview an archive from an allowlisted HTTPS URL. Returns its sha256 so the install can pin it. |
+| `POST` | `/api/plugins/install_from_url` | Install from an allowlisted HTTPS URL: `{url, expected_sha256?, requested_permissions?, job_id?, from_catalog}`. A catalog install must pin a sha256. |
+| `POST` | `/api/plugins/install_builtin` | Install one of the built-in plugins the agent ships: `{plugin_id}`. |
+| `WS` | `/api/plugins/jobs/{job_id}` | Install progress for a `job_id` passed to an install call. |
+| `GET` | `/api/plugins/{id}` | The install record, granted capabilities and the manifest summary with the GCS block. |
+| `DELETE` | `/api/plugins/{id}` | Stop and uninstall. |
+| `GET` | `/api/plugins/{id}/manifest` | The installed `manifest.yaml`, byte for byte. |
+| `GET` | `/api/plugins/{id}/attestation` | `{signature, files: [{path, sha256, payload?}]}`: the archive signature and every attested file's digest, payloads marked. Mission Control checks an inline GCS module against it before loading it. |
+| `GET` | `/api/plugins/{id}/readiness` | `{ok, plugin_id, services}`: each declared service that runs on this node, probed now. |
+| `GET` | `/api/plugins/{id}/gcs/{path}` | One file from the extension's GCS half, so a LAN-paired Mission Control mounts it with no cloud. |
+| `POST` | `/api/plugins/{id}/grant` | Grant one declared permission: `{permission_id}`. |
+| `DELETE` | `/api/plugins/{id}/perms/{permission_id}` | Revoke a permission. Takes effect at runtime. |
+| `POST` | `/api/plugins/{id}/enable`, `/disable` | Start or stop the extension. |
+| `POST` | `/api/plugins/{id}/pin`, `/unpin`, `/auto-update` | Update preferences. |
+| `POST` | `/api/plugins/capability-token` | Mint a short-lived capability token for the GCS half. |
+| `GET`, `PUT` | `/api/plugins/{id}/config` | Read the effective config, or write one key: `{key, value, scope?}`. |
+| `GET` | `/api/plugins/{id}/state` | The extension's latest published state. |
+| `POST` | `/api/plugins/{id}/tools/{tool}/invoke` | Run one of the extension's MCP tools. |
+| any | `/api/plugins/{id}/x/{path}` | The extension's own HTTP API. |
+
+### Extension HTTP passthrough
+
+An extension that declares `agent.http: true` serves its own API on a Unix
+socket the plugin host creates for it. `/api/plugins/{id}/x/{path}` forwards
+`GET`, `POST`, `PUT`, `PATCH` and `DELETE` there as `/{path}`, keeping the
+query string, and upgrades WebSockets. The pairing key authenticates the
+request before it is forwarded, and the route also works through a ground
+station's relay proxy. When the extension is not serving, the answer is `503`
+with `{"detail": "plugin <id> is not serving HTTP"}`.
+
+```bash
+curl -s -H "X-ADOS-Key: $KEY" \
+  http://localhost:8080/api/plugins/com.altnautica.world-engine/x/atlas/readiness
+```
 
 ## Common endpoints
 
