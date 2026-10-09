@@ -1,0 +1,576 @@
+---
+title: "MCP tool reference"
+sidebarTitle: "MCP tools"
+description: "Every built-in tool the ADOS MCP server registers, with its scope, safety class, reach, and arguments as declared in the source."
+icon: "wrench"
+lastUpdated: "2026-10-09"
+---
+
+This page lists every built-in tool the [ADOS MCP server](/developers/mcp-server) registers: 45 tools in 12 groups, from catalog version `0.1.0` against MCP revision `2025-06-18`. The data comes from `catalog/tools-catalog.json` (scope, safety class, reach flags, description) and the Zod input schemas in `src/registry/read-tools.ts`, `src/registry/admin-tools.ts` and `src/registry/flight-tools.ts` (arguments). Mission Control renders the same catalog in the MCP tab's **Built-in tools** section.
+
+To connect a client first, see [Connect an AI assistant](/mission-control/mcp-setup).
+
+<Note>
+A client never sees this whole list unless its credential allows it. `tools/list` is filtered per connection: a tool appears only when the token holds its scope, flight-affecting tools stay hidden until flight enforcement is on, and agent-mode-only tools are hidden in fleet-mode.
+</Note>
+
+## Reading the tables
+
+| Column | Meaning |
+|---|---|
+| Scope | The scope group the token must hold to call the tool. The server checks it on every call. |
+| Safety class | The class-specific gate the call passes after the scope check. See [Safety classes](#safety-classes). |
+| Agent-mode only | The tool is served only over the drone-direct reach (`--target agent` or `--target local-fleet`). The cloud relay has no synchronous parameter or config read/write, no plugin install or plugin config, and no supervisor restart, so in fleet-mode these tools are hidden from `tools/list` and refused with `agent_mode_only`. |
+| Affects flight | The tool writes MAVLink or changes in-flight behaviour. It is hidden and refused until the server runs with `--flight-enforced`, and never reaches a token without the `flight` scope. |
+
+In the argument tables, the description is the one declared in the schema; a dash means the schema declares none. Integer arguments without a listed range accept any safe integer. Every tool's schema rejects unknown properties (`additionalProperties: false`).
+
+## Scopes
+
+A scope is a named group, not a single permission. A token carries one or more groups, and each tool requires exactly one. The groups line up one-to-one with the safety classes, except `secret_read`, which is a modifier on reads rather than a class.
+
+| Scope | Default | Grants |
+|---|---|---|
+| `read` | On | Status, telemetry, parameters, configuration, logs and the audit log. No changes. |
+| `safe_write` | On | Reversible writes, such as one config value or one plugin config value. |
+| `admin` | On | Node administration: services, plugins, pairing, radio and network settings, parameter writes. |
+| `flight` | Off | Commands that move the aircraft: arm, disarm, takeoff, land, RTL, mode. |
+| `destructive` | Off | Irreversible actions such as reboot, shutdown, factory reset and reset-all-parameters. No built-in tool in this release is `destructive`. |
+| `secret_read` | Off | Return secret-bearing values unredacted. Requires `read`; a token cannot hold it alone. |
+
+"Default" is the scope set the server marks as on by default (`read`, `safe_write` and `admin`), which is also what Mission Control's default **Operate** preset grants. `flight`, `destructive` and `secret_read` are elevated and must be added explicitly.
+
+## Safety classes
+
+The scope check decides whether a token may call a tool. The safety gate then decides whether this particular call goes through. It runs for every principal, including the on-box Unix socket caller, which skips only the scope check.
+
+| Class | What the call must carry |
+|---|---|
+| `read`, `safe_write` | Nothing beyond the scope. |
+| `admin` | `confirm: true` in the arguments. Without it the call is refused with `confirm_required`. |
+| `flight` | One of: a one-time operator signed confirm in `confirm_id`, bound to this tool, node and exact arguments; a fresh operator-present signal (no older than 10 seconds); or a target verified as SITL with `--sim`. |
+| `destructive` | The exact typed confirm phrase in `confirm` (for example `RESET ALL PARAMS ON THIS NODE`) and an operator signed confirm in `confirm_id`. `--sim` waives the signature, never the phrase. |
+
+Some tools escalate from their base class at call time based on their arguments: `params.set`, `config.set` and `services.restart`. The rules are listed with each group below.
+
+<Warning>
+The server's entry point (`src/index.ts`) starts the gate without an operator-present or signed-confirm provider, so both default to "absent". On real hardware every `flight` class call is refused today; flight tools only run against a simulator started with `--sim`, which the server verifies against the target before it arms the waiver. Treat flight access as a SITL feature until a confirm provider ships.
+</Warning>
+
+Tool annotations (`readOnlyHint`, `openWorldHint`) are advertised honestly, but they are hints for the client. The server is the enforcement point.
+
+## Common arguments
+
+| Argument | Used by | Meaning |
+|---|---|---|
+| `node` | Every tool except `fleet.list_nodes` and `audit.search` | The target node. In agent mode the server always targets its one node: omit `node`, or pass `local` or the node's device id (`--node-id`); any other value is refused with `node_not_allowed`. In local-fleet mode pass a device id from the fleet; it can be omitted only when the fleet has one node. In fleet-mode it is required and must be a node the credential may reach (its allowed nodes, or any node you own when the credential has no node limit). For `audit.query` it is a filter, not a target. |
+| `confirm` | `admin` class tools | Set `true` to confirm the administrative action. |
+| `confirm_id` | Flight tools, and admin tools that declare it | A signed, one-time confirm id bound to this tool, node and arguments. Needed when the call runs through the flight gate. |
+
+## Plugin tools
+
+Besides the built-in tools, the server discovers MCP tools contributed by extensions installed on a node and registers them as `<pluginId>:<toolName>`. They are not in the catalog because they depend on what is installed. The rules:
+
+- A plugin's tools are exposed only if the plugin holds the `mcp.expose` capability, and only its agent-half tools are registered.
+- The declared `safety_class` maps to a scope: `read`, `safe_write`, `admin`, `flight` (also spelled `flight_action`) or `destructive`. A missing or unknown class maps to `admin`.
+- The class is floored at what the plugin's granted capabilities imply, so a plugin holding a flight-capable capability has every tool treated as `flight`, whatever it declares.
+- Plugin tools are always agent-mode only. A destructive plugin tool's typed phrase is `CONFIRM <PLUGINID:TOOLNAME>` in upper case.
+- The advertised description is capped at 512 characters and an input schema larger than 16 KiB is dropped from `tools/list`. The plugin validates its own arguments.
+
+See [Manifest reference](/developers/manifest) for how an extension declares MCP tools.
+
+## Status
+
+`status.*`, 6 tools. Node status, version, host resources and health.
+
+| Tool | Scope | Safety class | Agent-mode only | Affects flight | Description |
+|---|---|---|---|---|---|
+| `status.full` | `read` | `read` | No | No | Read the node's full status document (every reported field). |
+| `status.get` | `read` | `read` | No | No | Read the node's consolidated status (link, FC, battery, mode, health). |
+| `status.health` | `read` | `read` | No | No | A rollup of the node's reachability and reported health state. |
+| `status.ping` | `read` | `read` | No | No | A liveness probe: whether the node answers, with round-trip latency. |
+| `status.system` | `read` | `read` | No | No | Read host resources: cpu, memory, disk, temperature, load, uptime. |
+| `status.version` | `read` | `read` | No | No | Read the agent version and firmware identity for the node. |
+
+### status.full
+
+| Argument | Type | Required | Description |
+|---|---|---|---|
+| `node` | string | No | Device id (fleet-mode) or host (agent-mode) |
+
+### status.get
+
+| Argument | Type | Required | Description |
+|---|---|---|---|
+| `node` | string | No | Device id (fleet-mode) or host (agent-mode) |
+
+### status.health
+
+| Argument | Type | Required | Description |
+|---|---|---|---|
+| `node` | string | No | Device id (fleet-mode) or host (agent-mode) |
+
+### status.ping
+
+| Argument | Type | Required | Description |
+|---|---|---|---|
+| `node` | string | No | Device id (fleet-mode) or host (agent-mode) |
+
+### status.system
+
+| Argument | Type | Required | Description |
+|---|---|---|---|
+| `node` | string | No | Device id (fleet-mode) or host (agent-mode) |
+
+### status.version
+
+| Argument | Type | Required | Description |
+|---|---|---|---|
+| `node` | string | No | Device id (fleet-mode) or host (agent-mode) |
+
+## Telemetry
+
+`telemetry.*`, 1 tool. One-shot flight telemetry.
+
+| Tool | Scope | Safety class | Agent-mode only | Affects flight | Description |
+|---|---|---|---|---|---|
+| `telemetry.snapshot` | `read` | `read` | No | No | A one-shot flight telemetry read: battery, gps, position, attitude, mode. |
+
+### telemetry.snapshot
+
+| Argument | Type | Required | Description |
+|---|---|---|---|
+| `node` | string | No | Device id (fleet-mode) or host (agent-mode) |
+
+## Fleet
+
+`fleet.*`, 1 tool. The nodes reachable through this connection.
+
+| Tool | Scope | Safety class | Agent-mode only | Affects flight | Description |
+|---|---|---|---|---|---|
+| `fleet.list_nodes` | `read` | `read` | No | No | List the nodes reachable through this connection, with a status summary. |
+
+### fleet.list_nodes
+
+Takes no arguments.
+
+## Vision
+
+`vision.*`, 1 tool. Perception engine state.
+
+| Tool | Scope | Safety class | Agent-mode only | Affects flight | Description |
+|---|---|---|---|---|---|
+| `vision.status` | `read` | `read` | No | No | Read the perception engine status: model, tier, detection state. |
+
+### vision.status
+
+| Argument | Type | Required | Description |
+|---|---|---|---|
+| `node` | string | No | Device id (fleet-mode) or host (agent-mode) |
+
+## Parameters
+
+`params.*`, 6 tools. Flight-controller parameters joined with firmware metadata, plus the gated write.
+
+| Tool | Scope | Safety class | Agent-mode only | Affects flight | Description |
+|---|---|---|---|---|---|
+| `params.diff_from_default` | `read` | `read` | Yes | No | List the parameters whose value differs from the firmware default. |
+| `params.explain` | `read` | `read` | Yes | No | Explain a parameter's meaning (metadata + the node's current value) without changing it. |
+| `params.get` | `read` | `read` | Yes | No | Read one flight-controller parameter with its decoded meaning and metadata. |
+| `params.optimize` | `read` | `read` | Yes | No | Read-only tuning advisory. Reads every FC parameter joined with firmware metadata and returns deterministic, metadata-grounded observations plus the joined data for the model to reason over. Writes nothing; applying a change is params.set. |
+| `params.read_all` | `read` | `read` | Yes | No | Read flight-controller parameters joined with firmware metadata (meaning, range, default). Filter with prefix or search; large sets are paged by limit. |
+| `params.set` | `admin` | `admin` | Yes | No | Set one flight-controller parameter to a numeric value (confirm required; flight-critical names need the flight scope and a signed confirm). |
+
+`params.set` escalates at call time. When `name` matches a flight-critical pattern (`FS_*`, `ARMING_*`, `MOT_*`, `SERVO<n>_FUNCTION`, `EK3_SRC*`, `COMPASS_USE*`, or `BATT*_ARM*`), the call needs the `flight` scope and passes the flight gate instead of the admin gate. Every read joins the vendored firmware metadata, so a value comes back with its meaning, range and default even offline.
+
+### params.diff_from_default
+
+| Argument | Type | Required | Description |
+|---|---|---|---|
+| `node` | string | No | Device id (fleet-mode) or host (agent-mode) |
+
+### params.explain
+
+| Argument | Type | Required | Description |
+|---|---|---|---|
+| `node` | string | No | Device id (fleet-mode) or host (agent-mode) |
+| `name` | string | Yes | The parameter name. |
+
+### params.get
+
+| Argument | Type | Required | Description |
+|---|---|---|---|
+| `node` | string | No | Device id (fleet-mode) or host (agent-mode) |
+| `name` | string | Yes | The parameter name. |
+
+### params.optimize
+
+| Argument | Type | Required | Description |
+|---|---|---|---|
+| `node` | string | No | Device id (fleet-mode) or host (agent-mode) |
+| `focus` | string | No | A focus area hint, e.g. vibration, tuning, battery. |
+
+### params.read_all
+
+| Argument | Type | Required | Description |
+|---|---|---|---|
+| `node` | string | No | Device id (fleet-mode) or host (agent-mode) |
+| `prefix` | string | No | Only parameters whose name starts with this. |
+| `search` | string | No | Only parameters whose name contains this (case-insensitive). |
+| `limit` | integer (min 1, max 2000) | No | Max parameters returned (default 200). |
+
+### params.set
+
+| Argument | Type | Required | Description |
+|---|---|---|---|
+| `node` | string | No | Device id (fleet-mode) or host (agent-mode) |
+| `name` | string | Yes | The parameter name. |
+| `value` | number | Yes | The new numeric value. |
+| `confirm` | boolean | No | Set true to confirm this administrative action |
+| `confirm_id` | string | No | A signed confirm id, when the action escalates to flight |
+
+## Configuration
+
+`config.*`, 2 tools. The agent configuration document.
+
+| Tool | Scope | Safety class | Agent-mode only | Affects flight | Description |
+|---|---|---|---|---|---|
+| `config.get` | `read` | `read` | Yes | No | Read the agent configuration document (secret-shaped fields redacted). |
+| `config.set` | `safe_write` | `safe_write` | Yes | No | Set one agent configuration value by dotted key (network paths escalate to admin and need confirm). |
+
+`config.set` escalates to `admin` (scope and gate, so `confirm: true` is required) when any dotted segment of `key` is `network`, `wifi`, `wfb`, `uplink`, `modem`, `ethernet` or `radio`. `config.get` redacts secret-shaped fields unless the token also holds `secret_read`.
+
+### config.get
+
+| Argument | Type | Required | Description |
+|---|---|---|---|
+| `node` | string | No | Device id (fleet-mode) or host (agent-mode) |
+
+### config.set
+
+| Argument | Type | Required | Description |
+|---|---|---|---|
+| `node` | string | No | Device id (fleet-mode) or host (agent-mode) |
+| `key` | string | Yes | The dotted config key, e.g. video.bitrate. |
+| `value` | string | Yes | The new value (as a string). |
+| `confirm` | boolean | No | Set true to confirm this administrative action |
+| `confirm_id` | string | No | A signed confirm id, when the action escalates to flight |
+
+## Services
+
+`services.*`, 2 tools. Supervised services on the node.
+
+| Tool | Scope | Safety class | Agent-mode only | Affects flight | Description |
+|---|---|---|---|---|---|
+| `services.list` | `read` | `read` | No | No | List the node's services and their running state. |
+| `services.restart` | `admin` | `admin` | No | No | Restart one supervised service on the node (confirm required). |
+
+`services.restart` escalates to the `flight` scope and gate when the unit name contains `mavlink`, `supervisor` or `video` after normalisation (case, a `.service` suffix and aliases are folded first), because restarting those units mid-flight is flight-critical.
+
+### services.list
+
+| Argument | Type | Required | Description |
+|---|---|---|---|
+| `node` | string | No | Device id (fleet-mode) or host (agent-mode) |
+
+### services.restart
+
+| Argument | Type | Required | Description |
+|---|---|---|---|
+| `node` | string | No | Device id (fleet-mode) or host (agent-mode) |
+| `name` | string | Yes | The service unit name, e.g. ados-video. |
+| `confirm` | boolean | No | Set true to confirm this administrative action |
+| `confirm_id` | string | No | A signed confirm id, when the action escalates to flight |
+
+## Logs
+
+`logs.*`, 1 tool. The node's agent logs.
+
+| Tool | Scope | Safety class | Agent-mode only | Affects flight | Description |
+|---|---|---|---|---|---|
+| `logs.query` | `read` | `read` | No | No | Query the node's agent logs (optional level filter, bounded count). |
+
+### logs.query
+
+| Argument | Type | Required | Description |
+|---|---|---|---|
+| `node` | string | No | Device id (fleet-mode) or host (agent-mode) |
+| `level` | string | No | Minimum level filter, e.g. warning. |
+| `limit` | integer (min 1, max 1000) | No | Max entries (default 200). |
+
+## Plugins
+
+`plugins.*`, 7 tools. Installed plugins: list, inspect, install, enable, disable, remove and configure.
+
+| Tool | Scope | Safety class | Agent-mode only | Affects flight | Description |
+|---|---|---|---|---|---|
+| `plugins.config` | `safe_write` | `safe_write` | Yes | No | Set one plugin configuration value (scope drone\|global). |
+| `plugins.disable` | `admin` | `admin` | No | No | Disable an installed plugin by id (confirm required). |
+| `plugins.enable` | `admin` | `admin` | No | No | Enable an installed plugin by id (confirm required). |
+| `plugins.info` | `read` | `read` | Yes | No | Read one installed plugin's detail and manifest. |
+| `plugins.install` | `admin` | `admin` | Yes | No | Install a plugin from a signed archive url with a sha256 pin (confirm required). |
+| `plugins.list` | `read` | `read` | Yes | No | List installed plugins on the node. |
+| `plugins.remove` | `admin` | `admin` | No | No | Remove an installed plugin by id, optionally keeping its data (confirm required). |
+
+`plugins.enable`, `plugins.disable` and `plugins.remove` also work over the cloud relay. `plugins.list`, `plugins.info`, `plugins.install` and `plugins.config` read or write live plugin state that only the drone-direct reach serves. The plugins' own MCP tools are listed separately; see [Plugin tools](#plugin-tools).
+
+### plugins.config
+
+| Argument | Type | Required | Description |
+|---|---|---|---|
+| `node` | string | No | Device id (fleet-mode) or host (agent-mode) |
+| `id` | string | Yes | - |
+| `key` | string | Yes | - |
+| `value` | string \| number \| boolean \| object \| array | Yes | - |
+| `scope` | string: `drone`, `global` | No | - |
+
+### plugins.disable
+
+| Argument | Type | Required | Description |
+|---|---|---|---|
+| `node` | string | No | Device id (fleet-mode) or host (agent-mode) |
+| `id` | string | Yes | - |
+| `confirm` | boolean | No | Set true to confirm this administrative action |
+
+### plugins.enable
+
+| Argument | Type | Required | Description |
+|---|---|---|---|
+| `node` | string | No | Device id (fleet-mode) or host (agent-mode) |
+| `id` | string | Yes | - |
+| `confirm` | boolean | No | Set true to confirm this administrative action |
+
+### plugins.info
+
+| Argument | Type | Required | Description |
+|---|---|---|---|
+| `node` | string | No | Device id (fleet-mode) or host (agent-mode) |
+| `id` | string | Yes | - |
+
+### plugins.install
+
+| Argument | Type | Required | Description |
+|---|---|---|---|
+| `node` | string | No | Device id (fleet-mode) or host (agent-mode) |
+| `url` | string | Yes | The .adosplug archive url. |
+| `sha256` | string | No | The expected sha256 of the archive. |
+| `confirm` | boolean | No | Set true to confirm this administrative action |
+
+### plugins.list
+
+| Argument | Type | Required | Description |
+|---|---|---|---|
+| `node` | string | No | Device id (fleet-mode) or host (agent-mode) |
+
+### plugins.remove
+
+| Argument | Type | Required | Description |
+|---|---|---|---|
+| `node` | string | No | Device id (fleet-mode) or host (agent-mode) |
+| `id` | string | Yes | - |
+| `keep_data` | boolean | No | - |
+| `confirm` | boolean | No | Set true to confirm this administrative action |
+
+## Administration
+
+`admin.*`, 10 tools. Node and platform administration: name, pairing, radio, Wi-Fi and the supervisor.
+
+| Tool | Scope | Safety class | Agent-mode only | Affects flight | Description |
+|---|---|---|---|---|---|
+| `admin.agent.restart_supervisor` | `flight` | `flight` | Yes | Yes | Restart the agent supervisor and its whole service tree (confirm required). |
+| `admin.network.wifi_join` | `admin` | `admin` | Yes | No | Join a management Wi-Fi network. |
+| `admin.network.wifi_leave` | `admin` | `admin` | Yes | No | Leave the current management Wi-Fi network. |
+| `admin.node.rename` | `admin` | `admin` | Yes | No | Set the node's display name (shown in pairing and the fleet card). Not the OS hostname. |
+| `admin.pairing.claim` | `admin` | `admin` | Yes | No | Claim an unpaired node for an operator (LAN presence is the auth boundary). |
+| `admin.pairing.generate_code` | `admin` | `admin` | Yes | No | Mint a fresh local pair code (while the node is unpaired). |
+| `admin.pairing.info` | `read` | `read` | Yes | No | Read the node's pairing status and reach info. |
+| `admin.pairing.unpair` | `admin` | `admin` | Yes | No | Release the node's pairing (invalidates credentials derived from the pairing key). |
+| `admin.wfb.channel` | `admin` | `admin` | Yes | No | Set the WFB radio channel (agent validates against its allowed set). |
+| `admin.wfb.tx_power` | `admin` | `admin` | Yes | No | Set WFB TX power in dBm (agent clamps to its configured ceiling). |
+
+Every `admin.*` tool is drone-direct only. `admin.agent.restart_supervisor` is the exception to the admin pattern: it cycles the whole service tree, including the MAVLink router and video units, so it is `flight` class, needs the `flight` scope, and is hidden until flight enforcement is on. `admin.pairing.info` is a plain read.
+
+### admin.agent.restart_supervisor
+
+| Argument | Type | Required | Description |
+|---|---|---|---|
+| `node` | string | No | Device id (fleet-mode) or host (agent-mode) |
+| `confirm` | boolean | No | Set true to confirm this administrative action |
+
+### admin.network.wifi_join
+
+| Argument | Type | Required | Description |
+|---|---|---|---|
+| `node` | string | No | Device id (fleet-mode) or host (agent-mode) |
+| `ssid` | string | Yes | - |
+| `passphrase` | string | No | - |
+| `confirm` | boolean | No | Set true to confirm this administrative action |
+| `confirm_id` | string | No | A signed confirm id, when the action escalates to flight |
+
+### admin.network.wifi_leave
+
+| Argument | Type | Required | Description |
+|---|---|---|---|
+| `node` | string | No | Device id (fleet-mode) or host (agent-mode) |
+| `confirm` | boolean | No | Set true to confirm this administrative action |
+| `confirm_id` | string | No | A signed confirm id, when the action escalates to flight |
+
+### admin.node.rename
+
+| Argument | Type | Required | Description |
+|---|---|---|---|
+| `node` | string | No | Device id (fleet-mode) or host (agent-mode) |
+| `name` | string | Yes | - |
+| `confirm` | boolean | No | Set true to confirm this administrative action |
+| `confirm_id` | string | No | A signed confirm id, when the action escalates to flight |
+
+### admin.pairing.claim
+
+| Argument | Type | Required | Description |
+|---|---|---|---|
+| `node` | string | No | Device id (fleet-mode) or host (agent-mode) |
+| `user_id` | string | Yes | - |
+| `confirm` | boolean | No | Set true to confirm this administrative action |
+| `confirm_id` | string | No | A signed confirm id, when the action escalates to flight |
+
+### admin.pairing.generate_code
+
+| Argument | Type | Required | Description |
+|---|---|---|---|
+| `node` | string | No | Device id (fleet-mode) or host (agent-mode) |
+| `confirm` | boolean | No | Set true to confirm this administrative action |
+| `confirm_id` | string | No | A signed confirm id, when the action escalates to flight |
+
+### admin.pairing.info
+
+| Argument | Type | Required | Description |
+|---|---|---|---|
+| `node` | string | No | Device id (fleet-mode) or host (agent-mode) |
+
+### admin.pairing.unpair
+
+| Argument | Type | Required | Description |
+|---|---|---|---|
+| `node` | string | No | Device id (fleet-mode) or host (agent-mode) |
+| `confirm` | boolean | No | Set true to confirm this administrative action |
+| `confirm_id` | string | No | A signed confirm id, when the action escalates to flight |
+
+### admin.wfb.channel
+
+| Argument | Type | Required | Description |
+|---|---|---|---|
+| `node` | string | No | Device id (fleet-mode) or host (agent-mode) |
+| `channel` | integer | Yes | - |
+| `confirm` | boolean | No | Set true to confirm this administrative action |
+| `confirm_id` | string | No | A signed confirm id, when the action escalates to flight |
+
+### admin.wfb.tx_power
+
+| Argument | Type | Required | Description |
+|---|---|---|---|
+| `node` | string | No | Device id (fleet-mode) or host (agent-mode) |
+| `power_dbm` | integer | Yes | - |
+| `confirm` | boolean | No | Set true to confirm this administrative action |
+| `confirm_id` | string | No | A signed confirm id, when the action escalates to flight |
+
+## Audit
+
+`audit.*`, 2 tools. This MCP server's own local audit log.
+
+| Tool | Scope | Safety class | Agent-mode only | Affects flight | Description |
+|---|---|---|---|---|---|
+| `audit.query` | `read` | `read` | No | No | Query this MCP server's own local audit log (every tool call it made), newest first. Filter by tool, node, decision, or time. |
+| `audit.search` | `read` | `read` | No | No | Search this MCP server's own local audit log, newest first. The query is a field-qualified grammar: a `field:value` term (field one of tool / node / operator / decision / result) filters that field, and any other term is matched across the whole event. Example: `tool:params.set decision:denied`. |
+
+Both audit tools read the server's local audit file (`--audit-path`, default `~/.ados/mcp/audit.ndjson`), so they are fleet-wide: they target no node, and the `node` argument of `audit.query` is a filter on recorded events, not a target. `decision` filters on the gate outcome. In `audit.search`, a `field:value` term filters one of `tool`, `node`, `operator`, `decision` or `result`; any other term matches across the whole event.
+
+### audit.query
+
+| Argument | Type | Required | Description |
+|---|---|---|---|
+| `tool` | string | No | - |
+| `node` | string | No | - |
+| `decision` | string: `allowed`, `denied`, `confirmed`, `operator_absent` | No | - |
+| `sinceMs` | integer | No | - |
+| `limit` | integer (min 1, max 1000) | No | - |
+
+### audit.search
+
+| Argument | Type | Required | Description |
+|---|---|---|---|
+| `query` | string | Yes | Field-qualified terms (tool:/node:/operator:/decision:/result:) and/or free text. |
+| `decision` | string: `allowed`, `denied`, `confirmed`, `operator_absent` | No | - |
+| `sinceMs` | integer | No | - |
+| `limit` | integer (min 1, max 1000) | No | - |
+
+## Flight
+
+`flight.*`, 6 tools. Commands that move the aircraft. Hidden unless flight enforcement is on.
+
+| Tool | Scope | Safety class | Agent-mode only | Affects flight | Description |
+|---|---|---|---|---|---|
+| `flight.arm` | `flight` | `flight` | No | Yes | Arm the vehicle. Requires the flight scope and an operator-present or signed confirm (or --sim). |
+| `flight.disarm` | `flight` | `flight` | No | Yes | Disarm the vehicle. Requires the flight scope and an operator-present or signed confirm (or --sim). |
+| `flight.land` | `flight` | `flight` | No | Yes | Command the vehicle to land. Requires the flight scope and an operator-present or signed confirm (or --sim). |
+| `flight.mode` | `flight` | `flight` | No | Yes | Set the flight mode by name (e.g. GUIDED, RTL, LOITER). Requires the flight scope + confirm/sim. |
+| `flight.rtl` | `flight` | `flight` | No | Yes | Return to launch. Requires the flight scope and an operator-present or signed confirm (or --sim). |
+| `flight.takeoff` | `flight` | `flight` | No | Yes | Takeoff to an altitude AGL in metres. Requires the flight scope + confirm/sim. |
+
+Only the six commands the agent's `/api/command` accepts are registered. `flight.goto`, `flight.emergency_stop` and the mission upload and clear tools have rows in the server's route table but no reachable agent endpoint yet, so they are not registered: Planned.
+
+A flight result reports what the flight controller did, not just delivery. The agent answers HTTP 200 even when the flight controller rejects a command, so the tool returns `ok: true` only when the `COMMAND_ACK` was accepted. The result also carries `cmd`, `delivered`, `acked`, `accepted`, and, when present, `result` (the ACK result name), `reason` (the flight controller's status text), `message` and `raw`.
+
+### flight.arm
+
+| Argument | Type | Required | Description |
+|---|---|---|---|
+| `node` | string | No | Device id (fleet-mode) or host (agent-mode) |
+| `confirm_id` | string | No | A one-time operator signed-confirm id bound to this call. Required unless the target is SITL (--sim) or a fresh operator-present signal exists. |
+
+### flight.disarm
+
+| Argument | Type | Required | Description |
+|---|---|---|---|
+| `node` | string | No | Device id (fleet-mode) or host (agent-mode) |
+| `confirm_id` | string | No | A one-time operator signed-confirm id bound to this call. Required unless the target is SITL (--sim) or a fresh operator-present signal exists. |
+
+### flight.land
+
+| Argument | Type | Required | Description |
+|---|---|---|---|
+| `node` | string | No | Device id (fleet-mode) or host (agent-mode) |
+| `confirm_id` | string | No | A one-time operator signed-confirm id bound to this call. Required unless the target is SITL (--sim) or a fresh operator-present signal exists. |
+
+### flight.mode
+
+| Argument | Type | Required | Description |
+|---|---|---|---|
+| `node` | string | No | Device id (fleet-mode) or host (agent-mode) |
+| `mode` | string (min length 1) | Yes | - |
+| `confirm_id` | string | No | A one-time operator signed-confirm id bound to this call. Required unless the target is SITL (--sim) or a fresh operator-present signal exists. |
+
+### flight.rtl
+
+| Argument | Type | Required | Description |
+|---|---|---|---|
+| `node` | string | No | Device id (fleet-mode) or host (agent-mode) |
+| `confirm_id` | string | No | A one-time operator signed-confirm id bound to this call. Required unless the target is SITL (--sim) or a fresh operator-present signal exists. |
+
+### flight.takeoff
+
+| Argument | Type | Required | Description |
+|---|---|---|---|
+| `node` | string | No | Device id (fleet-mode) or host (agent-mode) |
+| `altitude_m` | number (greater than 0, max 500) | Yes | - |
+| `confirm_id` | string | No | A one-time operator signed-confirm id bound to this call. Required unless the target is SITL (--sim) or a fresh operator-present signal exists. |
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="MCP server" icon="server" href="/developers/mcp-server">
+    Run the connector, its flags and transports, and the agent token edge.
+  </Card>
+  <Card title="Connect an AI assistant" icon="robot" href="/mission-control/mcp-setup">
+    The Mission Control setup wizard, credentials and permissions.
+  </Card>
+</CardGroup>

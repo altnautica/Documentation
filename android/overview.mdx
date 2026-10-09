@@ -1,0 +1,88 @@
+---
+title: "What is ADOS Android GCS?"
+sidebarTitle: "Overview"
+description: "A native Android ground control station for ADOS drones, built with Kotlin and Jetpack Compose."
+icon: "mobile"
+lastUpdated: "2026-10-09"
+---
+
+ADOS Android GCS is a native ground control station app for Android phones and tablets. It shows live video with a HUD, sends flight commands over MAVLink, edits flight controller parameters, runs calibrations, plans and uploads waypoint missions, and manages an ADOS Ground Agent node over its REST API.
+
+The current release is **0.1.6** (`versionCode` 7). The source is public at `github.com/altnautica/ADOSAndroidGCS` under GPL-3.0-only.
+
+| Item | Value |
+|------|-------|
+| Package | `com.altnautica.gcs` (debug builds add `.debug`) |
+| Minimum Android | Android 10 (API 29, `minSdk = 29`) |
+| Target SDK | 34 (`targetSdk = 34`), compiled against SDK 35 |
+| CPU architecture | `arm64-v8a` only |
+| Stack | Kotlin 2.0, Jetpack Compose, Material 3, Hilt, Navigation Compose |
+| Layout | Dark theme, landscape-first, portrait supported (`screenOrientation="fullUser"`) |
+
+<Note>
+If you only need video and telemetry on a phone and don't want to install anything, Chrome on the ground station network works too. See [Android client](/ground-agent/android-client) for the browser path, the Wi-Fi AP and USB-C tether walkthroughs, and Android's captive-portal behaviour.
+</Note>
+
+## How it connects
+
+On launch the app probes the pairing state of the configured node, then picks a connection mode. The detection order comes from `ModeDetector` in `data/video/`:
+
+<Steps>
+  <Step title="Mode B: Direct USB">
+    A WFB-ng radio adapter (Realtek RTL8812 family, USB vendor ID `0x0BDA`) plugged into the phone over USB OTG. The app runs the WFB-ng receiver natively (C++ under `app/src/main/cpp/`), decodes video on the phone, and forwards the MAVLink stream from the radio link to a local UDP listener on `localhost:14550`. No ground station is involved.
+  </Step>
+  <Step title="Mode A: Ground Station over USB-C tether">
+    The phone is cabled to an ADOS Ground Agent and has an address in the agent's USB gadget subnet (`192.168.7.0/24`). The app uses `http://192.168.7.1:8080/` as its base URL and pulls video from `http://192.168.7.1:8080/whep`. The tether wins over Wi-Fi when both are present.
+  </Step>
+  <Step title="Mode A: Ground Station over Wi-Fi">
+    The phone is joined to a network whose SSID starts with `ADOS-GS-`. The app looks up the agent over mDNS (`_ados._tcp`, 3 second timeout) and falls back to `http://192.168.4.1:8080/`. Video comes over WebRTC WHEP at `/whep`.
+  </Step>
+  <Step title="Mode C: Cloud relay">
+    Used only when the phone has internet and this install is paired with a node. Telemetry arrives over MQTT and video over a WebSocket stream, both keyed on the paired node's device ID. Expect around 200 ms of extra latency: the Fly screen shows a banner saying cloud mode is not suitable for manual flight, and the Map screen disables mode changes.
+  </Step>
+</Steps>
+
+If none of these match, the app still polls the configured base URL and dials MAVLink, so a phone that reaches the agent over an ordinary LAN (rather than the AP) still connects.
+
+### MAVLink and the REST API
+
+- **MAVLink** goes over a WebSocket to the agent's MAVLink router at `ws://<host>:8765/` (`wss://` when the base URL is `https`). The host is taken from the configured base URL; the port is always `8765`. Reconnects run on a fixed interval with no attempt cap.
+- **USB serial** is a separate path: connect a flight controller to the phone over USB and pick it in **Settings > USB Serial**. Supported baud rates are 9600, 19200, 38400, 57600, 115200, 230400, 460800 and 921600.
+- **Ground station control** uses the agent REST API on port `8080`: `GET /api/v1/ground-station/status`, `GET`/`PUT /api/v1/ground-station/wfb`, `GET /api/v1/ground-station/network`, `PUT /api/v1/ground-station/network/ap`, `POST /api/v1/ground-station/recording/start` and `/stop`, `GET /api/v1/ground-station/recording/list`, `POST /api/v1/ground-station/camera/switch`, and `POST /api/v1/system/restart-supervisor`.
+
+### Pairing
+
+A paired agent refuses any request that carries no key. The app pairs locally over the LAN with `GET /api/pairing/info`, `POST /api/pairing/claim` and `POST /api/pairing/unpair`, stores the returned key, and sends it on every REST call and on the MAVLink WebSocket handshake in the `X-ADOS-Key` header. A node can be paired with one client at a time: if Mission Control or another phone already holds it, unpair it there first. See [Pairing](/drone-agent/pairing) for the agent side and [Install and first launch](/android/install#pair-with-a-node) for the steps in the app.
+
+## What's in 0.1.6
+
+| Area | Status | Details |
+|------|--------|---------|
+| Live video with HUD | Built | Full-screen video, attitude, altitude and speed ladders, compass tape, battery, GPS, flight mode, link latency. Map picture-in-picture. |
+| Flight controls | Built, with a known issue | Takeoff (2 to 100 m) and mission pause/resume send directly. Arm, disarm, land, RTL and mode changes on the Fly screen are affected by a known issue, see [Fly](/android/screens#fly). |
+| Map | Built | Mapbox (online) or OSMDroid with dark CARTO tiles, drone and home markers, compact telemetry bar, flight mode selector with confirmation. |
+| Mission planning | Built | Manual waypoints (Waypoint, Loiter, Return to Launch, Takeoff), survey grid generator, save locally, upload over MAVLink with progress. |
+| Parameters | Built | Download all parameters, search, grouped list, edit and write, save/load JSON profiles. |
+| Calibration | Built | Accelerometer (6 positions), compass, and level calibration. |
+| Ground station panel | Built | Signal meter, per-adapter diversity stats, packet loss graph, FEC and bitrate, recording on the node, system info, agent service restart. |
+| Flight logs | Built | A session and a `.tlog` are recorded automatically on every arm/disarm cycle. Browse, delete, add notes, share the tlog file. |
+| Spoken alerts | Built | Text-to-speech and vibration for battery low and critical, signal lost and recovered, GPS fix lost after a 3D fix, altitude limit, arm and disarm, mode changes, and waypoint reached. |
+| Agriculture | In progress | Spray configuration and spray mission generation exist. Field boundary capture is not wired to the screen yet, see [Agriculture](/android/screens#agriculture). |
+| Video gallery, offline maps | In progress | Screens exist in the navigation graph but have no entry point from Home yet. |
+
+## Where to go next
+
+<CardGroup cols={2}>
+  <Card title="Install and first launch" icon="download" href="/android/install">
+    Build the APK, sideload it, join a ground station and pair.
+  </Card>
+  <Card title="Screens" icon="table-cells-large" href="/android/screens">
+    What each of the 14 screens does and which controls it has.
+  </Card>
+  <Card title="Android client (browser)" icon="globe" href="/ground-agent/android-client">
+    Using Chrome on Android with a ground station, no install.
+  </Card>
+  <Card title="Mission Control" icon="display" href="/mission-control/overview">
+    The browser ground control station that shares the same agent API.
+  </Card>
+</CardGroup>

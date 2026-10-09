@@ -1,0 +1,140 @@
+---
+title: "Ports and endpoints"
+description: "Every network port, loopback UDP lane, and serial endpoint used by the Drone Agent, the Ground Agent, Mission Control, and the self-hosted stack, with who can reach each one."
+icon: "network-wired"
+---
+
+This page lists the ports ADOS components bind or dial by default, read from
+the source of each component. "Exposed to" describes the default bind:
+
+- **LAN**: binds all interfaces, so anything that can route to the box can
+  connect. Most LAN surfaces still authenticate each request.
+- **Loopback**: binds `127.0.0.1` only, reachable from processes on the same
+  machine.
+- **Outbound**: a port the component dials, not one it listens on.
+
+For the self-host failure modes and hardening checklist, see
+[Troubleshooting and ports](/developers/self-hosting/troubleshooting-and-ports).
+For the full route list behind port `8080`, see the
+[REST API index](/reference/rest-api-index).
+
+## Drone Agent
+
+The agent's HTTP front (`ados-control`), MAVLink router
+(`ados-mavlink-router`), and logging store (`ados-logd`). The same services
+run on a ground station.
+
+| Port | Protocol | Component | Purpose | Exposed to |
+| --- | --- | --- | --- | --- |
+| `8080` | TCP (HTTP, WebSocket) | `ados-control` | REST API, dashboard bundle, setup webapp, WHEP and HLS video proxy. Set by `api.rest.port`; `ADOS_CONTROL_PORT` overrides it. Binds IPv4 and IPv6. | LAN, authenticated per route |
+| `8765` | TCP (WebSocket) | `ados-mavlink-router` | MAVLink WebSocket proxy for Mission Control. Set by the `mavlink.endpoints` entry of `type: websocket`. Takes a WebSocket ticket or `X-ADOS-Key`. | LAN, authenticated |
+| `5760` | TCP | `ados-mavlink-router` | Raw MAVLink TCP proxy for a direct GCS. | Binds `0.0.0.0`; on a paired node it serves on-box callers only unless `mavlink.raw_proxy_lan_access` is on |
+| `14550`, `14551` | UDP | `ados-mavlink-router` | Raw MAVLink UDP proxies for a direct GCS. Same admission rule as `5760`. | Binds `0.0.0.0`; same as `5760` |
+| `8090` | TCP (HTTP) | `ados-logd` | LAN read plane of the logging store (`/v1/query`, `/v1/tail`, and the rest). Used by `ados logs --host` and Mission Control's direct log tier. Requires `X-ADOS-Key`. | LAN, authenticated and rate-limited |
+
+`ADOS_MAVLINK_BIND_ADDR` narrows the bind address of all three MAVLink proxies
+(`8765`, `5760`, `14550`, `14551`), for example to `127.0.0.1`.
+
+The agent also advertises itself over mDNS as `_ados._tcp.local.` (setting
+`discovery.service_type`), carrying the REST port.
+
+### Video (mediamtx)
+
+The agent writes the mediamtx config itself. Only the RTSP listener and the
+WebRTC media port face the network; the browser reaches video through
+`ados-control` on `8080` (`/whep`, `/hls`).
+
+| Port | Protocol | Component | Purpose | Exposed to |
+| --- | --- | --- | --- | --- |
+| `8554` | TCP (RTSP) | mediamtx | RTSP server. The encoder publishes `rtsp://localhost:8554/main`. Only on-box sources may publish. | LAN (read) |
+| `8189` | UDP | mediamtx | WebRTC media (ICE host candidate). TCP on the same port is offered only on the cloud relay profile, as a last resort for UDP-hostile networks. | LAN |
+| `8889` | TCP (HTTP) | mediamtx | WebRTC WHEP signalling, proxied by `ados-control`. | Loopback |
+| `8888` | TCP (HTTP) | mediamtx | Low-latency HLS fallback, proxied by `ados-control`. | Loopback |
+| `9997` | TCP (HTTP) | mediamtx | Control API, queried by the agent for stream state. | Loopback |
+| `9996` | TCP (HTTP) | mediamtx | Playback server for recorded segments. | Loopback |
+
+mediamtx's UDP RTSP transport is turned off, so its default `8000`/`8001`
+RTP/RTCP listeners do not open. They would collide with the `wfb_tx` control
+ports below.
+
+### Radio link (WFB-ng)
+
+Loopback UDP lanes between the video, radio, and control processes on one
+node. None of them face the network. The aux ports (`5602`, `5603`) are
+operator-settable under `radio`; the agent rejects a value that collides with
+a reserved plane port.
+
+| Port | Protocol | Component | Purpose | Exposed to |
+| --- | --- | --- | --- | --- |
+| `5600` | UDP | `ados-video`, `wfb_tx` | Drone: RTP video tee into the radio data plane (`wfb_tx -u 5600`). | Loopback |
+| `5601` | UDP | `wfb_tx` | Data plane stats. | Loopback |
+| `5602` | UDP | `ados-radio` | Aux lane transmit ingress (`radio_id` 2 on the drone, 3 on the ground). | Loopback |
+| `5603` | UDP | `ados-radio` | Aux lane receive re-emit. | Loopback |
+| `5803` | UDP | `ados-radio` | Control plane transmit (hop announce, presence beacons). | Loopback |
+| `5810` | UDP | `ados-radio`, `ados-groundlink` | Control plane receive, and the ground station's presence and HopAck ingress to `wfb_tx_control`. | Loopback |
+| `5820` | UDP | `ados-tunnel-config` | Config tunnel ingress for frames arriving over the aux lane. | Loopback |
+| `8000`-`8003` | UDP | `wfb_tx` | Per-transmitter command port (`-C 8000 + radio_port`): drone data `8000`, control `8001`, drone aux down `8002`, ground aux up `8003`. | Loopback |
+| `5555` | TCP | `ados-supervisor` | Key-transfer rendezvous during a radio bind, on the temporary bind tunnel between drone and ground station. | Bind tunnel only |
+
+## Ground Agent
+
+A ground station runs the agent with the ground-station profile, so it also
+has every port in the Drone Agent tables above. These are the additions.
+
+| Port | Protocol | Component | Purpose | Exposed to |
+| --- | --- | --- | --- | --- |
+| `80` | TCP (HTTP) | captive portal (`captive_dns.py`) | Answers OS captivity probes with a redirect to the setup webapp on the API port. Runs only until setup is complete. | All interfaces (in practice the AP) |
+| `53` | UDP (DNS) | captive portal | Answers probe hostnames with the AP gateway `192.168.4.1`. Runs only until setup is complete. | All interfaces (in practice the AP) |
+| `5600` | UDP | `ados-groundlink` | Decoded video from `wfb_rx` into the mediamtx ingest (`wfb_rx -c 127.0.0.1 -u 5600`). | Loopback |
+| `5605` | UDP | `ados-groundlink` | Video tap for the on-device LCD. | Loopback |
+| `5800` | UDP | `wfb_rx` aggregator | Receiver role: accepts FEC fragments forwarded by relays over the mesh. Set by `ground_station.wfb_receiver.listen_port` and `ground_station.wfb_relay.receiver_port`. Advertised as `_ados-receiver._tcp` on `bat0`. | Mesh (`bat0`) |
+| `5801` | UDP | `ados-groundlink` | Mesh pairing: relay join requests to the receiver. | Mesh (`bat0`) |
+| `5900` + slot | UDP | `wfb_rx -p 0` | Per-drone decoded video, one port per fleet slot. | Loopback |
+| `5930` + slot | UDP | `wfb_rx -p 2` | Per-drone decoded aux lane. | Loopback |
+| `5960` + slot | UDP | `wfb_rx -p 1` | Per-drone decoded control lane (presence, hop announce). | Loopback |
+
+The ground station's mediamtx uses the same `8554`, `8889`, and `9997`
+defaults as the drone.
+
+## Serial and device endpoints
+
+| Endpoint | Protocol | Component | Purpose | Notes |
+| --- | --- | --- | --- | --- |
+| FC serial (`mavlink.serial_port`) | MAVLink over UART or USB-ACM | `ados-mavlink-router` | Flight controller link. | Empty `serial_port` with `source: auto` probes the board's UARTs and USB-ACM devices. Default `baud_rate` is `57600`; board profiles list USB-ACM candidates `921600`, `115200`, `57600`. |
+| RC module serial | MAVLink | `ados-mavlink-router` | MAVLink over an RC module in native MAVLink mode. | Fixed at `460800` baud; opens a pinned device only. |
+| `14550` | UDP (MAVLink) | `ados-mavlink-router` | RC module Wi-Fi backpack streaming MAVLink to the host. | Conventional MAVLink UDP port. |
+
+Board UART paths (`/dev/ttyAMA0`, `/dev/ttyS*`) are declared per board in the
+profiles summarised in the [hardware matrix](/reference/hardware-matrix).
+
+## Outbound from the agent
+
+| Port | Protocol | Component | Purpose | Exposed to |
+| --- | --- | --- | --- | --- |
+| `443` | TCP (MQTT over WSS, path `/mqtt`) | `ados-cloud` | Cloud MQTT broker for telemetry and commands (`server.mqtt_transport: websockets`). | Outbound |
+| `8883` | TCP (MQTT over TLS) | `ados-cloud` | Default `server.self_hosted.mqtt_port` for a self-hosted broker. | Outbound |
+| `443` | TCP | `ados-net` | Cloud relay reachability probe (connect only). | Outbound |
+| `3211` | TCP (HTTPS) | agent pairing and heartbeat | Self-hosted Convex site origin (`pairing.convex_url`, `server.self_hosted.url`). | Outbound |
+
+## Mission Control
+
+| Port | Protocol | Component | Purpose | Exposed to |
+| --- | --- | --- | --- | --- |
+| `4000` | TCP (HTTP) | Mission Control (`next dev`, `next start`, Docker image) | The web GCS. `npm run dev` and `npm start` both use `--port 4000`; the Docker image sets `PORT=4000`. | Browser |
+| `4000`, else OS-assigned | TCP (HTTP) | Mission Control desktop app | The bundled server binds `127.0.0.1:4000`, or an OS-assigned port if `4000` is taken. | Loopback |
+| `14551` | TCP (WebSocket) | `tools/mavlink-bridge` | Bridges a UDP or TCP MAVLink source (`--in`) to the browser (`--ws`). Binds `127.0.0.1` unless `--ws-host` is set. | Loopback |
+| `5760` | TCP (WebSocket) | `tools/sitl` | SITL WebSocket bridge for drone 1 (`--ws-port`); each extra drone adds `10` (`5770`, `5780`, ...). Binds `::1` unless `--ws-host` is set. | Loopback |
+
+## Self-hosted stack
+
+From `tools/selfhost/docker-compose.yml` in the Mission Control repository.
+
+| Port | Protocol | Component | Purpose | Exposed to |
+| --- | --- | --- | --- | --- |
+| `3210` | TCP (HTTP, WebSocket) | Convex backend | Client API origin, used by the browser (`NEXT_PUBLIC_CONVEX_URL`) and `convex deploy`. | Browser |
+| `3211` | TCP (HTTP) | Convex backend | Site and HTTP actions origin, used by the agent and the MQTT bridge (`${CONVEX_URL}/agent/status`). | Agents, MQTT bridge |
+| `6791` | TCP (HTTP) | Convex dashboard | Backend admin UI. | Operator |
+| `4000` | TCP (HTTP) | Mission Control | Web GCS container. | Browser |
+| `1883` | TCP (MQTT) | Mosquitto | Native MQTT for agents and the MQTT bridge. | Agents, bridge (keep off the public internet) |
+| `9001` | TCP (MQTT over WebSocket) | Mosquitto | MQTT for the Mission Control browser. | Browser |
+| `3001` | TCP (HTTP, WebSocket) | Video relay | Browser video at `/ws/stream/{deviceId}`; `GET /` is the health check. Pulls RTSP from `rtsp://host.docker.internal:8554/{deviceId}` by default. | Browser |

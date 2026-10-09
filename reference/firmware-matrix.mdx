@@ -1,0 +1,102 @@
+---
+title: "Firmware matrix"
+description: "Side-by-side feature matrix for the four autopilot firmware families Mission Control supports: ArduPilot, PX4, Betaflight, and iNav."
+icon: "table-cells"
+lastUpdated: "2026-06-18"
+---
+
+Mission Control drives four flight controller firmware families: **ArduPilot** and **PX4** over MAVLink v2, and **Betaflight** and **iNav** over MSP. Each family reports a fixed capability set (`src/lib/protocol/firmware/` in the Mission Control repo), and the Configure tab shows only the panels the connected firmware supports. This page lays those capabilities side by side.
+
+## Detection
+
+Mission Control probes the link when you connect. A CRC-valid MAVLink `HEARTBEAT` identifies a MAVLink autopilot by its `autopilot` field; otherwise an MSP `FC_VARIANT` reply identifies an MSP flight controller.
+
+| | ArduPilot | PX4 | Betaflight | iNav |
+|---|---|---|---|---|
+| Protocol | MAVLink v2 | MAVLink v2 | MSP v1/v2 | MSP v1/v2 |
+| Identified by | `HEARTBEAT` `autopilot = 3` | `HEARTBEAT` `autopilot = 12` | `FC_VARIANT = BTFL` | `FC_VARIANT = INAV` |
+| Vehicle types | Copter, plane, VTOL, helicopter, rover, boat, sub | Multicopter, fixed-wing, VTOL | Multirotor | Multirotor, fixed-wing |
+
+An MSP flight controller that reports any other variant is driven over MSP as an unknown firmware, without a family-specific capability set.
+
+## Feature matrix
+
+| Feature | ArduPilot | PX4 | Betaflight | iNav |
+|---|---|---|---|---|
+| Parameter access | MAVLink parameters (about 1500) | MAVLink parameters (about 1000) | MSP settings and virtual parameters (about 300) | Name-based settings (about 400) |
+| Parameter persistence | `PARAM_SET` writes to EEPROM | `PARAM_SET` persists | Explicit save to EEPROM required | Explicit save to EEPROM required |
+| Mission upload and download | Yes | Yes | No | Yes |
+| Multi-mission storage on the FC | No | No | No | Yes |
+| Geofence | Yes | Yes | No | Geozones |
+| Rally points | Yes | No | No | No |
+| Safehomes | No | No | No | Yes (8 slots) |
+| Flight modes | Mode set over MAVLink | Mode set over MAVLink | Box modes on AUX channels | Box modes on AUX channels, plus navigation modes |
+| PID Tuning panel | Yes | Yes | No dedicated panel | No (Nav PID, EZ Tune, and Control Profiles instead) |
+| Rate profiles and in-flight adjustments | No | No | Yes | Yes |
+| OSD configuration | Yes | No | Yes | Yes (iNav OSD and custom elements) |
+| LED strip | Yes | No | Yes | Yes |
+| VTX | No | No | Yes | Yes |
+| Gimbal | Yes | Yes | No | No |
+| Camera | Yes | Yes | No | No |
+| Rangefinder | Yes | Yes | No | Yes |
+| Optical flow | Yes | Yes | No | No |
+| Obstacle avoidance | Yes | Yes | No | No |
+| DroneCAN | Yes | Yes | No | No |
+| Onboard logs | Log download | Log download | Blackbox (dataflash) | Blackbox (dataflash) |
+| MAVLink Inspector | Yes | Yes | No | No |
+| Stream rate control | Yes | No | No | No |
+| Command line | CLI panel | MAVLink Shell (`SERIAL_CONTROL`) | CLI panel | CLI panel |
+| MAVLink signing | Yes | No (no persistent key store) | Not applicable | Not applicable |
+| Manual control input | `MANUAL_CONTROL` at 50 Hz | `MANUAL_CONTROL` at 50 Hz | `MSP_SET_RAW_RC` at 50 Hz | `MSP_SET_RAW_RC` at 50 Hz |
+| Firmware flashing | Yes | Yes | Yes | Yes |
+| Serial passthrough | Yes | No | Yes | Yes |
+
+Parameter counts are the approximate sizes Mission Control plans for; the exact number depends on the firmware version, vehicle type, and enabled features.
+
+## Firmware flashing
+
+Flashing runs only when the flight controller is attached to this browser over a local USB serial link, because a reboot-to-bootloader sent over a network link would strand the board in a bootloader nobody can reach. Mission Control backs up parameters, reboots to the bootloader, erases, flashes, verifies, and reboots. The flasher follows from the image:
+
+- **Application images** (`.apj` for ArduPilot, `.px4` for PX4) go through the PX4-protocol bootloader, which both the ArduPilot and PX4 USB bootloaders speak.
+- **Absolute images** (`.hex`, including ArduPilot `_with_bl.hex`, and the Betaflight and iNav `.hex` builds) go through STM32 USB DFU or the STM32 ROM bootloader over UART (BOOT0).
+
+See [Firmware flashing](/mission-control/firmware-flashing) for the walkthrough.
+
+## Configure-tab panels
+
+All four families share a common base in the Configure tab: Outputs, Receiver, Flight Modes, Frame, Calibration, Sensors, Health Check, GPS (not iNav), Ports, Firmware, CLI, Sensor Graphs, Diagnostics, and Log Analysis. Mission Control adapts each shared panel to the connected firmware; for example, Frame becomes Airframe and Outputs becomes Actuators on PX4.
+
+Panels that depend on firmware:
+
+| Firmware | Panels |
+|---|---|
+| ArduPilot and PX4 | Failsafe, Geofence, PID Tuning, Radio Config, Gimbal, Camera, MAVLink Inspector, DroneCAN |
+| ArduPilot | EKF3, Non-GPS Nav, Harmonic Notch, Gripper / Payload, ADS-B & Avoidance, Airspeed and TECS / L1 (plane, VTOL), VTOL, Helicopter, Sub Config, Sailboat (rover), Stream Rates, Scripts (onboard Lua), MAVLink Signing |
+| PX4 | Thermal Cal, Flight Behavior, Fixed-Wing Tuning, Autotune, VTOL Transition, Control Allocation, Shell |
+| ArduPilot and Betaflight | OSD Editor, LED Strip |
+| Betaflight and iNav | Motors & ESC, Aux Modes, Rate Profiles, Adjustments, VTX, Blackbox, OSD Preview |
+| Betaflight | Configuration, All Settings |
+| iNav | Navigation Config, iNav Mission, Mixer Profiles, Output Mapping, Servos (iNav), Failsafe (iNav), Safehome, Geozones, Battery Profiles, Temp Sensors, Control Profiles, MC Braking, Rate Dynamics, EZ Tune, Nav PID, FW Approach, OSD (iNav), Custom OSD, Logic Conditions, Global Variables, Programming PIDs, Programming (JS) |
+
+Some panels also depend on the vehicle class (for example TECS only appears for planes and VTOLs). See [FC configuration](/mission-control/fc-configuration) for each panel.
+
+## iNav missions and geozones
+
+iNav missions use iNav's own waypoint actions: `WAYPOINT`, `POSHOLD_UNLIM`, `POSHOLD_TIME`, `RTH`, `SET_POI`, `JUMP`, `SET_HEAD`, and `LAND`. iNav compiles in fixed table sizes that MSP does not report; Mission Control uses 8 safehomes, 63 geozones, and 64 logic conditions, and limits each geozone to 10 vertices in the editor. See the [iNav guide](/mission-control/inav-guide) for the workflows.
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Connecting" icon="plug" href="/mission-control/connecting">
+    Serial, WebSocket, and Bluetooth connection flows.
+  </Card>
+  <Card title="iNav guide" icon="plane" href="/mission-control/inav-guide">
+    iNav-specific workflows: missions, safehomes, geozones, programming.
+  </Card>
+  <Card title="FC configuration" icon="sliders" href="/mission-control/fc-configuration">
+    Reference for every Configure-tab panel.
+  </Card>
+  <Card title="MAVLink signing" icon="lock" href="/drone-agent/mavlink-signing">
+    Why signing is ArduPilot-only today.
+  </Card>
+</CardGroup>

@@ -1,0 +1,160 @@
+---
+title: "Desktop app"
+description: "Install and run the Mission Control desktop app on macOS, Windows, and Linux, and how it differs from the browser build."
+sidebarTitle: "Desktop app"
+icon: "desktop"
+---
+
+The desktop app, **Altnautica Command**, is Mission Control wrapped in Electron. It runs the same Next.js app as the browser build, served from a local server inside the app, and adds native capabilities a browser cannot offer: raw UDP and TCP MAVLink sockets, built-in serial and USB device pickers, and OS key-store encryption for paired node keys.
+
+The current version is **0.59.0** (`version` in `ADOSMissionControl/package.json`). Installers are published on the [GitHub releases page](https://github.com/altnautica/ADOSMissionControl/releases).
+
+## Downloads
+
+| Platform | Architecture | File |
+|---|---|---|
+| macOS | Intel (`x64`) and Apple Silicon (`arm64`) | `AltnauticaCommand-<version>-<arch>.dmg` |
+| Windows | `x64` | `AltnauticaCommand-<version>-Setup.exe` (NSIS installer) |
+| Linux | `x64` | `AltnauticaCommand-<version>-<arch>.AppImage` |
+
+Each release also carries a `SHA256SUMS` file. The installers are not code-signed, so check your download against it:
+
+```bash
+sha256sum -c SHA256SUMS --ignore-missing
+```
+
+## Install
+
+<Tabs>
+  <Tab title="macOS">
+    <Steps>
+      <Step title="Open the disk image">
+        Download the `.dmg` for your Mac (`arm64` for Apple Silicon, `x64` for Intel), open it, and drag **Altnautica Command** to Applications.
+      </Step>
+      <Step title="Allow the unsigned app">
+        The macOS build is neither signed nor notarized, so Gatekeeper blocks a normal double-click the first time. Right-click the app, choose **Open**, then choose **Open** again in the dialog.
+      </Step>
+    </Steps>
+  </Tab>
+  <Tab title="Windows">
+    <Steps>
+      <Step title="Run the installer">
+        Run `AltnauticaCommand-<version>-Setup.exe`. The build is not code-signed, so Windows may warn that the publisher is unknown before it runs.
+      </Step>
+      <Step title="Choose a location">
+        The installer is not one-click: it asks before installing and lets you change the installation directory.
+      </Step>
+    </Steps>
+  </Tab>
+  <Tab title="Linux">
+    <Steps>
+      <Step title="Make the AppImage executable">
+        ```bash
+        chmod +x AltnauticaCommand-*.AppImage
+        ```
+      </Step>
+      <Step title="Run it">
+        ```bash
+        ./AltnauticaCommand-*.AppImage
+        ```
+        Run it from the AppImage file itself if you want in-app updates; see [Updates](#updates).
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>
+
+To build the installers yourself, or to run the app from a source checkout, see [Installation](/mission-control/installation). The `npm run desktop:build:mac`, `desktop:build:win` and `desktop:build:linux` scripts write their output to `release/`.
+
+## How it runs
+
+On launch the app:
+
+1. Starts the bundled Next.js standalone server as a child process, bound to `127.0.0.1` only. It uses port `4000`, or an OS-assigned free port if `4000` is taken. In a packaged build it waits up to 15 seconds for the server to answer.
+2. Opens a 1440 x 900 window (minimum 1024 x 700) at `http://127.0.0.1:<port>`.
+3. Checks for updates.
+
+Only one instance runs at a time. Launching it again focuses the existing window. Quitting by any path (closing the window, `Cmd+Q`, or installing an update) closes all sockets and stops the local server, so nothing keeps listening after you quit.
+
+If the local server fails to start, the app shows an "Altnautica Command failed to start" dialog with the error and exits instead of leaving a hidden process behind.
+
+Links to other sites open in your default browser. The app window, and any popup it opens such as the detached HUD, can never navigate away from the local app.
+
+## Differences from the browser build
+
+| Capability | Browser | Desktop |
+|---|---|---|
+| USB serial (WebSerial) | Chrome or Edge only | Always available, with a native **Select serial device** dialog |
+| WebUSB (firmware flashing) | Chrome or Edge only | Always available, with a native **Select USB device** dialog |
+| UDP and TCP MAVLink | Needs the separate MAVLink bridge helper (shown as "Desktop or bridge") | Native sockets in the app, no helper |
+| Paired node API keys at rest | Plain text in browser storage | Encrypted with the OS key store |
+| Geolocation (Follow Me) | Browser permission prompt | Allowed for the app window; the OS keeps its own location prompt |
+| LAN agents by IP or `.local` name | Browser's local network permission | Allowed for the app window |
+| Popups (detached HUD) | May need popups allowed for the site | Always allowed for the app's own windows |
+| Updates | Reload the page | Update banner, see [Updates](#updates) |
+
+### UDP and TCP connections
+
+In the connect dialog, **UDP** and **TCP** connect directly from the desktop app. The common presets are `udp:0.0.0.0:14550` (listen) and `tcp:127.0.0.1:5760`. UDP supports **listen** mode, which learns the vehicle's address from the first valid MAVLink frame it receives, and **target** mode for a fixed address.
+
+For safety, native sockets only reach local endpoints: loopback (`127.0.0.0/8`, `::1`), private ranges (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `100.64.0.0/10`, `fc00::/7`), link-local (`169.254.0.0/16`, `fe80::/10`), and `.local` hostnames. At most 32 sockets can be open at once, and a TCP connection that does not complete in 8 seconds fails instead of hanging. See [Connecting](/mission-control/connecting).
+
+### Window and shortcuts
+
+- On Windows the title bar is drawn by the app, with the window controls overlaid on the right. macOS and Linux use the native title bar.
+- In the mission planner, `Ctrl` / `⌘` + `N` (new plan) and `Ctrl` / `⌘` + `O` (focus plan search) work only in the desktop app. In a browser those keys keep their normal browser meaning.
+- The first-run welcome flow skips its download step in the desktop app.
+- The connect dialog's environment label reads **Desktop app**.
+
+## Updates
+
+At startup the app checks the GitHub releases feed for a newer version. It never downloads an update on its own: a ground station mid-flight should not pull a release in the background. When a newer version exists, a banner appears at the top of the window.
+
+What the banner offers depends on whether this build can install an update into itself:
+
+| Build | Banner | What to do |
+|---|---|---|
+| Linux, started from the `.AppImage` | **Download**, then "Restart to install it" with **Restart and install** | Click through; the AppImage file is replaced and the app restarts |
+| macOS | "This build cannot install updates itself." with **Open releases** | Download the new `.dmg` from the releases page. Unsigned macOS apps cannot update themselves |
+| Windows | Same as macOS | Download the new installer. An unsigned update cannot be verified before it installs, so self-install is off |
+| Linux, not started from an AppImage | Same as macOS | Download the new AppImage |
+| Running from source (`npm run desktop:dev`) | No check | Pull and rebuild |
+
+A failed download or install shows as "Update failed" in the banner. **Dismiss** hides the banner until the next status change.
+
+## Where your data lives
+
+The desktop app keeps everything the browser build keeps (settings, flight history and telemetry recordings in IndexedDB, plans, paired nodes) in its own Chromium profile under your OS user account, managed by Electron. It is separate from any browser profile: data from Mission Control in Chrome does not appear in the desktop app, and the reverse. Use **Backup** and **Restore** on the Logs page to move flight history between the two. See [Flight logs](/mission-control/flight-logs#local-storage-backup-and-cloud-sync).
+
+<Note>
+Browser storage is scoped to the page origin, which includes the port. The app normally serves on `127.0.0.1:4000`. If another program holds port `4000` when the app starts, it falls back to another port, and data saved under port `4000` is not visible in that session. Free port `4000` and restart the app to get it back.
+</Note>
+
+Paired node API keys are encrypted with the OS key store (Keychain on macOS, DPAPI on Windows, the desktop secret service on Linux) and only the ciphertext is saved. On Linux without a secret service the app has no real key store, so it stores the key the same way the browser build does.
+
+## Development flags
+
+When running from source, the Electron main process accepts:
+
+| Flag | Effect |
+|---|---|
+| `--dev` | Use a live `next dev` server with hot reload instead of the standalone bundle (unpackaged only) |
+| `--demo` | Start with `NEXT_PUBLIC_DEMO_MODE=true`, the simulated demo fleet |
+
+`npm run desktop:dev` passes `--dev`, and `npm run desktop:demo` passes both. Run `npm run desktop:preview` to test the production standalone bundle in Electron without packaging.
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/mission-control/installation">
+    Build from source and the browser build.
+  </Card>
+  <Card title="Connecting" icon="plug" href="/mission-control/connecting">
+    Serial, WebSocket, UDP, TCP and Bluetooth connections.
+  </Card>
+  <Card title="HUD and cockpit" icon="gauge" href="/mission-control/hud">
+    The detached HUD window and the cockpit.
+  </Card>
+  <Card title="Dashboard" icon="table-columns" href="/mission-control/dashboard">
+    The main fleet view.
+  </Card>
+</CardGroup>

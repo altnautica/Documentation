@@ -1,0 +1,172 @@
+---
+title: "HUD and cockpit"
+description: "The flight instruments in Mission Control: the Flight tab HUD, the video cockpit, and the full-screen /hud kiosk display."
+sidebarTitle: "HUD and cockpit"
+icon: "gauge"
+---
+
+Mission Control draws flight instruments in three places. All three read the same telemetry through the same freshness rules, so they never disagree about whether a value is known.
+
+| Surface | Where | Best for |
+|---|---|---|
+| Flight tab HUD | Drone detail, **Flight** tab, top of the left column | Glance view next to the map, telemetry and actions. Can pop out into its own window |
+| Cockpit | Drone detail, **Cockpit** tab | Flying from video: instruments over the live feed, Skill Bar, gamepad |
+| Kiosk HUD | The `/hud` route | A full-screen display on a ground station's HDMI output |
+
+## No-data rules
+
+Every instrument shows a dash placeholder (such as `--`) instead of a number when it has no fresh reading. It never draws a fabricated zero or a level horizon.
+
+- A telemetry sample older than 5 seconds is not shown as live. This matches the 5 second timeout the protocol layer uses to declare a MAVLink link lost.
+- The attitude pitch marks only draw from a fresh attitude sample. With no attitude, only the fixed reticle remains.
+- Altitude is height above home (`relativeAlt`), not MSL, so an aircraft on the ground reads about 0 rather than the site elevation.
+- A battery capacity of `-1` from the flight controller ("unknown") reads as no value, not as an empty pack.
+- The instruments re-check freshness once a second, so a dead link blanks the numbers even when no new telemetry arrives.
+
+## Flight tab HUD
+
+The **Flight** tab puts a canvas HUD above the telemetry readout, actions panel and info cards, with the map on the right. Use the edge handle to hide or show that column.
+
+<Frame caption="The Flight tab: the HUD at the top of the left column, the map on the right">
+  <img className="block dark:hidden" src="/images/mission-control/light/overview-map.png" alt="Per-drone Flight tab with the canvas HUD showing pitch ladder, speed and altitude tapes, heading, satellite count and armed status, above the telemetry readout and actions panel, next to a satellite map" />
+  <img className="hidden dark:block" src="/images/mission-control/dark/overview-map.png" alt="Per-drone Flight tab with the canvas HUD showing pitch ladder, speed and altitude tapes, heading, satellite count and armed status, above the telemetry readout and actions panel, next to a satellite map" />
+</Frame>
+
+The HUD draws:
+
+- Sky and ground background with a pitch ladder, roll arc and center crosshair
+- Speed tape on the left in km/h, altitude tape on the right in meters
+- Heading compass along the top
+- Battery gauge with percentage
+- GPS satellite count and flight mode, bottom left
+- Armed or disarmed status below the center
+- Signal bars from the radio RSSI, and a flight timer counted from the arm transition, bottom right
+
+**Double-click the HUD to detach it into a new window.** The popup keeps animating when the main window is in the background or minimized. Double-click again, or close the popup, to reattach. If the browser blocks the popup, Mission Control shows a toast asking you to allow popups for the site.
+
+For the numeric readouts below the HUD, see [Telemetry](/mission-control/telemetry). For the actions and map on the same tab, see [Flight control](/mission-control/flight-control).
+
+## Cockpit
+
+The **Cockpit** tab draws the instruments over the live video. It is built as layers, back to front:
+
+1. **Video** from the drone's camera. See [Video feed](/mission-control/video-feed).
+2. **Plugin video overlay**: the `video.overlay` plugin slot, sized to the visible video rectangle, plus detection boxes and target reticles from vision plugins.
+3. **Instrument HUD**: attitude indicator, speed tape, altitude tape, and the arrangeable widgets.
+4. **Cockpit chrome**: safety band, minimap, stream tabs, density control, and the Skill Bar.
+
+<Frame caption="The Cockpit tab over a demo feed: minimap, stream tabs, speed and altitude tapes, and the Skill Bar">
+  <img className="block dark:hidden" src="/images/mission-control/light/cockpit.png" alt="Cockpit tab drawing instruments over a demo video feed, with a minimap and stream tabs top left, a status band with armed state, battery, GPS and link, speed and altitude tapes on the edges, detection boxes, a camera list, and the Skill Bar along the bottom" />
+  <img className="hidden dark:block" src="/images/mission-control/dark/cockpit.png" alt="Cockpit tab drawing instruments over a demo video feed, with a minimap and stream tabs top left, a status band with armed state, battery, GPS and link, speed and altitude tapes on the edges, detection boxes, a camera list, and the Skill Bar along the bottom" />
+</Frame>
+
+### Instruments
+
+| Instrument | Position | Reads |
+|---|---|---|
+| Attitude indicator | Center | Bank arc with sky pointer, pitch marks every 10°, boresight. Pitch marks rotate with roll and move with pitch |
+| Speed tape | Left edge | Ground speed in m/s, one decimal, ticks every 1 m/s |
+| Altitude tape | Right edge | Height above home in meters, ticks every 5 m |
+
+The instruments are aligned with the video frame. When the video pipeline reports a frame age, each instrument reads the telemetry sample nearest to the moment the frame was captured, rather than the newest sample, so the horizon moves with the picture instead of ahead of it. When no frame age is known, the newest sample is used.
+
+### Safety band
+
+The band across the top is always on. Hiding the **Top bar** only drops the wordmark and node label; the safety stats stay.
+
+| Field | Shows |
+|---|---|
+| Armed pill | **ARMED** or **DISARMED** |
+| **BATT** | Battery bar and percentage |
+| **GPS** | `RTK / n`, `3D / n`, `2D / n` (n is satellites), or `NO FIX` |
+| **LINK** | Signal bars from the vehicle's radio RSSI |
+| **CMD** | Only when your command authority is limited: `RECEIVE ONLY`, `AUTHORISING`, or `ENDING SOON` (cloud relay sessions) |
+| **TIME** | Flight time from the arm transition. It does not reset when you leave the tab and come back |
+
+The band also holds two controls:
+
+- **REC** records the flight: video and telemetry together. While recording it shows the elapsed time; click again to stop. If automatic recording on arm is already running, REC leaves the telemetry to it and records only the video. Otherwise it records telemetry itself and downloads it as CSV when you stop. Video is saved as a WebM file when a live stream is present. See [Flight logs](/mission-control/flight-logs).
+- **Immersive** expands the cockpit to fill the window, hiding the dashboard around it. Press `Esc` (or the floating exit button) to return to the embedded tab.
+
+### Widgets and density
+
+The density control in the top-right corner (**Min**, **Std**, **Full**) sets how many read-only cards cover the video. The default is **Std**. Next to it are the live video stats (resolution, fps, frame age) and a pill naming the streaming camera.
+
+| Widget | Default zone | Minimum density |
+|---|---|---|
+| Proximity radar | Bottom right | Std |
+| Telemetry strip: DIST, HOME (bearing and distance to the flight controller's home position), VSPD, HDG, THR | Bottom left | Full |
+| What's locked (designated target state, shown only while a target is selected) | Top center | Any |
+| Perception health (local or offloaded perception, feed freshness) | Top left | Any |
+| Cameras (roster with live or idle badges, multi-camera nodes only) | Bottom left | Any |
+
+The minimap sits in the top-left corner (hidden at **Min** density) and shows the vehicle on a map. Its layers button switches between DARK, OSM, SAT and TOPO. Clicking the minimap opens the **Flight** tab.
+
+### Cockpit layout
+
+Open the Skill Bar editor (the settings button next to the Skill Bar) to reach the **Cockpit layout** section:
+
+- Switches for the chrome cards: **Top bar**, **Minimap**, **Telemetry strip**, **Proximity radar**.
+- For each arrangeable widget, including plugin widgets, a zone picker and a show or hide switch.
+
+Layout, density and the picture-in-picture position are stored on the active loadout, so switching loadouts restores each loadout's own cockpit arrangement. The Skill Bar itself cannot be hidden.
+
+### Multiple video streams
+
+On a node with more than one video stream, tabs beside the minimap switch the main view. A second stream can show as a picture-in-picture inset in the bottom-right corner, which you can drag; its position is saved with the loadout.
+
+### Keyboard and gamepad
+
+| Input | Action |
+|---|---|
+| `Ctrl` / `⌘` + `K` | Open the command palette (every command available on this drone) |
+| `Shift` + `,` | Toggle quick settings (plugin parameters and the vision model picker) |
+| `1` to `9` | Select that video stream (multi-stream nodes only) |
+| `` ` `` | Cycle video streams |
+| `P` | Toggle the picture-in-picture inset (otherwise passes through to a bound skill) |
+| `Esc` | Close the palette or editor, then leave immersive mode |
+| Gamepad L1 + R1 | Toggle quick settings |
+| Gamepad D-pad left / right | Cycle video streams |
+| Gamepad Start | Leave immersive mode |
+
+These keys are ignored while a confirm dialog, the binding editor, the palette, quick settings or the gamepad radial has input. Skill hotkeys and the Skill Bar are covered in [Flight control](/mission-control/flight-control).
+
+If Cockpit is switched off, a strip above the Skill Bar reads "Cockpit is off" with an **Enable Cockpit** button. The instruments still draw; enabling turns on the Skill Bar, hotkeys and gamepad controls.
+
+## Kiosk HUD (`/hud`)
+
+The `/hud` route is a full-screen display with no app chrome, meant for a Chromium kiosk on a ground station's HDMI output. The video fills the screen and retries indefinitely, since there is no operator at the screen to press retry. Without video it shows `connecting video...`, `video link down`, or `no video signal`.
+
+| Area | Shows |
+|---|---|
+| Top bar | MODE, RSSI, SATS on the left; ALT (m), SPD (m/s), BAT (%) on the right |
+| Bottom | HDG readout, artificial horizon, ALT readout |
+| Top left | Alerts: **BATT CRIT** (15% or less), **BATT LOW** (25% or less), **FENCE BREACH**, **LINK STALE** (no heartbeat for 5 s after a link existed) |
+| Top right | Gamepad name (or `NO INPUT`), pilot-in-command state, and the stick control switch |
+
+For lower-power boards, open `/hud?layer=minimal`: a small horizon, one line with MODE, SATS and BAT, one line with HDG, ALT and SPD, and the same alerts.
+
+### Gamepad and pilot in command
+
+The kiosk reads a connected gamepad. Stick input is never sent until someone presses **Enable stick control**, which needs a connected gamepad, is off at every start, and turns off if the gamepad disconnects.
+
+The pilot-in-command label reads `PIC CLAIMED` when this kiosk holds it, `PIC (remote)` when another client does, and `PIC pending` otherwise. To let the first gamepad button press claim pilot in command, turn on **HDMI kiosk auto-claim** under GCS Settings, **Input Devices** (`/config/input`). It is off by default so a standalone kiosk never takes control silently; when on, the label reads `Press button to claim`.
+
+While the page is starting, it shows **Agent offline** and `Retrying...`. If it has not loaded after 3 seconds, the message changes to **Agent unreachable** with the elapsed time.
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Video feed" icon="video" href="/mission-control/video-feed">
+    Transports and stream settings behind the cockpit video.
+  </Card>
+  <Card title="Flight control" icon="gamepad" href="/mission-control/flight-control">
+    Arming, modes, actions, and the Skill Bar.
+  </Card>
+  <Card title="Telemetry" icon="chart-line" href="/mission-control/telemetry">
+    Where each reading comes from.
+  </Card>
+  <Card title="Dashboard" icon="table-columns" href="/mission-control/dashboard">
+    The fleet view and drone detail tabs.
+  </Card>
+</CardGroup>

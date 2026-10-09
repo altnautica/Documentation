@@ -1,0 +1,176 @@
+---
+title: "Install and first launch"
+sidebarTitle: "Install"
+description: "Build ADOS Android GCS from source, sideload the APK, connect to a ground station and pair."
+icon: "download"
+lastUpdated: "2026-10-09"
+---
+
+ADOS Android GCS is installed by sideloading an APK. There is no app store listing and no tagged release in the repository, so you either build the APK yourself or take the debug APK that CI builds on every push to `main`.
+
+## Phone or tablet requirements
+
+| Requirement | Value |
+|-------------|-------|
+| Android version | 10 or later (`minSdk = 29`) |
+| CPU | 64-bit ARM. The build ships native code for `arm64-v8a` only, so 32-bit and x86 devices can't install it. |
+| USB host (optional) | Needed for a direct WFB-ng adapter or a USB serial flight controller (`android.hardware.usb.host`, not required) |
+
+## Option 1: Download the CI build
+
+The repository's **Android Build** workflow (`.github/workflows/android-build.yml`) runs `./gradlew test` and `./gradlew assembleDebug` on every push and pull request to `main`, then uploads the APK as an artifact named `debug-apk`.
+
+<Steps>
+  <Step title="Open the workflow run">
+    On GitHub, open the **Actions** tab of `altnautica/ADOSAndroidGCS`, choose the **Android Build** workflow, and open the latest successful run on `main`. Downloading artifacts needs a signed-in GitHub account.
+  </Step>
+  <Step title="Download the artifact">
+    Download `debug-apk` and unzip it. Artifacts are kept for 14 days, so an older run may have none.
+  </Step>
+  <Step title="Install it">
+    Follow [Sideload the APK](#sideload-the-apk) below.
+  </Step>
+</Steps>
+
+## Option 2: Build from source
+
+### Requirements
+
+| Tool | Version | Where it is set |
+|------|---------|-----------------|
+| JDK | 17 | `compileOptions` and `jvmTarget` in `app/build.gradle.kts` |
+| Android SDK | Platform 35 (compile), target 34 | `compileSdk = 35`, `targetSdk = 34` |
+| Android NDK | `26.3.11579264` | `ndkVersion` |
+| CMake | `3.22.1` | `externalNativeBuild.cmake.version` |
+| Gradle | 8.14.3, fetched by the wrapper | `gradle/wrapper/gradle-wrapper.properties` |
+| Android Gradle Plugin | 8.7.3 | root `build.gradle.kts` |
+
+Android Studio Ladybug or later installs the SDK platform, NDK and CMake for you through the SDK Manager. On the command line, point `ANDROID_HOME` (or `sdk.dir` in `local.properties`) at an SDK that has them.
+
+The native part of the build (`app/src/main/cpp/`) compiles the WFB-ng receiver and links prebuilt `libusb1.0.so`, `libsodium.so`, `libpcap.a` and `libopus.so` from `app/src/main/cpp/libs/arm64-v8a/`. Those are checked into the repository, so no extra download is needed.
+
+### Build a debug APK
+
+<Tabs>
+  <Tab title="Linux and macOS">
+    ```bash
+    git clone https://github.com/altnautica/ADOSAndroidGCS.git
+    cd ADOSAndroidGCS
+    ./gradlew assembleDebug
+    ```
+  </Tab>
+  <Tab title="Windows">
+    ```powershell
+    git clone https://github.com/altnautica/ADOSAndroidGCS.git
+    cd ADOSAndroidGCS
+    .\gradlew.bat assembleDebug
+    ```
+  </Tab>
+</Tabs>
+
+The APK lands in `app/build/outputs/apk/debug/`. Debug builds install as `com.altnautica.gcs.debug` with version name `0.1.6-debug`, so they sit next to a release build instead of replacing it.
+
+### Map token (optional)
+
+The Mapbox map needs an access token. The build reads it as the Gradle property `MAPBOX_ACCESS_TOKEN` and writes it into the `mapbox_access_token` string resource. Pass it on the command line or keep it in your user-level Gradle properties, never in a tracked file:
+
+```bash
+./gradlew assembleDebug -PMAPBOX_ACCESS_TOKEN=pk.your-token-here
+```
+
+```properties
+# ~/.gradle/gradle.properties
+MAPBOX_ACCESS_TOKEN=pk.your-token-here
+```
+
+An empty token is a supported build. The default map provider is Mapbox, though, so on a build without a token switch **Settings > Map Provider** to **OpenStreetMap** to get map tiles on the Map screen. The Plan screen always draws with Mapbox.
+
+### Release build
+
+```bash
+./gradlew assembleRelease
+```
+
+Release builds run R8 minification and resource shrinking (`proguard-rules.pro`). The repository has no signing configuration, so the output in `app/build/outputs/apk/release/` is unsigned. Sign it with your own key (for example with `apksigner` from the SDK build tools) before installing.
+
+### Tests and lint
+
+```bash
+./gradlew test
+./gradlew :app:testDebugUnitTest
+./gradlew :app:lintDebug
+```
+
+## Sideload the APK
+
+<Tabs>
+  <Tab title="With adb">
+    Enable **Developer options > USB debugging** on the phone, connect it, then:
+
+    ```bash
+    adb install -r app/build/outputs/apk/debug/app-debug.apk
+    ```
+
+    `-r` keeps app data when you install over an existing build.
+  </Tab>
+  <Tab title="On the phone">
+    Copy the APK to the phone, open it from a file manager, and allow your file manager to **Install unknown apps** when Android asks.
+  </Tab>
+</Tabs>
+
+## First launch
+
+The app opens on the **Home** screen. While Home is showing, it checks the pairing state of the configured node and detects a connection mode (Direct USB, Ground Station, Cloud relay) in the order described in [How it connects](/android/overview#how-it-connects). The status bar at the bottom of Home shows the mode, battery and GPS once telemetry arrives.
+
+<Warning>
+Version 0.1.6 doesn't ask for location permission at runtime. Android only lets apps read the name of the connected Wi-Fi network when they hold location permission, and the app uses that name (`ADOS-GS-...`) to recognise a ground station network. Grant it by hand: **App info > Permissions > Location > Allow**. Without it the app can still reach a ground station through the USB-C tether or the base URL in Settings.
+</Warning>
+
+### Connect to a ground station
+
+Pick whichever path matches your setup.
+
+<AccordionGroup>
+  <Accordion title="USB-C tether">
+    Cable the phone to the Ground Agent and accept Android's USB network prompt. The app spots the `192.168.7.x` address and uses `http://192.168.7.1:8080/` with no other setup. Details in [USB tether](/ground-agent/usb-tether).
+  </Accordion>
+  <Accordion title="Ground station Wi-Fi from inside the app">
+    Open **Settings** (gear icon on Home) and find **Ground Station Wi-Fi**. Enter the AP passphrase from the installer summary or the on-box display, or paste the QR join string (it starts with `WIFI:`). Tap **Save**, then **Join**. Android shows a system prompt to approve the connection to the `ADOS-GS-` network. Once the passphrase is saved, the app also joins on its own at launch whenever it detects the ground station mode. The passphrase is generated per unit, so there is no default. See [WiFi AP](/ground-agent/wifi-ap).
+  </Accordion>
+  <Accordion title="Ground station Wi-Fi from Android settings">
+    Join `ADOS-GS-XXXX` in Android's Wi-Fi settings and tap "Stay connected" when Android warns about no internet. With location permission granted, the app finds the agent over mDNS and falls back to `http://192.168.4.1:8080/`.
+  </Accordion>
+  <Accordion title="Any other network">
+    If the phone and the agent share a LAN, set the agent's address in **Settings > Ground Station > Base URL**, for example `http://192.168.1.5:8080/`. The value must be `http://` or `https://`, a host, an optional port, and end in `/`. The app saves it and reconnects.
+  </Accordion>
+  <Accordion title="Direct USB WFB-ng adapter">
+    Plug a supported RTL8812-family adapter into the phone with a USB OTG cable. Android asks for USB permission. Allow it and the app receives video and MAVLink straight off the radio link. In 0.1.6 the receiver starts on channel 149 at 20 MHz, see the note on [WFB-ng Video Link](/android/screens#settings).
+  </Accordion>
+</AccordionGroup>
+
+### Pair with a node
+
+A paired agent refuses every request without a key, so pairing is how the app gets one. Do this on the same network as the node. Nothing leaves the LAN.
+
+<Steps>
+  <Step title="Check the node">
+    In **Settings > Pairing**, tap **Check node**. The app calls `GET /api/pairing/info` on the configured base URL and shows the node's name, device ID and profile. The status line says whether the node is unpaired, paired with this device, or paired with another one.
+  </Step>
+  <Step title="Pair this device">
+    Tap **Pair this device**. The app sends `POST /api/pairing/claim`, stores the returned key, and sends it from then on in the `X-ADOS-Key` header on REST calls and the MAVLink WebSocket. If the node answers that it is already paired, unpair it from the client that holds it (Mission Control or another phone), then pair again.
+  </Step>
+  <Step title="Use the node's reported address (optional)">
+    When the node reports an mDNS name, a **Reach** row appears with **Use this address**. Tapping it sets the base URL to `http://<that-name>:8080/`, which keeps working if the node's IP changes.
+  </Step>
+</Steps>
+
+**Unpair node** releases the node (`POST /api/pairing/unpair`). **Forget stored key** only clears the key on this phone; the node stays paired until it is unpaired. Cloud relay mode needs a paired node, because the relay is keyed on the device ID that pairing provides. Agent-side details are in [Pairing](/drone-agent/pairing).
+
+### Connect a flight controller over USB serial
+
+With no ground station, you can cable a flight controller straight to the phone. In **Settings > USB Serial**, pick the baud rate (57600 or 115200 are common for MAVLink telemetry ports), tap refresh, then tap the detected device to connect. The row shows `<device> @ <baud>` while connected.
+
+## Next steps
+
+- [Screens](/android/screens) for what each screen does.
+- [Android client](/ground-agent/android-client) for the browser alternative on the same networks.

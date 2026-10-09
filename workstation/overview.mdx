@@ -1,0 +1,164 @@
+---
+title: "Workstation"
+description: "The workstation profile of the ADOS Drone Agent: what runs on an operator laptop, desktop or GPU box, how to install it on Linux and macOS, and what it leaves out."
+sidebarTitle: "Overview"
+icon: "computer"
+lastUpdated: "2026-10-09"
+---
+
+A workstation is an ADOS Drone Agent install on the operator's laptop,
+desktop or GPU box. It uses the same installer and the same binaries as a
+drone or ground station, with the profile set to `workstation`. The node
+pairs with Mission Control, reports status, keeps logs and hosts extensions,
+but it has no flight controller link, no long-range radio and no camera
+pipeline.
+
+Its main job is to be the heavy-compute half of the fleet. With the
+[World Engine extension](/drone-agent/extensions/world-engine) installed, a
+workstation reconstructs 3D world models from drone flights and runs
+perception for drones without an on-board accelerator. See
+[Compute node](/workstation/compute-node) for that role.
+
+## Workstation or compute
+
+The agent has two FC-less profiles. They resolve the same way and gate the
+same services; the difference is intent.
+
+| Profile | Intended box | Notes |
+|---|---|---|
+| `workstation` | The operator's own machine | The macOS default. You sit at it, run Mission Control on it, and it also serves compute. |
+| `compute` | A headless box on the LAN | A lean worker with no UI. Same services, same World Engine default. |
+
+Both report their own name on the wire (`workstation`, `compute`). Anything
+else the resolver does not recognise reports `drone`. See
+[Node profiles](/getting-started/node-profiles) for the full resolution order.
+
+## What runs
+
+The supervisor holds one service registry with a profile gate per entry.
+On `workstation` and `compute` it starts the cross-profile set and skips
+every flight-capable unit.
+
+| Runs | Does not run |
+|---|---|
+| `ados-supervisor`, the orchestrator | `ados-mavlink` (the router binary is never fetched, so starting it would crash-loop) |
+| `ados-control`, the HTTP front on `:8080` | `ados-video`, `ados-wfb`, `ados-vision` |
+| `ados-cloud`, cloud relay and heartbeat | `ados-swarmbus`, `ados-crsf`, `ados-tunnel-config` |
+| `ados-plugin-host`, the extension host | Every ground-station unit: Wi-Fi AP, kiosk, mesh, receive |
+| `ados-logd`, gated on `logging.store.enabled` | |
+| `ados-api`, `ados-health`, `ados-discovery`, `ados-peripherals` (Linux) | |
+
+The installer also leaves out the long-range radio driver on these two
+profiles, whatever `--no-rtl-driver` says, and does not hand the display to
+the kiosk compositor: a workstation stays a normal login box. It does apply
+the always-on settings every node gets (sleep targets masked, idle suspend
+and lid switch ignored) so the node does not drop off the network.
+
+## Install on Linux
+
+Pass the profile to the installer:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/altnautica/ADOSDroneAgent/main/scripts/install.sh \
+  | sudo bash -s -- --profile workstation
+```
+
+Use `--profile compute` for a headless worker. Add `--pair <code>` to pair
+with Mission Control in the same run.
+
+| Architecture | Status |
+|---|---|
+| `aarch64` | Installs from the published release binaries. |
+| `x86_64` | No published installer or release binaries. Build from source (`cargo build --release --workspace`) and run the installer with `--channel edge --artifacts <dir>`. |
+
+### Installer flags that matter here
+
+| Flag | Effect on a workstation or compute node |
+|---|---|
+| `--profile workstation` / `--profile compute` | Selects the profile and writes it to `/etc/ados/profile.conf`. |
+| `--world-engine` / `--no-world-engine` | Install or skip the World Engine extension. Default is on for these two profiles. An upgrade leaves an installed extension alone. |
+| `--name <hostname>` | The mDNS hostname the node advertises. |
+| `--pair <code>` | Pair with Mission Control during install. |
+| `--upgrade` | Upgrade in place. |
+
+<Warning>
+`workstation` and `compute` are install-time values. `ados profile set` only
+accepts `drone` and `ground-station`. To move a node onto one of these two
+profiles, re-run the installer with `--profile`.
+</Warning>
+
+## Install on macOS
+
+On macOS the bootstrap runs the installer from source and passes
+`--profile workstation` unless you pin a different one. Run it without
+`sudo`; it refuses to run as root.
+
+```bash
+curl -sSL https://raw.githubusercontent.com/altnautica/ADOSDroneAgent/main/scripts/install.sh | bash
+```
+
+Requirements: the Rust toolchain (`cargo`) and `git` (the Xcode Command Line
+Tools). The script uses a local checkout when it runs from one, else clones
+the repository into `$HOME/.ados/src`, then builds the service binaries with
+`cargo build --release`.
+
+A macOS workstation is rootless and Rust-only. Nothing is written under
+`/opt`, `/etc` or `/Library`:
+
+| Path | Contents |
+|---|---|
+| `$HOME/.ados/bin` | `ados-supervisor`, `ados-control`, `ados-cloud`, `ados-logd`, `ados-plugin-host`, `ados-tui` |
+| `$HOME/.ados/config.yaml` | Agent config |
+| `$HOME/.ados/profile.conf` | The profile sentinel |
+| `$HOME/.ados/pairing.json`, `device-id` | Identity and pairing |
+| `$HOME/.ados/log` | Daemon logs |
+| `$HOME/Library/LaunchAgents` | One plist per daemon, labelled `co.ados.<name>` (for example `co.ados.control`) |
+
+Five daemons are registered as LaunchAgents: `ados-supervisor`,
+`ados-control`, `ados-cloud`, `ados-logd` and `ados-plugin-host`. Each starts
+at login and restarts on a crash. `ados-tui` is built and installed but not
+registered, since it is an interactive terminal UI. The control front is
+pinned to `:8080`, the same port a drone or ground station uses.
+
+Check the install:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/altnautica/ADOSDroneAgent/main/scripts/install.sh | bash -s -- --status
+```
+
+`--status` prints the install result from `$HOME/.ados` and the state of each
+LaunchAgent. `--uninstall` boots out every LaunchAgent (installed extensions
+first, then the core daemons) and removes the plists; add `--force` to delete
+`$HOME/.ados` as well (identity, config and binaries). Both run without
+`sudo`. `--ref` is consumed by the bootstrap script to pin the source revision,
+and `--artifacts` is refused, because the macOS build always uses the source
+tree it runs in.
+
+## What a workstation does not have
+
+On macOS there is no Python process. The control front serves its native
+routes (`/api/status`, `/api/pairing/*`, `/api/services`, `/api/logs`), but not
+the routes it would proxy to the Python surface, such as
+`/api/v1/setup/status`. So there is no setup wizard, no captive portal, no
+Wi-Fi AP, no radio and no flight controller link on either OS.
+
+`GET /api/status` on a workstation reports an empty `board` block (there is
+no board sidecar) and no board tier. That is expected, not a fault.
+
+## In Mission Control
+
+A workstation is a connectable agent in Mission Control. It appears in the
+fleet with a server glyph and a Compute badge, serves the Agent pages (status,
+services, resources, logs, extensions), and reports no flight controller.
+
+The **Compute** and **Jobs & outputs** tabs come from the World Engine
+extension, not from the agent core. Without the extension the node shows the
+Agent pages only.
+
+## Related
+
+- [Compute node](/workstation/compute-node)
+- [Node profiles](/getting-started/node-profiles)
+- [World Engine](/drone-agent/extensions/world-engine)
+- [Install paths](/getting-started/install-paths)
+- [Systemd services](/drone-agent/systemd-services)

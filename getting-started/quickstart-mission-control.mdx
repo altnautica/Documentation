@@ -68,7 +68,8 @@ It loads with the full simulated fleet, demo telemetry, and every feature enable
     - Connection status
 
     <Frame caption="Mission Control dashboard in demo mode">
-      <img src="/images/dashboard/dashboard-demo.png" alt="Mission Control dashboard showing drone cards with telemetry data" />
+      <img className="block dark:hidden" src="/images/mission-control/light/dashboard.png" alt="Mission Control Dashboard in demo mode, with a fleet sidebar of simulated drones and node cards showing armed state, flight mode, GPS, battery, and companion CPU and memory" />
+      <img className="hidden dark:block" src="/images/mission-control/dark/dashboard.png" alt="Mission Control Dashboard in demo mode, with a fleet sidebar of simulated drones and node cards showing armed state, flight mode, GPS, battery, and companion CPU and memory" />
     </Frame>
   </Step>
 </Steps>
@@ -92,7 +93,8 @@ The mission planning interface. You can:
 - Import and export missions in multiple formats (QGC WPL, KML, CSV)
 
 <Frame caption="Mission planner with a survey grid pattern generated over a field">
-  <img src="/images/dashboard/mission-planner.png" alt="Mission planner showing a survey grid pattern with waypoints on a satellite map" />
+  <img className="block dark:hidden" src="/images/mission-control/light/plan.png" alt="Plan tab showing a survey grid of numbered waypoints over satellite imagery, with the demo plan library on the left and the mission editor on the right" />
+  <img className="hidden dark:block" src="/images/mission-control/dark/plan.png" alt="Plan tab showing a survey grid of numbered waypoints over satellite imagery, with the demo plan library on the left and the mission editor on the right" />
 </Frame>
 
 ### Configure

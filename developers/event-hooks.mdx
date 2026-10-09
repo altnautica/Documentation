@@ -1,11 +1,19 @@
 ---
 title: "Event hooks"
-description: "The events the host pushes to a GCS plugin and the requests the plugin can send."
+description: "The events the host pushes to plugins, the requests a plugin can send, the agent event bus topic taxonomy, and delivery rules."
 lastUpdated: "2026-06-23"
 ---
 
-On the GCS half the host runs the bridge; the plugin consumes two flavors
-of message:
+Both plugin halves talk to their host over a message bridge:
+
+- **GCS plugins** run in a sandboxed iframe inside Mission Control. The host pushes events and answers requests over an RPC envelope.
+- **Agent plugins** run as processes under the Drone Agent plugin host. They subscribe to and publish on the agent event bus.
+
+The first half of this page covers the GCS bridge; the second half is the topic-by-topic reference for the agent event bus.
+
+## GCS plugins
+
+The plugin consumes two flavors of message:
 
 - **Events**: pushed from the host, no response expected
   (`config.changed`, `theme.changed`, `telemetry.<topic>`).
@@ -14,7 +22,7 @@ of message:
 Plugins subscribe to events and send requests; they never receive
 unsolicited requests.
 
-## Events the host pushes
+### Events the host pushes
 
 | Method | Capability | Args | When |
 |--------|-----------|------|------|
@@ -30,7 +38,7 @@ iframe, or an agent plugin's state read-back), use the generic
 `ctx.events.subscribe(topic, handler)`, which returns an unsubscribe
 function and does no request/response round-trip.
 
-## Requests the plugin can send
+### Requests the plugin can send
 
 The SDK context exposes these high-level wrappers. Each delegates to a
 single `PluginClient`; drop to `ctx.client.request(method, capability,
@@ -45,19 +53,28 @@ args)` for anything else.
 | `ctx.mission.read(missionId)` | `mission.read` | `mission.read` | mission body |
 | `ctx.mission.write(update)` | `mission.write` | `mission.write` | host-defined |
 
-The host registry also recognizes `telemetry.unsubscribe`, `recording.start`
-and `recording.stop` (capability `recording.write`), `events.subscribe` and
-`events.publish` (`event.subscribe` / `event.publish`, both require a
-`topic` arg), `cloud.read`, `notify` (`ui.slot.notification-channel`),
-plus two always-allowed methods that need no capability: `ping` and
-`i18n.t`. A method
-that is not in the registry is rejected with `method_unknown`.
+The host registry (`src/lib/plugins/methods.ts` in Mission Control) also recognizes:
+
+| Method | Capability |
+|--------|-----------|
+| `recording.start`, `recording.stop` | `recording.write` |
+| `events.subscribe` | `event.subscribe` (requires a `topic` arg) |
+| `events.publish` | `event.publish` (requires a `topic` arg) |
+| `cloud.read` | `cloud.read` |
+| `records.list`, `records.get`, `records.put`, `records.remove` | `cloud.records` |
+| `cockpit.marks` | `ui.slot.video-overlay` |
+| `perception.read`, `perception.health` | `perception.read` |
+| `perception.subscribe` | `perception.subscribe` |
+| `notify` | `ui.slot.notification-channel` |
+| `ping`, `i18n.t`, `telemetry.unsubscribe`, `events.unsubscribe`, `cockpit.marks.clear`, `perception.unsubscribe` | none |
+
+A method that is not in the registry is rejected with `method_unknown`.
 
 The host re-resolves the required capability from the method (and, for
 telemetry, from the topic) and checks the granted set. The plugin never
 computes the capability id itself.
 
-## Wire shape
+### Wire shape
 
 ```ts
 interface RpcEnvelope<TArgs = unknown> {
@@ -75,7 +92,7 @@ The plugin never builds these by hand. The SDK's `PluginClient` generates
 the `id`, attaches the protocol version, and waits for the correlated
 response.
 
-## Error envelopes
+### Error envelopes
 
 When the host rejects a request it returns a response with
 `error: { code, message }`. The SDK throws a `HostError` whose `code`
@@ -99,7 +116,7 @@ iframe, the bridge drops it and records a security event host-side rather
 than replying. A plugin will never see it on the wire.
 </Note>
 
-## Theming
+### Theming
 
 `theme.changed` arrives once on mount and again on every theme toggle.
 The payload is a `Record<string, string>` of CSS variables. Apply them by
@@ -116,7 +133,7 @@ ctx.theme.onChange((vars) => {
 The SDK does not auto-apply because plugins choose how granular they want
 to be (full root, scoped to a panel, or ignored).
 
-## i18n
+### i18n
 
 Plugin authors ship a locale bundle in their archive; the host streams
 the active bundle to the plugin on mount. The SDK formats keys with
@@ -130,8 +147,149 @@ ctx.i18n.t("anomaly.cellLow", { voltage: 3.4 });
 Missing keys fall back to the key itself; missing parameters render the
 `{name}` placeholder so it is visible in QA.
 
+## Agent event bus
+
+The event bus is how the Drone Agent plugin host pushes data to agent
+plugins and how plugins share data with each other. The rules below are
+enforced in the plugin host (`crates/ados-plugin-host/src/handlers.rs`).
+
+### Topic taxonomy
+
+Every event has a dotted topic name. The first segment is the namespace.
+The host owns every namespace except a plugin's own.
+
+| Namespace | Owner | Purpose |
+|-----------|-------|---------|
+| `mavlink.*` | Host | MAVLink message stream. |
+| `vehicle.*` | Host | Canonical vehicle events (mode change, arm, disarm). |
+| `mission.*` | Host | Mission lifecycle. |
+| `safety.*` | Host | Safety events. |
+| `gps.*` | Host | GPS events. |
+| `sensor.<id>.*` | Host | Per-sensor events. |
+| `vision.*` | Host | Vision engine frame descriptors and detections. |
+| `telemetry.*` | Host | Vehicle state (`telemetry.state`). |
+| `video.*` | Host | Video pipeline state. |
+| `swarm.*` | Host | Swarm coordination events. |
+| `agent.*` | Host | Agent lifecycle (`agent.ready`, `agent.shutdown`). |
+| `gcs.*` | Host | GCS-originated events. |
+| `plugin.<id>.*` | Plugin | The plugin's own published topics. |
+
+Topics and subscription patterns are printable ASCII, at most 256 bytes.
+A pattern matches a topic exactly or as a glob: `*` matches any run of
+characters (including across `.`) and `?` matches one. `mavlink.*` matches
+`mavlink.heartbeat` but not the bare `mavlink`.
+
+### Subscribing
+
+Subscribing requires the `event.subscribe` capability, and the topic must
+be one of:
+
+- The plugin's own `plugin.<id>.*` namespace.
+- A public topic any plugin may subscribe to:
+  `vehicle.armed`, `vehicle.disarmed`, `vehicle.mode_changed`,
+  `vehicle.battery_low`, `vehicle.geofence_breach`, `agent.ready`,
+  `agent.shutdown`. The host derives the vehicle topics from the flight
+  controller's own MAVLink stream.
+- A [shared topic](#plugin-to-plugin) another plugin declares, when the
+  subscriber also holds the capability that topic requires.
+
+Public topics match exactly; there is no wildcard subscription to
+`vehicle.*`.
+
+### Publishing
+
+A plugin may always publish under its own `plugin.<id>.` prefix. Any other
+topic requires `event.publish`, and these prefixes are reserved and always
+refused: `vehicle.`, `mavlink.`, `mission.`, `safety.`, `agent.`, `swarm.`,
+`gps.`, `vision.`, `telemetry.`, and `plugin.` (another plugin's namespace).
+A shared topic can only be published by the plugin that declares it.
+
+The host re-resolves the required capability from the topic, not from the
+plugin's say-so, and stamps every event with the publisher's plugin id.
+
+```python
+# manifest grants: event.subscribe
+async def on_start(self, ctx) -> None:
+    async def on_armed(payload: dict) -> None:
+        # publish into your own namespace; the topic is delivered verbatim
+        await ctx.events.publish(
+            f"plugin.{ctx.plugin_id}.alert", {"kind": "armed"}
+        )
+
+    await ctx.events.subscribe("vehicle.armed", on_armed)
+```
+
+### Telemetry
+
+Subscribe to telemetry through the telemetry surface, gated by the
+`telemetry.read` capability on the agent (or `telemetry.subscribe` on the
+GCS half). Per-topic GCS grants use the `telemetry.subscribe.<topic>`
+form, as in `telemetry.subscribe.battery`. Representative topics include
+battery, gps, attitude, position, and system; treat the exact payload
+fields as the live telemetry shape, not a frozen contract.
+
+### Delivery and back-pressure
+
+The bus never blocks a publisher. Each subscriber reads from a bounded
+buffer 256 events deep; a subscriber that falls further behind skips the
+events it missed and carries on with the newest. Inside the Python plugin
+runner, host deliveries wait in a second queue of 1024 entries; when a
+callback is slower than its stream, new deliveries are shed and a warning
+is logged once per 100 drops. Telemetry and raw streams are therefore
+best-effort. If your plugin needs a complete record, persist from a
+recording rather than trying to capture every live event.
+
+To avoid dropping, do not block in the event handler. Hand work to a
+background task and let the handler return quickly:
+
+```python
+async def on_start(self, ctx) -> None:
+    queue: asyncio.Queue = asyncio.Queue(maxsize=64)
+    asyncio.create_task(self._worker(queue))
+
+    async def _ingest(sample: dict) -> None:
+        try:
+            queue.put_nowait(sample)
+        except asyncio.QueueFull:
+            pass  # drop locally; do not block the bus
+
+    await ctx.events.subscribe("vehicle.battery_low", _ingest)
+```
+
+### Plugin-to-plugin
+
+Events under `plugin.` reach a subscriber only when that subscriber
+published them, the host did, or the topic is a shared topic published by
+its declared owner. A plugin cannot read another plugin's private events
+by subscribing to a longer prefix, and cannot spoof them by publishing
+under one.
+
+To share a topic, the owner declares it in its manifest under
+`agent.contributes.shared_topics`, with the capability a subscriber needs:
+
+```yaml
+agent:
+  declared_capabilities:
+    - id: plugin.mapper.world.read
+      risk: low
+  contributes:
+    shared_topics:
+      - topic: plugin.mapper.occupancy
+        subscribe_capability: plugin.mapper.world.read
+      - topic: plugin.mapper.pose
+        subscribe_capability: telemetry.read
+```
+
+Each topic must sit under the owner's own `plugin.<leaf>.` prefix (lowercase
+`[a-z0-9._-]`, at most 128 characters), appear once, and name a
+`subscribe_capability` that is either a catalog capability or one the
+plugin declares. A subscriber needs `event.subscribe` plus that capability,
+granted by the operator. Shared topics match exactly, so a look-alike such
+as `plugin.mapper.occupancy.extra` inherits nothing. Plugin topics are
+derived data on a sandboxed bus; they never command the vehicle.
+
 ## See also
 
-- [Event hooks and bus](/developers/event-hooks-and-bus)
 - [Permissions](/developers/permissions)
 - [SDK TypeScript](/developers/sdk-typescript)
+- [State and storage](/developers/state-and-storage)

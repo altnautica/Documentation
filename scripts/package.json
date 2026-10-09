@@ -8,6 +8,7 @@
     "capture": "tsx capture-dashboard-screenshots.ts",
     "capture:drone": "tsx capture-dashboard-screenshots.ts --target drone",
     "capture:ground": "tsx capture-dashboard-screenshots.ts --target ground",
+    "gen:api": "tsx gen-api-index.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "devDependencies": {

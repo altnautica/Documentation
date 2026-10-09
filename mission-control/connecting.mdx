@@ -68,7 +68,7 @@ Mission Control supports three connection methods. Choose the one that fits your
     </Steps>
 
     <Tip>
-    The bundled SITL tool at `tools/sitl/` launches ArduPilot SITL and bridges TCP to WebSocket automatically. See the [SITL Testing](/mission-control/sitl-testing) page for setup.
+    The bundled SITL tool at `tools/sitl/` launches ArduPilot SITL and bridges TCP to WebSocket automatically. See [SITL testing](/mission-control/simulation#sitl-testing) for setup.
     </Tip>
 
     <Note>
@@ -146,7 +146,7 @@ Once connected, the top bar shows connection health:
     Verify the baud rate matches your FC configuration. For ArduPilot, the default is 115200 on the USB port. Check that no other ground station application is holding the serial port (only one app can own a serial port at a time).
   </Accordion>
   <Accordion title="WebSocket connection refused">
-    Confirm the target service is running and the URL is correct. For SITL, make sure the bridge is started (see [SITL Testing](/mission-control/sitl-testing)). Firewalls may block WebSocket connections on non-standard ports.
+    Confirm the target service is running and the URL is correct. For SITL, make sure the bridge is started and you pasted the full URL including `?token=` (see [SITL testing](/mission-control/simulation#sitl-testing)). Firewalls may block WebSocket connections on non-standard ports.
   </Accordion>
   <Accordion title="Cloud mode not activating">
     Cloud mode auto-activates when the page is served over HTTPS. On plain HTTP (`http://localhost:4000` or `http://<lan-ip>:4000`), the GCS uses direct LAN connections instead, which is the right path for self-hosting against an agent on your own network. To exercise cloud mode locally, use a tunneling service or deploy to a domain with TLS.

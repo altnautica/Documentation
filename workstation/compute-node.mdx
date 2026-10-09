@@ -1,0 +1,296 @@
+---
+title: "Compute node"
+description: "Run a workstation or compute profile node as the LAN compute worker for your drones: reconstruction jobs, perception offload, credentials, discovery and status."
+sidebarTitle: "Compute node"
+icon: "server"
+lastUpdated: "2026-10-09"
+---
+
+A compute node is a `workstation` or `compute` profile node that does heavy
+work for the drones on its network. It reconstructs 3D world models from
+flight keyframes, and it runs object detection for drones that have no
+on-board accelerator.
+
+The agent core does not do this work. It comes from the
+[World Engine extension](/drone-agent/extensions/world-engine), whose `node`
+service (`world-engine-node`) runs only on the `workstation` and `compute`
+profiles. The agent core supplies the profile, the plugin host that runs the
+service, and the perception-tier decision on the drone that reads whether a
+compute node is in use.
+
+## Set one up
+
+<Steps>
+  <Step title="Install the agent with a compute-class profile">
+    ```bash
+    curl -sSL https://raw.githubusercontent.com/altnautica/ADOSDroneAgent/main/scripts/install.sh \
+      | sudo bash -s -- --profile compute
+    ```
+    Use `--profile workstation` on the operator's own machine. On macOS, run the
+    script without `sudo`; it installs the `workstation` profile. See
+    [Workstation](/workstation/overview).
+  </Step>
+  <Step title="Confirm the World Engine is installed">
+    The installer turns it on by default for both profiles. On an existing node:
+    ```bash
+    ados plugin install com.altnautica.world-engine
+    ados plugin enable com.altnautica.world-engine
+    ```
+  </Step>
+  <Step title="Install the host tools">
+    Reconstruction calls COLMAP and a splat trainer installed on the host, and
+    perception offload needs `ffmpeg`. They are not shipped in the extension.
+    See [Host tools](/drone-agent/extensions/world-engine#host-tools-on-the-compute-node).
+  </Step>
+  <Step title="Pair the drone and the node">
+    Pair both to the same Mission Control account with the extension installed
+    on both. Mission Control issues the drone a credential for this node (see
+    [Credentials](#credentials-and-lanes)).
+  </Step>
+</Steps>
+
+## The node service
+
+The plugin host starts `world-engine-node` as the extension's `node` service.
+It opens a SQLite job store, runs a worker loop that drains the job queue,
+and serves the job API on one TCP listener.
+
+| Unit | Platform |
+|---|---|
+| `ados-plugin-com-altnautica-world-engine-node.service` | Linux |
+| `co.ados.plugin.com-altnautica-world-engine-node` | macOS LaunchAgent |
+
+```bash
+systemctl status ados-plugin-com-altnautica-world-engine-node.service
+ados plugin logs com.altnautica.world-engine
+```
+
+### Listener and reach
+
+Under the plugin host the node binds `0.0.0.0:8092` so drones on the LAN can
+reach it. The TCP listener is for other nodes: every lane on it admits only a
+credential this node issued for that lane, and owner-only routes are refused
+over TCP whatever is presented.
+
+The operator reaches the node through the agent's plugin passthrough on
+`:8080`, `/api/plugins/com.altnautica.world-engine/x/<path>`, with the normal
+pairing key. `ados-control` authenticates that request before it reaches the
+node.
+
+### Environment
+
+The defaults sit under the plugin's data directory (`<data>/node/`) when the
+host supplies one.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `ADOS_COMPUTE_WORKERS` | `1` | Worker slots: how many jobs run at once. |
+| `ADOS_COMPUTE_BIND` | `0.0.0.0:8092` | Listener address (`127.0.0.1:8092` on a standalone run). |
+| `ADOS_COMPUTE_DB` | `<data>/node/jobs.db` | Job store. |
+| `ADOS_COMPUTE_WORK` | `<data>/node/work` | Keyframe datasets and reconstruction artifacts. |
+| `ADOS_COMPUTE_NODE_CREDENTIALS` | `<data>/node/node-credentials.json` | Credentials this node has issued. |
+| `ADOS_COMPUTE_PUBLIC_URL` | Derived from the bind address | Base URL for artifact links (`<public_url>/artifacts/<relpath>`). |
+| `ADOS_COMPUTE_NODE_ID` | Derived from the machine id | This node's id. |
+| `ADOS_COMPUTE_RETENTION_S` | `86400` | How long terminal jobs are kept. |
+| `ADOS_COMPUTE_DETECTOR_MODEL` | empty | An `.onnx` detector path. Wins over `serving.detector_model`. |
+
+A worker claims the next job, then runs the backend without holding the
+job-store lock, so a reconstruction that takes minutes never blocks the API.
+A cancel that lands during the run wins.
+
+## How drones find it
+
+The node advertises its job API on mDNS as `_ados-compute._tcp` through the
+plugin host, retrying every 5 seconds until the advert is published. A
+standalone loopback run advertises nothing.
+
+On the drone, the extension picks a node in this order:
+
+1. `offload.compute_node_addr` in the plugin config, as `host:port` or a bare
+   host (port `8092` is assumed). Use this on segmented networks where
+   multicast does not reach the node.
+2. An mDNS advert, preferring a node that issued this drone a credential.
+
+```bash
+curl -X PUT -H "X-ADOS-Key: $ADOS_KEY" -H "Content-Type: application/json" \
+  http://192.168.1.5:8080/api/plugins/com.altnautica.world-engine/config \
+  -d '{"key": "offload.compute_node_addr", "value": "192.168.1.50:8092"}'
+```
+
+Mission Control finds the node through the agent's own `_ados._tcp` record,
+not the compute advert.
+
+## Credentials and lanes
+
+A drone's pairing key is full command authority over the aircraft, so it is
+never handed to a compute node. Instead, a party that holds the owner key of
+both nodes (Mission Control, or a ground station) asks the compute node to
+issue a credential scoped to named lanes, and installs it on the drone. The
+drone presents it in the `X-ADOS-Node-Credential` header.
+
+| Lane | Grants |
+|---|---|
+| `atlas.ingest` | Keyframe capture ingest (`POST /api/atlas/event`) |
+| `atlas.world` | The world-model stream (`GET /ws/atlas/<device_id>`) |
+| `offload.stream` | The detection return stream (`GET /ws/offload/<session_id>`) |
+| `artifacts.read` | Reconstruction artifacts (`GET /artifacts/*`) |
+| `jobs.submit` | Starting an offload session and reading its health |
+
+A drone gets every lane by default. A ground station relaying for a drone is
+issued `atlas.ingest` only.
+
+The operator manages credentials through the passthrough. These routes take
+no node credential, so a credential can never issue another:
+
+| Method | Path under `x/` | What it does |
+|---|---|---|
+| `POST` | `api/compute/node-credentials` | Issue a credential for `peer_device_id` (optional `lanes`). Replaces any earlier one for that peer. Returns the secret once. |
+| `GET` | `api/compute/node-credentials` | List issued credentials, without secrets. |
+| `POST` | `api/compute/node-credentials/:id/revoke` | Revoke one. |
+
+```bash
+BASE=http://192.168.1.50:8080/api/plugins/com.altnautica.world-engine/x
+curl -X POST -H "X-ADOS-Key: $ADOS_KEY" -H "Content-Type: application/json" \
+  $BASE/api/compute/node-credentials -d '{"peer_device_id": "ados-x"}'
+```
+
+The **Jobs & outputs** tab in Mission Control lists and revokes the same
+credentials.
+
+## Perception offload
+
+A drone without an on-board accelerator streams its camera to the compute
+node over RTSP (`:8554/main`, decoded on the node at 1280x720), the node runs
+the detector, and detections return onto the drone's own `vision.detection`
+bus. Follow-Me, the gimbal and the cockpit overlay read them like local
+detections.
+
+### On the drone
+
+The extension's offload reconciler ticks every 5 seconds. It starts a session
+when all of these hold:
+
+- `offload.enabled` calls for it: `auto` (the default) offloads only when the
+  board reports no NPU, `on` always, `off` never.
+- The camera reports ready and is publishing its main stream.
+- A compute node is reachable.
+
+While the session is live it re-advertises the link to the plugin host
+(`offload.advertise`). The host probes the advertised `host:port` with a TCP
+connect before it marks the link paired, then writes
+`/run/ados/offload-link.json`. The file goes stale after 20 seconds, so a dead
+reconciler never leaves a drone reporting a link that is gone.
+
+### The perception tier
+
+The drone's `GET /api/status` and its cloud heartbeat report where perception
+runs:
+
+| Field | Meaning |
+|---|---|
+| `perceptionTier` | `local`, `offload`, `hybrid` or `none` |
+| `perceptionOffloadTarget` | The node's `host:port`, only while offloading; else `null` |
+| `npuTops`, `hasAccelerator` | The board's declared accelerator |
+
+The tier comes from `pick_tier` in the `ados-offload` crate:
+
+| Condition | Tier |
+|---|---|
+| An on-board compute path (an accelerator, or a board that declares CPU ONNX inference) that the running vision engine reports as inference-capable | `local` |
+| Otherwise, a paired node on an acceptable link | `offload` |
+| Neither | `none` (no detection, tracking or map-based autonomy) |
+
+<Note>
+`hybrid` (a light detector on the drone plus heavy work on the node) is in
+the tier model but not produced today: no split light-detector path runs on
+the drone yet.
+</Note>
+
+### Safety gate
+
+Remote detection is near-real-time, not real-time. A returned detection
+older than its freshness budget (700 ms on the offload stream), or any
+detection after the link drops, is treated as absent, never held forward or
+extrapolated. A behaviour that loses its lock this way stops and holds, and
+does not re-acquire on its own; only an explicit re-designation locks again.
+
+### Detector support
+
+The node loads a real ONNX detector only in a build with ONNX support and
+when `ADOS_COMPUTE_DETECTOR_MODEL` or `serving.detector_model` names an
+`.onnx` file. Otherwise, or if the model fails to load, it falls back to a
+mock detector so the offload path still runs end to end.
+
+| Release build | Detector |
+|---|---|
+| `aarch64-macos` | ONNX with CoreML on the Apple GPU. ONNX Runtime is a host prerequisite. |
+| `aarch64-linux`, `x86_64-linux` | Built without ONNX support: the mock detector. Real detection on Linux needs a source build with `--features onnx`. |
+
+`serving.enabled` (default `auto`) controls whether the node accepts offload
+sessions at all; `off` refuses them. A bare model id in
+`serving.detector_model` resolves to `/opt/ados/models/vision/<id>.onnx`.
+
+## Compute status
+
+The node publishes its status as the `compute` member of the extension's
+`status` telemetry channel on every heartbeat, and serves the same body on
+`GET compute/status` through the passthrough. Before the first heartbeat
+that route is a `404`. `GET api/compute/status` on the job API returns the
+engine's own view (role, cluster, queue, active sessions) plus a per-state
+count of live offload sessions.
+
+The status carries the queue depth, active jobs, live offload sessions, idle
+workers, the cluster summary, and a `gpu` block. The `gpu` block (name, core
+count, Metal support, unified memory, live utilisation) is filled on macOS
+only; every field is `null` on Linux. Live utilisation needs passwordless
+`sudo` for `powermetrics`; without it that field stays `null`.
+
+The **Compute** tab in Mission Control renders this status: the GPU card,
+the cluster status and a jobs summary.
+
+## Multiple compute nodes
+
+<Warning>
+In progress. Today every compute node runs alone, as its own primary
+scheduler with no worker nodes. Drones and Mission Control pair with one
+node.
+</Warning>
+
+The node's cluster model already has one primary node, the single endpoint
+drones pair with and the scheduler, and a registry where extra nodes would
+join as workers and offer their idle worker slots. The status reports the
+primary's id and the total idle workers across the cluster. Nothing
+registers a second node yet, so the worker list is always empty and the
+total equals the node's own idle slots. Distributed scheduling and failover
+to a worker when the primary is lost are not built.
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="The drone never finds the node">
+    mDNS does not cross subnets or VLANs on most networks. Pin the node with
+    `offload.compute_node_addr`. Check that `:8092` is open on the node's
+    firewall.
+  </Accordion>
+  <Accordion title="perceptionTier stays none on an NPU-less drone">
+    The offload link is absent or stale. Confirm `offload.enabled` is not
+    `off`, the camera is publishing, the node is reachable on `host:port` from
+    the drone, and the drone holds a credential with the `offload.stream` and
+    `jobs.submit` lanes.
+  </Accordion>
+  <Accordion title="Detections arrive but look meaningless">
+    The node is running the mock detector. On Linux release builds that is
+    expected. Set `serving.detector_model` and use a build with ONNX support.
+  </Accordion>
+  <Accordion title="compute/status returns 404">
+    The node service has not finished its first heartbeat, or it is not
+    running. Check the node unit's status and the extension logs.
+  </Accordion>
+</AccordionGroup>
+
+## Related
+
+- [Workstation](/workstation/overview)
+- [World Engine](/drone-agent/extensions/world-engine)
+- [Node profiles](/getting-started/node-profiles)
+- [Plugins](/drone-agent/plugins)

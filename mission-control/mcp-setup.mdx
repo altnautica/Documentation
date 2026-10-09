@@ -1,0 +1,256 @@
+---
+title: "Connect an AI assistant"
+sidebarTitle: "MCP setup"
+description: "Use Mission Control's MCP tab to connect Claude Code or another MCP client to your drones, over the LAN or through the cloud, with scoped and audited access."
+icon: "robot"
+lastUpdated: "2026-10-09"
+---
+
+The **MCP** tab in Mission Control's top navigation (route `/mcp`) sets up ADOS MCP, a Model Context Protocol server that lets Claude Code, Cursor, Claude Desktop or another MCP client read and operate your drones. You run the server on your own machine. Mission Control's job is to fill in the commands for you and show you what the client is doing.
+
+There are two ways to connect:
+
+| Path | Reaches | Credential | Needs a sign-in |
+|---|---|---|---|
+| **Connect a LAN drone** (default) | One drone or every drone you have paired, directly over your network | Each drone's own pairing key | No |
+| **Manage from anywhere** (opt-in) | Your fleet through Mission Control's cloud relay | A machine credential you generate in the tab | Yes |
+
+For what the server can do once connected, see the [MCP tool reference](/developers/mcp-tools). For the server's flags, transports and the agent-side token edge, see [MCP server](/developers/mcp-server).
+
+## Before you start
+
+- Pair at least one drone over the LAN from the Dashboard's Add-a-Node card. The wizard lists only drones Mission Control has already paired, and uses the pairing key it stored for each. See [Pairing](/drone-agent/pairing).
+- On the machine that will run the server: Node.js 20 or newer, git, pnpm (`npm install -g pnpm`), and an MCP client.
+
+## Open the setup wizard
+
+With no credentials yet, the MCP tab shows a landing page headed "Control your drones from your AI assistant" with a **Local-first · no login** badge. Click **Connect a LAN drone** to open the **Set up ADOS MCP** wizard. It is always available; it does not need a Mission Control sign-in.
+
+Once you have generated a cloud credential, the tab shows a console instead, with a sidebar of **Overview**, **Connect**, **Access control** (**Credentials**, **Scopes & roles**), **Catalog** (**Built-in tools**), **Plugins** and **Audit log**. Open **Connect** (or the **Add to Claude Code** button at the bottom of the sidebar) and click **Connect a LAN drone** to reach the same wizard.
+
+## Connect over your LAN
+
+The wizard has five steps, shown as "Step N of 5".
+
+<Steps>
+  <Step title="Before you start">
+    The wizard lists the prerequisites: Node.js 20 or newer, git, pnpm, and an MCP client. Click **Next**.
+  </Step>
+  <Step title="Get the server">
+    Clone and build the server. There is no package to install:
+
+    ```bash
+    git clone https://github.com/altnautica/ADOS-MCP.git
+    cd ADOS-MCP
+    ./scripts/setup.sh
+    ```
+
+    `setup.sh` checks for Node 20+ and pnpm, runs `pnpm install` and `pnpm build`, and prints the add commands with your local clone path filled in. Note that path; the next steps use `<path-to>/ADOS-MCP` in its place.
+  </Step>
+  <Step title="Pick your drones">
+    Choose which paired drones the server controls:
+
+    - **Control all my drones (N)** is the default: every drone you have paired, in one command, with no file.
+    - **Choose specific drones instead** (shown when you have more than one) lets you tick a subset. Each row shows the drone's name, profile and host.
+    - **Also auto-adopt new drones on my LAN** is off unless you tick it. The server then browses your network and pairs itself to any new unpaired drone it finds (the `--discover` flag).
+
+    If the step says **No LAN drones paired yet**, close the wizard, pair a drone from the Add-a-Node card, and reopen it.
+
+    <Frame caption="Step 3 of the Set up ADOS MCP wizard">
+      <img className="block dark:hidden" src="/images/mission-control/light/mcp-wizard.png" alt="Set up ADOS MCP wizard on step 3 of 5, Pick your drones, with Control all my drones selected, a Choose specific drones instead option, and an unticked Also auto-adopt new drones on my LAN checkbox" />
+      <img className="hidden dark:block" src="/images/mission-control/dark/mcp-wizard.png" alt="Set up ADOS MCP wizard on step 3 of 5, Pick your drones, with Control all my drones selected, a Choose specific drones instead option, and an unticked Also auto-adopt new drones on my LAN checkbox" />
+    </Frame>
+  </Step>
+  <Step title="Add it to your client">
+    The wizard prints a `claude mcp add` command with your drone's host and key already in it. Run it in your terminal and replace `<path-to>/ADOS-MCP` with the path `setup.sh` printed. The key rides in the client's environment (`-e`), not your shell.
+
+    <Tabs>
+      <Tab title="One drone">
+        ```bash
+        claude mcp add ados -e ADOS_MCP_AGENT_KEY=<pairing-key> -- node <path-to>/ADOS-MCP/dist/index.js --target agent 192.168.1.5
+        ```
+
+        Expand **Prefer a project's .mcp.json? Use this instead.** for a file you can commit. It reads the key from your environment, so the file holds no secret:
+
+        ```json
+        {
+          "mcpServers": {
+            "ados": {
+              "command": "node",
+              "args": ["<path-to>/ADOS-MCP/dist/index.js", "--target", "agent", "192.168.1.5"],
+              "env": { "ADOS_MCP_AGENT_KEY": "${ADOS_MCP_AGENT_KEY}" }
+            }
+          }
+        }
+        ```
+
+        ```bash
+        export ADOS_MCP_AGENT_KEY=<pairing-key>
+        ```
+      </Tab>
+      <Tab title="Several drones">
+        Every selected drone's host and key is packed into one base64 value, so there is no file to save:
+
+        ```bash
+        claude mcp add ados -e ADOS_MCP_FLEET=<fleet-blob> -- node <path-to>/ADOS-MCP/dist/index.js --target local-fleet
+        ```
+
+        If you ticked auto-adopt, the command ends in `--discover`. The **.mcp.json** alternative works the same way as for one drone, reading `${ADOS_MCP_FLEET}` from your environment.
+
+        For a very large fleet or a saved setup, expand **Prefer a file? (very large fleets / a saved setup)**, click **Download ados-fleet.json**, save it to `~/.ados/mcp/fleet.json`, restrict it with `chmod 600` (it holds your drones' pairing keys), and run:
+
+        ```bash
+        claude mcp add ados -- node <path-to>/ADOS-MCP/dist/index.js --target local-fleet ~/.ados/mcp/fleet.json
+        ```
+      </Tab>
+    </Tabs>
+
+    The server picks the stdio transport when a client launches it, so no `--transport` flag is needed.
+  </Step>
+  <Step title="Check the connection">
+    The wizard probes each selected drone's `/api/pairing/info` directly over the LAN and marks it **Reachable** or **Unreachable** (for several drones, with an "N of M drones reachable" summary). Click **Check again** to re-probe.
+
+    It also shows a command that checks the connection without an MCP client. `--verify` connects, checks auth and reachability, prints the result, and exits `0` or `1`:
+
+    ```bash
+    ADOS_MCP_AGENT_KEY=<pairing-key> node <path-to>/ADOS-MCP/dist/index.js --target agent 192.168.1.5 --verify
+    ```
+
+    ```bash
+    node <path-to>/ADOS-MCP/dist/index.js --target local-fleet ~/.ados/mcp/fleet.json --verify
+    ```
+
+    Click **Done**, then ask your client for a drone's status.
+  </Step>
+</Steps>
+
+### What a LAN connection may do
+
+A client that launches the server over stdio against a LAN target carries no token. It runs as a local-presence principal that holds every scope except `flight` and `destructive`: `read`, `safe_write`, `admin` and `secret_read`. Presence on your laptop is not presence on the aircraft, so flight tools stay out of reach unless you start the server with a flight-scoped `--token`.
+
+Every write still passes the server's safety gate: an `admin` action needs `confirm: true` in the call, and escalating writes (a flight-critical parameter, a MAVLink or video service restart) need the flight gate. See [Safety classes](/developers/mcp-tools#safety-classes).
+
+The key in a LAN connection is the drone's pairing key, stored on your machine when you paired it. To cut a client off, unpair the drone.
+
+## Manage from anywhere (cloud)
+
+The cloud path reaches the drones Mission Control tracks through its cloud relay, for when you are off the drones' network. It is the only path that needs a sign-in. On the landing page, the **Manage from anywhere** section has a **Set up cloud access** button; signed out, it shows "Sign in to Mission Control to set up remote cloud access." instead.
+
+<Steps>
+  <Step title="Generate a credential">
+    **Set up cloud access** opens **Generate a credential**. Fill in:
+
+    | Field | Options |
+    |---|---|
+    | **Name** | Up to 64 characters, for example "Claude on my laptop". Required. |
+    | **Access** | **Read only** or **Operate**. See [Permissions](#permissions). |
+    | **Nodes** | **All my nodes**, or one of your cloud drones. |
+    | **Expires** | **Never**, **In 24 hours**, **In 7 days** or **In 30 days**. |
+
+    Click **Generate**.
+  </Step>
+  <Step title="Copy it now">
+    **Copy your credential now** shows the machine credential and a **Run this on your machine** command. This is the only time it is shown; Mission Control stores only a hash. If you lose it, revoke it and generate a new one.
+  </Step>
+  <Step title="Add it to your client">
+    ```bash
+    claude mcp add ados -e ADOS_MCP_TOKEN=<credential> -- node <path-to>/ADOS-MCP/dist/index.js --target fleet --gcs prod
+    ```
+
+    The **Connect** section's **Manage from anywhere** block also offers the `.mcp.json` form:
+
+    ```json
+    {
+      "mcpServers": {
+        "ados": {
+          "command": "node",
+          "args": ["<path-to>/ADOS-MCP/dist/index.js", "--target", "fleet", "--gcs", "prod"],
+          "env": { "ADOS_MCP_TOKEN": "<credential>" }
+        }
+      }
+    }
+    ```
+
+    Keep the credential out of shared source; in a shared repository, set it from an environment variable. Running your own Mission Control backend? Use `--gcs local` or `--gcs <your-url>` instead of `--gcs prod`.
+  </Step>
+  <Step title="Verify">
+    ```bash
+    ADOS_MCP_TOKEN=<credential> node <path-to>/ADOS-MCP/dist/index.js --target fleet --gcs prod --verify
+    ```
+  </Step>
+</Steps>
+
+Manage credentials under **Access control > Credentials**. Each shows Active, Revoked or Expired, when it was created and last used, and a **Revoke** button. Revoking cuts off any client using it immediately and cannot be undone. **Details** opens "What this token can do": how many built-in tools the credential could call, and why the rest are blocked (scope not granted, flight actions off, agent-mode (LAN) only, or node not in allow-list). A machine credential connects through the fleet relay, so tools marked agent-mode only, such as parameter reads and writes, are not reachable with it.
+
+## Permissions
+
+A credential carries scope groups. **Access control > Scopes & roles** lists them:
+
+| Scope | What it grants |
+|---|---|
+| `read` | Live status, telemetry, parameters and configuration. No changes to the fleet. |
+| `safe_write` | Reversible writes: configuration, recording, staged mission edits and vision designation. |
+| `admin` | Node administration: services, plugins, network configuration and parameter writes. |
+| `flight` (elevated) | Flight actions: arm, disarm, mode, takeoff, land, RTL. Off by default; each call also confirms. |
+| `destructive` (elevated) | Irreversible actions: reboot, shutdown, factory reset, firmware rollback and reset-all-parameters. |
+| `secret_read` (elevated) | Read secret-bearing values unredacted. A modifier on `read`, not a substitute for it. |
+
+The **Access** presets in **Generate a credential** bundle them:
+
+| Preset | Scopes |
+|---|---|
+| **Read only** | `read` |
+| **Operate** (default) | `read`, `safe_write`, `admin` |
+
+A **Full control** preset (adding `flight` and `destructive`) exists in the code but is not offered in the dialog yet, so Mission Control does not mint flight-scoped credentials today.
+
+**Catalog > Built-in tools** lists every tool with its scope and safety class, grouped by namespace, safety class or scope. Pick a credential in its **Credential** filter to mark each tool callable or blocked. **Plugins** lists installed extensions that expose MCP tools; an extension needs the `mcp.expose` capability to expose any, and a non-first-party one is marked **Untrusted**.
+
+<Warning>
+**Flight-affecting tools are off at every layer by default.** A tool that can move the aircraft (`flight.*`, `admin.agent.restart_supervisor`, a flight-critical `params.set`, a MAVLink or video `services.restart`) needs all of these:
+
+- a token holding the `flight` scope (the LAN stdio principal never has it, and Mission Control does not mint it);
+- the server started with `--flight-enforced`, otherwise flight tools are hidden from the client and refused;
+- per call, a fresh operator-present signal, a one-time signed confirm bound to that exact call, or a simulator target with `--sim`.
+
+The current server ships no operator-present or signed-confirm provider, so on real hardware flight calls are refused; they run only against SITL with `--sim`, and the server checks that the target really is a simulator before it starts. Even then, a flight result reports `ok: true` only when the flight controller accepted the command. Keep a pilot with a transmitter ready whenever an AI client can command a vehicle.
+</Warning>
+
+## Watch it work
+
+Keep Mission Control open while your client works and open the **MCP Activity** panel in the right sidebar (the **MCP** rail). Each tool call appears live with its tool, node, arguments, result and latency, filterable by **Drone**, **Mission**, **Config** and **Query**. Turn on **Follow** to have Mission Control jump to the surface each call changes and highlight it.
+
+The live feed reads the server's local activity file, so it works only when Mission Control runs on the same machine as the server (localhost or the desktop app). A hosted browser tab shows "MCP activity is local".
+
+**Audit log** shows recent tool calls, newest first, filterable by outcome (**Allowed**, **Confirmed**, **Denied**, **No operator**) and credential. It is recorded by your connector, not an independent log; the full record is in the server's audit file on the machine running it (`~/.ados/mcp/audit.ndjson` by default), which the `audit.query` and `audit.search` tools also read.
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="The wizard says No LAN drones paired yet">
+    The wizard only lists drones paired over the LAN in this browser. Pair one from the Dashboard's Add-a-Node card, then reopen **Set up ADOS MCP**.
+  </Accordion>
+  <Accordion title="A drone shows Unreachable">
+    The browser could not reach the drone's `/api/pairing/info`. Confirm the agent is running and that the machine running Mission Control can reach its host. The `--verify` command checks the same path from the machine that runs the server.
+  </Accordion>
+  <Accordion title="The client does not see a tool">
+    `tools/list` only shows what the connection can call. A tool is hidden when the token lacks its scope, when it affects flight and the server was not started with `--flight-enforced`, or when it is agent-mode only and you connected through the cloud (`--target fleet`). Check the tool's row in the [MCP tool reference](/developers/mcp-tools).
+  </Accordion>
+  <Accordion title="An admin call is refused with confirm_required">
+    `admin` class tools need `confirm: true` in the call arguments. Ask the client to confirm the action and retry.
+  </Accordion>
+  <Accordion title="The Set up cloud access button is missing">
+    Generating a credential needs a Mission Control sign-in and a reachable cloud backend, and is not available in demo mode. The LAN path needs neither.
+  </Accordion>
+</AccordionGroup>
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="MCP tool reference" icon="wrench" href="/developers/mcp-tools">
+    Every tool, its scope, safety class and arguments.
+  </Card>
+  <Card title="MCP server" icon="server" href="/developers/mcp-server">
+    Connector flags, transports, and the agent token edge.
+  </Card>
+</CardGroup>

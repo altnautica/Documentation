@@ -170,7 +170,6 @@ On the aircraft, MAVLink does not reach the browser directly. The drone agent ru
 A typical telemetry flow from flight controller to browser:
 
 ```mermaid
-%%{init: {'theme': 'dark'}}%%
 sequenceDiagram
     participant FC as Flight Controller
     participant Agent as Drone Agent
@@ -198,7 +197,7 @@ To add support for a new MAVLink message:
 4. Subscribe to the callback in `DroneManager.bridgeTelemetry()`
 5. Update the relevant Zustand store with the decoded data
 
-See [Contributing Guide](/architecture/contributing-guide) for a detailed walkthrough.
+See [Contributing](/getting-started/contributing#adding-a-mavlink-message-decoder) for a detailed walkthrough.
 
 ## What is next
 

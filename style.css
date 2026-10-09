@@ -1,0 +1,52 @@
+/* Space Grotesk 500 and 600. Licence: fonts/LICENSE-space-grotesk.txt (SIL OFL 1.1). */
+@font-face {
+  font-family: "Space Grotesk";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 500;
+  src: url("/fonts/space-grotesk-latin-500-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Space Grotesk";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 600;
+  src: url("/fonts/space-grotesk-latin-600-normal.woff2") format("woff2");
+}
+
+/* Inter 400 and 600. Licence: fonts/LICENSE-inter.txt (SIL OFL 1.1). */
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url("/fonts/inter-latin-400-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 600;
+  src: url("/fonts/inter-latin-600-normal.woff2") format("woff2");
+}
+
+/* JetBrains Mono 400. Licence: fonts/LICENSE-jetbrains-mono.txt (SIL OFL 1.1). */
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url("/fonts/jetbrains-mono-latin-400-normal.woff2") format("woff2");
+}
+
+h1,
+h2 {
+  letter-spacing: -0.03em;
+}
+
+code,
+pre,
+kbd,
+samp {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+}

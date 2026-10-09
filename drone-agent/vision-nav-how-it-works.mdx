@@ -1,177 +1,281 @@
 ---
-title: "How it works"
-description: "A system-level walkthrough of the Vision Navigation pipeline. Camera and IMU samples become MAVLink messages the flight controller's EKF fuses."
+title: "How Vision Navigation works"
+sidebarTitle: "How it works"
+description: "The path from a camera frame to the flight controller's EKF: inputs, the per-frame loop, MAVLink output, the heartbeat, fallback behaviour, and the Rust module map."
 icon: "diagram-project"
-lastUpdated: "2026-06-18"
+lastUpdated: "2026-10-09"
 ---
 
 # How Vision Navigation works
 
-A short tour of the path a camera frame takes from the sensor to the
-flight controller's state estimate. No code; this is for operators
-and integrators who want a mental model.
-
-For the developer-facing module map and protocol details, see
-[Architecture](/drone-agent/vision-nav-architecture).
+This page follows a camera frame from the sensor to the flight controller's state estimate. The first half is the operator's mental model. The second half, from [Module map](#module-map), is the developer reference for the compiled agent half.
 
 ## The pieces
 
-The plugin reads four kinds of input and produces one kind of output:
-
 **Inputs:**
 
-- A **camera** (downward for OF modes, forward for VIO modes).
-  Frames arrive at the agent at 30 frames per second.
-- An **IMU** (the flight controller's, read through MAVLink). Gyro
-  and accelerometer samples arrive at 100 to 200 samples per second.
-- A **rangefinder** (optional). One reading per camera frame when
-  wired. Provides the altitude that turns angular flow into metric
-  velocity.
-- An **altitude ladder** (used only by the rangefinder-free OF mode).
-  Walks the FC's barometric altitude or GPS altitude when the
-  rangefinder is absent.
+- **Camera frames** from the agent's shared vision frame bus. The vision host owns the camera (USB UVC or CSI); the plugin subscribes to the stream and never opens a device.
+- **Gyro** from the flight controller's MAVLink `RAW_IMU`, the path every flight controller publishes. Used to remove rotation from the measured flow.
+- **Rangefinder** (in `optical_flow`): the flight controller's `DISTANCE_SENSOR`, or a TF-Luna on a companion UART.
+- **Altitude messages** (in `optical_flow_degraded`): `GLOBAL_POSITION_INT`, `VFR_HUD`, and `GPS_RAW_INT` for the scale ladder.
+- **`TIMESYNC`** replies from the flight controller, to align the two clocks.
 
-**Output:**
+**Output** on MAVLink component 198:
 
-- A **MAVLink message** on a specific MAVLink component, at a fixed
-  rate, that the flight controller's state estimator fuses. The
-  message type depends on the mode:
-  - `OPTICAL_FLOW_RAD` on component 198 at the camera frame rate
-    (around 30 Hz) for OF modes.
-  - `VISION_POSITION_ESTIMATE` on component 197 at the same rate for
-    VIO modes.
-  - Both in parallel for hybrid mode.
+- `OPTICAL_FLOW_RAD` (#106) at the camera frame rate, around 30 Hz.
+- `DISTANCE_SENSOR` (#132) alongside each flow sample when the rangefinder is wired to the companion.
+- `TIMESYNC` (#111) and a 1 Hz `HEARTBEAT` carrying the companion state.
 
 ## The chain
 
+```text
+camera -> vision host -> frame bus -> plugin -> OPTICAL_FLOW_RAD -> FC EKF
+                                        ^                              |
+                                        |                              v
+                         gyro + rangefinder / altitude        position and velocity
 ```
-camera -> agent  ->  estimator  ->  MAVLink emit  ->  flight controller EKF
-              ^                                                     |
-              |                                                     v
-            IMU pairing                                       drone position
-                                                              and velocity
+
+On every frame the plugin:
+
+1. **Converts** the frame (`nv12`, `yuv420p`, or `rgb24`) to grayscale. The frame-bus callback never blocks; it hands the frame to a worker task.
+2. **Pairs** it with the gyro sample taken at the same instant. The time aligner interpolates between the two IMU samples around the frame time, after applying the `timeshift_cam_imu` offset from the calibration file (zero when there is none).
+3. **Estimates** flow with the active mode's estimator. The Lucas-Kanade tracker picks up to 200 Shi-Tomasi corners spread on a grid, tracks each through a 3-level pyramid, drops outliers, and takes the median of the displacements.
+4. **Emits** `OPTICAL_FLOW_RAD` on component 198, with `time_usec` converted to the flight controller's clock.
+5. **Updates health**: flow quality, flow rate, distance, scale source, sync offset, estimator state, and the pre-arm report. A 1 Hz tick publishes that snapshot as the `navigation` heartbeat block.
+
+## How the flight controller fuses it
+
+The plugin does not change flight controller parameters. You set them once:
+
+- **ArduPilot**: `FLOW_TYPE = 5` accepts `OPTICAL_FLOW_RAD` from MAVLink, and an EKF3 source set with `EK3_SRCn_VELXY = 5` uses it for horizontal velocity.
+- **PX4**: `EKF2_OF_CTRL` enables flow fusion.
+- **iNav 7.0+**: `opflow_hardware = MAVLINK` and `nav_use_optflow_for_poshold = ON`.
+
+The EKF fuses each sample subject to its own gating (innovation checks, delay, the quality field). The `quality` field is the plugin's main lever: in `optical_flow_degraded` it is scaled down per scale source so the EKF trusts weaker heights less. See [Configure optical flow](/drone-agent/vision-nav-optical-flow).
+
+## What the plugin does that the flight controller can't
+
+1. **Talk to the camera.** The flight controller can't read a USB or CSI camera. The agent captures it and the plugin tracks it.
+2. **Run the vision.** The EKF is good at fusing a velocity measurement; it doesn't run a feature tracker.
+3. **Report honestly.** The plugin watches its own inputs, labels the estimator state, and publishes a pre-arm report so you don't arm on a bad feed.
+
+## What Mission Control shows
+
+The **Vision Nav** tab on the drone detail panel reads the `navigation` heartbeat block:
+
+- **Companion pill** in the header: active, critical, terminating, or offline.
+- **Fallback banner**: appears when the estimator is `degraded` or `failed`, with the most likely cause and a next step.
+- **Mode card**: the modes the agent advertises, with the active one marked and the estimator state pill. Read-only.
+- **Sensors card**: camera device and whether a calibration file was loaded; IMU source, rate, and sync offset; rangefinder topology, distance, and scale source.
+- **Estimator card**: engine (Lucas-Kanade, or Lucas-Kanade (degraded)), state, flow quality, and sync offset.
+- **Telemetry trends**: 60 seconds of flow quality and sync offset.
+- **Flow health** and **Pre-arm** cards.
+- **Firmware parameters**: the reference list for ArduPilot, PX4, or iNav, or an explanation on Betaflight.
+
+A short guided tour runs the first time; **Replay tour** in the header runs it again.
+
+---
+
+## Fallback and recovery
+
+The plugin assumes every input degrades at some point and makes that visible. Four mechanisms do the work.
+
+### 1. The scale ladder
+
+`optical_flow_degraded` has no rangefinder, so it walks a four-rung height ladder every frame: the flight controller's baro-fused relative altitude (quality x0.7), raw `VFR_HUD` altitude minus take-off (x0.6), GPS height outdoors (x0.4), and a fixed 1.5 m (x0.2). See [Modes](/drone-agent/vision-nav-modes) for the triggers.
+
+**Why not stop emitting on the last rung?** An EKF with nothing else to fuse is better off with a heavily de-weighted velocity hint than with none. The fixed rung is the lowest-quality emission the plugin makes, and the estimator reports `degraded` the whole time it is on it.
+
+```text
+GLOBAL_POSITION_INT.relative_alt  --fresh-->  quality x0.7
+        | stale (> 2 s)
+VFR_HUD.alt - take-off             --fresh-->  quality x0.6
+        | stale
+GPS_RAW_INT.alt - take-off         --outdoor, 3D fix, eph <= 200 cm-->  quality x0.4
+        | not healthy
+fixed 1.5 m                        ---------->  quality x0.2, state degraded
 ```
 
-The agent does five things on every camera frame:
+Height is clamped to 0.3 to 50 m on every rung.
 
-1. **Capture.** The agent's vision host grabs the frame from the
-   camera (USB UVC or CSI via V4L2) and publishes it on the shared
-   vision frame bus. The plugin reads it from there, tagged with a
-   monotonic timestamp.
-2. **Pair.** Look up the IMU sample closest to the camera frame's
-   timestamp. Apply the calibrated static offset between the two
-   clocks. If the residual offset has drifted past 30 ms, mark the
-   estimator as degraded.
-3. **Estimate.** Run the selected estimator on the frame + the
-   paired IMU sample. The estimator is one of six (`off`,
-   `optical_flow`, `optical_flow_degraded`, `vio_openvins`,
-   `vio_vins_fusion`, `hybrid_of_plus_vio`).
-4. **Emit.** Translate the estimator's output into the matching
-   MAVLink message and send it to the flight controller on the
-   right component.
-5. **Publish telemetry.** Update the heartbeat snapshot Mission
-   Control reads so the operator sees flow quality, sync offset,
-   feature count, and other live diagnostics.
+### 2. Camera-IMU sync bands
 
-## Why two MAVLink components?
+The time aligner tracks the residual between each frame and its paired gyro sample over a rolling 60-sample window and reports the average as `cameraImuSyncOffsetMs`. The Vision Nav tab colours it:
 
-The plugin owns two MAVLink component IDs:
+| Band | Average residual |
+|---|---|
+| Green | 10 ms or less |
+| Yellow | 10 to 30 ms |
+| Red | above 30 ms |
 
-- **Component 198** is the peripheral component. ArduPilot and PX4
-  recognise it as the optical-flow companion. It carries
-  `OPTICAL_FLOW_RAD` and the rangefinder relay `DISTANCE_SENSOR`.
-- **Component 197** is
-  `MAV_COMP_ID_VISUAL_INERTIAL_ODOMETRY`. The flight controller
-  recognises it as a VIO source. It carries
-  `VISION_POSITION_ESTIMATE`.
+The sync offset is shown, not gated: no pre-arm check reads it. When the estimator is degraded and the offset is above 30 ms, the fallback banner names sync drift as the cause and suggests re-checking the calibration. Tens of milliseconds are typical on a USB UVC camera with software timestamps.
 
-The plugin claims both. The component router picks which one to
-emit on per output, based on the active estimator's mode. When the
-hybrid mode is running, it emits on both components in the same
-tick.
+### 3. The companion state machine
 
-## How does the flight controller fuse the data?
+The companion's state follows the estimator. A `converged` sample makes it active. A `degraded` or `failed` streak of 2 seconds flips it to critical. The state rides the 1 Hz `HEARTBEAT` on component 198 as `MAV_STATE_STANDBY`, `MAV_STATE_ACTIVE`, or `MAV_STATE_CRITICAL`, and drives the `companion_active` pre-arm check and the pill on the Vision Nav tab.
 
-ArduPilot uses the EKF3 source-set system. Three parameters
-(`EK3_SRC1_VELXY`, `EK3_SRC1_POSXY`, `EK3_SRC1_YAW`) declare which
-sensors feed which state. The plugin does not change these
-parameters automatically; the operator either sets them once
-through Mission Control's parameter tab or uses the Vision Nav
-tab's source-set switcher to flip them at runtime.
+### 4. The flight controller's own source switch
 
-PX4 uses EKF2 with different parameter names (`EKF2_OF_CTRL`,
-`EKF2_EV_CTRL`, `EKF2_HGT_REF`). PX4 does not support runtime
-source-set switching; the plugin's source-set switcher is disabled
-in PX4 mode and the GCS tooltip explains why.
+The plugin never switches EKF source sets and never changes flight mode. That stays with you and the flight controller: on ArduPilot, configure a GPS source set and an optical-flow source set and switch between them with the flight controller's RC source-set option; on PX4, a source change is a parameter write and an EKF restart. Switching back to GPS at altitude is the standard recovery when vision degrades.
 
-When the EKF receives a sample on the configured source, it fuses
-the data subject to its own gating (innovation thresholds, time
-delay limits, sensor health flags). A well-tuned EKF rejects bad
-samples on its own; the plugin's job is to provide samples the
-EKF can rely on.
+### How they combine
 
-## What does the plugin do that the flight controller cannot?
+A flight that goes wrong might look like this:
 
-Three things:
+1. Light fades over a smooth floor. Flow quality drops below 50 and the estimator reports `degraded`.
+2. The fallback banner appears: quality below the safe gate, slow the yaw and fly over more texture.
+3. Two seconds later the companion goes critical; the pill turns red.
+4. You flip the flight controller to its GPS source set (or land). The plugin keeps emitting low-quality samples, which the EKF now ignores, so you can switch back when conditions improve.
 
-1. **Sensor abstraction.** The flight controller does not know how
-   to talk to a USB UVC camera. The agent handles the frame
-   capture, the optical-flow tracker (or the vendor VIO binary), and
-   the timing.
-2. **State estimation.** The flight controller's EKF is good at
-   fusing pre-computed velocity or pose. It does not run vision
-   itself. The plugin runs the vision and hands the result to the
-   EKF.
-3. **Calibration and validation.** The plugin validates camera
-   intrinsics, runs the camera-IMU time aligner, watches for
-   degraded inputs, and refuses to feed bad data to the EKF. The
-   pre-arm gate is the safety net.
+### What the plugin does not detect
 
-## How does Mission Control see it?
+The plugin has no frame-loss timer of its own. If the camera stops delivering frames, the plugin simply stops emitting, and the flight controller's EKF times out the flow source by its own rules. On the Vision Nav tab the tell is a flow-rate trend that stops updating.
 
-Every heartbeat carries a `navigation` block with the live
-estimator state, the active scale source, the sync offset, the
-flow quality, the VIO feature count and drift estimate, and the
-full pre-arm report. The Mission Control Navigation tab reads
-this block and renders five surfaces:
+---
 
-- The **mode card** with the active mode highlighted.
-- The **sensors card** showing camera + IMU + rangefinder health.
-- The **estimator card** showing the engine name, the state pill,
-  and the live metrics.
-- The **telemetry charts** showing trends over the last minute.
-- The **pre-arm status** showing one row per check.
+## Module map
 
-When the estimator goes degraded or fails, the **fallback banner**
-appears at the top of the tab with the most likely cause and a
-suggested next action.
+The agent half is a compiled Rust binary (`bin/vision-nav`). The plugin host execs it under systemd, passes the per-plugin socket on the command line and the capability token and agent id through the unit environment, and the binary runs until `SIGTERM`. The crate lives at `extensions/vision-nav/agent/` in ADOSExtensions:
 
-## What can go wrong?
+```text
+extensions/vision-nav/
+  manifest.yaml          # id, permissions, resources, component 198, Engage Skill
+  config-schema.json     # the per-drone configuration
+  agent/
+    Cargo.toml
+    src/
+      main.rs            # entry point: builds the plugin, runs to SIGTERM
+      lib.rs             # module declarations
+      config.rs          # per-drone config parse + validation (mirrors config-schema.json)
+      framing.rs         # luma extraction from nv12 / yuv420p / rgb24 frames
+      flow.rs            # sparse pyramidal Lucas-Kanade tracker
+      estimator.rs       # Estimator trait, EstimatorOutput, EstimatorState
+      estimators.rs      # off / optical_flow / optical_flow_degraded + the registry
+      scale.rs           # the rangefinder-free height ladder
+      rangefinder.rs     # FC relay, TF-Luna UART, I2C stubs
+      imu.rs             # RAW_IMU ring buffer + frame/IMU time aligner
+      clock_align.rs     # bidirectional TIMESYNC clock alignment
+      mavlink_emit.rs    # message builders + the component router
+      pre_arm.rs         # the mode-aware pre-arm gate
+      health.rs          # companion state + the navigation heartbeat block
+      pipeline.rs        # plugin lifecycle, subscriptions, the per-frame worker
+    calibration-helper/  # Python camchain.yaml validators (not shipped in the archive)
+  gcs/                   # the Mission Control half (Vision Nav tab, Engage Skill)
+  locales/               # translation strings
+```
 
-The honest answer: many things, and that is why the GCS surfaces
-are designed the way they are. Sensors fail, calibrations drift,
-scenes go featureless, light dies, USB cables unseat themselves
-mid-flight. The plugin's safety posture is:
+### The estimator contract
 
-- **Pre-arm gate refuses to arm** when any required input is
-  unhealthy. The operator never lifts off blind.
-- **Estimator state tracks degradation** in real time. The GCS
-  banner explains the cause and suggests an action.
-- **EKF source-set switcher** is the operator's escape hatch. On
-  ArduPilot, switching back to GPS at altitude is safe and
-  recoverable.
-- **Watchdog restarts the VIO engine** when it goes silent for
-  more than two seconds, with a five-second cooldown that prevents
-  restart storms.
+Every estimator answers `step(...)` with an `EstimatorOutput`, or `None` when there's not enough input this frame (warm-up, no trackable features):
 
-For the full troubleshooting flow see
-[Troubleshooting](/drone-agent/vision-nav-troubleshooting).
+```rust
+pub struct EstimatorOutput {
+    pub timestamp_us: i64,
+    pub output_mode: OutputMode,            // OpticalFlow | None
+    pub state: EstimatorState,              // off|init|converging|converged|degraded|failed
+    pub flow_rate_x: Option<f32>,
+    pub flow_rate_y: Option<f32>,
+    pub flow_rate_z: Option<f32>,
+    pub flow_quality: Option<i32>,          // 0-255
+    pub flow_distance_m: Option<f32>,
+    pub flow_scale_source: Option<ScaleSourceLabel>, // rangefinder|baro|gps|vision
+    pub integration_time_us: Option<i64>,
+}
+```
 
-## Where to go next
+The component router reads `output_mode`: an `OpticalFlow` sample becomes `OPTICAL_FLOW_RAD` on component 198, a `None` sample (from `off`) sends nothing.
 
-- [Fallback methods](/drone-agent/vision-nav-fallback-methods) for a
-  deeper read on how the plugin degrades gracefully.
-- [Features](/drone-agent/vision-nav-features) for the use cases each
-  mode enables.
-- [Architecture](/drone-agent/vision-nav-architecture) for the
-  developer-facing module map and IPC protocol.
+### Sequence: one frame in `optical_flow`
+
+```text
+1. The vision host publishes a frame on the shared frame bus. The plugin's
+   subscription callback converts it with framing::frame_to_gray and sends
+   it down a channel.
+2. The worker pairs (prev_gray, curr_gray, dt) and asks imu::TimeAligner
+   for the gyro sample at the frame time.
+3. The rangefinder trait returns the latest reading (FC relay readings
+   older than 200 ms count as missing).
+4. estimators::OpticalFlowEstimator::step runs flow::OpticalFlowLk and
+   returns an EstimatorOutput.
+5. mavlink_emit::ComponentRouter::emit sends OPTICAL_FLOW_RAD on component
+   198; a companion rangefinder also sends DISTANCE_SENSOR.
+6. The companion state machine and pre_arm::PreArmGate update, and
+   health::HealthSnapshot is refreshed.
+7. The 1 Hz health tick publishes the navigation block and the
+   navigation.engage state event.
+```
+
+### Clock alignment
+
+Once a second the plugin sends `TIMESYNC(tc1 = 0, ts1 = now)`. The flight controller replies with its own time in `tc1`, and the plugin folds `tc1 - ts1` into an exponential moving average (alpha 0.1). That offset converts the plugin's monotonic clock into flight controller time for every `time_usec` it sends.
+
+### Rangefinder drivers
+
+`rangefinder.rs` implements four sources behind one trait:
+
+| Driver | Topology | Status |
+|---|---|---|
+| `fc_relay` | `fc` | Implemented. Relays the flight controller's `DISTANCE_SENSOR`. The default when no rangefinder is configured. |
+| `tfluna_uart` | `companion` | Implemented. Pure 9-byte Benewake frame parser; default device `/dev/ttyUSB0` at 115200 baud. |
+| `garmin_lidarlite_i2c` | `companion` | Stub that returns no reading until the plugin SDK exposes an I2C facade. Wire the sensor to the flight controller and use `fc_relay`. |
+| `vl53l1x_i2c` | `companion` | Same as above. |
+
+### The pre-arm gate
+
+`pre_arm::PreArmGate::evaluate()` is a pure function: no MAVLink, no filesystem, no async. It returns a report with a list of checks, each with a severity (`ok`, `pending`, `blocking`) and a detail string; `armable` is true only when every check is `ok` (or the list is empty, in `off`). The flow-quality gate follows the config's `flow_quality_min` (default 50).
+
+### The heartbeat block
+
+Every second the plugin pushes the `navigation` block through `ctx.telemetry.extend("navigation", ...)`. Keys are camelCase end to end; a snake_case key is dropped by the cloud relay's validator.
+
+```json
+{
+  "opticalFlowSupported": true,
+  "rangefinderTopology": "fc",
+  "recommendedCameraId": "/dev/video0",
+  "flowQuality": 180,
+  "flowRateHz": 29.5,
+  "flowDistanceM": 1.25,
+  "companionState": "active",
+  "mode": "optical_flow",
+  "availableEstimators": ["off", "optical_flow", "optical_flow_degraded"],
+  "estimatorState": "converged",
+  "flowScaleSource": "rangefinder",
+  "imuSource": "mavlink-raw-imu",
+  "imuRateHz": 100,
+  "cameraImuSyncOffsetMs": 4.2,
+  "cameraIntrinsicsLoaded": false,
+  "preArmReport": {
+    "mode": "optical_flow",
+    "armable": true,
+    "checks": [
+      {"id": "companion_active", "severity": "ok", "detail": ""},
+      {"id": "flow_quality", "severity": "ok", "detail": "Quality 180/255."},
+      {"id": "rangefinder", "severity": "ok", "detail": "Topology: fc"}
+    ]
+  },
+  "suggestedMode": null,
+  "suggestedModeReason": null,
+  "detectedCameraCount": null,
+  "detectedRangefinderDriver": null
+}
+```
+
+The four `suggested*` / `detected*` keys are part of the block's shape but the current agent leaves them `null`. The block rides the cloud relay's `cmd_droneStatus.navigation` field into Mission Control's per-drone store.
+
+### Adding a mode
+
+1. Implement the `Estimator` trait in `estimators.rs` (or a new module): `estimator_id`, `output_mode`, `step`.
+2. Add its id to `available_estimators()` so the heartbeat advertises it and the mode card lists it.
+3. Add the variant to `Mode` in `config.rs` and to the `mode` enum in `config-schema.json`.
+4. Add a branch to `PreArmGate::evaluate()` with the checks it needs.
+5. Add the mode to `ModeCard.tsx` and `EstimatorCard.tsx` in the GCS half.
+6. Write unit tests for its state machine and output shape.
+
+The pipeline does not change.
+
+## Next steps
+
+- [Modes](/drone-agent/vision-nav-modes)
+- [Troubleshooting](/drone-agent/vision-nav-troubleshooting)
+- [Agent plugin deep dive](/developers/agent-plugin-deep-dive)

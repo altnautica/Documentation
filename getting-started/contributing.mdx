@@ -1,208 +1,510 @@
 ---
 title: "Contributing"
-description: "How to contribute code, docs, and translations to ADOS."
+description: "How to contribute code, docs, translations, and plugins to ADOS: dev setup, common change recipes, and the pull request process."
 icon: "code-pull-request"
 lastUpdated: "2026-06-18"
 ---
 
 ## Welcome
 
-ADOS is built in the open and we welcome contributions. Whether you are fixing a typo, reporting a bug, adding a feature, or translating the UI into your language, there is a way to help.
+ADOS is built in the open and we welcome contributions. Whether you are fixing a typo, reporting a bug, adding a feature, translating the UI, or publishing a plugin, there is a way to help.
 
-This page covers the practical details: where to contribute, how to set up each repo, what the PR process looks like, and the code conventions we follow.
+This page covers where to contribute, how to set up each repo, recipes for the most common kinds of change, the pull request process, and the code conventions we follow.
 
-## Where to Contribute
+## Where to contribute
 
-ADOS has two main repositories. Both are on GitHub, both are GPLv3.
+All ADOS repositories are on GitHub under GPLv3.
 
 <CardGroup cols={2}>
   <Card title="ADOS Mission Control" icon="display" href="https://github.com/altnautica/ADOSMissionControl">
-    Browser-based GCS. TypeScript, Next.js 16, React 19.
+    Browser-based GCS. TypeScript, Next.js, React, Zustand.
   </Card>
   <Card title="ADOS Drone Agent" icon="microchip" href="https://github.com/altnautica/ADOSDroneAgent">
-    Companion computer software. Rust services plus Python 3.11+, native HTTP front, local setup webapp.
+    Companion computer software. Rust services plus Python 3.11+.
+  </Card>
+  <Card title="ADOS Android GCS" icon="mobile" href="https://github.com/altnautica/ADOSAndroidGCS">
+    Native Android ground control station.
+  </Card>
+  <Card title="ADOSExtensions" icon="puzzle-piece" href="https://github.com/altnautica/ADOSExtensions">
+    First-party plugins built and signed by Altnautica.
   </Card>
 </CardGroup>
 
-The Ground Agent is part of the Drone Agent repo (it is the same codebase, activated by a `ground-station` profile).
+The Ground Agent is part of the Drone Agent repo (the same codebase, activated by the `ground-station` profile). This documentation site lives at [`altnautica/Documentation`](https://github.com/altnautica/Documentation).
 
-## Types of Contributions
+## Types of contributions
 
-**Bug reports.** Found something broken? Open a GitHub issue with steps to reproduce, expected behavior, actual behavior, and your environment (OS, browser, FC firmware, agent version). Screenshots or logs help a lot.
+**Bug reports.** Open a GitHub issue with steps to reproduce, expected behavior, actual behavior, and your environment (OS, browser and version, FC firmware and version, agent version). Screenshots, logs, or MAVLink Inspector output help a lot.
 
 **Bug fixes.** Small fixes (typos, off-by-one errors, missing null checks) can go straight to a PR. Bigger fixes should have an issue first so we can discuss the approach.
 
-**Features.** Open an issue first to discuss the feature. We want to make sure it fits the project's direction before you write code. Small features can be a single PR. Larger features should be broken into smaller PRs.
+**Features.** Open an issue first to discuss the feature and the use case it solves. Small features can be a single PR. Larger features should be broken into smaller PRs. For large work, open a draft PR early with a description of what you plan to build.
 
-**Documentation.** This docs site, README files, code comments, JSDoc/docstrings. Docs PRs are always welcome and reviewed quickly.
+**Documentation.** This docs site, README files, code comments, JSDoc and docstrings. Docs PRs are always welcome.
 
-**Translations.** Mission Control supports 16 languages. Translation files are JSON in the `locales/` directory. Adding missing keys or improving existing translations is a great first contribution.
+**Translations.** Mission Control ships 16 languages as JSON files in `locales/`. Adding missing keys or improving existing translations is a good first contribution. See the [translation guide](#translation-guide).
 
-**Tests.** Test coverage is an area where we can always improve. Vitest for Mission Control, pytest for the Drone Agent.
+**Tests.** Vitest for Mission Control, pytest for the Drone Agent's Python layer, `cargo test` for its Rust crates.
 
-## Setting Up Mission Control
+**Plugins.** Anyone can build and publish a plugin. See [Plugins and extensions](#plugins-and-extensions).
+
+## Setting up Mission Control
 
 ### Prerequisites
 
-- Node.js 20+ (LTS)
-- npm 9+
+- Node.js 20+ and npm
 - Git
+- Chrome or Edge for WebSerial (USB) connections. Firefox and Safari do not support WebSerial.
 
 ### Setup
 
 ```bash
-# Clone the repo
 git clone https://github.com/altnautica/ADOSMissionControl.git
 cd ADOSMissionControl
-
-# Install dependencies
 npm install
 
-# Start in demo mode (no hardware needed)
+# Start in demo mode: a simulated fleet, no hardware needed
 npm run demo
 
 # Open http://localhost:4000
 ```
 
-### Useful Commands
+### Useful commands
 
 ```bash
-# Development server (no demo data)
+# Development server without demo data (http://localhost:4000)
 npm run dev
 
-# Type checking
-npx tsc --noEmit
+# Type checking (app, Convex, Electron, tools)
+npm run typecheck
 
 # Linting
 npm run lint
 
-# Run tests
-npx vitest
+# Unit tests (Vitest)
+npm test
 
-# Build for production
+# Production build
 npm run build
 ```
 
-### Project Structure
+### Project structure
 
-```
+```text
 ADOSMissionControl/
 ├── src/
 │   ├── app/              # Next.js App Router pages and layouts
 │   ├── components/       # React components, organized by feature
 │   │   ├── command/      # Agent and fleet management UI
-│   │   ├── dashboard/    # Per-node detail panels
-│   │   ├── fc/           # Flight controller configuration panels (60+)
+│   │   ├── drone-detail/ # Per-drone tabs, FC panel router and nav registry
+│   │   ├── fc/           # Flight controller panels, one folder per domain
+│   │   │                 #   (calibration, pid, safety, sensors, px4, inav, ...)
 │   │   ├── flight/       # Flight control UI
 │   │   ├── hardware/     # Ground station hardware management
+│   │   ├── indicators/   # Telemetry indicator widgets
 │   │   ├── planner/      # Mission planning tools
 │   │   ├── simulation/   # 3D mission simulation
 │   │   └── ui/           # Shared UI primitives
-│   ├── hooks/            # Custom React hooks
+│   ├── hooks/            # Custom React hooks (usePanelParams and others)
 │   ├── lib/
 │   │   ├── protocol/     # MAVLink and MSP protocol implementation
-│   │   │   ├── firmware/ # Firmware-specific adapters
+│   │   │   ├── firmware/ # Firmware flashing and per-firmware manifests
+│   │   │   ├── handlers/ # Decoded-message handlers that feed callbacks
 │   │   │   ├── messages/ # Binary message decoders
-│   │   │   └── encoders/ # Binary message encoders
-│   │   ├── video/        # WebRTC client, transport cascade
+│   │   │   ├── encoders/ # Binary message encoders
+│   │   │   └── types/    # DroneProtocol interface and shared types
+│   │   ├── video/        # Video client and transports
 │   │   └── patterns/     # Mission pattern generators
-│   ├── stores/           # Zustand state stores (60+)
+│   ├── stores/           # Zustand state stores (103 store modules)
 │   └── i18n.ts           # Locale registry
-├── locales/              # i18n translation files (16 languages)
+├── locales/              # Translation files (16 languages)
 ├── convex/               # Convex backend (optional, cloud features)
-└── tools/                # SITL launcher, MQTT bridge, video relay
+└── tools/                # SITL launcher, MAVLink and MQTT bridges, video relay, deploy
 ```
 
-### Key Architecture Concepts
+There are 87 `*Panel.tsx` components under `src/components/fc/`, grouped into domain folders such as `adsb/`, `calibration/`, `comms/`, `ekf/`, `flight-modes/`, `frame/`, `gimbal/`, `motors/`, `osd/`, `pid/`, `power/`, `receiver/`, `safety/`, `security/`, `sensors/`, and firmware-specific folders `px4/`, `betaflight/`, and `inav/`. Shared panel building blocks live in `src/components/fc/shared/`.
 
-**Protocol adapters.** Each firmware (ArduPilot, PX4, Betaflight, iNav) has its own adapter that implements the `DroneProtocol` TypeScript interface. The adapters handle the differences between MAVLink and MSP, between ArduPilot parameter names and PX4 parameter names, and between different capability sets. New firmware support means writing a new adapter.
+### Key architecture concepts
 
-**Zustand stores.** All state lives in Zustand stores. Components subscribe to store slices via selectors. Stores are independent. The telemetry store uses ring buffers (300 samples) for time-series data.
+**Protocol adapters.** Every firmware is driven through the `DroneProtocol` TypeScript interface (`src/lib/protocol/types/protocol.ts`). The MAVLink adapter (`mavlink-adapter.ts`) serves ArduPilot and PX4; the MSP adapter (`msp-adapter.ts`, plus `msp-adapter-inav.ts`) serves Betaflight and iNav. Components and stores never import MAVLink or MSP primitives directly; they go through the protocol.
 
-**Pattern generators.** Mission patterns (survey grid, orbit, corridor, etc.) are pure functions. They take configuration in and return waypoints out. No React, no side effects. You can add new patterns by writing a generator function and registering it in the pattern registry.
+**Zustand stores.** All shared state lives in Zustand stores in `src/stores/`, one store per domain. Components subscribe to store slices via selectors. The telemetry store keeps time-series data in fixed-size ring buffers (for example 600 attitude samples, 300 position samples) to cap memory.
 
-## Setting Up the Drone Agent
+**Pattern generators.** Mission patterns (survey, orbit, corridor, search-and-rescue, structure scan, landing) are pure functions in `src/lib/patterns/`. They take configuration in and return waypoints out, with no React and no side effects. The pattern store owns the dispatcher from a pattern type to its generator.
+
+### Testing against SITL
+
+Demo mode is enough for most UI work. For protocol, calibration, or mission changes, test against real ArduPilot SITL with the bundled tool:
+
+```bash
+cd ADOSMissionControl/tools/sitl
+bash scripts/setup-ardupilot.sh   # one-time: clone and build ArduPilot into ~/.ardupilot
+npm install
+npx tsx src/index.ts
+```
+
+The tool prints a `ws://[::1]:5760/?token=<token>` URL. In Mission Control, click Connect, pick the WebSocket tab, and paste the full URL. See [Simulation](/mission-control/simulation#sitl-testing) for options, multi-drone runs, and troubleshooting.
+
+## Common Mission Control changes
+
+### Adding an FC panel
+
+FC panels let the user adjust a group of flight controller parameters. They are the most common contribution.
+
+<Steps>
+  <Step title="Create the component in its domain folder">
+    Add the panel under `src/components/fc/<domain>/`, for example `src/components/fc/sensors/MyNewPanel.tsx`. Load parameters with the `usePanelParams` hook from `@/hooks/use-panel-params`:
+
+    ```tsx
+    import { usePanelParams } from "@/hooks/use-panel-params";
+    import { PanelHeader } from "../shared/PanelHeader";
+
+    const REQUIRED = ["MY_PARAM_1", "MY_PARAM_2"];
+    const OPTIONAL = ["MY_PARAM_3"];
+
+    export function MyNewPanel() {
+      const {
+        params, loading, error, dirtyParams,
+        setLocalValue, saveAllToRam, commitToFlash, revertAll,
+      } = usePanelParams({
+        paramNames: REQUIRED,
+        optionalParams: OPTIONAL,
+        panelId: "my-new-panel",
+        autoLoad: true,
+      });
+
+      // Render inputs from params.get(name); call setLocalValue(name, value)
+      // on edit, saveAllToRam() to write, commitToFlash() to persist.
+    }
+    ```
+
+    Put parameters a firmware may not have in `optionalParams` so the panel still loads when they are absent. `usePanelParams` handles the protocol details, so the same panel code works for MAVLink parameters (ArduPilot, PX4) and MSP virtual parameters (Betaflight, iNav).
+  </Step>
+  <Step title="Register it in the nav">
+    Add an entry to the nav registry in `src/components/drone-detail/fc-nav-items.tsx`, with its id, label, icon, capability gate, and section:
+
+    ```tsx
+    { id: "my-new-panel", label: "My New Panel", icon: <Cpu size={14} />, requiredCapability: "supportsGpsConfig", section: "Sensors" },
+    ```
+
+    Entries can also restrict themselves with `excludeFirmware` or `vehicleClasses`.
+  </Step>
+  <Step title="Route the id to the component">
+    In `src/components/drone-detail/FcPanelRouter.tsx`, load the panel with `next/dynamic` and return it for its `activePanel` id. Firmware-specific variants are chosen here too, by `firmwareType`.
+  </Step>
+  <Step title="Test it">
+    Check the panel in demo mode, then against SITL: it loads, reads parameters, writes them back, and survives a disconnect.
+  </Step>
+</Steps>
+
+Reuse the shared pieces in `src/components/fc/shared/`, such as `PanelHeader` and `DisconnectGuard` (blocks writes when the link drops), and the `ArmedWarningBanner` indicator for panels that should not be edited while armed.
+
+### Adding a MAVLink message decoder
+
+<Steps>
+  <Step title="Add the CRC seed and payload length">
+    In `src/lib/protocol/mavlink-crc-extra.ts`, add the message id to the `CRC_EXTRA` map (seed from the MAVLink XML definition) and to `PAYLOAD_LENGTHS`.
+  </Step>
+  <Step title="Add the decoder">
+    Add a `decode<MessageName>(dv: DataView)` function to the matching file in `src/lib/protocol/messages/` (re-exported through `mavlink-messages.ts`). Return a typed object matching the MAVLink field layout.
+  </Step>
+  <Step title="Add a handler and callback list">
+    Add a `handle<MessageName>` function in `src/lib/protocol/handlers/` that decodes the payload and calls each registered callback, then add the callback array and its `on<MessageName>` subscriber in `mavlink-adapter-callbacks.ts`.
+  </Step>
+  <Step title="Dispatch it">
+    Add a `case <id>:` branch to the dispatch switch in `src/lib/protocol/mavlink-adapter-frame-handlers.ts`.
+  </Step>
+  <Step title="Expose it and bridge it to a store">
+    Declare the `on<MessageName>(callback): () => void` method on `DroneProtocol` in `src/lib/protocol/types/protocol.ts`, then subscribe in `bridgeTelemetry()` in `src/stores/drone-manager-bridge.ts` and write into the right store.
+  </Step>
+  <Step title="Encode, if you send it">
+    Add an `encode<MessageName>()` function to the matching file in `src/lib/protocol/encoders/` (re-exported through `mavlink-encoder.ts`), following the existing `DataView` byte-packing pattern.
+  </Step>
+</Steps>
+
+The MAVLink Inspector in the UI shows every incoming message, which is the quickest way to confirm the decoder sees traffic.
+
+### Adding a Zustand store
+
+<Steps>
+  <Step title="Create the store">
+    ```typescript
+    // src/stores/my-new-store.ts
+    import { create } from "zustand";
+
+    interface MyNewState {
+      value: number;
+      setValue: (v: number) => void;
+    }
+
+    export const useMyNewStore = create<MyNewState>((set) => ({
+      value: 0,
+      setValue: (v) => set({ value: v }),
+    }));
+    ```
+  </Step>
+  <Step title="Use selectors in components">
+    ```typescript
+    const value = useMyNewStore((s) => s.value);
+    ```
+
+    Always select specific fields. Never destructure the entire store.
+  </Step>
+</Steps>
+
+If the store needs to persist across page reloads, use the `persist` middleware with a version number:
+
+```typescript
+import { persist } from "zustand/middleware";
+
+export const useMyNewStore = create<MyNewState>()(
+  persist(
+    (set) => ({
+      value: 0,
+      setValue: (v) => set({ value: v }),
+    }),
+    {
+      name: "my-new-store",
+      version: 1,
+    }
+  )
+);
+```
+
+## Setting up the Drone Agent
+
+The agent is a Rust and Python hybrid. The long-running and safety-critical services are Rust binaries built from `crates/`; Python carries AI and vision, the plugin runtime, setup, HAL detection, drivers, and the residual web API. A full dev setup needs both a Rust toolchain and Python.
 
 ### Prerequisites
 
 - Python 3.11+
-- pip
+- A recent stable Rust toolchain
 - Git
-- A Linux SBC (for full testing) or macOS/Linux desktop (for development)
+- A Linux SBC for full testing, or a macOS or Linux desktop for development
 
 ### Setup
 
+<Steps>
+  <Step title="Clone the repo">
+    ```bash
+    git clone https://github.com/altnautica/ADOSDroneAgent.git
+    cd ADOSDroneAgent
+    ```
+  </Step>
+  <Step title="Create a Python virtual environment">
+    ```bash
+    python3 -m venv .venv
+    source .venv/bin/activate
+    pip install -e ".[dev]"
+    ```
+
+    `uv` works too if you prefer it.
+  </Step>
+  <Step title="Build and test the Rust services">
+    ```bash
+    cd crates
+    cargo build
+    cargo test
+    ```
+
+    The Cargo workspace lives in `crates/`.
+  </Step>
+  <Step title="Run the CLI">
+    ```bash
+    ados --help
+    ados status
+    ados
+    ```
+
+    `ados` with no subcommand opens the terminal dashboard in an interactive terminal, and prints a one-shot plain status otherwise.
+  </Step>
+</Steps>
+
+### Tests and linting
+
 ```bash
-# Clone the repo
-git clone https://github.com/altnautica/ADOSDroneAgent.git
-cd ADOSDroneAgent
+# Python
+pytest
+ruff check .
+black .
+mypy src/
 
-# Create a virtual environment
-python3 -m venv .venv
-source .venv/bin/activate
-
-# Install in development mode
-pip install -e ".[dev]"
-
-# Run the CLI
-ados --help
-
-# Start the local API/setup server through the repository's development flow
-ados --help
+# Rust (from crates/)
+cargo fmt --check
+cargo clippy
+cargo test
 ```
 
-### Project Structure
+### Project structure
 
-```
+```text
 ADOSDroneAgent/
-├── crates/              # Rust services (supervisor, control front,
-│   │                    #   mavlink-router, cloud, video, radio,
-│   │                    #   vision, logd, net, groundlink, and more)
+├── crates/              # Rust services, one crate per service
+│                        #   (ados-supervisor, ados-mavlink-router, ados-control,
+│                        #   ados-cloud, ados-video, ados-radio, ados-vision,
+│                        #   ados-logd, ados-net, ados-groundlink, ados-plugin-host,
+│                        #   ados-protocol, ados-sdk, ados-tui, and more)
+├── dashboard/           # Browser dashboard source (TypeScript)
+├── cockpit/             # On-box ground-station cockpit source (TypeScript)
+├── data/systemd/        # systemd unit files
 ├── src/ados/            # Python layer
 │   ├── __init__.py      # Version (single source of truth)
 │   ├── cli/             # ados command-line interface
-│   ├── setup/           # Universal setup facade
-│   ├── webapp/          # Local setup webapp assets
-│   ├── api/             # Residual FastAPI (permanent-Python features)
+│   ├── setup/           # Setup facade
+│   ├── api/             # Residual Python API
 │   │   ├── runtime.py   # API facade and runtime boundary
 │   │   └── routes/      # Domain route modules
-│   ├── services/        # Python service glue (AI/vision,
-│   │                    #   peripherals, ground-station managers)
-│   ├── plugins/         # Plugin host, signing, manifest
+│   ├── services/        # Python services (vision, peripherals,
+│   │                    #   ground-station managers, health, ...)
+│   ├── plugins/         # Plugin runtime, signing, manifest
 │   ├── sdk/             # Python plugin SDK
 │   ├── hal/
 │   │   ├── boards/      # Board profile YAMLs, one per supported SBC
 │   │   └── detect.py    # Hardware auto-detection
-│   └── core/config/     # Configuration models and the on-disk writer
+│   └── core/            # Config, logging, paths, IPC
 └── scripts/
     └── install.sh       # One-line installer bootstrap
 ```
 
-### Key Architecture Concepts
+### Key architecture concepts
 
-**systemd services.** In production, each agent service runs as a separate systemd unit. Many units run native Rust binaries (the supervisor, MAVLink router, control front, cloud relay, video, radio). Others run Python (the residual API, health, and the ground-station hardware managers). A Rust supervisor orchestrates the unit catalog through systemd. For development, you can run individual services directly.
+**systemd services.** In production each agent service runs as its own systemd unit (`data/systemd/ados-*.service`). Many units run native Rust binaries (the supervisor, MAVLink router, control front, cloud relay, video, radio). Others run Python (the residual API, health, and the ground-station hardware managers). The Rust supervisor (`ados-supervisor`) orchestrates the unit catalog through `systemctl`. For development, you can run individual services directly.
 
-**HAL board profiles.** Each supported SBC has a YAML profile (`src/ados/hal/boards/*.yaml`) that describes its hardware: serial ports, camera paths, GPIO pins, capabilities. The agent reads the profile at boot and configures itself accordingly.
+**HAL board profiles.** Each supported SBC has a YAML profile in `src/ados/hal/boards/` that describes its hardware: serial ports, camera interfaces, GPIO pins, video codecs, capabilities. The agent reads the profile at boot and configures itself accordingly.
 
-**IPC via Unix sockets.** Agent services communicate through Unix domain sockets at `/run/ados/`. The MAVLink service writes parsed telemetry to `/run/ados/mavlink.sock`. Other services read from it.
+**IPC via Unix sockets.** Services talk through Unix domain sockets under `/run/ados/`, for example `mavlink.sock` (MAVLink to and from the flight controller) and `state.sock` (the telemetry snapshot). The wire contracts are defined in the `ados-protocol` crate, which is the single source of truth.
 
-**API runtime facade.** Residual Python API route modules should use the
-accessors in `ados.api.runtime` for telemetry, FC, video, WFB-ng, and parameter
-state. If a new route needs more runtime data, add a facade method instead of
-reading private process fields from a route handler.
+**API runtime facade.** Residual Python API route modules use the accessors in `ados.api.runtime` for telemetry, FC, video, WFB-ng, and parameter state. If a new route needs more runtime data, add a facade method instead of reading private process fields from a route handler.
 
-## Pull Request Guidelines
+## Common Drone Agent changes
 
-### Before Submitting
+### Adding a board profile
+
+<Steps>
+  <Step title="Create the YAML profile">
+    ```yaml
+    # src/ados/hal/boards/my-board.yaml
+    name: "My Board Name"
+    vendor: "Board Manufacturer"
+    soc: "RK3566"
+    arch: "aarch64"
+    model_patterns:
+      - "My Board Model String"
+    default_tier: 3
+    gpio_pins: [5, 6, 13, 19]
+    uart_paths:
+      - /dev/ttyS0
+    hw_video_codecs:
+      - h264_enc
+      - h264_dec
+    video:
+      csi_ports: 1
+      max_encode_resolution: "1920x1080"
+      max_encode_fps: 30
+      encoder_api: rkmpp
+    ```
+
+    `model_patterns` are matched against the board's device-tree model string for auto-detection. Use an existing profile in the same folder as the template for the full set of keys.
+  </Step>
+  <Step title="Test detection">
+    On the target board, run:
+
+    ```bash
+    ados status --json
+    ```
+
+    This prints setup, service, board, and runtime status for inspection.
+  </Step>
+</Steps>
+
+### Adding an agent service
+
+New long-running or safety-critical services are written as Rust crates under `crates/`. An ancillary Python service is still fine for ecosystem-bound work (AI, drivers, setup glue); the steps below show the Python case. Either way, the unit is registered in the supervisor catalog.
+
+<Steps>
+  <Step title="Create the service module">
+    ```python
+    # src/ados/services/my_service/__main__.py
+    import asyncio
+    import structlog
+
+    log = structlog.get_logger()
+
+    async def main():
+        log.info("my_service.started")
+        while True:
+            # Service logic here
+            await asyncio.sleep(1)
+
+    if __name__ == "__main__":
+        asyncio.run(main())
+    ```
+  </Step>
+  <Step title="Create the systemd unit">
+    Add `data/systemd/ados-my-service.service`, following the existing units:
+
+    ```ini
+    [Unit]
+    Description=ADOS My Service
+    PartOf=ados-supervisor.service
+
+    [Service]
+    Slice=ados.slice
+    Type=simple
+    ExecStart=/opt/ados/venv/bin/python -m ados.services.my_service
+    Restart=always
+    RestartSec=3
+    Environment=ADOS_CONFIG=/etc/ados/config.yaml
+    MemoryMax=64M
+    CPUQuota=25%
+
+    [Install]
+    WantedBy=ados-supervisor.service
+    ```
+  </Step>
+  <Step title="Register it in the supervisor">
+    Add the unit to `SERVICE_REGISTRY` in `crates/ados-supervisor/src/registry.rs` with its category (`Core`, `Hardware`, or `OnDemand`), its profile gate, and any ground-station role gate. The supervisor drives the unit through `systemctl`; it does not spawn the process itself.
+  </Step>
+</Steps>
+
+## Plugins and extensions
+
+### Your own repo
+
+The default. Build a plugin, sign it with your own key, and publish it on GitHub or anywhere else. Operators install by URL or downloaded file. Distribution is not gated; the host gates trust through the publisher key list. You decide license, release cadence, supported platforms, and support policy. The host enforces only the manifest schema and the permission model.
+
+### Altnautica-published extensions
+
+[`altnautica/ADOSExtensions`](https://github.com/altnautica/ADOSExtensions) is the public monorepo for first-party extensions Altnautica builds and signs. It is first-party only for now; community submissions go through the [hosted registry](/developers/distribution-registry) flow once the registry reaches v1.0. Extensions there are GPL-3.0-or-later, tested (unit tests at minimum, ideally against ArduPilot SITL), maintained, and technical in scope.
+
+### Filing host issues
+
+Bugs in the plugin host itself go to the host repos:
+
+- Agent plugin host: [`altnautica/ADOSDroneAgent`](https://github.com/altnautica/ADOSDroneAgent)
+- GCS plugin host: [`altnautica/ADOSMissionControl`](https://github.com/altnautica/ADOSMissionControl)
+
+Include a minimal `.adosplug` that reproduces the bug whenever possible.
+
+### Spec drift
+
+If a manifest field, a capability, or a slot id is documented one way here and behaves differently in the host code, the host code is authoritative. File a docs issue against [`altnautica/Documentation`](https://github.com/altnautica/Documentation) and we will reconcile.
+
+## Pull request guidelines
+
+### Before submitting
 
 1. **Check existing issues.** Someone may already be working on this.
 2. **For features, open an issue first.** Discuss the approach before writing code.
 3. **Keep PRs focused.** One feature or fix per PR. If your PR touches 50 files across 5 features, split it.
-4. **Test your changes.** Run the linter, type checker, and tests. If you add a feature, add tests.
+4. **Run the checks.**
+   - Mission Control: `npm run typecheck`, `npm run lint`, `npm test`, and `npm run build`. Test in demo mode, and against SITL or real hardware if you touched the protocol layer, calibration, or pre-arm logic.
+   - Drone Agent: `pytest`, `ruff check .`, and `mypy src/` for Python; `cargo fmt --check`, `cargo clippy`, and `cargo test` for Rust crates.
+5. **Add tests** for new features. Do not bump versions yourself; maintainers handle releases.
 
-### Branch Naming
+### Branch naming
 
-```
+```text
 fix/short-description      # Bug fixes
 feat/short-description     # New features
 docs/short-description     # Documentation
@@ -210,51 +512,52 @@ i18n/short-description     # Translations
 refactor/short-description # Code cleanup
 ```
 
-### Commit Messages
+### Commit messages
 
 Write clear, short commit messages. Describe what changed and why.
 
-```
+```text
 feat: add corridor scan pattern generator
 
 fix: prevent null reference in telemetry store when FC disconnects
 
 docs: add gamepad setup instructions to flight control page
 
-i18n: add missing Hindi translations for configure panels
+i18n: add missing Japanese translations for configure panels
 ```
 
-Keep commit messages focused on what the change does. Do not reference issue trackers from other projects.
+### Review process
 
-### The Review Process
+1. Fork the repo, push your branch, and open a PR against `main`.
+2. Describe what changed, why, and how to test it. Include before and after screenshots for UI changes.
+3. Automated checks run (type check, lint, tests).
+4. A maintainer reviews the code; address the feedback.
+5. Once approved, the maintainer merges.
 
-1. Push your branch and open a PR against `main`
-2. Fill in the PR template (summary, test plan, screenshots if UI changes)
-3. A maintainer will review within a few days
-4. Address review feedback
-5. Once approved, the PR is merged
-
-### Code Style
+## Code style
 
 **Mission Control (TypeScript):**
-- TypeScript strict mode (`noEmit` type check must pass)
-- Functional React components with hooks
-- Zustand for state (not Redux, not Context for data)
-- Tailwind CSS for styling
-- No `any` types without a comment explaining why
+- TypeScript strict mode. No `any`; use `unknown` and narrow.
+- Functional React components with hooks.
+- Zustand for shared state (not Redux, not Context for data), one store per domain.
+- `usePanelParams` for FC panels, selectors for store subscriptions.
+- Tailwind CSS with the design tokens; no CSS modules. Components must look correct on the dark theme.
 
 **Drone Agent (Python):**
-- Python 3.11+ features are fine (match statements, `|` union types, etc.)
-- Type hints on all public functions
-- structlog for logging
-- Pydantic for config and API models
-- Black for formatting (if configured)
+- Python 3.11+ features are fine (match statements, `|` union types).
+- Type hints on all public functions; mypy in strict mode.
+- `structlog` for logging, `asyncio` for async code, Pydantic for config and API models.
+- Black (100-character lines) for formatting, Ruff for linting.
 
-## Translation Guide
+**Drone Agent (Rust):**
+- Format with `cargo fmt`, lint with `cargo clippy`.
+- Keep the IPC wire contracts in the `ados-protocol` crate as the single source of truth.
 
-Mission Control supports 16 languages. Translation files live at `locales/<lang>.json`.
+## Translation guide
 
-### Current Languages
+Mission Control supports 16 languages. Translation files live at `locales/<code>.json`, and the locale registry is `src/i18n.ts`.
+
+### Current languages
 
 | Code | Language | Status |
 |------|----------|--------|
@@ -275,46 +578,45 @@ Mission Control supports 16 languages. Translation files live at `locales/<lang>
 | `te` | Telugu | Partial |
 | `zh` | Chinese (Simplified) | Partial |
 
-### How to Contribute Translations
+### How to contribute translations
 
-1. Open `locales/en.json` (the reference file)
-2. Open the target language file (e.g., `locales/hi.json`)
-3. Find keys that are missing or have English placeholder values
-4. Translate them
-5. Submit a PR
+1. Open `locales/en.json` (the reference file).
+2. Open the target language file (for example `locales/ja.json`).
+3. Find keys that are missing or still carry English values.
+4. Translate them and submit a PR.
 
 Keep these in mind:
-- Drone terminology often does not have direct translations. Use the term pilots in your language actually use. For example, "throttle" in Hindi might stay as "throttle" rather than a literal Hindi translation.
+- Drone terminology often has no direct translation. Use the term pilots in your language actually use, even if it is the English word.
 - Keep strings short. UI labels have limited space.
-- Do not translate parameter names (like `MOT_SPIN_ARM`). Those are ArduPilot identifiers.
+- Do not translate parameter names (like `MOT_SPIN_ARM`). Those are firmware identifiers.
 
-### Adding a New Language
+### Adding a new language
 
-1. Copy `locales/en.json` to `locales/<code>.json`
-2. Translate all keys
-3. Add the language to the locale registry in `src/i18n.ts`
-4. Submit a PR
+1. Copy `locales/en.json` to `locales/<code>.json`.
+2. Translate all keys.
+3. Add the code to the `locales` list in `src/i18n.ts`.
+4. Submit a PR.
 
-## Reporting Security Issues
+## Reporting security issues
 
 If you find a security vulnerability, do **not** open a public issue. Email [team@altnautica.com](mailto:team@altnautica.com) with details. We will work with you on a fix and coordinated disclosure.
 
-## Code of Conduct
+## Code of conduct
 
-Be respectful. Be constructive. Help each other learn. We do not tolerate harassment, discrimination, or personal attacks. If you see bad behavior, report it to [team@altnautica.com](mailto:team@altnautica.com).
+Be respectful. Be constructive. Be specific. We do not tolerate harassment, discrimination, or personal attacks. If you see bad behavior, report it to [team@altnautica.com](mailto:team@altnautica.com). Code in the official repos stays technical in scope: no marketing copy in the source tree.
 
-## Need Help?
+## Need help?
 
 If you want to contribute but are not sure where to start:
 
 - Look for issues labeled `good first issue` on GitHub
-- Ask in the `#contributing` channel on [Discord](https://discord.gg/uxbvuD4d5q)
+- Ask on [Discord](https://discord.gg/uxbvuD4d5q): `#contributing` for general contributions, `#plugins` for plugin authors
 - Read the [Architecture](/architecture/system-overview) section to understand the codebase
 
-## Next Steps
+## Next steps
 
 <CardGroup cols={2}>
-  <Card title="Architecture Overview" icon="sitemap" href="/architecture/system-overview">
+  <Card title="Architecture overview" icon="sitemap" href="/architecture/system-overview">
     Understand the system architecture before making changes.
   </Card>
   <Card title="Community" icon="users" href="/getting-started/community">

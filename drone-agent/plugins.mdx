@@ -87,7 +87,7 @@ agent:
 
 The agent's IPC dispatcher gates each capability at request time. A plugin that calls a `vehicle.command` operation without the matching grant gets `capability_denied` back from the dispatcher and never reaches the handler.
 
-There are more than 40 named agent capabilities in the catalog. They cover telemetry reads and extension, MAVLink read and write plus the component IDs (`mavlink.component.*`), mission read and write, sensor registration, hardware bus access (`hardware.uart` / `i2c` / `spi` / `gpio` / `usb`), recording, vision frames and detections, estimator pose injection, and process spawn. The GCS half has its own UI slot capabilities on the Mission Control side. The full table lives next to the SDK in the [agent plugin deep dive](/developers/agent-plugin-deep-dive#capability-catalog).
+There are more than 40 named agent capabilities in the catalog. They cover telemetry reads and extension, MAVLink read and write plus the component IDs (`mavlink.component.*`), mission read and write, sensor registration, hardware bus access (`hardware.uart` / `i2c` / `spi` / `gpio` / `usb`), recording, vision frames and detections, estimator pose injection, and process spawn. The GCS half has its own UI slot capabilities on the Mission Control side. The full table lives in the [permissions reference](/developers/permissions#agent-capabilities).
 
 Risk badges roll up the requested capabilities into one of four levels (informational, low, medium, high) so operators can decide at a glance whether a plugin matches their threat tolerance.
 

@@ -7,8 +7,9 @@ lastUpdated: "2026-06-18"
 
 The Dashboard is the first screen you see when you open Mission Control. It shows all connected drones, their live positions on a map, and quick-access telemetry cards.
 
-<Frame caption="Dashboard with drone list, map, and detail panel">
-  <img src="/images/dashboard/dashboard.png" alt="Mission Control dashboard showing connected drones and map" />
+<Frame caption="The Dashboard in Grid view: the fleet sidebar on the left and a live card per node">
+  <img className="block dark:hidden" src="/images/mission-control/light/dashboard.png" alt="Mission Control Dashboard in Grid view, with Grid, Overview, Nodes and Swarm view switches, fleet totals, a fleet sidebar of demo drones, and node cards showing armed state, flight mode, GPS, battery, and companion CPU and memory" />
+  <img className="hidden dark:block" src="/images/mission-control/dark/dashboard.png" alt="Mission Control Dashboard in Grid view, with Grid, Overview, Nodes and Swarm view switches, fleet totals, a fleet sidebar of demo drones, and node cards showing armed state, flight mode, GPS, battery, and companion CPU and memory" />
 </Frame>
 
 ## Layout
@@ -58,6 +59,13 @@ Select a drone to see expanded information:
 - **GPS:** Fix type, satellite count, HDOP
 - **Radio:** RSSI, remote RSSI, noise floor
 - **EKF:** Status flags and variance ratios
+
+Drones with a companion agent also show the agent's side in the detail view's **Overview** tab: system resources, the agent's services, and a live log stream.
+
+<Frame caption="A drone's detail view, Overview tab: companion resources, agent services, and live logs">
+  <img className="block dark:hidden" src="/images/mission-control/light/node-overview.png" alt="Per-drone Overview tab showing CPU, memory, disk and temperature bars, CPU and memory history charts, a services table with running and stopped agent services, and a live agent log stream" />
+  <img className="hidden dark:block" src="/images/mission-control/dark/node-overview.png" alt="Per-drone Overview tab showing CPU, memory, disk and temperature bars, CPU and memory history charts, a services table with running and stopped agent services, and a live agent log stream" />
+</Frame>
 
 ## Demo Mode
 

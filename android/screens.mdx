@@ -1,0 +1,219 @@
+---
+title: "Screens"
+description: "Every screen in ADOS Android GCS 0.1.6: what it is for and which controls it has."
+icon: "table-cells-large"
+lastUpdated: "2026-10-09"
+---
+
+The app's navigation graph lives in `ui/ADOSApp.kt`, with route names in `ui/navigation/NavRoutes.kt`. It has 12 routes. The Configure route holds two tabs, Parameters and Calibration, which are full screens of their own, so this page covers 14 screens.
+
+| Screen | Route | Reached from |
+|--------|-------|--------------|
+| [Home](#home) | `home` | Start destination |
+| [Fly](#fly) | `fly` | Home, **FLY** card |
+| [Map](#map) | `map` | Home, **MAP** card |
+| [Plan](#plan) | `plan` | Home, **PLAN** card |
+| [Agriculture](#agriculture) | `agriculture` | Home, **AGRICULTURE** card |
+| [Configure](#configure) | `configure` | Home, **CONFIGURE** card |
+| [Parameters](#parameters) | tab inside `configure` | Configure, **Parameters** tab |
+| [Calibration](#calibration) | tab inside `configure` | Configure, **Calibration** tab |
+| [Flight logs](#flight-logs) | `logs` | Home, **LOGS** card |
+| [Flight details](#flight-details) | `flight_detail/{sessionId}` | Tap a flight in Flight logs |
+| [Ground Station](#ground-station) | `groundstation` | Home, **STATION** card |
+| [Settings](#settings) | `settings` | Home, gear icon |
+| [Recordings](#recordings) | `gallery` | No entry point yet |
+| [Offline maps](#offline-maps) | `tile_download` | No entry point yet |
+
+Every screen except Recordings and Offline maps has a back arrow at the top left that returns to Home. Android's system back gesture works everywhere.
+
+## Home
+
+The launcher for everything else. The title bar reads **ADOS Ground Control** with a gear icon on the right that opens [Settings](#settings).
+
+Below it, seven cards in a two-column grid:
+
+| Card | Opens | Description on the card |
+|------|-------|-------------------------|
+| **FLY** | Fly | Live video feed and flight controls |
+| **MAP** | Map | Full-screen map with drone tracking |
+| **PLAN** | Plan | Mission planning and waypoints |
+| **AGRICULTURE** | Agriculture | Spray missions and field mapping |
+| **CONFIGURE** | Configure | FC parameters and calibration |
+| **LOGS** | Flight logs | Flight history and tlog recordings |
+| **STATION** | Ground Station | Radio link, recording and node services |
+
+A status bar along the bottom shows the current connection mode, battery percentage, GPS fix type and satellite count.
+
+## Fly
+
+Full-screen live video with a HUD on top, for flying.
+
+**Video and HUD.** Video fills the screen. The HUD draws an artificial horizon, compass tape, altitude ladder, speed ladder, battery, flight mode and armed state, GPS, distance to home, link latency, and a recording indicator. The compass tape and the two ladders follow the toggles in [Settings](#settings). In cloud relay mode a yellow banner across the top reads "Cloud mode -- high latency (~200ms). Not suitable for manual flight."
+
+**Overlays.**
+- Top left: back arrow, with a gamepad status overlay underneath when an Android gamepad or joystick is connected.
+- Top right: the connection mode indicator, and a menu icon that opens the controls panel.
+- Map picture-in-picture showing the drone and home position (bottom right in landscape, top right in portrait).
+
+**Action buttons.** In landscape the ARM button sits bottom left and the other buttons stack bottom right. In portrait they share one dock along the bottom.
+
+| Button | Behaviour |
+|--------|-----------|
+| **ARM** / **DISARM** | Green when disarmed, red when armed. Long-press to arm. Tap while armed to open a "Disarm motors?" confirmation. |
+| Record | Toggles the HUD recording indicator. In 0.1.6 it does not start a recording on the phone or the node; use [Ground Station](#ground-station) to record on the node. |
+| Pause / Resume | Only in Auto mode. Sends a pause or resume mission command right away. |
+| Takeoff | Shown while disarmed, or armed and not in Auto. Opens a dialog with an altitude slider from 2 m to 100 m, then sends the takeoff command. |
+| Land | Shown while armed. |
+| **RTL** | Return to launch. Always shown. |
+
+**Controls panel.** Slides in from the right in landscape, or up from the bottom in portrait. It has flight mode chips, a telemetry summary (battery, voltage, GPS satellites, altitude, ground speed), a Ground Station block that shows `A (WebRTC)` when connected through a ground station, and a camera picker. The camera picker only changes the selection in the panel; it doesn't call the node's camera switch in 0.1.6.
+
+<Warning>
+Known issue in 0.1.6: ARM, the disarm confirmation, Land, RTL and the mode chips in the controls panel on the Fly screen queue a confirmation step that the Fly screen never displays, so those commands are not sent from Fly. Takeoff, Pause and Resume send normally. To change flight mode (including RTL and Land), use the mode selector on the [Map](#map) screen, which shows the confirmation and sends the command.
+</Warning>
+
+## Map
+
+A full-screen map that tracks the drone.
+
+- **Map.** Shows the drone and home markers. The tile source follows **Settings > Map Provider**: Mapbox, or OSMDroid with dark CARTO tiles for OpenStreetMap.
+- **Flight mode selector** (top right). Stabilize, AltHold, Loiter, Auto, RTL, Land, Guided and PosHold. Tapping a mode opens a "Switch flight mode to ...?" dialog with **Confirm** and **Cancel**. The selector is disabled in cloud relay mode.
+- **Telemetry bar** (bottom). `BAT` (green above 40 %, amber from 21 to 40 %, red at 20 % or below), `GPS` satellites (red without a fix, amber for 2D, green for 3D), `ALT` relative altitude, armed state, and `MODE`.
+
+## Plan
+
+Waypoint mission planning. The screen is split: map on the left (60 %), waypoint list and controls on the right (40 %). The map here always uses Mapbox.
+
+**Waypoints.**
+- The **+** button at the bottom right of the map opens the waypoint editor: latitude and longitude fields, an altitude slider (5 m to 200 m), a speed slider (1 m/s to 30 m/s), and a command picker with **Waypoint**, **Loiter**, **Return to Launch** and **Takeoff**.
+- Each row in the list shows its number, coordinates to six decimals, altitude and speed, with **Edit** and **Delete** icons.
+- The save icon next to the **Waypoints (N)** heading opens a **Save Mission** dialog that stores the mission on the phone under a name.
+- **Upload Mission** sends the list to the flight controller over MAVLink. A progress line shows "Uploading... N%", then "Upload complete" or the error.
+
+**Templates.** Four buttons: **Survey**, **Corridor**, **Orbit**, **Custom**. Only **Survey** does something in 0.1.6; the other three have no action yet.
+
+**Survey.** Opens a **Survey Mission** sheet with sliders for Altitude (20 m to 120 m), Forward Overlap (50 % to 90 %), Side Overlap (40 % to 80 %), Grid Angle (0° to 180°) and Speed (2 m/s to 15 m/s). **Generate Preview** draws the lawnmower path on the map and shows Flight Time, Distance, Lines and Est. Photos. **Upload Mission** replaces the waypoint list with the survey and uploads it.
+
+<Note>
+In 0.1.6 the survey area isn't drawn by hand. It is a fixed square about 0.002° (roughly 200 m) either side of the drone's current position. Drawing the polygon on the map is planned.
+</Note>
+
+## Agriculture
+
+Spray mission setup. A status chip at the top right shows the workflow state: **Idle**, **Mapping**, **Ready**, **Spraying** or **Done**.
+
+Four large buttons:
+
+| Button | Enabled when | Action |
+|--------|--------------|--------|
+| **Map Field** | Idle or Done | Puts the screen into the Mapping state. |
+| **Set Up Spray** | A field boundary exists | Opens the spray configuration sheet. |
+| **Start Mission** | Ready | Generates the spray pattern from the boundary and config, uploads it over MAVLink, and moves to Done when the upload completes (back to Ready on error). |
+| **View Summary** | Done | Shows waypoint count, area in hectares and acres, crop, chemical, rate, and the estimated total litres. |
+
+The spray configuration sheet has dropdowns for **Crop Type** and **Chemical** (Pesticide, Herbicide, Fungicide, Fertilizer (liquid), Growth Regulator) and sliders for **Rate (L/acre)** (1 to 50), **Flight Altitude** (1.5 m to 15 m), **Flight Speed** (1 m/s to 8 m/s) and **Swath Width** (1 m to 10 m). Once set, a summary card shows the field (points and hectares) and the spray settings.
+
+<Warning>
+In progress in 0.1.6: the walk-the-boundary field mapper (phone GPS, high-accuracy fixes every 2 seconds) is in the source but isn't shown on this screen yet. **Map Field** changes the state, but no boundary gets recorded, so **Set Up Spray** and the steps after it stay disabled.
+</Warning>
+
+## Configure
+
+Flight controller configuration. A title bar with a back arrow and **Configure**, then two tabs: **Parameters** and **Calibration**. Both need a live MAVLink connection.
+
+## Parameters
+
+The first Configure tab.
+
+- **Search parameters...** field filters the list as you type. A count line shows "N params", plus "(filtered from M)" while a filter is active.
+- Parameters are grouped by name prefix. Tap a group header to collapse or expand it; the header shows the group's count.
+- Tap a parameter to open the editor sheet with its current value and a **New value** field. **Write** sends it to the flight controller, and a snackbar reports "NAME written" or the failure. Non-numeric input is rejected with "Enter a valid number".
+- While parameters download, a progress bar shows "Downloading parameters... N%". With no parameters loaded, the screen reads "Connect to drone to view parameters" with a **Refresh** button.
+
+Bottom actions:
+
+| Button | Action |
+|--------|--------|
+| **Refresh** | Downloads the full parameter list again. |
+| **Save Profile** | Writes all current values to `param_profiles/params_<timestamp>.json` in the app's private storage. |
+| **Load Profile** | Reads the most recent profile file and writes every value in it to the flight controller, then reports "Loaded N params from FILE". |
+
+## Calibration
+
+The second Configure tab, with three sub-tabs:
+
+| Tab | What it does |
+|-----|--------------|
+| **Accel** | Accelerometer calibration. **Start Calibration**, then follow "Step N of 6" to place the drone in six orientations. Ends with "Calibration Complete!" or "Calibration Failed" with **Retry** and **Cancel**. |
+| **Compass** | Compass calibration. Move away from metal and magnetic sources, tap **Start Calibration**, and rotate the drone slowly in all axes while a percentage counts up. On success the offsets are saved to the flight controller. |
+| **Level** | Place the drone on a flat, level surface and tap **Calibrate Level**. Keep it still until "Level calibration complete!". |
+
+## Flight logs
+
+The list of recorded flights, titled **Flight Logs**.
+
+The app records a session automatically: arming starts a session and a MAVLink `.tlog` recording, and disarming closes it and saves the stats. Each row shows the start date and time with **Duration**, max **Alt**, max **Speed** and **Batt** used. Swipe a row from right to left to delete it. Tap a row to open [Flight details](#flight-details).
+
+With no flights yet, the screen reads "No flights recorded" and "Flight sessions are logged automatically when the drone is armed".
+
+## Flight details
+
+One recorded flight, titled **Flight Details**.
+
+| Section | Fields |
+|---------|--------|
+| Time | Start, End, Duration |
+| Flight Stats | Max Altitude, Max Speed, Max Distance, Total Distance |
+| Battery | Start, End, Used (percent) |
+| Connection | Mode and Vehicle, when recorded |
+
+**Share Tlog File** hands the session's `.tlog` to Android's share sheet, so you can send it to another device or open it in a log viewer. A **Notes** field below saves as you type.
+
+## Ground Station
+
+Status and control for the ADOS Ground Agent the app is connected to. The header shows **Ground Station** with a **Connected** or **Disconnected** badge. Failures (recording, camera switch, pairing) show as a notice under the header for six seconds.
+
+- **Signal meter** for the link RSSI.
+- **Diversity Reception** panel, shown only with two or more radio adapters, listing each adapter's RSSI in dBm.
+- **Packet Loss**, **FEC Recovered** and **Bitrate** (Mbps) cards, plus a packet-loss graph over the last 60 seconds.
+- **Recording**: the record button starts a recording on the node (`POST /api/v1/ground-station/recording/start`), and a `REC mm:ss` timer runs with a stop button.
+- **System Info**: Hostname, IP Address, SoC Temp (green below 60 °C, amber from 60 °C, red from 80 °C), Uptime, and Agent Version. An **Update Available** badge opens a dialog explaining that updates are applied on the node itself (installer or agent update command), since the agent has no remote update endpoint.
+- **Restart agent services**: after a confirmation, calls `POST /api/v1/system/restart-supervisor`. The node's radio, video and MAVLink services stop and come back, and telemetry and video drop for a few seconds. The machine does not reboot.
+
+If the node is paired and this phone holds no key, the screen tells you to pair in Settings. See [Pair with a node](/android/install#pair-with-a-node).
+
+## Settings
+
+Opened from the gear icon on Home. Sections from top to bottom:
+
+| Section | Controls | Applied in 0.1.6 |
+|---------|----------|------------------|
+| **Theme** | Dark, OLED | Saved only, not applied yet |
+| **Units** | Metric, Imperial | Saved only, not applied yet |
+| **Map Provider** | Mapbox (default), OpenStreetMap | Yes, on the Map screen |
+| **HUD Elements** | HUD Overlay, Compass Tape, Altitude Ladder, Speed Ladder (all on by default) | Compass Tape and both ladders yes; the HUD Overlay master switch is saved only |
+| **Ground Station** | **Base URL** of the agent, default `http://192.168.4.1:8080/`. Must be `http(s)://host[:port]/` ending in `/`. Saving reconnects. | Yes |
+| **Pairing** | Status line, node name, device ID and profile; **Check node**, **Pair this device**, **Unpair node**, **Use this address**, **Forget stored key** | Yes |
+| **Ground Station Wi-Fi** | AP passphrase or QR join string; **Save**, **Join**, **Forget** | Yes |
+| **USB Serial** | Baud rate (9600 to 921600), detected devices list with refresh, **Disconnect** | Yes |
+| **WFB-ng Video Link** | WiFi Channel (36, 48, 149, 153, 157, 161, 165), Bandwidth (20 MHz, 40 MHz) | Saved only. The Direct USB receiver starts on channel 149 at 20 MHz. |
+| **About** | Version (`0.1.6`), License (GPL-3.0), Website, Source | Read only |
+
+Pairing and the Wi-Fi section are walked through step by step in [Install and first launch](/android/install#pair-with-a-node).
+
+## Recordings
+
+Route `gallery`. Lists video files in the app's private `recordings` folder with name, date and size, and **Play**, **Share** and **Delete** buttons for each. With no files it reads "No recordings yet".
+
+In progress in 0.1.6: no button navigates here yet, and nothing in the app writes to that folder yet, so the list stays empty. Node-side recordings made from [Ground Station](#ground-station) stay on the node.
+
+## Offline maps
+
+Route `tile_download`, titled **Offline Maps**. Sliders pick **Min Zoom** and **Max Zoom** (1 to 18, default 10 to 15), the screen estimates tile count and size, and **Download Tiles** fetches them with a progress readout and **Cancel**. Downloaded packs are listed with tile count and size, each with a delete button.
+
+In progress in 0.1.6: no button navigates here yet, and the download area is a fixed bounding box. Choosing the area on the map is not wired up.
+
+## Related pages
+
+- [Overview](/android/overview) for connection modes and the feature list.
+- [Android client](/ground-agent/android-client) for using Chrome on Android instead of the app.

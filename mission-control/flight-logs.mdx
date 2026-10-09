@@ -1,0 +1,192 @@
+---
+title: "Flight logs"
+description: "Recorded flights, onboard log download, log import, analysis charts, replay, and export in Mission Control."
+sidebarTitle: "Flight logs"
+icon: "clock-rotate-left"
+---
+
+The **Logs** tab in the top navigation opens the Flight History page at `/flight-logs`. Every flight Mission Control records live, every onboard log you download, and every log file you import ends up in one list, with a detail panel for analysis, a full-screen replay, and exports.
+
+## Where flights come from
+
+| Source | How it arrives | What you get |
+|---|---|---|
+| Live recording | Automatic on arm and disarm | A flight record plus the full telemetry recording, so Charts, Replay and telemetry export all work |
+| Onboard logs | **Onboard Logs** button, downloads dataflash logs from the connected flight controller | One flight record per arm-to-disarm flight found in the log |
+| File import | **Import** button: ArduPilot `.bin`, PX4 `.ulg`, MAVLink `.tlog`, ADOS `.json` | Flight records (with telemetry for `.ulg` and `.tlog`) |
+| Backup restore | **Restore** button with a ZIP made by **Backup** | Every flight in the backup, merged into your history |
+| Cloud sync | Signed in to a Convex backend | Flight records from your other devices |
+
+### Live recording
+
+When a vehicle arms, Mission Control creates a flight record with status **In progress** and starts a telemetry recording for that drone. On disarm it stops the recording, computes the flight's stats (distance, max altitude, max speed, battery used, a downsampled track) and marks the record **Completed**. Recording on arm is on by default. If a recording is already running for that drone (for example, the cockpit **REC** button), the flight is cut out of that recording instead of starting a new one.
+
+At arm time the record also freezes a snapshot of:
+
+- the pilot and aircraft details from your operator profile, and the active loadout
+- the pre-flight checklist and prearm state
+- sun and moon position for the takeoff site (when the vehicle has a GPS fix)
+- the mission held on the vehicle, but only if this GCS uploaded it and the vehicle acknowledged that exact plan
+
+The recorder captures each telemetry channel with a per-channel rate cap so the stored data stays bounded:
+
+| Channel | Max rate |
+|---|---|
+| `attitude`, `scaledImu` | 50 Hz |
+| `vibration`, `servoOutput`, `cameraTrigger`, `debug` | 20 Hz |
+| `position`, `globalPosition`, `localPosition`, `vfr`, `rc`, `gimbal`, `distanceSensor` | 10 Hz |
+| `gps`, `radio`, `battery`, `sysStatus`, `ekf`, `obstacle`, `estimatorStatus`, `navController` | 5 Hz |
+| `wind`, `terrain`, `fenceStatus` | 2 Hz |
+| `homePosition`, `powerStatus` | 1 Hz |
+| Any other channel | 20 Hz |
+
+Frames are written to IndexedDB in chunks of 50,000 as the flight goes, so a long flight never sits in memory. If a write fails, recording stops, everything already stored is kept, and the recording is marked as truncated at that point.
+
+<Note>
+Recordings that no flight record uses (manual recordings and record-on-connect sessions) are capped at the newest 20. A recording that belongs to a flight in your history, and any imported recording, is never deleted to make room.
+</Note>
+
+### Onboard logs (dataflash download)
+
+Click **Onboard Logs** to open the **Onboard dataflash logs** dialog. It lists the logs stored on the connected flight controller with their time and size. Select one or more and click **Download**; progress shows as bytes received out of the total, and **Cancel** stops the transfer.
+
+Downloaded bytes are format-detected (ArduPilot dataflash or PX4 ULog), split into one flight per arm-to-disarm cycle, and added to history. The dialog reports how many flights were imported, how many were already in history (re-downloading the same log never creates duplicates, because ids are derived from the log content), and whether no flight was found.
+
+<Warning>
+The dialog refuses to download while the vehicle is armed, because pulling a log while armed can corrupt the log buffer. Disarm first. It also needs a real flight controller; in demo mode it shows a notice and does not download.
+</Warning>
+
+If an ArduPilot log has no RC input rows, the result notes that `LOG_BITMASK` should include RCIN before the next flight if you want stick inputs in the log.
+
+### File import
+
+Click **Import** and drop files (or click to browse). Several files can be imported at once. The format is detected from the file's magic bytes, falling back to the extension:
+
+| Format | Detected by | Label in the dialog |
+|---|---|---|
+| ArduPilot dataflash | Starts with `0xA3 0x95`, or `.bin` | ArduPilot (.bin) |
+| PX4 ULog | Starts with `ULog`, or `.ulg` / `.ulog` | PX4 ULog (.ulg) |
+| MAVLink telemetry log | 8-byte timestamp followed by a MAVLink start byte, or `.tlog` | MAVLink (.tlog) |
+| ADOS JSON | Starts with `{` or `[`, or `.json` | ADOS JSON |
+
+Binary logs are parsed in a Web Worker with a progress bar. ADOS JSON is the record format produced by the **JSON** export below; it carries flight records but no telemetry frames.
+
+Use **Media** to attach photos and videos (JPEG, PNG, WebP, HEIC, MP4, MOV, WebM). Mission Control reads each file's EXIF data and links it to the matching flight.
+
+## The flight list
+
+The toolbar filters and sorts the list:
+
+- **Search** across name, drone, notes, and tags. Press `/` to focus it.
+- **Range**: All time, Today, Last 7 days, Last 30 days, This month, or a **From** / **To** date pair.
+- **Status**: All Statuses, In progress, Completed, Aborted, Emergency.
+- **Drone**: filter by vehicle.
+- **Sort**: Newest First, Oldest First, Longest, Farthest. Column headers in the table also sort.
+- **Favorites** shows only starred flights. **Trash** shows deleted flights.
+- **Reports** opens `/flight-logs/reports` with totals (flights, hours, distance, battery), averages (duration, distance, max altitude) and a per-drone table, over All time, Last 7 days, Last 30 days, Last 90 days, or Last year.
+
+A stats bar above the table sums **Flights**, **Hours**, **Distance**, and **Battery used** for the filtered list. Table columns are Date, Drone, Duration, Distance, Max Alt, Status, and Batt Used. Flights that came from a dataflash log carry an icon in the row.
+
+### Selection and bulk actions
+
+Tick rows to open the bulk action bar:
+
+| Action | What it does |
+|---|---|
+| **Export** | Download the selected flight records as CSV |
+| **Logbook** | Compliance logbook export for the selection |
+| **Compare** | Side-by-side comparison, available with exactly two flights selected |
+| **Overlay** | Draw two to five flight tracks on one map |
+| **Fleet map** | Fleet coverage map of the flights' tracks |
+| **Favorite** / **Unfavorite** | Star or unstar the selection |
+| **Delete** | Move the selection to the trash |
+| **Restore** / **Delete permanently** | In the trash view only |
+
+### Keyboard shortcuts
+
+| Key | Action |
+|---|---|
+| `/` | Focus search |
+| `T` | Toggle the trash view |
+| `Esc` | Close the detail panel, or clear the selection |
+| `Del` / `Backspace` | Move the selected flights to the trash |
+
+## Flight detail
+
+Click a flight to open its detail panel. The header shows **Replay** when the flight has a recording with position data, and **Sign & lock** to seal the record with your operator signature. A sealed record shows a verify button and **Unseal**; unsealing logs an audit event and invalidates the previous signature.
+
+The panel has eight tabs:
+
+| Tab | Contents |
+|---|---|
+| **Overview** | Flight Info (drone, date, start and end time, takeoff and landing coordinates and place names), Metrics (duration, distance, max altitude, max speed), Summary, and when available Mission Adherence, Geofence, Phases, Conditions (sun, moon, nearby weather station, estimated wind), Pre-flight, and Loadout |
+| **Map** | The flight track with takeoff and landing markers |
+| **Charts** | Six stacked charts sharing one time cursor: Altitude (m), Speed (m/s), Battery, Attitude (°), GPS quality, Vibration (m/s²). Below them: Custom Chart (pick any recorded channel and field), Statistics, Correlation, and Vibration Spectrogram (needs at least 32 vibration samples) |
+| **Events** | Timeline of events detected by the flight analyzer, with **Run analysis** |
+| **Analysis** | Health Summary (Avg Sats, Avg HDOP, Max Vib RMS, Battery Used) and anomaly Flags, with **Re-run analysis** |
+| **Notes** | Custom name, comma-separated tags, markdown notes, and favorite toggle. Edits save automatically |
+| **Media** | Photos and videos linked to the flight |
+| **Export** | See [Export formats](#export-formats) |
+
+Charts, telemetry export, and replay need a telemetry recording. Flights imported from ADOS JSON, or recorded with recording turned off, show "No telemetry recording attached to this flight."
+
+## Replay
+
+Click **Replay** to swap the list for a full-screen replay: a map with the flight path, a telemetry panel (ALT, SPD, HDG, VS, BAT, VOLT, AMP, FIX, SAT, HDOP, ROLL, PITCH, YAW, THR), and a playback bar with skip to start, step back 5 s, play/pause, step forward 5 s, skip to end, a scrubber with event markers, and a speed selector.
+
+| Key | Action |
+|---|---|
+| `Space` | Play / pause |
+| `←` / `→` | Seek 1 s (hold `Shift` for 10 s) |
+| `Home` / `End` | Jump to start / end |
+| `J` / `L` | Slower / faster through 0.25x, 0.5x, 1x, 2x, 4x, 8x |
+| `Esc` | Exit replay |
+
+<Warning>
+Replay refuses to start while any vehicle is connected. Playback and live telemetry share the same store, so disconnect every vehicle first.
+</Warning>
+
+For a 3D replay on the globe, use the [Simulate](/mission-control/simulation) tab.
+
+## Export formats
+
+The **Export** tab in the detail panel offers:
+
+| Card | Formats | Needs |
+|---|---|---|
+| Telemetry | **CSV**, **KML**, **KMZ** | A telemetry recording |
+| Track | **GPX** | Track points on the record |
+| Record | **JSON** (the full flight record: stats, path, metadata), **ICS** (calendar entry) | Nothing extra |
+| Compliance | **PDF**, **CSV**, **JSON**, and **XML** where the template supports it | A **Jurisdiction** template; errors list missing fields, which you fill in under GCS Settings, **Operator & Aircraft** |
+
+The cockpit **REC** button is a separate path: when recording on arm is off, stopping REC downloads the telemetry as CSV, and any live video is saved as a WebM file. See [HUD and cockpit](/mission-control/hud).
+
+## Local storage, backup, and cloud sync
+
+Everything lives in your browser's IndexedDB on this machine: the flight list under `altcmd:flight-history`, and each telemetry recording under `altcmd:recording:<id>` with an index at `altcmd:recordings-index`. Nothing leaves the device unless you sign in to a cloud backend.
+
+- **Backup** downloads a ZIP of your flight history and its registries plus working state (mission, fence, rally points, planner settings, drone names). Toggle **With telemetry** first to include recordings, so restored flights keep replay, charts, and export; the file is larger.
+- **Restore** merges a backup ZIP back in and reloads the page.
+
+When Mission Control is connected to a Convex backend and you are signed in, flight records sync to the cloud and from your other devices. The toolbar badge shows **Local only**, **Syncing…**, **Synced** with a time, **Sync error**, or the number of records waiting, with a **Sync now** button. Sync carries the record (stats, track, notes, events, health, media references, recording id) but not the telemetry recording itself, which stays on the device that recorded it. Permanently deleted records are never merged back from the cloud. Demo mode never syncs. See [Cloud features](/mission-control/cloud-features).
+
+## Log Analysis panel
+
+Separate from history, the drone's **Setup** tab has a **Log Analysis** panel in the Debug section. Its **Live** view shows quick graphs (altitude, voltage, vertical speed, vibration with 30 and 60 m/s² warning lines, RC sticks) and the GPS track for the connected vehicle. **Load .bin** reads an ArduPilot dataflash file and shows its message counts on the **File** view. Both views link out to external web log viewers for deeper analysis.
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Telemetry" icon="chart-line" href="/mission-control/telemetry">
+    The live readouts these recordings capture.
+  </Card>
+  <Card title="HUD and cockpit" icon="gauge" href="/mission-control/hud">
+    The REC button and in-flight instruments.
+  </Card>
+  <Card title="Simulation" icon="globe" href="/mission-control/simulation">
+    3D replay of recorded flights.
+  </Card>
+  <Card title="Dashboard" icon="table-columns" href="/mission-control/dashboard">
+    Fleet overview and drone detail tabs.
+  </Card>
+</CardGroup>

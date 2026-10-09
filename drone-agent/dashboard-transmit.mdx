@@ -1,0 +1,156 @@
+---
+title: "WFB Transmit"
+description: "The drone dashboard's /transmit page: live WFB-ng transmit adapter, channel, bandwidth, TX power, MCS and bitrate."
+sidebarTitle: "WFB Transmit"
+icon: "tower-broadcast"
+lastUpdated: "2026-10-09"
+---
+
+The WFB Transmit page shows the drone side of the WFB-ng video link at a
+glance: which adapter is transmitting, on which channel, at what power and
+rate. It lives at `/transmit` in the browser dashboard and appears in the
+sidebar as **WFB Transmit** on the drone profile.
+
+The page is read-only. It renders one card, the same WFB Transmit panel the
+Home page uses, at full width. Changes to the link happen from the Video page,
+the CLI or Mission Control (see [Changing the link](#changing-the-link)).
+
+## What the card shows
+
+The card polls `GET /api/wfb` every 2 seconds and shows these rows:
+
+| Row | Source field | Notes |
+|---|---|---|
+| interface | `interface` | The wireless interface the transmitter is bound to. |
+| channel | `actual_channel`, `frequency_mhz` | The live interface channel and its frequency, for example `149 (5745 MHz)`. Shows a dash placeholder until the radio reports one. |
+| bandwidth | `bandwidth_mhz` | Hidden when the agent reports no bandwidth. |
+| tx power | `tx_power_dbm`, `tx_power_max_dbm` | Current power over the configured ceiling, for example `5 dBm / 15`. |
+| MCS | `mcs_index` | The modulation and coding index passed to the transmitter. Hidden when unknown. |
+| domain | `regulatory_domain` | The regulatory domain the radio applied. Hidden when empty. |
+| bitrate | `bitrate_kbps` | Shown in kbps, or Mbps from 1000 kbps up. A dash placeholder when zero. |
+| packets | `packets_received` | The radio's packet counter. Shown only when non-zero. |
+| restarts | `restart_count` | How many times the radio process restarted. Shown only when non-zero. |
+
+The badge in the card header follows the `state` field:
+
+| `state` | Badge |
+|---|---|
+| `active`, `ready` | Green, the state name |
+| `connecting` | Blue, `connecting` |
+| `error` | Amber, `error` |
+| `disabled` | Grey, `disabled` |
+| anything else | Grey, the state name |
+
+### No adapter
+
+When `state` is `disabled`, or `state` is `error` with no interface, the card
+replaces the rows with a short note: the transmitter is not running. Plug in a
+supported WFB-ng adapter and set the channel and TX power; the agent starts the
+transmit pipeline on its own once both are present.
+
+## Where the data comes from
+
+`GET /api/wfb` is served by the native control front (`ados-control`). The
+radio runs as its own process, so the route reads the most recent
+`link.wfb_status` event from the Black Box store and falls back to
+`/run/ados/wfb-stats.json`, the sidecar the radio writes about once a second.
+Both paths start from a base block seeded from `video.wfb` in
+`/etc/ados/config.yaml`, then re-derive frequency and bandwidth from the
+channel.
+
+On a node with no radio at all, the route still answers `200`, with
+`state: "disabled"`, an empty `interface`, and `null` for the signal fields.
+It never returns a fabricated reading.
+
+The same endpoint serves both profiles. The ground station's
+[WFB Receive](/drone-agent/dashboard-per-profile) page reads the receive-side
+fields from it.
+
+## Changing the link
+
+| Change | Where | Endpoint |
+|---|---|---|
+| TX power | `ados radio set-tx-power <DBM>` | `PUT /api/wfb/tx-power` |
+| Channel | `ados radio hop <CHANNEL>` | `POST /api/wfb/channel` |
+| MCS, FEC ratio, preset, adaptive | **Video** page, Link tuning card | `POST /api/video/config` |
+
+### TX power
+
+```bash
+ados radio set-tx-power 10
+```
+
+The agent refuses a value below 1 dBm (`400`, `below_floor`) or above
+`video.wfb.tx_power_max_dbm` (`400`, `above_ceiling`, default ceiling 15). An
+accepted value is applied to the running radio and persisted to
+`video.wfb.tx_power_dbm`, so it survives a restart. The default is 5 dBm, the
+floor for bench bring-up.
+
+<Warning>
+A USB adapter powered straight from the host's USB port can brown out at high
+sustained power. Raise TX power in small steps after the link is validated,
+and keep the ceiling at a level your power topology can carry.
+</Warning>
+
+### Channel
+
+```bash
+ados radio hop 157
+```
+
+A channel change is a coordinated hop: the drone announces it and the ground
+station follows. The route answers `202` with the target channel as soon as
+the radio accepts the request, before the hop completes. Watch the **channel**
+row on this page to see the link land on the new channel.
+
+Valid channels are 36, 40, 44, 48, 149, 153, 157, 161 and 165. Any other value
+is a `400`. A refused hop (not paired, no peer, mid-bind) is a `409` with the
+reason.
+
+## Profile gating
+
+`/transmit` is a drone page. On a finalized ground-station profile the route
+renders the "Not available on this profile" panel with a link back to Home.
+While the profile is still `auto`, the page renders so you can explore it
+during setup.
+
+## Backend endpoints
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/wfb` | Link status: state, interface, channel, power, MCS, counters |
+| PUT | `/api/wfb/tx-power` | Set runtime TX power (`{"tx_power_dbm": <int>}`) |
+| POST | `/api/wfb/channel` | Coordinated channel hop |
+| POST | `/api/video/config` | Link tuning: `mcs`, `fec_k`, `fec_n`, `preset`, `auto` |
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Card says WFB-tx is not running">
+    The agent sees no transmit adapter, or the radio failed before binding an
+    interface. Run `ados radio adapters` to list what the agent detects, and
+    `ados radio status` for the radio's own view. Check that the adapter's
+    driver is installed and the adapter is in a powered port.
+  </Accordion>
+  <Accordion title="Channel shows a dash placeholder">
+    The radio has not reported a live channel yet. This is normal for the
+    first seconds after the radio starts. If it persists, check the
+    **restarts** row and the radio logs on the **Logs** page.
+  </Accordion>
+  <Accordion title="TX power will not go above a value">
+    The request is above `video.wfb.tx_power_max_dbm`. Raise the ceiling in the
+    config only if the adapter's power supply can carry it.
+  </Accordion>
+  <Accordion title="Restarts keeps climbing">
+    The radio process is crash-looping. A brownout under load is a common
+    cause; lower TX power or move the adapter to a powered hub, then run
+    `ados diag link`.
+  </Accordion>
+</AccordionGroup>
+
+## Related
+
+- [WFB-ng configuration](/drone-agent/wfb-ng)
+- [Video page](/drone-agent/dashboard-video)
+- [Per-profile visibility](/drone-agent/dashboard-per-profile)
+- [Diagnostics](/drone-agent/diagnostics)

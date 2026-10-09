@@ -7,8 +7,9 @@ lastUpdated: "2026-06-18"
 
 ADOS Mission Control is an open-source ground control station (GCS) that runs in your browser. It connects to your flight controller over USB, Wi-Fi, or the cloud, and gives you everything you need to fly, plan missions, configure your FC, and manage a fleet.
 
-<Frame caption="ADOS Mission Control dashboard with live drone telemetry">
-  <img src="/images/dashboard/dashboard-overview.png" alt="Mission Control dashboard showing drone cards, map, and telemetry" />
+<Frame caption="The Dashboard in Grid view: the fleet sidebar on the left and a live card per node">
+  <img className="block dark:hidden" src="/images/mission-control/light/dashboard.png" alt="Mission Control Dashboard in Grid view, with a fleet sidebar listing demo drones and live node cards showing armed state, flight mode, GPS, battery, and companion CPU and memory" />
+  <img className="hidden dark:block" src="/images/mission-control/dark/dashboard.png" alt="Mission Control Dashboard in Grid view, with a fleet sidebar listing demo drones and live node cards showing armed state, flight mode, GPS, battery, and companion CPU and memory" />
 </Frame>
 
 ## Why Mission Control?
@@ -21,6 +22,11 @@ Traditional GCS tools are desktop-only, platform-locked, and built for a single 
 - **Mission planning.** Waypoints, 9 pattern generators, terrain following, geofence editor, rally points, and KML/CSV import/export.
 - **Video.** WebRTC with a 4-mode transport switcher (LAN, P2P via MQTT signaling, Auto cascade, or Off).
 - **Open source.** GPLv3 license. Self-host the backend, fork the code, contribute upstream.
+
+<Frame caption="A drone's Flight tab: HUD, telemetry, actions and health on the left, the live map on the right">
+  <img className="block dark:hidden" src="/images/mission-control/light/overview-map.png" alt="Per-drone Flight tab with an attitude HUD, altitude, speed, heading and vertical speed readouts, disarm and mode controls, a health checklist, and a satellite map showing the drone's track" />
+  <img className="hidden dark:block" src="/images/mission-control/dark/overview-map.png" alt="Per-drone Flight tab with an attitude HUD, altitude, speed, heading and vertical speed readouts, disarm and mode controls, a health checklist, and a satellite map showing the drone's track" />
+</Frame>
 
 ## Feature Highlights
 

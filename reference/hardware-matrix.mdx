@@ -1,0 +1,136 @@
+---
+title: "Hardware matrix"
+description: "Every board profile the Drone Agent ships, side by side: SoC, CPU, RAM, NPU, hardware video encode, default tier, and profile metadata."
+icon: "table-cells"
+---
+
+The Drone Agent ships 21 board profiles, one YAML file each under
+`src/ados/hal/boards/` in the agent repository. This page lays them out side
+by side, grouped by SoC vendor. For what each board is good for and which to
+buy, see [Supported hardware](/drone-agent/supported-hardware). For how the
+agent detects a board and turns a profile into a feature tier, see
+[HAL and tiers](/drone-agent/hal-and-tiers).
+
+## How to read the tables
+
+- **ID** is the YAML file name without `.yaml`. It is the value you write to
+  `/etc/ados/board_override` to pin a profile when auto-detection cannot
+  decide (for example on an Allwinner A733 board that reports only its SoC
+  family string).
+- **Default tier** is the profile's `default_tier`. An explicit `agent.tier`
+  in `config.yaml` overrides it.
+- **CPU**, **RAM** and **NPU** come from the optional `compute` block. A `-`
+  means the profile does not declare the field; the agent measures cores and
+  RAM at runtime instead.
+- **NPU** is `compute.npu_tops`. A value of `0` is deliberate on boards whose
+  accelerator the agent's vision engine cannot drive. **local inference** is
+  `compute.local_inference`: `onnx` means detection runs on the CPU through
+  the in-process ONNX backend, `none` means detection is offloaded.
+- **Hardware encode** lists the `*_enc` entries of `hw_video_codecs`, then
+  `video.encoder_api` and the profile's maximum encode resolution and frame
+  rate.
+- **VIO** is `navigation.vio_capable`: whether the board can host the
+  visual-inertial odometry front end. Every board supports optical flow.
+
+## Boards by SoC vendor
+
+### Raspberry Pi (Broadcom)
+
+| Board | ID | SoC | Arch | Default tier | CPU | RAM | NPU | Hardware encode | VIO |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Raspberry Pi 3 | `rpi3` | BCM2837 | `aarch64` | 2 | - | - | - | None (`none`) | No |
+| Raspberry Pi 4B | `rpi4b` | BCM2711 | `aarch64` | 3 | - | - | - | H.264 (`v4l2`, 1920x1080 @ 30) | No |
+| Raspberry Pi 5 | `rpi5` | BCM2712 | `aarch64` | 4 | - | - | - (local inference: `onnx`) | H.265 (`v4l2`, 1920x1080 @ 60) | Yes |
+| Raspberry Pi Zero 2 W | `zero2w` | BCM2710A1 | `aarch64` | 2 | Cortex-A53 x4 @ 1000 MHz | 512 MB LPDDR2 | 0 | None (`none`) | No |
+| Raspberry Pi Compute Module 3 | `cm3` | BCM2837 | `aarch64` | 2 | - | - | - | None (`none`) | No |
+| Raspberry Pi CM4 | `cm4` | BCM2711 | `aarch64` | 3 | - | - | - | H.264 (`v4l2`, 1920x1080 @ 30) | No |
+| Raspberry Pi CM5 | `cm5` | BCM2712 | `aarch64` | 4 | - | - | - (local inference: `onnx`) | H.265 (`v4l2`, 1920x1080 @ 60) | Yes |
+
+The BCM2837 and BCM2710A1 boards (Pi 3, CM3, Zero 2 W) declare hardware
+H.264 decode only: their profiles omit encode because it is not reliably
+exposed on standard 64-bit Raspberry Pi OS builds. The Zero 2 W profile
+targets the headless build (512 MB RAM).
+
+### Rockchip
+
+| Board | ID | SoC | Arch | Default tier | CPU | RAM | NPU | Hardware encode | VIO |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Rockchip RV1126B | `rv1126b` | RV1126B | `armv7l` | 3 | Cortex-A7 @ 1500 MHz | 1024 MB external_ddr | 2 TOPS | H.264, H.265 (`rkmedia`, 3840x2160 @ 30) | Yes |
+| Radxa CM3 (RK3566) | `rk3566` | RK3566 | `aarch64` | 3 | Cortex-A55 @ 1800 MHz | 2048 MB LPDDR4 | 0.8 TOPS | H.264, H.265 (`rkmedia`, 1920x1080 @ 60) | No |
+| Rockchip RK3576 (Reference) | `rk3576` | RK3576 | `aarch64` | 3 | 4x Cortex-A72 @ 2.2GHz + 4x Cortex-A53 @ 1.8GHz | 4096 MB LPDDR5 | 6 TOPS | H.264, H.265 (`mpp`, 3840x2160 @ 60) | Yes |
+| Radxa CM4 (RK3588S2) | `rk3588s2` | RK3588S2 | `aarch64` | 4 | Cortex-A76 x4 + Cortex-A55 x4 @ 2400 MHz | 4096 MB LPDDR4X | 6 TOPS | H.264, H.265 (`rkmedia`, 7680x4320 @ 30) | Yes |
+| Radxa ROCK 5C Lite (RK3582) | `rock-5c-lite` | RK3582 | `aarch64` | 4 | Cortex-A76 x2 + Cortex-A55 x4 @ 2400 MHz | 16384 MB LPDDR4X | 6 TOPS | H.264, H.265 (`rkmpp`, 3840x2160 @ 60) | Yes |
+| Orange Pi 5 | `orange-pi-5` | RK3588S | `aarch64` | 4 | - | - | - | H.264, H.265 (`rkmpp`, 7680x4320 @ 30) | Yes |
+
+The `rock-5c-lite` profile also serves the full ROCK 5C. The same device tree
+covers both SoC bins, so the profile carries a `variants` entry: when the
+agent counts 8 CPU cores it reports the board name as "Radxa ROCK 5C
+(RK3588S2)" with SoC `RK3588S2`. Everything else in the profile is shared.
+
+### Allwinner
+
+| Board | ID | SoC | Arch | Default tier | CPU | RAM | NPU | Hardware encode | VIO |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Radxa Cubie A7Z | `cubie-a7z` | Allwinner A733 | `aarch64` | 2 | Cortex-A76 x2 + Cortex-A55 x6 @ 2200 MHz | 1024 MB LPDDR4X | 3 TOPS | H.264 (`vendor`, 1920x1080 @ 60) | Yes |
+| Radxa Cubie A7S | `cubie-a7s` | Allwinner A733 | `aarch64` | 3 | Cortex-A76 x2 + Cortex-A55 x6 @ 2000 MHz | 4096 MB LPDDR5 | 3 TOPS (local inference: `onnx`) | H.264 (`vendor`, 3840x2160 @ 30) | Yes |
+
+Both boards share the A733 SoC, so neither profile matches the SoC family
+string. A board that reports only that string falls back to `generic-arm64`;
+pin it with `/etc/ados/board_override` set to `cubie-a7z` or `cubie-a7s`.
+The A733 NPU is declared as a hardware capability only: the vision engine has
+no backend for it, so the A7S runs detection on its CPU through ONNX.
+
+### NVIDIA Jetson
+
+| Board | ID | SoC | Arch | Default tier | CPU | RAM | NPU | Hardware encode | VIO |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| NVIDIA Jetson Nano | `jetson-nano` | Tegra X1 | `aarch64` | 3 | - | - | - | H.264, H.265 (`v4l2`, 3840x2160 @ 30) | Yes |
+| NVIDIA Jetson Orin Nano | `jetson-orin-nano` | Tegra Orin | `aarch64` | 4 | - | - | - | H.264, H.265 (`v4l2`, 3840x2160 @ 60) | Yes |
+
+### Other SoC vendors
+
+| Board | ID | SoC | Arch | Default tier | CPU | RAM | NPU | Hardware encode | VIO |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| BeagleBoard.org BeagleY-AI | `beagley-ai` | TI AM67A (J722S) | `aarch64` | 3 | Cortex-A53 x4 @ 1400 MHz | 4096 MB LPDDR4 | 0 (local inference: `none`) | H.264, H.265 (`vendor`, 1920x1080 @ 60) | No |
+| D-Robotics RDK X3 | `rdk-x3` | Horizon Sunrise X3 | `aarch64` | 3 | Cortex-A53 x4 @ 1.5 GHz | 1024 MB LPDDR4 | 0 (local inference: `none`) | H.264, H.265 (`vendor`, 3840x2160 @ 60) | No |
+
+Both boards carry an on-chip accelerator that needs a vendor-specific
+toolchain the agent's ONNX and RKNN vision engine cannot drive, so their
+profiles declare `npu_tops: 0` and detection is offloaded to another node.
+
+### Generic fallback
+
+| Board | ID | SoC | Arch | Default tier | CPU | RAM | NPU | Hardware encode | VIO |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| generic-arm64 | `generic-arm64` | unknown | `aarch64` | 2 | - | - | - | None (`unknown`) | No |
+| generic-x86_64 | `generic-x86_64` | unknown | `x86_64` | 2 | - | - | - | None (`unknown`) | No |
+
+These two profiles have no model patterns. When no other profile matches,
+the agent resolves the board through the generic profile for its CPU
+architecture, which carries fallback UART candidates and camera defaults.
+[HAL and tiers](/drone-agent/hal-and-tiers) covers the RAM-based tier
+fallback on `generic-arm64`.
+
+## Profile status and feature sets
+
+Some profiles also carry a `board` block with a support `status`, and a
+`profiles` block naming a tier and the features that profile enables. Boards
+not listed here declare neither block.
+
+| ID | `board.status` | `profiles` tier | `max_features` |
+| --- | --- | --- | --- |
+| `rpi4b` | - | ground station: `lite` | `wfb_rx`, `mediamtx_relay`, `wifi_ap`, `usb_tether`, `oled_ui`, `hdmi_kiosk`, `mesh_relay`, `mesh_receiver`, `batman_adv` |
+| `zero2w` | `experimental` | - | - |
+| `rv1126b` | `target` | `recommended` | `mavlink_proxy`, `mqtt_gateway`, `video_pipeline`, `rest_api`, `wifi_ap`, `wfb_ng`, `captive_portal`, `config_webapp` |
+| `rk3566` | `recommended` | `recommended` | `mavlink_proxy`, `mqtt_gateway`, `video_pipeline`, `rest_api`, `wifi_ap`, `wfb_ng`, `captive_portal`, `config_webapp` |
+| `rk3576` | `recommended` | `recommended` | `mavlink_proxy`, `mqtt_gateway`, `video_pipeline`, `rest_api`, `wifi_ap`, `wfb_ng`, `captive_portal`, `config_webapp`, `npu_vision`, `sensor_manager`, `modem_manager` |
+| `rk3588s2` | `supported` | `pro` | `mavlink_proxy`, `mqtt_gateway`, `video_pipeline`, `rest_api`, `wifi_ap`, `wfb_ng`, `captive_portal`, `config_webapp` |
+| `rock-5c-lite` | `supported` | `pro` | `mavlink_proxy`, `mqtt_gateway`, `video_pipeline`, `rest_api`, `vision_engine`, `wfb_ng`, `cloud_relay` |
+| `cubie-a7z` | `experimental` | ground station: `lite` | `wfb_rx`, `mesh_relay`, `mesh_receiver`, `batman_adv`, `framebuffer_lcd` |
+| `cubie-a7s` | `experimental` | - | - |
+| `beagley-ai` | `experimental` | - | - |
+| `rdk-x3` | `experimental` | - | - |
+
+The two ground station profiles (`rpi4b`, `cubie-a7z`) declare support for
+all three distributed receive roles: `direct`, `relay` and `receiver`. See
+[HAL and tiers](/drone-agent/hal-and-tiers) for the full profile schema.

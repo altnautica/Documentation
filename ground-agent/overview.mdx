@@ -26,7 +26,6 @@ The Ground Agent handles three jobs:
 ## How it fits together
 
 ```mermaid
-%%{init: {'theme': 'dark'}}%%
 flowchart LR
     Drone["Drone"] -->|long-range video link| GS["Ground Agent<br/>(receiver bridge)"]
     GS -->|WiFi AP| Laptop["Laptop Browser"]

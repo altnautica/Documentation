@@ -24,7 +24,6 @@ The multi-process design isolates failures. A crashed `ados-video` gets restarte
 ## Service tree
 
 ```mermaid
-%%{init: {'theme': 'dark'}}%%
 flowchart TB
     Supervisor["ados-supervisor (Rust)<br/>orchestrates systemd"]
 

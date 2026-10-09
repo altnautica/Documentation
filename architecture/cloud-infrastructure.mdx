@@ -12,7 +12,6 @@ The cloud layer is optional. Every core ADOS function works without internet. Bu
 ## Three layers
 
 ```mermaid
-%%{init: {'theme': 'dark'}}%%
 flowchart LR
     subgraph Agent["Drone/Ground Agent"]
         Cloud["ados-cloud (Rust)<br/>one service:<br/>HTTP status + MQTT telemetry<br/>+ WebRTC signaling"]

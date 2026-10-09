@@ -1,103 +1,98 @@
 ---
-title: "Hardware"
-description: "Picking a camera and rangefinder for vision navigation. Mount placement, wiring, and FC-versus-companion ownership."
+title: "Vision Navigation hardware"
+sidebarTitle: "Hardware"
+description: "Picking a downward camera and a rangefinder for vision navigation: lens, mounting, wiring, and flight controller versus companion ownership."
 icon: "camera"
-lastUpdated: "2026-06-18"
+lastUpdated: "2026-10-09"
 ---
 
 # Hardware
 
-The camera direction depends on the mode:
+Vision Navigation needs a **downward-facing camera**. The `optical_flow` mode also needs a **rangefinder** that reports distance to the ground; `optical_flow_degraded` runs without one by taking height from the flight controller's barometer.
 
-- **Optical flow** always needs a **downward-facing camera** plus a rangefinder that reports ground distance. The plugin can take the rangefinder from the FC (read by the FC, forwarded over MAVLink) when wiring directly to the companion is impractical.
-- **VIO** accepts either a **forward-facing** camera (indoor, corridor, inspection) or a **downward-facing** camera (over-ground: agriculture, survey, SAR, pipeline patrol). The wizard surfaces an explicit orientation picker; the agent suggests the direction that fits the active suite.
-- **Hybrid** uses **both** a downward camera (for optical flow) and a forward camera (for VIO).
+The companion board must be one the manifest lists: Raspberry Pi 5, CM5, CM4, Zero 2 W, Radxa ROCK 5C Lite (RK3582), Radxa CM4 (RK3588S2), or an RK3576 board. See [Supported boards](/drone-agent/vision-nav-overview#supported-boards).
 
 ## Camera
 
-Any camera that produces a 30 Hz grayscale or color frame at 320x240 or higher works for optical flow. The tracker downsamples to 320x240 internally, so higher resolutions waste CPU without gaining accuracy.
+The agent's vision host owns the camera and publishes frames on the shared vision bus; the plugin reads them from there. The plugin accepts `nv12`, `yuv420p`, and `rgb24` frames and works in grayscale. 640x480 at 30 fps is plenty for the tracker, and the flow rate follows the camera frame rate. Rolling-shutter cameras are fine; a global shutter handles fast motion better.
 
 ### USB UVC
 
-Plug-and-play. The agent's vision host enumerates `/dev/video*` nodes and captures the camera; the plugin reads frames from the shared vision bus. Set the camera device path in the plugin's config.
+Plug-and-play. The vision host enumerates `/dev/video*` and captures the camera. Good picks:
 
-Good picks:
-- Generic USB endoscope or borescope cameras (the kind sold for inspection work). Cheap, mechanically simple, often come with a fixed-focus lens around 60-90 degree FOV.
-- ArduCam or compatible USB UVC modules. M12 lens mounts let you swap the lens for the FOV you want.
-- Webcams with manual focus. Avoid autofocus-only models; the tracker doesn't like the camera hunting mid-flight.
+- USB inspection or borescope cameras with a fixed-focus lens around 60 to 90 degrees field of view. Cheap and mechanically simple.
+- USB UVC camera modules with an M12 lens mount, so you can choose the field of view.
+- Webcams with manual focus. Avoid autofocus-only models; the tracker loses features while the lens hunts.
 
 ### MIPI CSI
 
-CSI cameras are higher quality at lower latency. They cost more in setup but pay off on platforms that have a CSI ISP (the Radxa boards, Raspberry Pi, RK3588S2, RK3576).
+Lower latency, a little more setup, and worth it on boards with a CSI port (Raspberry Pi, Radxa, RK3576 boards). Good picks:
 
-Good picks:
-- Raspberry Pi Camera Module 3. Wide variant (120 degree FOV) is well-suited to downward optical flow.
-- ArduCam IMX477 or IMX219 modules. Both work on Pi and on Radxa with the right adapter cable.
-- Radxa CSI camera kits. Match the FFC cable pitch to the board (0.5mm vs 1.0mm; the wrong pitch destroys the connector).
+- Raspberry Pi Camera Module 3, wide variant (120 degrees), suits a downward mount.
+- IMX219 or IMX477 modules, on Raspberry Pi or Radxa with the matching adapter cable.
+- Match the FFC cable pitch to the board (0.5 mm versus 1.0 mm). The wrong pitch can destroy the connector.
 
-The agent's vision host captures a CSI camera through `libcamera` or `v4l2`. Select the camera (device path and kind) in the plugin's config.
+Set `camera.bus_type` to `uvc` or `csi` and `camera.orientation` to `downward` in the plugin's configuration.
 
-### Lens FOV
+### Lens field of view
 
-Aim for **60 to 100 degrees diagonal**. Narrow lenses (wider zoom) lose features at low altitude; ultra-wide lenses introduce distortion the tracker doesn't model. The wide-FOV variants of common camera modules are usually a better starting point than the default narrow-FOV variants.
+Aim for **60 to 100 degrees diagonal**. A narrow lens sees too little ground at low altitude to keep enough corners in view; an ultra-wide lens adds distortion. The wide variant of a common module is usually a better start than the default narrow one.
 
 ## Rangefinder
 
-Optical flow needs a height reference. On its own the tracker gives angular velocity (radians per second); a height measurement turns that into linear velocity (meters per second), which is what the EKF wants. The `optical_flow` mode requires a rangefinder; `optical_flow_degraded` runs without one by pulling scale from the FC's altitude instead.
+The tracker on its own measures angular velocity (radians per second). Height turns that into linear velocity (metres per second), which is what the EKF wants.
 
-### FC-relayed (default and universal)
+### Flight controller relayed (recommended)
 
-If the rangefinder is wired to the FC (a common starting point for ArduPilot, PX4, or iNav setups), the plugin reads it via the `DISTANCE_SENSOR` MAVLink message the FC streams. No re-wiring required, and it works for any sensor the FC supports. Set the rangefinder topology to `fc` (driver `fc_relay`) and pick which orientation the FC reports as "down" (usually `MAV_SENSOR_ROTATION_PITCH_270`). For iNav, also set `rangefinder_hardware = MSP` or `nav_rangefinder_for_terrain = ON` per the iNav docs.
+If the rangefinder is wired to the flight controller, the flight controller streams `DISTANCE_SENSOR` and the plugin reads it. No extra wiring, and it works with any sensor the flight controller supports. Set `rangefinder.topology` to `fc`. On iNav, set `rangefinder_hardware` for the wired sensor.
 
-The trade-off is latency: the rangefinder reading travels FC then MAVLink then plugin, adding 50 to 100 ms versus a companion-direct path. Acceptable for most use cases.
+The trade-off is a little latency, since the reading travels flight controller to MAVLink to plugin. Readings older than 200 ms count as missing.
 
-### Companion-owned
+### Companion owned
 
-The agent talks to the rangefinder directly over a companion bus. The Benewake TF-Luna over UART is the implemented companion-direct driver.
+The plugin can read a rangefinder on the companion directly. Set `rangefinder.topology` to `companion` and pick the driver.
 
 | Driver | Sensor | Bus | Status |
-|--------|--------|-----|--------|
-| `tfluna_uart` | Benewake TF-Luna | UART | Implemented companion-direct driver. 0.2-8 m, low cost, ~100 Hz. The common starter pick. |
-| `garmin_lidarlite_i2c` | Garmin LIDAR-Lite v3 | I2C | Not yet a companion-direct driver (returns no reading until the SDK exposes an I2C facade). Wire it to the FC and use the relay path. 0.05-40 m. |
-| `vl53l1x_i2c` | ST VL53L1X | I2C | Not yet a companion-direct driver (same reason). Wire it to the FC and use the relay path. 0.04-4 m. |
+|---|---|---|---|
+| `tfluna_uart` | Benewake TF-Luna | UART | Implemented. 0.2 to 8 m, low cost. The plugin also forwards its readings to the flight controller as `DISTANCE_SENSOR`. |
+| `garmin_lidarlite_i2c` | Garmin LIDAR-Lite v3 | I2C | Not available yet: returns no reading until the plugin SDK exposes I2C. Wire it to the flight controller and use `fc`. 0.05 to 40 m. |
+| `vl53l1x_i2c` | ST VL53L1X | I2C | Not available yet, same reason. Wire it to the flight controller. 0.04 to 4 m. |
 
-The plugin's manifest declares `hardware.uart` and `hardware.i2c` permissions; you grant them at install time. Wiring the TF-Luna is straightforward: 3.3V or 5V power per the datasheet, ground, and the UART pins to a free UART on the companion.
+The plugin requests `hardware.uart` and `hardware.i2c`; you grant them at install time. Wire the TF-Luna's power (per its datasheet), ground, and TX/RX to a free UART on the companion, then set `rangefinder.device` (for example `/dev/ttyAMA0`) and `rangefinder.baud` (115200 by default).
 
-## Mount placement
+## Mounting
 
-The downward camera mounts on the bottom plate of the airframe, lens pointing straight down, with a clear unobstructed view of the ground. A few guidelines:
+The camera goes on the bottom of the airframe, lens straight down, with a clear view of the ground.
 
-- **Keep landing gear out of frame.** Even thin gear strips appear as strong features and confuse the tracker.
-- **Avoid props in frame.** A prop guard or a recessed mount usually solves this.
-- **Maintain a fixed pose.** Foam or rubber mounts isolate vibration but introduce camera lag. A rigid mount is preferred for optical flow; reserve soft mounts for VIO where IMU fusion compensates.
-- **Match the rangefinder pose.** Mount the rangefinder pointing the same direction as the camera (straight down). Cross-axis offset doesn't matter at altitude but does matter close to the ground.
+- **Keep landing gear out of frame.** Even thin gear legs make strong features that don't move with the ground.
+- **Keep props out of frame.** A recessed mount or a guard usually fixes it.
+- **Mount rigidly.** Soft mounts add camera lag relative to the gyro, which hurts derotation.
+- **Point the rangefinder the same way.** Straight down, close to the camera. Offset matters near the ground.
 
 ## Ground clearance
 
-The plugin needs the rangefinder reading to fall inside its valid range. ArduPilot's flow fusion clamps below `RNGFND1_MIN_CM` and above `RNGFND1_MAX_CM`; outside those bounds the flow source goes unhealthy.
+The rangefinder has to read inside its valid range. Outside the band the flight controller is configured for, flow fusion stops.
 
-- TF-Luna: arm and fly at 0.3 m or higher; the bottom 0.2 m is unreliable.
-- ST VL53L1X: arm at 0.1 m or higher; ceiling at 3 m even though the datasheet says 4 m (signal-to-noise drops sharply).
-- Garmin LIDAR-Lite: arm at 0.1 m or higher; the long ceiling makes it the most forgiving of the three.
+- TF-Luna: fly at 0.3 m or higher; the bottom 0.2 m is unreliable.
+- ST VL53L1X: fine from 0.1 m; treat 3 m as the practical ceiling.
+- Garmin LIDAR-Lite v3: fine from 0.1 m, with the most headroom of the three.
 
-Auto-takeoff with vision navigation typically starts from a stationary ground clearance of 0.15 m (props spinning, vehicle on the ground). The plugin reports rangefinder health to Mission Control's Navigation tab; arm only when that reports `OK`.
+The pre-arm card checks that a rangefinder is configured, not that it is reading. Watch the distance on the Vision Nav sensors card before you arm.
 
-## Wiring quick reference
+## Wiring example
 
-A typical setup on a Radxa ROCK 5C Lite:
+A typical layout on a Radxa ROCK 5C Lite:
 
+```text
+USB-A or CSI port        -> downward camera
+UART TX/RX (pins 8/10)   -> TF-Luna (optional, companion-owned)
+GND                      -> shared ground with the flight controller
+FC MAVLink UART          -> companion (already wired for the agent)
 ```
-USB-A or CSI port    -> downward camera
-UART2 TX/RX (pins 8/10) -> TF-Luna (3.3V tolerant)
-GND                  -> shared ground with the FC
-```
 
-Wire an I2C rangefinder (VL53L1X, LIDAR-Lite v3) to the flight controller and read it over the FC relay; the companion-direct I2C drivers are not available yet.
+On a Raspberry Pi 5 it looks the same: CSI port for a Pi camera module, a UART on pins 8/10 for a TF-Luna. I2C rangefinders go on the flight controller, not the companion.
 
-On a Raspberry Pi 5 the layout is similar (the CSI port speaks to a Pi Camera Module, UART4 on pins 8/10, I2C-1 on pins 3/5).
+## Next steps
 
-The plugin checks the requested bus is free at install time and refuses to grant `hardware.uart` or `hardware.i2c` if another plugin or service already owns the bus.
-
-## What's next
-
-Once the hardware is mounted and wired, head to [Install on a drone](/drone-agent/vision-nav-install) to load the plugin, then [Configure optical flow](/drone-agent/vision-nav-optical-flow) to pick the camera and rangefinder drivers and set the right FC parameters.
+- [Install on a drone](/drone-agent/vision-nav-install)
+- [Configure optical flow](/drone-agent/vision-nav-optical-flow)

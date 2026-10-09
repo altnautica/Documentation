@@ -1,149 +1,253 @@
 ---
-title: "3D Simulation"
-description: "CesiumJS globe with mission replay, flight path visualization, and playback controls."
+title: "Simulation"
+description: "Preview missions on a 3D CesiumJS globe, overlay a flown log, and test against real ArduPilot SITL through the bundled WebSocket bridge."
 icon: "globe"
 ---
 
-The Simulate tab renders your missions and flight history on a 3D CesiumJS globe. Replay recorded flights, preview planned missions, and inspect the flight path from any angle.
+Mission Control has two ways to try things without a drone in the air:
 
-<Frame caption="3D simulation view with flight path, waypoints, and terrain">
-  <img src="/images/dashboard/simulation.png" alt="CesiumJS globe showing a drone flight path over terrain" />
+- **The Simulate tab** previews the mission in the planner on a 3D CesiumJS globe. It computes a trajectory from the planned path and plays it back. It does not run an autopilot.
+- **The SITL tool** (`tools/sitl/` in the Mission Control repo) launches real ArduPilot SITL on your computer and bridges it to a WebSocket the browser can connect to. Everything that works against a flight controller works against it.
+
+## The Simulate tab
+
+The Simulate tab is a read-only view of whatever mission is in the planner. If the mission has waypoints, it renders them in 3D; if it is empty, it shows "Nothing to simulate yet" with a link back to the Plan tab. The tab never edits or clears the mission. Loading a different plan from the library asks before it replaces unsaved work.
+
+<Frame caption="The Simulate tab previewing a demo mission on the 3D globe, with playback controls and the waypoint progress panel">
+  <img className="block dark:hidden" src="/images/mission-control/light/sim3d.png" alt="Simulate tab showing a planned flight path and numbered waypoints over 3D imagery, a map and quality options panel, a preview readout, playback controls along the bottom, and a side panel with duration, distance, altitude profile, active waypoint and waypoint progress" />
+  <img className="hidden dark:block" src="/images/mission-control/dark/sim3d.png" alt="Simulate tab showing a planned flight path and numbered waypoints over 3D imagery, a map and quality options panel, a preview readout, playback controls along the bottom, and a side panel with duration, distance, altitude profile, active waypoint and waypoint progress" />
 </Frame>
 
-## What You Can Visualize
-
-The simulation viewer renders multiple layers on the 3D globe:
-
-| Layer | Description |
-|-------|-------------|
-| **Flight path** | 3D polyline showing the drone's actual or planned route |
-| **Drone entity** | An animated drone model that moves along the path during playback |
-| **Waypoint markers** | Numbered markers at each mission waypoint position |
-| **Camera trigger points** | Markers showing where camera shutter events occur |
-| **Geofence volumes** | 3D extruded polygons/cylinders showing geofence boundaries |
-| **Rally point markers** | Flag markers at rally point positions |
-| **Pattern boundaries** | The source polygon for pattern-generated missions |
-| **GCS position** | Your ground station location on the globe |
-| **Drone trail** | A fading trail behind the drone during playback |
-
-## Replaying a Flight
+### Previewing a mission
 
 <Steps>
-  <Step title="Open the Simulate tab">
-    Click "Simulate" in the top navigation.
+  <Step title="Plan or load a mission">
+    Build a mission in the Plan tab, or open the Simulate tab and pick a saved plan from the flight plan library in the left panel (`L` toggles the library).
   </Step>
-  <Step title="Load a flight">
-    Select a flight from the left panel. This can be a saved mission or a recorded flight log from the History tab.
+  <Step title="Play it">
+    Press `Space` or use the playback bar. A drone model flies the computed path with a trail behind it.
   </Step>
-  <Step title="Use playback controls">
-    The playback bar at the bottom controls the replay. Play, pause, scrub the timeline, or adjust playback speed.
-  </Step>
-  <Step title="Explore the 3D view">
-    Rotate, zoom, and tilt the globe to view the flight from any angle. The camera can follow the drone or be positioned freely.
+  <Step title="Inspect it">
+    Switch camera modes, scrub the timeline, and read the HUD and altitude profile to check the route before uploading it to the flight controller.
   </Step>
 </Steps>
 
-## Playback Controls
+### What is drawn
 
-The playback bar provides standard media controls:
+| Layer | Description |
+|-------|-------------|
+| **Flight path** | The planned route as a 3D polyline |
+| **Drone and trail** | An animated drone model with a trail, moving along the path during playback |
+| **Waypoint markers** | A marker at each mission waypoint |
+| **Camera triggers** | Points where camera shutter events occur |
+| **Geofence volumes** | Geofence boundaries extruded in 3D |
+| **Rally points** | Markers at rally point positions |
+| **Pattern boundaries** | The source polygon of a pattern-generated mission |
+| **GCS position** | Your ground station location |
+| **Flown path** | The actual path from a loaded flight log (see [Comparing a flown log](#comparing-a-flown-log)) |
 
-| Control | Function |
-|---------|----------|
-| Play / Pause | Start or stop playback |
-| Scrub bar | Drag to jump to any point in the flight |
-| Speed selector | 0.5x, 1x, 2x, 4x, 8x playback speed |
-| Step forward / back | Advance or rewind by one data frame |
-| Reset | Return to the beginning |
+### Playback controls
 
-## Simulation HUD
+The playback bar has play/pause, step back, step forward, skip to start, skip to end, a scrubber, and a speed selector with `0.25x`, `0.5x`, `1x`, `2x`, and `4x`.
 
-During playback, a heads-up display overlay shows real-time data at the current playback position:
+| Key | Action |
+|-----|--------|
+| `Space` | Play / pause |
+| `Left` / `Right` | Step back / forward |
+| `[` / `]` | Decrease / increase speed |
+| `Home` or `R` | Rewind to the start |
+| `End` | Skip to the end |
+| `1` to `9` | Seek to 10% to 90% of the flight |
+| `Escape` | Stop |
+| `T` / `F` / `O` / `X` | Top-down / Follow / Orbit / Free camera |
+| `L` | Toggle the flight plan library |
 
-- Altitude (AGL and MSL)
-- Ground speed
-- Heading
-- Battery level at that moment
-- GPS status
-- Distance from home
-- Current waypoint (for mission replays)
+### Camera modes
 
-## Altitude Profile
+| Mode | Key |
+|------|-----|
+| **Top-down** | `T` |
+| **Follow** | `F` |
+| **Orbit** | `O` |
+| **Free** | `X` |
 
-Below the 3D view, an altitude profile chart shows:
+Mouse and touch controls: left-drag orbits, right-drag or Ctrl + drag tilts, scroll or pinch zooms, and Shift + drag is free look. The camera cluster also has reset view, zoom in and out, a camera heading lock, and an "Auto-follow on play" option.
 
-- Flight altitude over time or distance
-- Ground elevation (terrain line)
-- AGL clearance at each point
-- Waypoint altitude targets vs actual altitude
+### HUD
 
-This is useful for verifying terrain following and checking that the drone maintained safe clearance.
+During playback the HUD shows the current waypoint (`WP`), altitude (`ALT`), speed (`SPD`), heading (`HDG`), distance (`DIST`), time remaining (`ETA`), and photo count (`CAM`) when the mission takes photos. These values are computed from the planned path, not live telemetry. Battery (`BATT`), signal (`SIG`), and wind (`WIND`) are greyed out because the trajectory preview does not model them.
 
-## Mission Preview
+### Altitude profile
 
-Before flying, you can preview a planned mission in 3D:
+Below the 3D view, the altitude profile plots the planned altitude along the route against the terrain profile, so you can check clearance before flying. This is most useful over hilly ground, where a 2D map can hide a waypoint that sits below a ridge.
 
-1. Plan a mission in the Plan tab.
-2. Switch to the Simulate tab.
-3. The planned mission renders as waypoints connected by path lines.
-4. Play the preview to see an animated drone fly the planned route.
+### Map controls
 
-This helps you visualize the mission in 3D before uploading to the FC, especially over hilly terrain where 2D map views can be misleading.
+The map controls in the top-left corner of the viewer set:
 
-## Map Controls Panel
+- Imagery: dark map or satellite (satellite needs a Cesium ion token)
+- Render quality: Balanced or High
+- 3D buildings
+- Terrain exaggeration
+- Path labels and camera triggers
+- **Rounded turns**: draws the planned line with softened corners. This is display smoothing only. The flight controller flies its own cornering, so it is not a predicted path.
 
-The controls panel on the side lets you toggle visualization layers:
+### Comparing a flown log
 
-- Show/hide flight path
-- Show/hide waypoint markers
-- Show/hide camera triggers
-- Show/hide geofence volumes
-- Show/hide rally points
-- Toggle terrain imagery (satellite, terrain, or both)
-- Toggle 3D buildings (in supported areas)
+Under the plan library, **Compare a flown log** loads a recorded flight log (`.bin`, `.log`, `.tlog`, or `.ulg`) and overlays its actual GPS path on the planned mission. The control shows the file name and point count, and **Clear** removes it. Nothing is drawn unless the log contains GPS-fixed positions; a truncated log is reported with the byte offset where it ends. To analyze recorded flights in depth, use [Flight logs](/mission-control/flight-logs).
 
-## Camera Modes
+### Cesium token
 
-The CesiumJS viewer supports several camera modes:
+CesiumJS needs a Cesium ion token for terrain and 3D tiles. Without one the globe still works, but terrain may be flat and satellite imagery is unavailable.
 
-| Mode | Description |
-|------|-------------|
-| **Free** | Manually control the camera with mouse/touch |
-| **Follow** | Camera follows the drone, looking at it from behind |
-| **Overhead** | Top-down view following the drone |
-| **First person** | Camera positioned at the drone, looking forward |
-
-## Cesium token
-
-CesiumJS needs an API token for terrain data and 3D tiles. Without one the globe
-still works, but terrain elevation may be flat.
-
-The token is a **Convex** server variable named `CESIUM_ION_TOKEN`, not a
-Next.js `NEXT_PUBLIC_` variable, so putting it in `.env` does nothing:
+Set the token as a **Convex** server variable named `CESIUM_ION_TOKEN`; Mission Control reads it from Convex at runtime:
 
 ```bash
 npx convex env set CESIUM_ION_TOKEN your_cesium_ion_token
 ```
 
-Get a free token at [cesium.com/ion](https://cesium.com/ion). If you self-host
-the Cesium JS build itself, point `CESIUM_BASE_URL` at it in `.env.local`;
-unset falls back to the CDN. See
-[Installation](/mission-control/installation#convex-server-variables).
+When the Convex value is not available, the viewer falls back to the build-time `NEXT_PUBLIC_CESIUM_ION_TOKEN` variable. Get a free token at [cesium.com/ion](https://cesium.com/ion). If you self-host the Cesium JS build, point `CESIUM_BASE_URL` at it; unset falls back to the CDN. See [Installation](/mission-control/installation#convex-server-variables).
 
-## History Integration
-
-The [History](/mission-control/settings) tab records flight data. From the History tab, you can:
-
-1. Select a recorded flight.
-2. Click "Open in Simulation" to load it in the 3D viewer.
-3. Replay the flight with full telemetry overlay.
-
-History detail pages also include their own analysis tools: statistics panels, correlation charts, and vibration spectrograms.
-
-## Performance Notes
+### Performance
 
 CesiumJS renders a full 3D globe with terrain and imagery. For best performance:
 
-- Use a dedicated GPU or integrated graphics with WebGL 2 support
+- Use a GPU with WebGL 2 support
 - Close other GPU-heavy browser tabs
-- Reduce the browser window size if frame rate drops
-- On low-end machines, disable 3D buildings and use simplified terrain
+- Set render quality to Balanced and turn off 3D buildings on low-end machines
+
+## SITL testing
+
+SITL (Software In The Loop) runs the real ArduPilot autopilot on your computer with simulated physics. Every MAVLink message, parameter, command, calibration, failsafe, geofence, and mission behaves as it does on hardware. Unlike demo mode, which uses mock telemetry, SITL runs actual flight code.
+
+The SITL tool lives at `tools/sitl/` in the Mission Control repo. It runs ArduPilot's `sim_vehicle.py` and relays raw MAVLink v2 frames between SITL's TCP port and a WebSocket, with no parsing or modification.
+
+<Frame caption="SITL tool running with ArduPilot and WebSocket bridge">
+  <img src="/images/dashboard/sitl-testing.png" alt="Terminal showing SITL launcher with ArduPilot running" />
+</Frame>
+
+### Prerequisites
+
+- Node.js 20 or newer
+- Python 3, `pip3`, and `git`
+- ArduPilot source built for SITL, by default at `~/.ardupilot`
+
+The setup script clones ArduPilot into `~/.ardupilot` (or `$ARDUPILOT_HOME`) and builds ArduCopter for the SITL board. It is written for macOS; on Linux, follow the [ArduPilot build instructions](https://ardupilot.org/dev/docs/building-setup-linux.html) and build the same way.
+
+```bash
+cd ADOSMissionControl/tools/sitl
+bash scripts/setup-ardupilot.sh
+npm install
+```
+
+To build by hand, or to add other vehicles:
+
+```bash
+cd ~/.ardupilot
+./waf configure --board sitl
+./waf copter
+```
+
+### Starting SITL and connecting
+
+<Steps>
+  <Step title="Start the SITL tool">
+    ```bash
+    cd ADOSMissionControl/tools/sitl
+    npx tsx src/index.ts
+    ```
+    This launches ArduCopter SITL and a WebSocket bridge. A terminal dashboard shows the SITL log; pass `--no-dashboard` to log plainly to stdout.
+  </Step>
+  <Step title="Copy the printed URL">
+    Every run generates a random token and prints a URL per drone in this form:
+    ```text
+    ws://[::1]:5760/?token=<token>
+    ```
+    The token changes on every start. Connections without it are refused.
+  </Step>
+  <Step title="Connect from Mission Control">
+    Open Mission Control from a `localhost`, `127.0.0.1`, or `[::1]` address. Click Connect, select the WebSocket tab, paste the full URL including `?token=`, and connect. The simulated vehicle appears with live telemetry: arm, take off, change modes, upload missions, edit parameters, and run calibrations as on hardware.
+  </Step>
+</Steps>
+
+<Note>
+The bridge binds the IPv6 loopback `::1` by default because each drone's WebSocket shares its SITL TCP port number and SITL listens on IPv4. Browser pages are admitted only from loopback origins. To use a GCS served from another origin, add it with `--allow-origin` (repeatable). Clients that send no Origin header, such as scripts, need only the token.
+</Note>
+
+### Options
+
+| Flag | Default | Description |
+|--------|---------|-------------|
+| `--drones <N>` | `1` | Number of vehicle instances |
+| `--ws-port <port>` | `5760` | WebSocket port for drone 1 (also the SITL TCP base port) |
+| `--ws-host <addr>` | `::1` | WebSocket bind address |
+| `--allow-origin <origin>` | none | Also accept a GCS page from this exact origin (repeatable) |
+| `--vehicle <type>` | `ArduCopter` | `ArduCopter`, `ArduPlane`, or `ArduRover` |
+| `--lat <deg>` / `--lon <deg>` | built-in home | Home position in decimal degrees |
+| `--speedup <N>` | `1` | Simulation speed multiplier |
+| `--wind <spd,dir>` | none | Wind speed (m/s) and direction (degrees), e.g. `5,180` |
+| `--ardupilot <path>` | `~/.ardupilot` | ArduPilot source root (must contain `Tools/autotest/sim_vehicle.py`) |
+| `--preset <id>` | none | Build preset: sets frame, parameters, and vehicle |
+| `--list-presets` | | List build presets and exit |
+| `--scenario <id>` | none | Named test scenario: sets drones, preset, location, wind, and speed |
+| `--list-scenarios` | | List scenarios and exit |
+| `--no-dashboard` | off | Log to stdout instead of the terminal dashboard |
+
+Build presets: `5in-fpv-freestyle`, `7in-long-range`, `10in-heavy-lifter`, `3in-cinewhoop`, `xclass-racer`, `tiny-whoop`, `7in-ados-reference`. Scenarios include `single-debug`, `formation-5`, `swarm-8`, `wind-stress`, `long-range-mission`, and `heavy-lift-ops`; run `--list-scenarios` for the full list.
+
+```bash
+# Plane instead of copter
+npx tsx src/index.ts --vehicle ArduPlane
+
+# Custom home location (Sydney Harbour)
+npx tsx src/index.ts --lat -33.8568 --lon 151.2153
+
+# 5 m/s wind from the south, at 2x speed
+npx tsx src/index.ts --wind 5,180 --speedup 2
+
+# Hexa heavy-lifter preset
+npx tsx src/index.ts --preset 10in-heavy-lifter
+```
+
+### How the bridge works
+
+Browsers cannot open raw TCP sockets. ArduPilot SITL speaks MAVLink over TCP, so the bridge relays it:
+
+```text
+sim_vehicle.py (TCP 127.0.0.1:5760)  ->  tcp-ws bridge  ->  WebSocket [::1]:5760  ->  Browser
+```
+
+The bridge connects to SITL's TCP port, serves a WebSocket, and forwards binary frames in both directions. If the TCP link drops, it reconnects.
+
+### Multiple drones
+
+`--drones N` launches N SITL instances, each with a unique system ID. Each instance gets its own port: `--ws-port` for drone 1, then +10 per drone (5770, 5780, and so on). The bridge runs one WebSocket per drone on that drone's port and prints one URL per drone, all sharing the same token. Connect Mission Control to each URL separately; each drone appears in the fleet sidebar.
+
+```bash
+npx tsx src/index.ts --drones 3
+```
+
+### Testing missions and configuration
+
+1. Plan a mission in the Plan tab and preview it in the Simulate tab.
+2. Upload it to the SITL drone.
+3. Arm, switch to Auto, and watch it fly with real navigation, EKF, wind, and battery drain.
+
+All configuration panels work against SITL: read and write parameters, calibrate sensors (simulated data), configure failsafes and test their triggers, set up geofences and test breach behavior, and configure flight modes.
+
+### Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Failed to launch SITL">
+    The tool looks for `sim_vehicle.py` under `~/.ardupilot`. If ArduPilot is elsewhere, pass `--ardupilot <path>`. Make sure the vehicle you asked for is built (`./waf copter`, `./waf plane`, `./waf rover`).
+  </Accordion>
+  <Accordion title="Connection refused or closed immediately">
+    The bridge answers `401` when the `?token=` is missing or stale (it changes on every start) and `403` when the page origin is not loopback or listed with `--allow-origin`. Copy the URL again from the current run. Also check the port is free (`lsof -i :5760` on macOS or Linux).
+  </Accordion>
+  <Accordion title="No telemetry after connecting">
+    SITL takes a few seconds to initialize. Wait for "Ready to fly" in the SITL log, and check for `TCP bridge connected to 127.0.0.1:<port>` in the tool output.
+  </Accordion>
+  <Accordion title="Simulated drone crashes on takeoff">
+    Wait for a GPS fix (SITL simulates one after a few seconds). Try arming in Stabilize first, then switch to Loiter or Auto after takeoff.
+  </Accordion>
+</AccordionGroup>

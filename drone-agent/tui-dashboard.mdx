@@ -7,8 +7,9 @@ lastUpdated: "2026-06-18"
 
 # Terminal Status Page
 
-The old multi-screen terminal dashboard has been replaced by a read-only status
-page.
+`ados` with no arguments opens a status page with an actions menu: a live view
+of the local agent, plus a short list of maintenance actions you can run from
+the same screen.
 
 Run:
 
@@ -17,7 +18,11 @@ ados
 ```
 
 The page refreshes every few seconds and shows the URLs you need to finish setup
-in a browser.
+in a browser. Press `a` for the actions menu, `r` to refresh now, and `q` to quit.
+
+<Frame caption="A drone node before its flight controller is connected: setup links on the left, the missing autopilot flagged on the right.">
+  <img src="/images/agent/tui-1.png" alt="ados terminal status page in a degraded state, listing console, Mission Control, ground control and video URLs, with the Autopilot panel reporting no flight controller and a setup step asking to connect the FC" />
+</Frame>
 
 ## What it shows
 
@@ -30,7 +35,23 @@ in a browser.
 | Video | WHEP URL, recording state, camera or receiver state, and link stats when available. |
 | Network | Hotspot SSID, local IPs, mDNS hostname, internet state, and Cloudflare state. |
 
+<Frame caption="Flight controller connected and disarmed: flight mode, battery, GPS fix and the video pipeline all report live.">
+  <img src="/images/agent/tui-3.png" alt="ados terminal status page in a healthy state, with the Autopilot panel showing STABILIZE and DISARMED, a battery bar, a 3D GPS fix and video running" />
+</Frame>
+
+<Frame caption="Armed and holding altitude: the Autopilot panel adds an altitude trace while the vehicle flies.">
+  <img src="/images/agent/tui-6.png" alt="ados terminal status page with the vehicle armed in LOITER at 15 m, a battery bar and an altitude trace" />
+</Frame>
+
 Press `q` or Ctrl-C to quit.
+
+<Frame caption="The actions menu, opened with a, over the live status page.">
+  <img src="/images/agent/tui-7.png" alt="ados terminal status page with the Actions menu open, listing Install RTL driver, Pair, Logs, Radio status, Update agent, Restart radio, Unpair and Reboot host, each with a one-line description" />
+</Frame>
+
+<Frame caption="Arrow keys move the selection; Enter runs the highlighted action.">
+  <img src="/images/agent/tui-10.png" alt="ados terminal status page with the Actions menu open and Radio status selected" />
+</Frame>
 
 ## SSH usage
 
