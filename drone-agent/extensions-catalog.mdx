@@ -2,7 +2,7 @@
 title: "Extensions catalog"
 description: "First-party extensions shipped by Altnautica through the public ADOSExtensions repo."
 icon: "boxes-stacked"
-lastUpdated: "2026-06-18"
+lastUpdated: "2026-10-09"
 ---
 
 # Extensions catalog
@@ -16,7 +16,7 @@ Every extension is licensed GPL-3.0-or-later; hardware reference designs ship CC
 | Field | Value |
 |---|---|
 | Plugin id | `com.altnautica.mavlink-gimbal-v2` |
-| Version | 1.3.0 |
+| Version | 1.4.0 |
 | Risk | medium |
 | Type | Hybrid (agent subprocess + GCS iframe) |
 | Hardware | A MAVLink gimbal-manager gimbal on component 154 (optional) |
@@ -36,7 +36,7 @@ It speaks MAVLink Gimbal v2 only. There are no vendor serial drivers, so a gimba
 | Field | Value |
 |---|---|
 | Plugin id | `com.altnautica.vision-nav` |
-| Version | 0.4.0 |
+| Version | 0.4.1 |
 | Risk | high |
 | Type | Hybrid (Rust agent binary + GCS iframe) |
 | Hardware | USB UVC global-shutter or rolling-shutter camera, or CSI via V4L2; optional rangefinder (TF-Luna, Garmin LIDAR-Lite, ST VL53L1X) |
@@ -58,7 +58,7 @@ See the [Vision Navigation overview](/drone-agent/vision-nav-overview) for the f
 | Field | Value |
 |---|---|
 | Plugin id | `com.altnautica.follow-me` |
-| Version | 0.2.8 |
+| Version | 0.2.9 |
 | Risk | high |
 | Type | Hybrid (agent subprocess + GCS iframe) |
 | Hardware | USB UVC or CSI camera bound to the vision pipeline; a gimbal is optional |
@@ -78,7 +78,7 @@ A lock-state gate stops commanding the instant the tracker reports the subject u
 | Field | Value |
 |---|---|
 | Plugin id | `com.altnautica.siyi-pod` |
-| Version | 0.4.0 |
+| Version | 0.5.0 |
 | Risk | high |
 | Type | Agent subprocess + GCS iframe |
 | Hardware | A SIYI pod (A2 mini, A8 mini, ZR10, ZR30, ZT6, ZT30) on the pod network `192.168.144.x`, or a TTL serial port |
@@ -92,12 +92,33 @@ Until the pod answers the identity query it is sent nothing at all. The negotiat
 
 **Resources:** 128 MB max RAM, 25% CPU, 4 PIDs.
 
+## ADOS Thermal Camera FLIR Lepton USB UVC
+
+| Field | Value |
+|---|---|
+| Plugin id | `com.altnautica.thermal-flir-lepton-usb` |
+| Version | 1.3.1 |
+| Risk | medium |
+| Type | Agent subprocess (Python) + GCS iframe |
+| Hardware | FLIR Lepton 3.5 on a PureThermal 2 USB UVC dongle (firmware 1.2.2 or newer) |
+| Supported boards | cm4, cm5, rk3582, rk3576, rk3566, x86 |
+
+A radiometric thermal driver for a FLIR Lepton 3.5 on a PureThermal 2 dongle. It locks the radiometric linear resolution so raw Y16 counts convert to degrees Celsius, meters a centre-reticle spot plus the frame minimum and maximum, and colorizes the feed with one of three palettes that match between the agent and the cockpit overlay. High and low gain trade temperature sensitivity against range, and a one-touch flat field correction recalibrates the sensor.
+
+Cockpit Skills cycle the palette (`p`) and run a flat field correction (`Shift+F`). When a colorized stream endpoint is configured, the thermal feed is also offered to the video pipeline as its own selectable stream.
+
+Capture needs a native UVC backend that the agent supplies; the extension does not bundle one. With no backend, no device on the bus, or a failed open, it publishes an explicit unavailable state with the reason and never synthesises a temperature.
+
+**Permissions:** USB UVC hardware, video source set, telemetry extend, event publish.
+
+**Resources:** 192 MB max RAM, 35% CPU, 16 PIDs.
+
 ## ADOS World Engine
 
 | Field | Value |
 |---|---|
 | Plugin id | `com.altnautica.world-engine` |
-| Version | 1.0.0 |
+| Version | 1.0.1 |
 | Risk | high |
 | Type | Hybrid (Rust agent binaries on every profile + inline GCS module) |
 | Hardware | Any camera the vision engine publishes frames for; a workstation or compute node on the drone's LAN (an NVIDIA or Apple Silicon GPU speeds reconstruction) |

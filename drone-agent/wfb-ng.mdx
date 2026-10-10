@@ -51,9 +51,9 @@ The RTL8812EU requires a DKMS kernel driver that is not part of the mainline Lin
 The adapter's built-in antenna works for short-range bench testing. For real flights, use external antennas:
 
 - **Air side (drone):** Omnidirectional dipole antenna, 3-5 dBi. The drone moves in all directions, so omnidirectional coverage is important.
-- **Ground side:** Directional patch or panel antenna, 8-14 dBi. Point it at the drone for maximum range.
+- **Ground side:** Directional patch or panel antenna. Point it at the drone for maximum range.
 
-With a 14 dBi directional antenna on the ground and a 5 dBi dipole on the drone, expect 20-50 km line-of-sight range depending on conditions.
+Range depends on the ground antenna. With the stock antennas, expect 1-3 km line of sight. Long-range links in the 40-60 km class need a high-gain ground dish (around 18 dBi), a clear line of sight, and suitable transmit power; treat that figure as the ceiling under good conditions, not a default.
 
 ## Configuration
 
@@ -92,7 +92,7 @@ The `tx_power` setting is in dBm. Higher power means more range but also more in
 | 15 | 32 | Bench testing |
 | 20 | 100 | Short range (< 1 km) |
 | 25 | 316 | Medium range (1-10 km) |
-| 29 | 800 | Long range (10-50 km) |
+| 29 | 800 | Long range, with a high-gain ground dish |
 
 ### FEC tuning
 

@@ -5,6 +5,8 @@ icon: "download"
 lastUpdated: "2026-06-18"
 ---
 
+import InstallAgent from "/snippets/install-agent.mdx";
+
 # Installation
 
 The Ground Agent uses the same install script as the Drone Agent. One command, one SD card image, one codebase. The hardware fingerprint at first boot picks the right profile automatically.
@@ -29,9 +31,7 @@ The install script requires internet to download packages and the DKMS driver fo
 
 SSH into your SBC and run:
 
-```bash
-curl -sSL https://raw.githubusercontent.com/altnautica/ADOSDroneAgent/main/scripts/install.sh | sudo bash
-```
+<InstallAgent />
 
 To pair with a drone at install time, add the pairing key:
 
@@ -93,7 +93,7 @@ ados status
 You should see output like:
 
 ```
-ADOS Drone Agent v0.99.374
+ADOS Drone Agent v0.102.5
 Profile: ground-station
 Board: pi4b (Raspberry Pi 4B)
 

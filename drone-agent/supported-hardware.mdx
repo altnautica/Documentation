@@ -1,13 +1,13 @@
 ---
 title: "Supported Hardware"
-description: "The 17 board profiles, tier system, and recommended hardware."
+description: "The 21 board profiles, tier system, and recommended hardware."
 icon: "circuit-board"
-lastUpdated: "2026-06-18"
+lastUpdated: "2026-10-09"
 ---
 
 # Supported Hardware
 
-The ADOS Drone Agent ships with 17 board profiles. Each profile is a YAML file that tells the agent what SoC it is running on, which buses are available, what video encoders exist, and which features to enable.
+The ADOS Drone Agent ships with 21 board profiles. Each profile is a YAML file that tells the agent what SoC it is running on, which buses are available, what video encoders exist, and which features to enable.
 
 <Note>
 **Ready to install?** Use the [Flash Tool in Mission Control](/mission-control/flash-tool). Pick your board from the catalog, then copy the install one-liner for it.
@@ -15,7 +15,7 @@ The ADOS Drone Agent ships with 17 board profiles. Each profile is a YAML file t
 
 ## Board profiles
 
-The agent reads `/proc/device-tree/model` at boot and matches it against the patterns in each profile. If no match is found, it falls back to `generic-arm64`.
+The agent reads `/proc/device-tree/model` and the device-tree compatible string at boot and matches them against the patterns in each profile. If no match is found, it falls back to `generic-arm64` on ARM hosts and `generic-x86_64` on x86 hosts.
 
 | Board | SoC | Architecture | Default Tier | Video Encode | NPU |
 |-------|-----|-------------|-------------|-------------|-----|
@@ -23,19 +23,23 @@ The agent reads `/proc/device-tree/model` at boot and matches it against the pat
 | Raspberry Pi CM4 | BCM2711 | aarch64 | 3 | H.264 | No |
 | Raspberry Pi CM5 | BCM2712 | aarch64 | 4 | H.265 | No |
 | Raspberry Pi 3 | BCM2837 | aarch64 | 2 | None | No |
+| Raspberry Pi Zero 2 W | BCM2710A1 | aarch64 | 2 | None | No |
 | Raspberry Pi 4B | BCM2711 | aarch64 | 3 | H.264 | No |
 | Raspberry Pi 5 | BCM2712 | aarch64 | 4 | H.265 | No |
 | Radxa ROCK 5C Lite | RK3582 | aarch64 | 4 | H.264, H.265 | 6 TOPS |
 | Radxa Cubie A7Z | Allwinner A733 | aarch64 | 2 | H.264 | 3 TOPS |
-| Radxa CM3 | RK3566 | aarch64 | 3 | H.264, H.265 | 0.8 TOPS |
-| RK3566 (reference) | RK3566 | aarch64 | 3 | H.264, H.265 | 0.8 TOPS |
+| Radxa Cubie A7S | Allwinner A733 | aarch64 | 3 | H.264 | 3 TOPS |
+| Radxa CM3 (RK3566) | RK3566 | aarch64 | 3 | H.264, H.265 | 0.8 TOPS |
 | Radxa CM4 (RK3588S2) | RK3588S2 | aarch64 | 4 | H.264, H.265 | 6 TOPS |
 | Rockchip RK3576 (reference) | RK3576 | aarch64 | 3 | H.264, H.265 | 6 TOPS |
 | Orange Pi 5 | RK3588S | aarch64 | 4 | H.264, H.265 | 6 TOPS |
 | NVIDIA Jetson Nano | Tegra X1 | aarch64 | 3 | H.264, H.265 | GPU |
 | NVIDIA Jetson Orin Nano | Tegra Orin | aarch64 | 4 | H.264, H.265 | GPU |
 | Rockchip RV1126B | RV1126B | armv7l | 3 | H.264, H.265 | 2 TOPS |
+| D-Robotics RDK X3 | Horizon Sunrise X3 | aarch64 | 3 | H.264, H.265 | No (perception offloads) |
+| BeagleBoard.org BeagleY-AI | TI AM67A (J722S) | aarch64 | 3 | H.264, H.265 (probed, software fallback) | No (perception offloads) |
 | Generic ARM64 | Unknown | aarch64 | 2 | None | No |
+| Generic x86_64 (PC, mini-PC or VM) | Unknown | x86_64 | 2 | None (CPU encode) | No |
 
 Every board installs the agent on top of its stock vendor OS through the Flash Tool's install one-liner. The "Video Encode" column lists hardware encoders; boards with decode-only video acceleration fall back to software encoding. NPU figures are the vendor-stated on-chip accelerator capability where one exists.
 

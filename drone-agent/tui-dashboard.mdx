@@ -1,54 +1,82 @@
 ---
-title: "Terminal Status Page"
-description: "Use ados over SSH to find setup URLs and monitor the local agent."
+title: "Terminal dashboard"
+description: "Run ados over SSH for a live dashboard of links, autopilot, video, link and services, with quick actions."
 icon: "table-layout"
-lastUpdated: "2026-06-18"
+lastUpdated: "2026-10-09"
 ---
 
-# Terminal Status Page
+# Terminal dashboard
 
-The old multi-screen terminal dashboard has been replaced by a read-only status
-page.
-
-Run:
-
-```bash
-ados
-```
-
-The page refreshes every few seconds and shows the URLs you need to finish setup
-in a browser.
-
-## What it shows
-
-| Area | Details |
-|---|---|
-| Header | Agent version, device name, profile, and refresh time. |
-| Open setup | Local setup URL, mDNS URL, LAN URL, hotspot URL, USB tether URL, Mission Control URL, and tunnel URL when configured. |
-| Status | Setup completion, MAVLink, video, network, remote access, and services. |
-| Telemetry | Mode, armed state, battery, GPS, altitude, and heartbeat state when MAVLink is live. |
-| Video | WHEP URL, recording state, camera or receiver state, and link stats when available. |
-| Network | Hotspot SSID, local IPs, mDNS hostname, internet state, and Cloudflare state. |
-
-Press `q` or Ctrl-C to quit.
-
-## SSH usage
+Run `ados` on the node, or over SSH, to open the terminal dashboard:
 
 ```bash
 ssh user@<node-name>.local
 ados
 ```
 
-If your terminal is narrow, the layout stacks panels vertically and folds long
-URLs. For scripts or support collection, use JSON instead:
+In an interactive terminal, `ados` hands off to the native `ados-tui` dashboard. It polls the local agent every 2 seconds on a background thread, so a slow or hung agent never freezes the screen or the keys. Without a TTY (a pipe, a script, or a missing dashboard binary), `ados` prints the same one-shot summary as `ados status` instead.
+
+For scripts or support collection, use JSON:
 
 ```bash
 ados status --json
 ```
 
+## Layout
+
+The top line shows the node identity, the last refresh time and, when needed, a `stale` flag. Under it, a verdict line reads `HEALTHY`, `DEGRADED` or `SETUP`, followed by a one-line summary.
+
+| Panel | What it shows |
+|---|---|
+| **Links** | Every URL the node answers on, grouped and best first: the setup page, LAN IP, hotspot, USB tether and mDNS name. The direct IP is the most reliable address and also works from the hosted Mission Control; the `.local` name needs a desktop app on the same LAN. Long URLs wrap so they stay copyable. |
+| **Autopilot** | Flight controller link (with the autopilot family when it is verified, or the board over MSP), flight mode, `ARMED` or `DISARMED`, a battery gauge with a trend sparkline, GPS fix, satellites, and altitude with its own trend. A ground station without a flight controller shows "no autopilot". |
+| **Video** | Live video pipeline state. The viewer URL lives in the Links panel. |
+| **Link** | Cloud relay state, remote access state, the hotspot name and, when there is one, the per-unit Wi-Fi passphrase. |
+| **Services** | Running and stopped service counts. While setup is incomplete, each setup step with its state and what it still needs. |
+| **Status** | Shown in place of the panels while the dashboard is still connecting to the agent, or with the reason the agent could not be reached. |
+
+The footer lists the key hints on the left and the installed version on the right, with "up to date" or "update available" once the background version check lands.
+
+## Keys
+
+| Key | Action |
+|---|---|
+| `a` | Open the actions overlay. Move with `j`/`k` or the arrow keys, run with `Enter`, close with `Esc` or `q`. |
+| `r` | Refresh now instead of waiting for the next poll. |
+| `u` | Update the agent. Shown only when a newer version is available. Asks for confirmation, and is refused while the vehicle reports armed. |
+| `d` | Install the RTL8812EU radio driver if it is missing (asks for confirmation). |
+| `p` | Show Mission Control pairing info. |
+| `l` | Follow the agent logs. Press Ctrl-C to stop following and return. |
+| `q` | Quit. Ctrl-C quits from any screen. |
+
+## Quick actions
+
+The actions overlay (`a`) lists 8 actions. Each one runs an existing `ados` (or `systemctl`) command in the plain terminal, so you see its real output and any sudo prompt, then press Enter to return to the dashboard. Actions marked confirm ask `[y/N]` first.
+
+| Action | Runs | Confirm |
+|---|---|---|
+| Install RTL driver | `ados radio install-driver` | Yes |
+| Pair | `ados pair` | No |
+| Logs | `ados logs tail` | No |
+| Radio status | `ados radio status` | No |
+| Update agent | `ados update` | Yes |
+| Restart radio | Restarts this node's WFB radio service (the transmit unit on a drone, the receive unit on a ground station) | Yes |
+| Unpair | `ados unpair` | Yes |
+| Reboot host | `sudo systemctl reboot` | Yes |
+
+Two actions refuse rather than run when it is unsafe:
+
+- **Update agent** is refused while the vehicle reports armed, because an update restarts the MAVLink router, video and radio.
+- **Restart radio** is refused until the agent has reported the node's profile, because a drone and a ground station run different radio units.
+
+## Update splash
+
+On launch, the dashboard checks for a newer agent release in the background. If one exists, a splash shows the installed and latest versions once per session. Press `u` to update (the same confirmed, armed-refused path as the `u` key), or any other key to continue to the dashboard. The footer keeps an "update available" reminder.
+
+## Stale data
+
+If no poll has succeeded for 6 seconds, the header shows `stale`, the verdict line changes to `STALE` (or `UNREACHABLE` when the last poll returned an error) and says it is showing the last snapshot. The Autopilot panel hides its flight readings, so a frozen mode, arm state or battery level never reads as live.
+
 ## Next step
 
-Open the setup URL shown at the top of the page. The webapp handles first-run
-device identity, MAVLink, video, network, remote access, Mission Control handoff,
-ground-station setup, logs, and advanced actions.
-
+Open the setup URL from the Links panel. The setup webapp handles first-run device identity, MAVLink, video, network, remote access, Mission Control handoff, ground-station setup, logs, and advanced actions.

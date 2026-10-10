@@ -25,7 +25,7 @@ Traditional GCS tools are desktop-only, platform-locked, and built for a single 
 ## Feature Highlights
 
 <CardGroup cols={2}>
-  <Card title="60+ Configuration Panels" icon="sliders">
+  <Card title="87 Configuration Panels" icon="sliders">
     Flight modes, failsafes, PID tuning, power monitoring, OSD editor, serial ports, sensors, gimbal, camera, LED, VTX, CAN bus, and more.
   </Card>
   <Card title="83 MAVLink Decoders" icon="message-code">
@@ -64,7 +64,7 @@ Open `http://localhost:4000` after running the dev server. WebSerial for USB con
 
 **Electron Desktop App**
 
-A standalone application built on Electron 35. Same features as the browser version, packaged as a native app for macOS, Windows, and Linux. Useful when you want a dedicated window and system tray integration.
+A standalone application built on Electron 44. Same features as the browser version, packaged as a native app for macOS, Windows, and Linux. Useful when you want a dedicated window and system tray integration.
 
 ```bash
 # Build for your platform
@@ -75,7 +75,7 @@ npm run desktop:build:linux
 
 ## Demo Mode
 
-Try Mission Control without any hardware. Demo mode simulates seven drones across ArduPilot, PX4, and iNav, with realistic telemetry, flight modes, and GPS tracks.
+Try Mission Control without any hardware. Demo mode simulates fourteen aircraft across ArduPilot (copter, plane, VTOL, rover, boat, sub and heli), PX4, Betaflight and iNav, with realistic telemetry, flight modes, and GPS tracks.
 
 ```bash
 npm run demo
@@ -93,12 +93,12 @@ You can also activate demo mode in the browser by adding `?demo=true` to the URL
 |-------|------------|
 | Framework | Next.js 16 (App Router) + React 19 |
 | Language | TypeScript (strict mode) |
-| State | 60+ Zustand stores with ring-buffered telemetry |
+| State | 100+ Zustand stores with ring-buffered telemetry |
 | Styling | Tailwind CSS v4 |
 | Maps | Leaflet (2D), CesiumJS (3D simulation) |
 | Video | WebRTC (WHEP + MQTT signaling) |
 | Backend | Convex (optional, for cloud features) |
-| Desktop | Electron 35 |
+| Desktop | Electron 44 |
 | License | GPL-3.0-only |
 
 ## Next Steps

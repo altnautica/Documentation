@@ -1,8 +1,9 @@
 ---
 title: "CLI Reference"
-description: "Everyday ados commands plus the config, diag, hardware, logs, mcp, network, plugin, profile, radio, record, and rust subgroups."
+sidebarTitle: "Agent CLI"
+description: "Everyday ados commands plus the config, diag, hardware, logs, mcp, network, plugin, profile, radio, and record subgroups."
 icon: "terminal"
-lastUpdated: "2026-09-24"
+lastUpdated: "2026-10-09"
 ---
 
 # CLI Reference
@@ -53,7 +54,6 @@ setup, remote access) lives in the local setup webapp or ADOS Mission Control.
 | `ados profile` | Show or override the agent profile. |
 | `ados radio` | Inspect and tune the WFB-ng radio link, including pairing and the driver build. |
 | `ados record` | Start, stop, list, and clip ground-station recordings. |
-| `ados rust` | Switch services between the native and packaged implementations. |
 
 <Note>
 Every subgroup except `ados logs` is hidden from `ados --help` by design, so the
@@ -69,14 +69,7 @@ Run `ados` after install or over SSH:
 ados
 ```
 
-In an interactive terminal it opens a read-only status page with:
-
-- Setup URL.
-- Hotspot, LAN, USB tether, and mDNS URLs when available.
-- Mission Control and tunnel URLs when configured.
-- MAVLink and video state.
-- Network and remote access state.
-- Services and telemetry.
+In an interactive terminal it opens the live [terminal dashboard](/drone-agent/tui-dashboard): Links, Autopilot, Video, Link and Services panels, with quick actions on `a` (pair, logs, radio status, driver install, update, radio restart, unpair, reboot).
 
 Press `q` or Ctrl-C to exit.
 
@@ -103,7 +96,7 @@ Example output:
 
   MAVLink FC    not connected
   Video         running  encoder=v4l2m2m  http://127.0.0.1:8889/main/
-  Cloud relay   configured (https://convex-site.altnautica.com, awaiting pair)
+  Cloud relay   configured (https://cloud.example.com, awaiting pair)
   Cloudflare    disabled
 
 Next: Connect or configure the flight controller
@@ -297,16 +290,6 @@ Inspect and tune the WFB-ng radio link, including pairing.
 | `ados radio pair auto on` | Re-arm auto-pair (only when unpaired). |
 | `ados radio pair auto off` | Disable auto-pair. |
 | `ados radio install-driver` | Build and install the RTL8812EU (WFB) kernel driver if it is missing. Add `--force` to rebuild when the module is already present. |
-
-## `ados rust`
-
-Switch individual services between the native (Rust) and packaged implementations. This writes a marker file the supervisor reconciles. It never hand-edits live unit files.
-
-| Command | What it does |
-|---|---|
-| `ados rust status` | Show the native-vs-packaged state per service. |
-| `ados rust enable <service>...` | Run the native implementation for one or more services. |
-| `ados rust disable <service>...` | Fall back to the packaged service for one or more services. |
 
 ## `ados config`
 

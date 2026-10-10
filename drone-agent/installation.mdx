@@ -5,6 +5,8 @@ icon: "download"
 lastUpdated: "2026-06-18"
 ---
 
+import InstallAgent from "/snippets/install-agent.mdx";
+
 # Installation
 
 The agent installs with a single command. It detects your board, installs dependencies, configures systemd services, and starts everything automatically.
@@ -17,9 +19,7 @@ Mission Control's Flash Tool surfaces this install command automatically. See [I
 
 SSH into your companion computer and run:
 
-```bash
-curl -sSL https://raw.githubusercontent.com/altnautica/ADOSDroneAgent/main/scripts/install.sh | sudo bash
-```
+<InstallAgent />
 
 That is it. The script handles everything from there.
 

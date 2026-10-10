@@ -4,6 +4,8 @@ description: "Install the ADOS Drone Agent and point it at your own Convex and M
 lastUpdated: "2026-06-23"
 ---
 
+import InstallAgent from "/snippets/install-agent.mdx";
+
 The ADOS Drone Agent runs on the companion computer of a drone or ground station. By default a fresh install is **local**: it talks to Mission Control directly over the LAN and never reaches out to any cloud. Self-hosting changes one thing. You point the agent at your own Convex deployment and MQTT broker so a Mission Control reached from any network can find and command the drone through your own relay.
 
 This page covers installing the agent and switching it from local mode to `self_hosted`. It assumes you have already stood up your own Convex backend and MQTT bridge (see [Mission Control and Convex](/developers/self-hosting/mission-control-and-convex) and [MQTT bridge](/developers/self-hosting/mqtt-bridge)).
@@ -12,9 +14,7 @@ This page covers installing the agent and switching it from local mode to `self_
 
 The agent installs with a single command on the companion computer. The install script fetches and verifies a prebuilt installer, then provisions every service.
 
-```bash
-curl -sSL https://raw.githubusercontent.com/altnautica/ADOSDroneAgent/main/scripts/install.sh | sudo bash
-```
+<InstallAgent />
 
 The installer detects the board, sets board-specific overrides, builds the radio stack, and brings up the services. No follow-up commands are required for a working local agent.
 

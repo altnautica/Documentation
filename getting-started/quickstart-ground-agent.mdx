@@ -34,7 +34,7 @@ flowchart LR
         TV[HDMI Monitor]
     end
 
-    TX -.->|5.8 GHz<br/>50 km range| RX
+    TX -.->|5.8 GHz<br/>1-3 km stock antennas| RX
     RX --> SBC
     SBC -->|WiFi AP| LAPTOP
     SBC -->|WiFi AP| PHONE
@@ -145,7 +145,7 @@ You should see:
 
   MAVLink FC    not connected
   Video         idle
-  Cloud relay   paired (https://convex-site.altnautica.com)
+  Cloud relay   paired (https://cloud.example.com)
   Cloudflare    disabled
 
 Next: Open Mission Control or continue optional remote access setup
