@@ -1,264 +1,80 @@
 ---
 title: "Legal and licensing"
-description: "Plugin authors keep their rights. Pick any license, monetize freely, and ship through the channel that fits your terms."
-lastUpdated: "2026-06-18"
+description: "Plugin ownership, licence declaration, how the GPL SDKs interact with your licence, vendor binaries, trademarks and warranty."
 ---
 
-You wrote it; you keep the rights. The plugin system is designed
-around the idea that plugin authors own their work and pick the
-licensing model that suits their goals. The Altnautica registry is
-one distribution channel among several; it does not change who owns
-or licenses what.
+You wrote your plugin and you keep the rights to it. The registry is one distribution channel among several and does not change who owns or licenses what. How you sell, support or license your plugin is between you and your users.
 
-## You can monetize plugins
+## Declare a licence
 
-Nothing in the plugin system stops you from charging for your
-plugin. You can:
-
-- Sell licences directly to operators.
-- Ship a closed-source proprietary plugin under your own EULA.
-- Run a subscription or activation server and have your plugin
-  check in against it.
-- Bundle paid support, updates, or a hardware product.
-- Offer a free open-source community edition plus a paid pro
-  edition under different licenses.
-
-How you handle pricing, billing, taxes, refunds, support, EULAs,
-and commercial contracts is entirely up to you. Altnautica is not a
-party to your transaction with your customers.
-
-## Pick any license
-
-Declare the license in the manifest using a valid SPDX identifier
-or expression:
+Declare the licence in the manifest with an SPDX identifier or expression:
 
 ```yaml
-license: "GPL-3.0-or-later"      # OSS
+license: "GPL-3.0-or-later"
 # or
-license: "Apache-2.0"            # OSS, permissive
+license: "Apache-2.0"
 # or
-license: "MIT"                   # OSS, permissive
-# or
-license: "BSD-3-Clause"          # OSS, permissive
-# or
-license: "LicenseRef-MyProductEULA-1.0"   # your own commercial EULA
+license: "LicenseRef-MyProductEULA-1.0"
 ```
 
-For SPDX, see [spdx.org/licenses](https://spdx.org/licenses/). For
-custom or proprietary licenses, use the `LicenseRef-<your-id>`
-form and ship the full license text in the archive at
-`LICENSE.txt`.
+For SPDX ids see [spdx.org/licenses](https://spdx.org/licenses/). For a custom licence use the `LicenseRef-<your-id>` form and ship the full text in the archive as `LICENSE.txt`. The agent does not gate installs by licence; operators see the declared string in the install review.
 
-The host runtime does not gate plugins by license at install time.
-Operators see the declared license string in the install dialog
-and can decide whether they accept it.
+## The SDKs are GPL
 
-## What changes when you link against GPL code
+The agent is GPL-3.0-or-later and Mission Control is GPL-3.0-only. The plugin SDKs are GPL-3.0-or-later too, and that matters more than the process boundary:
 
-The agent and the GCS are licensed GPL-3.0-or-later. If your
-plugin links into the same process (the GCS iframe is a separate
-process by default; the agent's `inprocess` isolation mode is the
-case that matters) then the GPL's copyleft can apply. The
-practical patterns:
+- A GCS bundle built with `@altnautica/plugin-sdk` contains SDK code.
+- A Rust agent half statically links the `ados-sdk` crate.
+- A Python agent half imports `ados.sdk` inside the agent's GPL plugin runner.
 
-- **GPL-friendly host integration.** Default. The agent runs
-  third-party plugins as separate subprocesses over a defined IPC
-  surface. The GCS sandboxes plugins inside iframes that
-  communicate by `postMessage`. Subprocess and iframe boundaries
-  are widely treated as license boundaries; your plugin can ship
-  under a license different from the host without copyleft
-  reaching into your code.
-- **Inprocess isolation.** Reserved for first-party Altnautica
-  plugins. Third-party plugins do not get inprocess linkage today,
-  so the GPL-linkage question does not arise.
-- **Vendor SDKs.** A proprietary SDK loaded by your plugin runs
-  inside your plugin's subprocess, not the host's. You are
-  responsible for whether the SDK's licence allows distribution
-  with your plugin. See [Vendor binaries](#vendored-binaries).
+The agent runs every agent half as its own subprocess over a defined IPC surface, and Mission Control runs plugins in a sandboxed iframe that talks over `postMessage`. No plugin runs in-process. Even so, get legal advice before shipping a plugin that uses the SDKs under a licence that is not GPL-compatible. Altnautica is not your lawyer.
 
-If you are uncertain whether your distribution model is compatible
-with the GPL, talk to your own counsel. Altnautica is not your
-lawyer.
+A proprietary vendor library loaded by your plugin runs inside your plugin's process. You are responsible for whether its licence allows distribution with your plugin; see [Vendor binaries](/developers/vendor-binaries).
 
-## How distribution channels interact with licensing
+## Distribution channels
 
-There are three distribution channels for plugins. Each one has
-different requirements.
-
-| Channel | Hosting | License requirement |
+| Channel | Hosting | Licence requirement |
 |---------|---------|---------------------|
-| Local file install | Operator drops a `.adosplug` archive on the device. | Any license. The archive moves between two parties without Altnautica in the loop. |
-| URL install | You host the archive on your own server. The agent fetches it. | Any license. The agent verifies the signature; it does not check the licence string against an allowlist. |
-| Hosted registry | Altnautica hosts the archive on its registry. | The publisher must grant Altnautica the right to redistribute the archive. |
+| Local file install | The operator copies a `.adosplug` to the node. | Any licence. |
+| URL install | Archive on a GitHub release (or another allowlisted host). | Any licence. The agent verifies the signature, not the licence. |
+| Registry | The registry hosts the archive. | You grant the registry operator the right to redistribute it. |
 
-For commercial closed-source plugins, **URL install is usually the
-right channel**. You keep your archive on your own infrastructure,
-your own gating logic decides who gets the download URL, and your
-EULA is part of your transaction with the operator. The agent
-does not need to know any of that.
-
-The hosted registry is best for OSS plugins where free
-redistribution is the intent. For commercial offerings, the
-registry's auto-publish gate is OSS-licence-only and discretion
-on hosted distribution rests with the registry operator.
-
-## The hosted registry's auto-publish list
-
-The Altnautica-hosted registry's auto-publish path accepts these
-licenses without manual review (when the registry is live):
-
-| License | SPDX id | Notes |
-|---------|---------|-------|
-| GPL-3.0-or-later | `GPL-3.0-or-later` | Recommended for plugins that link with the agent or the GCS, both of which are GPL-3.0-or-later. |
-| Apache-2.0 | `Apache-2.0` | Permissive. GPL-compatible in the consumer direction. Includes a patent grant. |
-| MIT | `MIT` | Permissive. GPL-compatible. |
-| BSD-3-Clause | `BSD-3-Clause` | Permissive. GPL-compatible. |
-
-Anything else routes to manual review at the registry operator's
-discretion. The same plugin can ship through URL install with no
-review involved.
+Every registry submission is reviewed. OSS-licensed, clean-scanning submissions are marked ready for review; everything else is queued for closer review. See [Catalog and registry](/developers/distribution-registry#submit-a-plugin).
 
 ## Vendored binaries
 
-Some plugins must ship vendor SDKs (camera firmware, gimbal control
-libraries, model files with their own license). Declare the inclusion on
-the agent half with `contains_vendor_binary` plus `vendor_attribution`:
+Declare vendor binaries on the agent half with `contains_vendor_binary` and `vendor_attribution` (full schema on [Vendor binaries](/developers/vendor-binaries)):
 
-```yaml
-agent:
-  contains_vendor_binary: true
-  vendor_attribution:
-    - name: "Example Vendor"
-      license: "Proprietary"
-      source_url: "https://example-vendor.example.com/sdk"
-      upstream_version: "2.4.1"
-      notice: "Decodes radiometric frames into Celsius."
-```
+- Each attribution entry carries its own required `license`. Ship the full licence text in the archive too.
+- Your plugin's own `license` is independent of the vendor's.
+- `ados plugin lint` does not inspect vendor binaries; you are responsible for what you ship.
+- Operators see the attribution in the install review.
 
-Rules for vendored binaries:
+If a vendor licence forbids redistribution, the registry cannot host the plugin.
 
-- Each declared vendor binary carries its own `license` (required). Ship
-  the full license text inside the archive too.
-- The plugin's overall `license` is independent. A GPL-3.0-or-later
-  wrapper around an Apache-2.0 vendor SDK is fine. A GPL-3.0-or-later
-  wrapper around a proprietary SDK is fine provided the proprietary terms
-  allow distribution.
-- Third-party plugins already run subprocess isolation; setting
-  `contains_vendor_binary` adds the vendor-binary signal to the install
-  dialog.
-- The `ados plugin lint` static analyzer never inspects vendor binaries;
-  the publisher is on the hook for what they ship.
-- Operators see the vendor attribution on the install dialog and on the
-  plugin detail page.
+## Trademarks
 
-If a vendor SDK forbids redistribution, the plugin cannot be hosted
-on the registry. URL install from the vendor's own server is the
-fallback; the agent treats vendor-binary archives the same way
-regardless of how they arrived.
+The names "ADOS" and "Altnautica" and the Altnautica, Mission Control and Drone Agent logos are reserved. Do not use them in a plugin name, description or icon. You may state compatibility ("Works with the ADOS Drone Agent", "for ADOS Mission Control"), link to the docs, and declare `compatibility.ados_version` in your manifest. Your reverse-DNS plugin id (`com.your-name.something`) makes namespace ownership explicit.
 
-## Patent grants and DRM
+## The registry's role
 
-Plugins that bundle DRM, attempt to enforce DRM, or include software
-patents that they assert against the host or other plugins are
-rejected. The registry's redistribution right is conditioned on the
-publisher not asserting patents against the host runtime or against
-other plugins running on the same host.
-
-## SECURITY.md is recommended
-
-Add a `SECURITY.md` at the root of your plugin's source repository.
-The file should cover:
-
-1. How to report a security issue (preferred contact channel).
-2. PGP key or signal channel for sensitive reports.
-3. Your typical response cadence so reporters know what to expect.
-4. The current major versions you support with security fixes.
-5. Whether you publish post-mortems.
-
-A `SECURITY.md` is recommended for any plugin you distribute. When the
-hosted registry is live it will factor into submission review; today it
-is good practice that helps reporters reach you.
-
-## Trademark policy
-
-Altnautica brand assets are reserved. Specifically:
-
-| Asset | Reserved |
-|-------|----------|
-| The name "ADOS" | Reserved as a product family name. Plugins must not call themselves "ADOS X" or "ADOS-something". |
-| The name "Altnautica" | Reserved. Do not use in plugin names, descriptions, or icons. |
-| The Altnautica logo | Reserved. Do not embed in your plugin's icon or screenshots. |
-| The Mission Control logo | Reserved. Same rule. |
-| The Drone Agent logo | Reserved. Same rule. |
-| Domain names containing `altnautica` or `ados` | Reserved. |
-
-What is allowed:
-
-- Stating compatibility: "Works with the ADOS Drone Agent",
-  "Mission Control plugin", "for ADOS Mission Control".
-- Pointing to the Altnautica docs or GitHub from your README.
-- Using the standard manifest field `compatibility.ados_version` to
-  declare the agent versions you target.
-
-Pick a plugin name that is yours. The reverse-DNS plugin id in the
-manifest (`com.your-name.something`) makes namespace ownership
-explicit.
-
-If you are an integrator or partner who wants to use the trademarks
-in marketing material, get in touch through the contact channel on
-[altnautica.com](https://altnautica.com) for a trademark usage
-agreement.
-
-## The registry's role: distributor, not author
-
-The registry hosts archives published by their authors. The registry
-does not author the plugins. Specifically:
-
-- The registry redistributes signed archives the publisher uploaded.
-- The registry runs static analysis at submission time as a
-  defense-in-depth measure, not as a quality endorsement.
-- The registry hosts metadata (description, screenshots, README)
-  the publisher provided.
-- The registry does not modify the archive bytes after upload.
-
-A plugin's behavior at runtime is the publisher's responsibility.
-The host's containment (signatures, permissions, sandboxing) is the
-registry's collaboration with operators to limit blast radius.
+The registry redistributes signed archives that publishers upload and does not modify their bytes. Its submission scan is a defense-in-depth measure, not a quality endorsement or a security audit. A plugin's runtime behavior is its publisher's responsibility.
 
 ## No warranty
 
-The agent and the GCS ship under GPL-3.0-or-later, which carries no
-warranty. Plugins inherit the same default. Specifically:
+The agent (GPL-3.0-or-later) and Mission Control (GPL-3.0-only) carry no warranty. Plugins distributed through the registry come with no warranty from Altnautica; your plugin's licence governs what you warrant. Verified-publisher status is set by the registry operator and is not a warranty.
 
-- Plugins distributed via the Altnautica registry come with no
-  warranty from Altnautica.
-- The plugin's own license governs what the publisher warrants. A
-  GPL-3.0-or-later plugin disclaims warranty per GPL section 15.
-- Verified-publisher status is not a warranty. It is a domain-
-  ownership proof plus a track record on the registry.
-- The static-analyzer report is a snapshot of detected patterns at
-  submission time. It is not a security audit.
+The catalog is served from the Convex backend; a self-hosted backend serves its own catalog. No availability terms are published for the hosted registry.
 
-Operators run plugins at their own risk. The host's job is to make
-that risk visible (risk badge, permission set, signer trust,
-revocation list) and bounded (subprocess isolation, capability
-checks, resource limits).
+Security reporting is on [Revocation and incidents](/developers/revocation-and-incidents#reporting-a-security-issue). Give your own users a private reporting channel in your plugin's README.
 
-## Hosted-registry availability
+## Next steps
 
-The Altnautica-hosted registry is best-effort and is not yet live.
-When it ships, the operations terms (availability targets, status
-page, incident communication) will be published alongside the
-launch. Until then, the local-file install path and the URL
-install path are the supported channels.
-
-If your deployment needs contractual availability terms, run a
-self-hosted registry. The agent and the GCS work identically
-against your own endpoint, and the operating terms become whatever
-your own infrastructure provides.
-
-## See also
-
-- [Submitting to the registry](/developers/submitting-to-the-registry)
-- [Vendor binaries](/developers/vendor-binaries)
-- [Revocation and incidents](/developers/revocation-and-incidents)
+<CardGroup cols={2}>
+  <Card title="Publish to ADOSExtensions" href="/developers/contributing-repos">
+    Contribute a plugin to the first-party repo.
+  </Card>
+  <Card title="Revocation and incidents" href="/developers/revocation-and-incidents">
+    Report a security issue.
+  </Card>
+</CardGroup>

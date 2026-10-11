@@ -1,13 +1,13 @@
 ---
 title: "Performance and budgets"
-description: "Resource budgets, cgroup throttling, memory pressure, and how to profile."
-lastUpdated: "2026-06-23"
+description: "Plugin resource budgets, cgroup throttling, memory pressure, and how to profile agent and GCS halves."
 ---
 
-A plugin runs on a small SBC alongside the rest of the agent. The
-supervisor budgets resources through systemd and the shared
-`ados-plugins.slice` cgroup. This page covers the budgets, how to spot
-when you blow them, and how to profile.
+A plugin runs on a small SBC alongside the rest of the agent. The plugin
+host budgets resources through systemd and the shared `ados-plugins.slice`
+cgroup. This page covers the budgets, how to spot when you blow them, and
+how to profile. Unit, cgroup and log names are explained on
+[Agent runtime and sandbox](/developers/agent-plugin-deep-dive#unit-name).
 
 ## Default budgets
 
@@ -18,7 +18,7 @@ When a plugin's manifest does not declare resources, it gets:
 | RAM | 96 MB |
 | CPU | 25% of one core |
 | PIDs | 12 |
-| Inbound topic outbox | 256 messages per topic |
+| Event-bus queue | 256 events per subscriber (drop-newest on overflow) |
 
 Declare different caps in the manifest:
 
@@ -30,24 +30,36 @@ agent:
     max_pids: 8           # 1 to 256
 ```
 
+`class: heavy` (first-party only) raises the ceilings to 65536 MB, 3200 %
+and 4096 PIDs. A third-party manifest that sets it is refused at install.
+
 Honest declarations matter. The operator sees the requested budget in the
 install dialog. Asking for far more than you use is a bad signal; asking
 for too little ends with the kernel killing your process.
 
-The caps map straight to the per-plugin systemd unit: `max_ram_mb` to
-`MemoryMax`, `max_cpu_percent` to `CPUQuota`, `max_pids` to `TasksMax`.
+The caps map straight to the plugin's unit: `max_ram_mb` to `MemoryMax`,
+`max_cpu_percent` to `CPUQuota`, `max_pids` to `TasksMax`.
+
+## Find the plugin's cgroup
+
+The unit name carries an 8-hex hash, so ask systemd for the cgroup path
+rather than building it:
+
+```bash
+systemctl show -p ControlGroup 'ados-plugin-com-example-battery-*'
+# ControlGroup=/ados.slice/ados-plugins.slice/ados-plugin-com-example-battery-c2d87e2a.service
+```
+
+Prefix that path with `/sys/fs/cgroup` in the commands below.
 
 ## Spotting cgroup throttling
 
 `max_cpu_percent` is enforced by the cgroup CPU controller. A plugin that
-breaches it does not crash; it gets throttled. The symptom is
-"everything got slower for no reason."
+breaches it does not crash; it gets throttled. The symptom is "everything
+got slower for no reason."
 
-Read the throttle stats from the unit's cgroup (the unit name is
-`ados-plugin-<id>` with the dots in your plugin id replaced by hyphens):
-
-```sh
-cat /sys/fs/cgroup/ados-plugins.slice/ados-plugin-com-example-battery.service/cpu.stat
+```bash
+cat /sys/fs/cgroup<ControlGroup>/cpu.stat
 ```
 
 The interesting field is `nr_throttled`. If it climbs every second, your
@@ -57,15 +69,16 @@ plugin is over budget. Optimize the code or declare a higher
 ## Memory pressure
 
 `max_ram_mb` is enforced by `MemoryMax`. A breach OOM-kills the process.
-The unit restarts on failure, and repeated kills that exceed the start
-limit move the plugin to `failed`.
+The unit restarts 2 s after each kill, indefinitely, so a plugin stuck over
+its cap loops rather than stopping; watch `oom_kill` in `memory.events`
+climb.
 
-```sh
-cat /sys/fs/cgroup/ados-plugins.slice/ados-plugin-com-example-battery.service/memory.current
-cat /sys/fs/cgroup/ados-plugins.slice/ados-plugin-com-example-battery.service/memory.events
+```bash
+cat /sys/fs/cgroup<ControlGroup>/memory.current
+cat /sys/fs/cgroup<ControlGroup>/memory.events
 ```
 
-`memory.events` shows `low`, `high`, `max`, `oom`, `oom_kill` counters.
+`memory.events` shows `low`, `high`, `max`, `oom` and `oom_kill` counters.
 Any non-zero `high` or `max` means the kernel started applying pressure.
 
 To stay under the cap:
@@ -77,14 +90,12 @@ To stay under the cap:
 
 ## Inspecting a running plugin
 
-`ados plugin info <id>` shows the plugin's recorded state, granted
-permissions, and recent events. Pair it with the cgroup stat files above
-and the durable log query for a full picture:
+`ados plugin info <id>` shows the plugin's recorded state and granted
+permissions. Pair it with the cgroup counters above and the plugin's log:
 
-```sh
+```bash
 ados plugin info com.example.battery
-ados plugin logs com.example.battery
-ados logs query --unit ados-plugin-com-example-battery
+ados plugin logs com.example.battery --follow
 ```
 
 A plugin running consistently near any cap is one bad input away from a
@@ -108,15 +119,14 @@ def on_start_profiled(self, ctx):
         pstats.Stats(pr).sort_stats("cumulative").print_stats(30)
 ```
 
-Plugin stdout and stderr append to `/var/log/ados/plugins/<id>.log`, so
-profiler output lands there (or read it with
-`journalctl -u ados-plugin-<id>.service`).
+Plugin stdout and stderr append to the plugin's log file, so profiler
+output lands there; read it with `ados plugin logs <id>`.
 
 ## Profiling TypeScript plugins
 
-Open the GCS in developer mode, pick the plugin's iframe in browser
-devtools (Sources tab), and use the Performance recorder. The iframe is a
-real browsing context with the standard devtools surface.
+Open Mission Control, pick the plugin's iframe in browser devtools
+(Sources tab), and use the Performance recorder. The iframe is a real
+browsing context with the standard devtools surface.
 
 Common GCS hot paths:
 
@@ -128,9 +138,8 @@ Common GCS hot paths:
 
 ## Event-loop discipline
 
-The biggest cause of agent-plugin stalls is a blocked event loop. A
-plugin that blocks the loop stops responding and the supervisor restarts
-it.
+The biggest cause of agent-plugin stalls is a blocked event loop. A blocked
+loop stalls every IPC call and subscription; nothing restarts it for you.
 
 Don't:
 
@@ -146,25 +155,29 @@ Do:
 
 ## Disk and network discipline
 
-Disk I/O is a common cause of throttling. A plugin writing a megabyte of
-samples per second to an SD card is already at the sustained-write
-ceiling for the cheap end of the market. Batch writes (one `fsync` per
-second is plenty), compress logs, and rotate them.
+The plugin slice runs at a low I/O weight, so a plugin that writes hard
+loses every contended block to the flight services and stalls itself. A
+plugin writing a megabyte of samples per second to an SD card is already at
+the sustained-write ceiling for cheap cards. Batch writes (one `fsync` per
+second is plenty) and keep your own files bounded.
 
 Plugins with `network.outbound` share the drone's link with telemetry and
-video. Pulling large payloads in flight is a UX bug; pull during ground
-time and cache.
+video. Pull large payloads during ground time and cache them.
 
 ## Thermal behavior
 
-Sustained high CPU on a small SoC raises its temperature and the kernel
-eventually throttles the whole package, which shows up as cgroup throttle
-events on every plugin, not just yours. The agent reduces its own
-non-essential work as the SoC heats up. A well-behaved plugin watches the
-system telemetry and backs off before the kernel forces the issue.
+Sustained high CPU on a small SoC raises its temperature, and the kernel
+eventually throttles the whole package, which shows up as throttle events
+on every plugin, not just yours. A well-behaved plugin watches the system
+telemetry and backs off before the kernel forces the issue.
 
-## See also
+## Next steps
 
-- [Agent plugin deep dive](/developers/agent-plugin-deep-dive)
-- [State and storage](/developers/state-and-storage)
-- [Vision plugins](/developers/vision-plugins)
+<CardGroup cols={2}>
+  <Card title="Versioning and updates" icon="code-branch" href="/developers/versioning-and-updates">
+    Semver, compatibility ranges and automatic updates.
+  </Card>
+  <Card title="Agent runtime and sandbox" icon="microchip" href="/developers/agent-plugin-deep-dive">
+    Unit names, sandbox, restart policy and logs.
+  </Card>
+</CardGroup>

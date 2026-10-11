@@ -1,114 +1,123 @@
 ---
-title: "Lifecycle"
-description: "Install, parse, enable, disable, remove. The states a plugin moves through and the operator actions that drive them."
-lastUpdated: "2026-06-23"
+title: "Plugin lifecycle"
+sidebarTitle: "Lifecycle"
+description: "Parse, install, enable, disable and remove: the states a plugin moves through, the hooks each half gets, and how config reaches a running plugin."
 ---
 
-A plugin moves through a small set of recorded states. The host is the
-state machine; the plugin reacts to lifecycle hooks the runner calls.
+A plugin moves through a small set of recorded states. The agent's
+plugin host is the state machine; the plugin reacts to the lifecycle
+hooks its runtime calls.
 
 ## States
 
-The supervisor records one status per installed plugin in
-`/var/ados/state/plugin-state.json`:
+The host records one status per installed plugin in
+`/var/ados/state/plugin-state.json`. The record describes the agent
+half; the GCS half has no recorded state of its own.
 
 | State | Meaning |
 |-------|---------|
-| `installed` | Archive unpacked, manifest validated, signature accepted. Permissions recorded but not yet granted. The plugin is dormant. |
-| `enabled` | Operator approved the permissions. The plugin is set to run. |
-| `running` | The agent half is alive under its systemd unit; the GCS half is mounted in its iframe. |
-| `disabled` | Operator stopped the plugin. The subprocess is dead and the iframe is unmounted. State on disk is preserved. |
-| `failed` | The unit could not stay up (it exceeded the systemd start limit). Operator intervention required. |
-| `incompatible` | The running host version fell outside the manifest's compatibility range. The plugin will not start until the range matches. |
+| `installed` | Archive unpacked, manifest validated, signature accepted. The plugin is dormant. |
+| `enabled` | The operator switched it on; the unit is being started. |
+| `running` | The agent half's unit was started. |
+| `disabled` | The operator switched it off, or the host disabled it because its signer, archive or release was revoked (the reason is recorded). The unit is stopped; data on disk is kept. |
 
-Removal deletes the install entry rather than moving it to a state.
+Grants are recorded per permission and are independent of enable and
+disable. `failed` and `incompatible` are reserved states the current
+host does not assign. Removal deletes the install record rather than
+moving it to a state.
 
 ## Parse before install
 
-The install flow is deliberately two-stage:
+The install flow is two-stage:
 
-1. **Parse**: the host opens the archive in memory, validates the
+1. **Parse**: the agent opens the archive in memory, validates the
    manifest, verifies the Ed25519 signature, and returns a summary.
    Nothing is written to disk.
-2. **Install**: only after the operator approves the requested
-   permissions does the host commit the install. It checks compatibility
-   (version, board, tier, `target_profiles` against the node's profile,
-   and a binary for the host architecture), downloads and verifies any
-   `payloads`, then unpacks the archive into `/var/ados/plugins/<id>/`
-   (`~/.ados/plugins/<id>/` on macOS); the GCS records the install in
-   the operator's profile.
+2. **Install**: only after the operator approves does the agent commit.
+   It checks compatibility (`ados_version`, board, tier,
+   `target_profiles` against the node's profile, and a binary for the
+   host architecture), downloads and verifies any `payloads`, then
+   unpacks the archive into `/var/ados/plugins/<id>/`.
 
-A malicious archive cannot leave traces just by being previewed. The
-dialog runs parse; the **Install** button commits.
+Previewing an archive leaves no trace. See
+[Permissions](/developers/permissions#two-stage-install) for what the
+operator sees.
 
 ## Enable and disable
 
-Enable is the first time the plugin actually runs. For a subprocess
-plugin the agent generates a service unit and starts it. On Linux that
-is a systemd unit (`ados-plugin-<id>.service`, one more per declared
-service) written under `/etc/systemd/system/` and started inside the
-shared `ados-plugins.slice`. On macOS it is a per-user LaunchAgent
-(`co.ados.plugin.<id>`, dots as hyphens) under `~/Library/LaunchAgents`.
-The GCS host sets the status to enabled and mounts the GCS half in every
-contributing slot: in an iframe, or inline for a first-party
-`gcs.isolation: inline` module.
+Enable is the first time the plugin runs. For an agent half the host
+writes a service unit and starts it. On Linux that is a systemd unit
+named `ados-plugin-<id>-<hash8>.service` (dots in the id as hyphens,
+`<hash8>` the first 8 hex digits of the SHA-256 of the id), plus one
+`ados-plugin-<id>-<hash8>-<service>.service` per declared service, in
+the shared `ados-plugins.slice`. On macOS it is a per-user LaunchAgent
+named `co.ados.plugin.<id>-<hash8>`; because launchd provides no
+sandbox, only first-party plugins install there.
 
-Disable stops the unit and unmounts the iframe. State on disk persists.
-Re-enable resumes from where it left off.
+Mission Control mounts the GCS half in each slot it contributes to: in
+an iframe, or inline for a first-party `gcs.isolation: inline` module.
 
-## Failure and the start limit
+Disable stops the unit. Data on disk persists, and re-enable resumes
+from where it left off.
 
-The per-plugin unit restarts on failure (`Restart=on-failure`,
-`RestartSec=2s`). If it exceeds the start limit (5 starts within 60
-seconds) systemd stops restarting it and the supervisor records the
-plugin as `failed`. The plugin does not auto-recover from that; the
-operator inspects the logs and decides whether to re-enable, remove, or
-investigate. Auto-recovery would mask the underlying bug.
+## Restarts
+
+A plugin unit restarts on failure every 2 s with no start limit
+(`Restart=on-failure`, `RestartSec=2s`, `StartLimitIntervalSec=0`). A
+crash-looping plugin stays `running` in the record; check
+`systemctl status` and the plugin log (see
+[Troubleshooting](/developers/troubleshooting#the-agent-half-crashes-or-restarts)).
 
 ## Lifecycle hooks (agent half)
 
 Every hook is optional. The runner looks each one up on your plugin
-instance at the right point in the process lifecycle and awaits it if it
-returns a coroutine; a hook you do not define is simply skipped.
+instance and awaits it if it returns a coroutine; a hook you do not
+define is skipped.
 
-The runner is one process per plugin. Each time the unit starts, the
-runner calls the startup hooks in a fixed order, waits for the shutdown
-signal, then calls the teardown hooks. It does not persist a marker
-across restarts, so the full sequence runs on every process start.
+The runner is one process per plugin (one per drone with
+`per_drone_config: true`). Each time the unit starts, the runner calls
+the startup hooks in a fixed order, waits for the stop signal, then
+calls the teardown hooks. It keeps no marker across restarts, so the
+full sequence runs on every process start.
 
 | Hook | When the runner calls it |
 |------|--------------------------|
-| `on_install(ctx)` | First, on every process start. Treat the body as idempotent. |
-| `on_enable(ctx)` | Second, on every process start, after `on_install`. |
-| `on_configure(ctx, config)` | Third, on every process start, with the loaded config (an empty dict when none is on disk). |
-| `on_start(ctx)` | Fourth, on every process start. The usual place to subscribe to events and begin work. |
-| `on_stop(ctx)` | On shutdown (SIGTERM or SIGINT), before the process exits. |
-| `on_disable(ctx)` | On shutdown, immediately after `on_stop`. |
+| `on_install(ctx)` | First, on every process start. Keep the body idempotent. |
+| `on_enable(ctx)` | Second, after `on_install`. |
+| `on_configure(ctx, config)` | Third, with the static config loaded at start (an empty dict when none is on disk). |
+| `on_start(ctx)` | Fourth. The usual place to subscribe to events and begin work. |
+| `on_stop(ctx)` | On shutdown (SIGTERM or SIGINT, or the host connection dropping), before the process exits. |
+| `on_disable(ctx)` | On shutdown, right after `on_stop` (skipped when the process stops because the host connection dropped). |
 
-Most plugins only need `on_start` and `on_stop`. The runner keeps the
-process alive between `on_start` and `on_stop` until the supervisor
-stops the unit.
+Most plugins only need `on_start` and `on_stop`.
 
-A built-in agent plugin is a plain class (no base class to subclass)
-named by the `module:Class` entrypoint; a file-path entrypoint loads a
-class named `Plugin`. The `ctx` argument is the plugin context (see
-[event hooks and bus](/developers/event-hooks-and-bus)).
+An agent plugin is a plain class with no base class to subclass, named
+by a `module:Class` entrypoint; a file-path entrypoint loads a class
+named `Plugin`. The `ctx` argument is the plugin context; see the
+[Python SDK](/developers/sdk-python).
 
 ```python
 class TelemetryLoggerPlugin:
     async def on_start(self, ctx) -> None:
+        self._ctx = ctx
         await ctx.events.subscribe("vehicle.armed", self._on_armed)
         ctx.log.info("started")
 
     async def on_stop(self, ctx) -> None:
         ctx.log.info("stopped")
+
+    async def _on_armed(self, event: dict) -> None:
+        self._ctx.log.info("armed_event", payload=event)
 ```
+
+A Rust plugin implements the same hooks on the `Plugin` trait; see the
+[Rust SDK](/developers/sdk-rust).
 
 ## Lifecycle hooks (GCS half)
 
 The GCS half exposes `mount` and `unmount` through `definePlugin`:
 
-```ts
+```typescript
 import { definePlugin } from "@altnautica/plugin-sdk";
 
 definePlugin({
@@ -123,37 +132,53 @@ definePlugin({
 });
 ```
 
-`unmount` runs when the host disposes the iframe (operator disabled the
-plugin, navigated away, or removed it). Use it to flush in-flight state.
+`mount` runs once the bundle loads. When the operator closes the
+surface, switches drone, disables or removes the plugin, Mission Control
+asks the frame to unmount, waits up to 500 ms, and then destroys the
+iframe. Keep `unmount` short and do not rely on it to persist state;
+write state as it changes. For your own teardown, call the `unmount()`
+of the instance `definePlugin` returns; it runs your `unmount`.
 
 ## Remove
 
-`ados plugin remove <id>` (or the GCS button) tears the plugin out:
+`ados plugin remove <id>` (or **Uninstall** on the **Extensions** tab)
+tears the plugin out:
 
 1. Stop the unit if running.
-2. Delete the unit file (and any declared extra-service units). Reload
-   the daemon.
+2. Delete the unit file and any declared service units, then reload the
+   service manager.
 3. Remove the install directory `/var/ados/plugins/<id>/`.
-4. Drop the install entry from the state file.
+4. Drop the install record from the state file.
 
-`--keep-data` additionally retains the plugin's log file. The plugin's
-data directory under `/var/ados/plugin-data/<id>/` is not deleted by
-remove, so a reinstall can pick up where it left off.
+Without `--keep-data`, remove also deletes the plugin's log, its data
+directory `/var/ados/plugin-data/<id>/` and its system user.
+`--keep-data` keeps all three, so a reinstall picks up where it left off.
 
 ## Configuration changes
 
-On the agent side, the config you receive is loaded once when the
-process starts. The runner reads it from disk and passes it to
-`on_configure(ctx, config)` during startup. To pick up a later edit
-without a restart, read live values through `ctx.config` at the point of
-use rather than caching the dict from `on_configure`.
+On the agent side, `ctx.config` is the static dict loaded when the
+process starts and passed to `on_configure`. To pick up a later edit
+without a restart, read live values with
+`await ctx.config_kv.get(key, default)` at the point of use rather than
+caching the dict.
 
-On the GCS side the host emits a `config.changed` event that your plugin
-subscribes to with `ctx.config.onChange`, so the iframe can react to an
-edit while it stays mounted.
+On the GCS side, `ctx.config.onChange` delivers the plugin's config on
+mount and after every accepted write. See
+[GCS bridge methods](/developers/event-hooks#host-pushed-events).
 
 ## State observability
 
-Every transition is recorded. Operators see the plugin's history through
-`ados plugin info <id>` and `ados plugin logs <id>` on the agent, and on
-the plugin detail page in Mission Control.
+`ados plugin info <id>` prints the record, and `ados plugin logs <id>`
+prints the agent half's log. In Mission Control the **Extensions** tab
+shows each plugin's status.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Plugin CLI reference" href="/developers/cli-reference">
+    Drive the lifecycle from a shell.
+  </Card>
+  <Card title="Troubleshooting" href="/developers/troubleshooting">
+    When a plugin will not install or will not stay up.
+  </Card>
+</CardGroup>

@@ -1,183 +1,147 @@
 ---
-title: "Settings"
-description: "Theme, language, video, notifications, operator profile, and input configuration."
+title: "Mission Control settings"
+sidebarTitle: "Settings"
+description: "Every Mission Control settings page: General, Operator & Aircraft, Input Devices, DroneCAN, Video, Notifications, Theme, Data, Flash Tool and Extensions."
 icon: "gear"
-lastUpdated: "2026-06-18"
 ---
 
-The Settings section lets you customize Mission Control's appearance, behavior, and personal preferences. All settings persist in IndexedDB across browser sessions.
+Settings hold Mission Control's own preferences, separate from each node's configuration (for that, see [Node configuration](/mission-control/node-configuration)). Open them with the gear in the top bar. Settings are stored in this browser; signed in, your preferences also sync to your account.
 
-<Frame caption="Settings page showing theme and language options">
-  <img src="/images/dashboard/settings.png" alt="Settings page with theme picker and language selector" />
+<Frame caption="Settings, General page.">
+  ![Mission Control Settings General page with the GCS Settings navigation, general options and the language grid](/images/mission-control/settings-general.png)
 </Frame>
 
-## Settings Pages
+## Pages
 
-Settings are organized into sub-pages under `/config`, reached from the settings gear in the top bar:
+The **GCS Settings** navigation lists ten pages:
 
-| Page | Route | Description |
-|------|-------|-------------|
-| Theme | `/config/theme` | Visual appearance, color scheme, accent color |
-| Video | `/config/video` | Video preferences, transport default, OSD |
-| Input | `/config/input` | Gamepad mapping, keyboard shortcuts |
-| Data | `/config/data` | Units, coordinate format, data management |
-| Notifications | `/config/notifications` | Alert thresholds, sounds, telemetry warnings |
-| Operator | `/config/operator` | Pilot profile, certifications, display name |
-| Firmware | `/config/firmware` | Firmware flash settings (covered in [Firmware Flashing](/mission-control/firmware-flashing)) |
+| Page | Route | What it holds |
+|---|---|---|
+| **General** | `/config` | Jurisdiction, units, connection, demo mode, location, setup wizard, language and, in the desktop app, About |
+| **Operator & Aircraft** | `/config/operator` | Pilot, organisation, insurance, aircraft, battery and equipment registries |
+| **Input Devices** | `/config/input` | Controllers, Bluetooth, browser gamepad calibration, Skill bindings |
+| **DroneCAN** | `/config/can` | CAN bus setup, node browser and bus tools |
+| **Video** | `/config/video` | Current resolution |
+| **Notifications** | `/config/notifications` | Sounds, alert thresholds, popups, changelog notifications |
+| **Theme** | `/config/theme` | Theme and accent colour |
+| **Data** | `/config/data` | Offline map tiles |
+| **Flash Tool** | `/config/firmware` | Firmware flashing, see [Flash Tool](/mission-control/flash-tool) |
+| **Extensions** | `/config/plugins` | Fleet-wide overview of installed extensions and the registry |
 
-## Theme
+## General
 
-Mission Control ships with 22 themes:
+| Setting | Default | Notes |
+|---|---|---|
+| **Regulatory Jurisdiction (optional)** | Not set | Picking one also sets units to that jurisdiction's default. |
+| **Units** | Metric (m, km/h, °C) | Or Imperial (ft, mph, °F). |
+| **Auto-connect on startup** | On | |
+| **Auto-reconnect on disconnect** | On | |
+| **Demo Mode** | Off, unless the build sets demo mode | Simulates telemetry to explore without a flight controller. |
+| **Show My Position on Map** | Off | Uses browser geolocation. Your position stays in this browser and is never sent to a server. |
+| **Re-run Setup Wizard** | | Runs the first-launch wizard again. |
 
-| Theme | Style |
-|-------|-------|
-| Dark (default) | Near-black background, electric blue accents |
-| Light | White background for bright environments |
-| Solarized Dark | Solarized color palette, dark variant |
-| Solarized Light | Solarized color palette, light variant |
-| NVG | Night vision green on black. Minimal brightness for night operations. |
-| Dracula | Popular dark theme with purple and pink accents |
-| Catppuccin Mocha | Warm dark theme |
-| Catppuccin Frappe | Medium dark theme |
-| Catppuccin Latte | Light warm theme |
-| Nord | Arctic, cool blue palette |
-| Gruvbox Dark | Retro warm dark theme |
-| Gruvbox Light | Retro warm light theme |
-| One Dark | Atom One Dark colors |
-| Tokyo Night | Soft dark blues and purples |
-| Rose Pine | Soft, muted palette |
-| Monokai | Classic dark theme with vivid syntax colors |
-| Kanagawa | Inspired by Katsushika Hokusai's artwork |
-| Synthwave | Neon 80s aesthetic |
-| GitHub Dark | GitHub's dark mode colors |
-| Ayu Dark | Warm dark theme |
-| Ayu Mirage | Balanced dark/warm theme |
-| Everforest Dark | Nature-inspired greens |
+Jurisdictions:
 
-### Accent Color
+| Jurisdiction | Default units | Registration label |
+|---|---|---|
+| DGCA | Metric | UIN |
+| FAA | Imperial | FAA N-number |
+| CASA | Metric | CASA ID |
+| EASA | Metric | EASA Operator ID |
+| CAA UK | Metric | Operator ID |
+| CAAC | Metric | UAS Registration |
+| JCAB | Metric | DIPS ID |
+| TCCA | Metric | RPAS Registration |
 
-Choose from 9 accent colors that apply across the interface:
+The registration label appears on the drone's Flight tab info card.
 
-Blue, Green, Amber, Red, Lime, Purple, Pink, Cyan, Orange
+**Language**: choose from 16 languages: English, Hindi, Gujarati, Kannada, Marathi, Punjabi, Tamil, Telugu, Chinese, French, German, Indonesian, Japanese, Korean, Portuguese and Spanish. The interface switches without a reload.
 
-The accent color affects buttons, active states, selection highlights, and status indicators.
+**About** (desktop app only): **Check for updates** asks GitHub for a newer release now, instead of waiting for the next start. See [Desktop app updates](/mission-control/desktop-app#updates).
 
-## Language
+## Operator & Aircraft
 
-Mission Control supports 16 languages:
+Registries used for compliance exports and for the pilot, aircraft and loadout snapshot saved with each flight:
 
-| Language | Code |
-|----------|------|
-| English | en |
-| German | de |
-| Spanish | es |
-| French | fr |
-| Hindi | hi |
-| Gujarati | gu |
-| Kannada | kn |
-| Marathi | mr |
-| Punjabi | pa |
-| Tamil | ta |
-| Telugu | te |
-| Indonesian | id |
-| Japanese | ja |
-| Korean | ko |
-| Portuguese | pt |
-| Chinese | zh |
+- **Pilot**, **Organisation**, **Insurance** and **Defaults** (default jurisdiction).
+- **Aircraft**: name, registration, manufacturer, model, serial and Remote ID serial, vehicle type, category, maximum take-off mass, airworthiness and maintenance dates.
+- **Batteries**: label, serial, chemistry, cell count, capacity, C rating and cycles. Retire or delete a pack.
+- **Equipment**: propeller, motor and ESC sets, cameras, gimbals, payloads, frames and RC transmitters, with hours and flights. Mark an item inspected or retire it.
 
-Change the language from the settings page. The entire UI updates immediately without a page reload.
+The battery and equipment you pick under **Loadout** on the Flight tab come from these registries.
 
-## Video Settings
+## Input Devices
 
-Configure video feed behavior:
+The page title is **Controllers**.
 
-| Setting | Options | Description |
-|---------|---------|-------------|
-| Transport mode | Auto, LAN Direct, P2P MQTT, Off | Default transport for the [video feed](/mission-control/video-feed) |
-| OSD overlay | On / Off | Show telemetry overlay on the video |
-| Auto-play | On / Off | Start video automatically when a drone connects |
+- **Devices** (with an agent connected): controllers attached to the ground station agent. **Scan Bluetooth** pairs a new one; **Set as primary** picks the controller that sends sticks.
+- **Paired Bluetooth devices**: **Forget** removes one.
+- **Browser Input**: controllers attached to this browser through the Web Gamepad API. Turn **Stick control** on, run **Calibrate**, choose the **Stick mode** (Mode 2, throttle on the left stick, by default; or Mode 1), and tune **Deadzone** and **Expo Curve**.
+- **Skill & Keyboard Bindings**: loadout presets and the key and gamepad button for each Skill slot.
 
-## Input Configuration
+How stick control is gated and what the default bindings are: [Cockpit and Skills](/mission-control/cockpit#gamepad-and-stick-control).
 
-### Gamepad Mapping
+## DroneCAN
 
-Customize which gamepad axes and buttons map to which flight controls:
+**CAN Configuration** for the connected flight controller:
 
-- **Stick mapping:** Assign roll, pitch, throttle, yaw to specific axes
-- **Deadzone:** Set the center deadzone for each axis (prevents drift)
-- **Expo curve:** Apply an exponential curve for finer control near center
-- **Button mapping:** Assign functions to gamepad buttons (arm, mode change, RTL)
+- **Bus setup**: CAN1, CAN2 and SLCAN passthrough, with **Save to FC**, **Write to flash**, **Reload from FC** and **Reboot FC**.
+- **Node browser**: detected DroneCAN nodes.
+- **Per-node params**: read and write a node's parameters.
+- **Bus monitor**: raw MAVLink frames and decoded DroneCAN transfers.
+- **Diagnostics**: bus diagnostics.
+- **Test utilities**: node ping, manual frame inject, node-ID conflict scanner, ESC sweep, GPS fix snapshot and compass stream.
 
-### Keyboard Shortcuts
+With no drone selected, the page asks you to connect a flight controller. Flash firmware to a CAN node from the [Flash Tool](/mission-control/flash-tool).
 
-View and customize keyboard shortcuts for the entire application. The shortcuts page lists all available actions and their current key bindings.
+## Video
 
-## Units and Data
-
-| Setting | Options |
-|---------|---------|
-| Unit system | Metric (m, km/h, m/s) or Imperial (ft, mph, ft/min) |
-| Coordinate format | Decimal degrees, DMS, UTM |
-| Map tile source | OpenStreetMap, Satellite, Terrain, Dark |
-
-### Data Management
-
-- **Clear local data:** Remove all cached data from IndexedDB
-- **Export settings:** Download your settings as a JSON file
-- **Import settings:** Load settings from a JSON file
+Shows the current resolution. Bitrate, codec and resolution are set per node, on the node's **Agent → Cameras** page. The transport is chosen in the video card's switcher; see [Video feed](/mission-control/video-feed).
 
 ## Notifications
 
-Configure when and how Mission Control alerts you:
+| Setting | Default |
+|---|---|
+| **Enable audio alerts** | Off |
+| Volume | 70 % |
+| Alert sounds: Low Battery, GPS Lost, RC Link Lost, Arm / Disarm, Waypoint & Mission, Failsafe & Errors | All on (play only with audio alerts on) |
+| **Battery warning threshold** | 30 % (10 to 50) |
+| **Battery critical threshold** | 20 % (5 to 30, must be below the warning threshold) |
+| **Alert popup duration** | 5 seconds (or 3, 10, or never dismiss) |
+| **Show changelog notifications** | On |
 
-| Alert | Default Threshold | Description |
-|-------|--------------------|-------------|
-| Low battery | 20% | Warning when battery drops below threshold |
-| Critical battery | 10% | Urgent alert for very low battery |
-| GPS degradation | &lt;3D fix | Alert when GPS fix is lost or degraded |
-| Link quality | RSSI < 50 | Warning for weak radio link |
-| EKF warning | Variance > threshold | Alert for EKF estimation problems |
-| Fence breach | Any breach | Alert when geofence is crossed |
-| Telemetry stale | 10 seconds | Warning when telemetry stops updating |
-| Telemetry offline | 30 seconds | Alert when telemetry is lost |
+**Reset seen entries** shows past changelog entries again.
 
-You can also configure:
-- **Sound alerts:** Toggle audio notifications on or off
-- **Alert history:** View past alerts in chronological order
+## Theme
 
-## Operator Profile
+Pick a theme from the searchable list. The default is **Dark**.
 
-Set your pilot profile information:
+- Core: Dark, Light and Mono.
+- Solarized: Solarized Dark and Solarized Light.
+- Dark themes: Dracula, Catppuccin Mocha, Catppuccin Frappé, Nord, Gruvbox Dark, One Dark, Tokyo Night, Rosé Pine, Monokai, Kanagawa, Synthwave '84 and GitHub Dark.
+- Light themes: Catppuccin Latte and Gruvbox Light.
+- Mid-tone: Ayu Dark, Ayu Mirage and Everforest Dark.
 
-- **Display name:** Your name shown in community features and flight logs
-- **Certification level:** Your drone pilot certification (informational, not enforced)
-- **Organization:** Company or team name
-- **Notes:** Free-text field for personal notes
+**Accent Color**: Blue (default), Green, Amber, Red, Lime, Purple, Pink, Cyan or Orange.
 
-The operator profile is stored locally and optionally synced to the cloud when authenticated.
+## Data
 
-## Jurisdiction
+Download and manage offline map tiles for flying without internet.
 
-Set your operating jurisdiction to configure region-specific defaults:
+## Flash Tool and Extensions
 
-- **Altitude limits:** Sets default maximum altitude based on local regulations
-- **Distance limits:** Sets default maximum distance for geofence suggestions
+- **Flash Tool** opens the firmware flasher. See [Flash Tool](/mission-control/flash-tool).
+- **Extensions** is a read-only overview of what is installed across the fleet, grouped per node, plus the registry browser. Installs happen per node from the node's **Agent → Extensions** page. An extension's detail page shows a **Failure reason** field when a LAN-paired node has stopped or refused it. See [Install extensions from Mission Control](/mission-control/installing-plugins).
 
-Available jurisdictions include FAA (United States), DGCA (India), CASA (Australia), EASA (Europe), and ICAO (global fallback).
+The Parameters tab has its own column settings; see [Parameters](/mission-control/parameters).
 
-## Persistence
+## Next steps
 
-All settings are stored in IndexedDB using Zustand's persist middleware. This means:
-
-- Settings survive browser restarts
-- Settings are specific to the browser/device
-- Clearing browser data resets all settings
-- Cloud sync (when authenticated) can back up and restore settings across devices
-
-<Tip>
-Export your settings to a JSON file as a backup before clearing browser data or switching devices.
-</Tip>
-
-## Parameter Panel Settings
-
-The parameter browser has its own settings for column visibility and filter presets. These are covered in the [Parameters](/mission-control/parameters) page.
+<CardGroup cols={2}>
+  <Card title="Cockpit and Skills" icon="gamepad" href="/mission-control/cockpit">
+    Bindings, loadouts and stick control in use.
+  </Card>
+  <Card title="Flash Tool" icon="bolt" href="/mission-control/flash-tool">
+    Flash flight controllers, CAN nodes and companion boards.
+  </Card>
+</CardGroup>

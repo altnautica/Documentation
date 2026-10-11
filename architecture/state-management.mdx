@@ -1,190 +1,140 @@
 ---
-title: "State Management"
-description: "Zustand stores, ring buffers, and how telemetry flows from protocol to pixel."
+title: "Mission Control state management"
+sidebarTitle: "State management"
+description: "How Mission Control keeps state in Zustand stores, buffers telemetry in ring buffers, and moves data from a protocol adapter to the screen."
 icon: "database"
-lastUpdated: "2026-06-18"
 ---
 
-# State Management
-
-ADOS Mission Control uses Zustand for all client-side state. There are more than 70 stores covering telemetry, drone management, mission planning, video, settings, and more. Each store is a small, focused slice of state with its own actions and selectors.
+Mission Control keeps client-side state in Zustand. There are more than 100 stores in `src/stores/`, each a focused slice of state with its own actions. Some larger stores are split into a directory of slices (`agent-connection/`, `agent-capabilities/`, `settings/`, `ground-station/`).
 
 ## Why Zustand
 
-Zustand is a minimal state manager for React. It has no boilerplate, no context providers, and no reducers. A store is a plain function that returns state and actions. Components subscribe to specific fields and only re-render when those fields change.
+A Zustand store is a plain function that returns state and actions. There are no context providers and no reducers. Components subscribe to the fields they read and re-render only when those fields change.
 
-This matters for a GCS because telemetry arrives at 10-50 Hz. A full React context re-render at 50 Hz would freeze the browser. Zustand's fine-grained subscriptions keep the frame rate stable even under heavy telemetry load.
+That matters for a ground control station. A MAVLink stream delivers hundreds of decoded frames a second. A React context that re-rendered on every frame would freeze the page; fine-grained subscriptions plus coalesced notifications (below) keep it smooth.
 
-## Store categories
+## Store map
 
-The stores group into six broad categories (representative examples shown, not the full list):
+These are representative stores, not the full list. Browse `src/stores/` for the rest.
 
-| Category | Examples |
-|----------|---------|
-| Telemetry | `telemetry-store`, `battery-store`, `gps-store`, `attitude-store`, `sensor-store`, `rc-channels-store`, `servo-output-store`, `esc-store` |
-| Drone management | `drone-manager`, `protocol-store`, `connection-store`, `demo-store`, `fleet-store` |
-| Mission planning | `planner-store`, `drawing-store`, `pattern-store`, `geofence-store`, `rally-store`, `plan-library-store`, `simulation-history-store` |
-| Configuration | `parameter-store`, `calibration-store`, `firmware-store`, `osd-store`, `failsafe-store`, `ports-store` |
-| Video and comms | `video-store`, `ground-station-store`, `cloud-status-store`, `mqtt-store` |
-| UI and settings | `settings-store`, `ui-store`, `panel-cache-store`, `changelog-notification-store`, and more |
+| Area | Stores |
+|------|--------|
+| Live telemetry | `telemetry-store`, `drone-store` (connection, mode and armed state of the selected vehicle), `trail-store`, `swarm-beacon-store`, `vision-detections-store` |
+| Vehicles and fleet | `drone-manager`, `fleet-store`, `node-registry/`, `drone-metadata-store`, `local-nodes-store`, `pairing-store` |
+| Agent connection | `agent-connection-store`, `agent-capabilities-store`, `agent-system-store`, `agent-peripherals-store`, `ground-station-store` |
+| Planning | `mission-store`, `planner-store`, `drawing-store`, `pattern-store`, `geofence-store`, `rally-store`, `plan-library-store` |
+| Flying | `cockpit-store`, `guided-store`, `checklist-store`, `armed-confirm-store`, `input-store` |
+| Video | `video-store`, `video-streams-store`, `camera-manager-store` |
+| Configuration | `param-safety-store`, `panel-cache-store`, `signing-store`, `mixer-store` |
+| Simulation and history | `simulation-store`, `simulation-history-store`, `history-store`, `sim-replay-store` |
+| App settings and UI | `settings-store`, `ui-store`, `ui-prefs-store`, `changelog-notification-store` |
 
 ## Ring buffers for telemetry
 
-High-frequency telemetry stores use ring buffers instead of growing arrays. A ring buffer holds a fixed number of samples (typically 300) and overwrites the oldest when full. This keeps memory bounded regardless of flight duration.
+`telemetry-store` holds one fixed-capacity ring buffer per telemetry message (`RingBuffer` in `src/lib/ring-buffer.ts`). When a buffer is full the oldest sample is overwritten, so memory stays flat however long the flight is. Most buffers are sized for about 60 seconds at the message's usual rate:
 
-```typescript
-// Simplified ring buffer pattern used in telemetry stores
-interface RingBuffer<T> {
-  data: T[]
-  head: number
-  capacity: number
-}
+| Buffer | Capacity | Sized for |
+|--------|----------|-----------|
+| `attitude`, `vfr`, `rc` | 600 | 10 Hz for 60 s |
+| `position`, `gps`, `localPosition`, `servoOutput` | 300 | 5 Hz for 60 s |
+| `battery`, `radio`, `scaledImu`, `navController` | 120 | 2 Hz for 60 s |
+| `sysStatus`, `gimbal`, `powerStatus`, `fenceStatus` | 60 | 1 Hz for 60 s |
+| `flowQuality`, `flowDistance`, `vioQuality` | 1000 | Optical flow and VIO quality at 10 to 50 Hz |
 
-function push<T>(buffer: RingBuffer<T>, item: T) {
-  buffer.data[buffer.head] = item
-  buffer.head = (buffer.head + 1) % buffer.capacity
-}
-```
+The full list is in `src/stores/telemetry-store.ts`. A buffer offers `push`, `latest`, `get`, `last(n)`, `nearest(ts)` and `toArray`.
 
-Stores that use ring buffers:
+### Coalesced notifications
 
-| Store | Buffer size | Update rate | Purpose |
-|-------|------------|-------------|---------|
-| `telemetry-store` | 300 | 10 Hz | Attitude, altitude, speed history for charts |
-| `battery-store` | 300 | 2 Hz | Voltage and current history |
-| `gps-store` | 300 | 5 Hz | Position history for trail rendering |
-| `rc-channels-store` | 60 | 10 Hz | RC input history for the stick visualizer |
+Pushing a sample mutates the buffer in place and then calls `scheduleVersionBump()` from `src/stores/coalesced-version.ts`. All the pushes inside one animation frame collapse into a single increment of the store's `_version` field. Components select `_version` and re-read the buffers, so the UI updates at most once per display frame however fast the wire runs. Any store fed by live telemetry follows the same rule.
 
 ## The drone manager bridge
 
-`DroneManager` is the central coordinator between protocol adapters and stores. When a connection is established, `bridgeTelemetry()` subscribes to all protocol callbacks and routes the data to the correct stores:
+`drone-manager` (`src/stores/drone-manager.ts`) owns the connected vehicles, their protocol adapters and the selected vehicle. When a vehicle connects, `bridgeTelemetry()` in `src/stores/drone-manager-bridge.ts` subscribes to the adapter's callbacks and routes each one to the stores:
 
 ```typescript
-// Simplified from drone-manager.ts bridgeTelemetry()
-function bridgeTelemetry(protocol: DroneProtocol) {
-  protocol.onHeartbeat((msg) => {
-    connectionStore.setHeartbeat(msg)
-    droneManagerStore.setMode(msg.customMode)
-  })
+// Simplified from bridgeTelemetry() in drone-manager-bridge.ts
+export function bridgeTelemetry(droneId: string, droneName: string, protocol: DroneProtocol) {
+  const telemetry = useTelemetryStore.getState();
+  const isSelected = () => droneSelection().selectedDroneId === droneId;
 
-  protocol.onAttitude((msg) => {
-    telemetryStore.pushAttitude(msg)
-    attitudeStore.set(msg)
-  })
-
-  protocol.onGps((msg) => {
-    gpsStore.set(msg)
-    telemetryStore.pushPosition(msg)
-  })
-
-  protocol.onBattery((msg) => {
-    batteryStore.set(msg)
-    telemetryStore.pushBattery(msg)
-  })
-
-  // ... 26 core callbacks + 15 optional capability-gated callbacks
+  return [
+    protocol.onAttitude((data) => {
+      if (isSelected()) telemetry.pushAttitude(data);
+      rec("attitude", data);
+    }),
+    protocol.onPosition((data) => {
+      if (isSelected()) {
+        telemetry.pushPosition(data);
+        useTrailStore.getState().pushPoint(data.lat, data.lon, data.relativeAlt);
+      }
+    }),
+    // ...one subscription per callback
+  ];
 }
 ```
 
-The bridge subscribes to 26 core callbacks that every protocol supports, plus up to 15 optional callbacks gated by `protocol.capabilities`. For example, `onGimbalManagerStatus` only subscribes if `capabilities.supportsGimbalV2` is true.
+The telemetry rings are global, so only the selected vehicle writes to them; otherwise two connected vehicles would interleave their streams in one buffer. Every frame is still recorded for its own vehicle. `bridgeTelemetry()` returns the unsubscribe functions, and they all run when the connection closes.
 
-Each subscription returns an unsubscribe function. When the connection closes, all subscriptions are cleaned up.
+## Parameters and configuration panels
 
-## Parameter store
-
-The parameter store holds the flight controller's full parameter set (1,000+ parameters for ArduPilot). It supports:
-
-- **Batch loading** via `PARAM_REQUEST_LIST` (receives all parameters over 5-15 seconds)
-- **Individual reads** via `PARAM_REQUEST_READ`
-- **Writes** via `PARAM_SET` with optimistic UI update and rollback on failure
-- **Search and filtering** by parameter name, group, or description
-
-The `usePanelParams` hook is the primary interface for configure panels:
+Every flight controller configuration panel reads and writes parameters through the `usePanelParams` hook (`src/hooks/use-panel-params.ts`). It takes an options object and returns the values, load state and write actions:
 
 ```typescript
-function usePanelParams(paramNames: string[]) {
-  // Returns { values, setParam, isLoading, isDirty }
-  // Automatically subscribes to the parameter store
-  // Handles both MAVLink native params and MSP virtual params
-}
+const {
+  params,          // Map<string, number>
+  loading,
+  dirtyParams,     // Set<string>
+  setLocalValue,
+  saveAllToRam,
+  commitToFlash,
+  revert,
+} = usePanelParams({ paramNames, optionalParams, panelId: "failsafe", autoLoad: true });
 ```
 
-Every configure panel (failsafe, PID tuning, power, OSD, ports, etc.) uses this hook. Panel code never touches protocol details directly.
+It handles MAVLink parameters (ArduPilot and PX4) and MSP virtual parameters (Betaflight and iNav) the same way, so panel code never touches the protocol. Writes go to RAM first; `commitToFlash` makes them permanent on the flight controller.
 
-## Demo mode and the mock engine
+## Demo mode
 
-Demo mode runs fourteen simulated aircraft with telemetry, spanning ArduPilot (copter, plane, VTOL, tailsitter, tiltrotor, rover, boat, sub, heli), PX4, Betaflight and iNav, plus a workstation node and a ground-station node. The mock engine generates synthetic MAVLink messages:
+Demo mode runs a simulated fleet entirely in the browser with no backend. `MockFlightEngine` (`src/mock/engine.ts`) writes synthetic telemetry into the same stores a real link would, and registers a `MockProtocol` per simulated vehicle with the drone manager, so configuration panels, flight logs and sensor health work too. The fleet itself is described on [Dashboard](/mission-control/dashboard).
 
-- Attitude oscillates with configurable rates
-- GPS follows circular or waypoint paths
-- Battery drains over time
-- Mode transitions happen on a timer
+The first-run welcome modal has a **Demo Mode** switch, on by default. You can also turn Demo Mode on or off in Settings, or with **Toggle Demo Mode** in the command palette (⌘K).
 
-The mock engine implements the `DroneProtocol` interface, so the rest of the app cannot tell the difference between a real drone and a simulated one. This is useful for development, demos, and testing UI without hardware.
+## Persistence
 
-Demo mode activates from the welcome modal or the settings page. It runs entirely in the browser with no backend.
+Stores that must survive a reload use Zustand's `persist` middleware with a version number and a migration function. When the stored shape changes, the version goes up in the same change and the migration converts old data. Persisted stores include:
 
-## Connection lifecycle
+| Store | What it keeps |
+|-------|---------------|
+| `settings-store` | App settings, including the video transport mode, units, theme and language |
+| `plan-library-store` | Saved mission plans |
+| `simulation-history-store` | Past simulation runs |
+| `local-nodes-store` | Nodes paired over the LAN and their API keys |
+| `cockpit-store` | Cockpit preferences |
+| `aircraft-registry-store`, `battery-registry-store`, `equipment-registry-store` | Your aircraft, batteries and equipment records |
 
-```mermaid
-%%{init: {'theme': 'dark'}}%%
-stateDiagram-v2
-    [*] --> Disconnected
-    Disconnected --> Connecting: User clicks Connect
-    Connecting --> Detecting: Transport open
-    Detecting --> Connected: Heartbeat received
-    Detecting --> Disconnected: Timeout (10s)
-    Connected --> Disconnected: Transport closed
-    Connected --> Reconnecting: Heartbeat lost (5s)
-    Reconnecting --> Connected: Heartbeat restored
-    Reconnecting --> Disconnected: Timeout (30s)
-```
+Live telemetry stores never persist. They start empty on every page load.
 
-The `connection-store` tracks this state machine. UI components subscribe to the connection state to show appropriate indicators (green dot, yellow reconnecting, red disconnected).
+## Selectors
 
-## Persist and hydration
-
-Some stores persist across reloads via Zustand's `persist` middleware, backed by IndexedDB or browser local storage depending on the store:
-
-| Store | What persists | Version |
-|-------|--------------|---------|
-| `settings-store` | Video transport mode, theme, units, language, recent connections | 35 |
-| `plan-library-store` | Saved mission plans | 1 |
-| `simulation-history-store` | Past simulation results | 1 |
-| `local-nodes-store` | LAN-paired nodes and their API keys | 4 |
-
-Each persisted store has a version number. When the schema changes, a migration function converts the old format to the new one. The version is bumped in the same commit that changes the schema.
-
-Stores that hold ephemeral telemetry (attitude, GPS, battery) never persist. They reset to defaults on page load.
-
-## Selectors and performance
-
-Components use Zustand selectors to subscribe to specific fields:
+Components subscribe to specific fields:
 
 ```typescript
-// Good: only re-renders when altitude changes
-const altitude = useTelemetryStore((s) => s.altitude)
+// Re-renders only when the selected vehicle's arm state changes
+const armState = useDroneStore((s) => s.armState);
 
-// Bad: re-renders on ANY store change
-const everything = useTelemetryStore()
+// Re-renders on every change to the store: avoid
+const everything = useDroneStore();
 ```
 
-For computed values that depend on multiple fields, `useShallow` prevents unnecessary re-renders:
+When a component needs several fields at once, wrap the selector in `useShallow` so a new object with equal values does not trigger a render.
 
-```typescript
-const { lat, lng, alt } = useGpsStore(
-  useShallow((s) => ({ lat: s.lat, lng: s.lng, alt: s.alt }))
-)
-```
+## Next steps
 
-## Notifications
-
-The `notifications-store` handles transient alerts (arm/disarm, mode changes, failsafe triggers, parameter save confirmations). Notifications auto-dismiss after 5 seconds. Critical notifications (failsafe, low battery) stay until acknowledged.
-
-The store caps at 50 notifications and drops the oldest when full.
-
-## What is next
-
-- [MAVLink Protocol](/architecture/mavlink-protocol) for the protocol adapter layer
-- [Agent Services](/architecture/agent-services) for the server-side state
-- [Project Structure](/architecture/project-structure) for where stores live in the codebase
+<CardGroup cols={2}>
+  <Card title="MAVLink protocol" icon="code" href="/architecture/mavlink-protocol">
+    The adapters that feed the stores.
+  </Card>
+  <Card title="Code recipes" icon="code-pull-request" href="/architecture/contributing-guide">
+    Add a store, a panel or a decoder.
+  </Card>
+</CardGroup>

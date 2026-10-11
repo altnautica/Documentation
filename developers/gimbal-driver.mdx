@@ -1,17 +1,16 @@
 ---
 title: "Gimbal driver"
-description: "Implement a GimbalDriver to add a new mount to the agent."
-lastUpdated: "2026-06-23"
+description: "Implement a GimbalDriver that moves a stabilised mount and reports its pointing state."
 ---
 
-A `GimbalDriver` moves a stabilised mount to a commanded attitude
-or rate, and reports back the current pointing state.
+import DriverLayerStatus from "/snippets/driver-layer-status.mdx";
+import { DriverRustNote } from "/snippets/driver-rust-note.mdx";
 
-The first-party reference is the MAVLink Gimbal v2 driver at
-[`altnautica/ADOSExtensions/extensions/mavlink-gimbal-v2`](https://github.com/altnautica/ADOSExtensions/tree/main/extensions/mavlink-gimbal-v2),
-which targets ArduPilot's Gimbal Manager Protocol v2 and stubs out
-SimpleBGC, Storm32 NT, and Gremsy serial drivers behind the same
-base.
+<DriverLayerStatus />
+
+A `GimbalDriver` moves a stabilised mount to a commanded attitude or rate, and reports the current pointing state.
+
+The first-party reference is `MavlinkGimbalDriver` in the MAVLink Gimbal v2 plugin ([`extensions/mavlink-gimbal-v2`](https://github.com/altnautica/ADOSExtensions/tree/main/extensions/mavlink-gimbal-v2)). It drives any gimbal that speaks the MAVLink Gimbal Manager Protocol v2 (ArduPilot or PX4 forwarding; Storm32 NT and Gremsy in MAVLink mode). It ships no serial SimpleBGC, Storm32 or Gremsy drivers.
 
 ## The interface
 
@@ -55,17 +54,9 @@ class MyGimbalDriver(GimbalDriver):
         ...
 ```
 
-<Note>
-A Rust trait of the same shape ships in the `ados-sdk` crate at
-`ados_sdk::drivers::GimbalDriver`. It mirrors the Python contract
-(`discover`, `open`, `close`, `capabilities`, `command_attitude`,
-`command_rate`, `get_state`, `state_iterator`) with an associated
-`Session` type, takes `f32` angles, and returns `DriverResult`
-(`command_rate` returns `DriverError::NotSupported` for
-position-only mounts). `GimbalCandidate`, `GimbalCapabilities`,
-and `GimbalState` carry the same fields. Pick the language that
-matches your plugin's `agent.runtime` (`python` or `rust`).
-</Note>
+<DriverRustNote trait="GimbalDriver" methods="discover, open, close, capabilities, command_attitude, command_rate, get_state, state_iterator" />
+
+In Rust the angles are `f32`, and `command_rate` returns `DriverError::NotSupported` on a position-only mount.
 
 ## Capabilities
 
@@ -86,8 +77,7 @@ GimbalCapabilities(
 )
 ```
 
-Limits are degrees from neutral. `None` on `max_rate_dps` means the
-gimbal is position-controlled only.
+Limits are degrees from neutral. `max_rate_dps=None` means the gimbal is position-controlled only.
 
 ## State
 
@@ -105,60 +95,33 @@ GimbalState(
 )
 ```
 
-Drivers that cannot report rates fill `*_rate_dps` with `0.0`.
-Driver-specific status (fault codes, mount temperature, vendor
-firmware version) goes under `metadata`; the GCS panel renders
-known keys with friendly labels and shows the rest as a generic
-detail list.
+Drivers that cannot report rates leave `*_rate_dps` at `0.0`. Put driver-specific status (fault codes, mount temperature, firmware version) under `metadata`. Your plugin's GCS half renders this data; publish it with `ctx.telemetry.extend` or `ctx.events.publish`.
 
-## Manifest permissions
+## Region of interest
 
-```yaml
-agent:
-  permissions:
-    - id: sensor.payload.register   # gimbal drivers register under the payload sensor cap (no dedicated sensor.gimbal.register in the current catalog)
-    - id: mavlink.component.gimbal  # to own a MAVLink gimbal component id (the reference path)
-    - id: mavlink.write             # if the driver sends MAVLink
-    - id: mavlink.read              # to observe gimbal status messages
-    - id: hardware.uart             # if the driver speaks raw serial
-```
+ROI is not part of the `GimbalDriver` contract. A driver that supports it adds its own methods. The reference driver adds `set_roi_location` and `clear_roi`, which map to `MAV_CMD_DO_SET_ROI_LOCATION` (195) and `MAV_CMD_DO_SET_ROI_NONE` (197).
 
-## ROI vs attitude
+## Opening the driver from your plugin
 
-Two separate motion modes:
-
-- **Attitude / rate**: the GCS sets pitch and yaw directly via
-  `command_attitude` or `command_rate`. The driver propagates the
-  command verbatim.
-- **ROI (region of interest)**: the GCS hands the driver a
-  geographic point (lat, lon, alt). The driver figures out the
-  attitude that points the camera at that point and tracks it as
-  the vehicle moves. ROI is implemented inside the driver because
-  the mount hardware sometimes resolves it in firmware.
-
-The reference MAVLink driver maps ROI to
-`MAV_CMD_DO_SET_ROI_LOCATION` (cmd 195) and release-ROI to
-`MAV_CMD_DO_SET_ROI_NONE` (cmd 197).
-
-## Registering
-
-```python
-class Plugin:
-    async def on_start(self, ctx):
-        self.driver = MyGimbalDriver()
-        await ctx.peripheral_manager.register_gimbal_driver(self.driver)
-```
+The reference plugin builds its driver in `on_start` around a router handle for the agent's MAVLink link, registers its MAVLink component, and feeds incoming `GIMBAL_DEVICE_ATTITUDE_STATUS` messages to `driver.on_attitude_status(...)`. See `agent/src/altnautica_gimbal_v2/plugin.py`. For MAVLink gimbals declare `mavlink.read`, `mavlink.write` and `mavlink.component.gimbal`; the full table is on [Driver layer](/developers/driver-layer#manifest-permissions).
 
 ## Testing without hardware
 
-Construct the driver against a mock MAVLink router (or a mock
-serial port). The reference plugin's `tests/` shows the round-trip
-pattern: command pitch=-30 yaw=45, capture the encoded
-`COMMAND_LONG` byte payload, inject a `GIMBAL_MANAGER_STATUS`
-reply, assert state updates.
+Construct the driver against a mock MAVLink router. The reference plugin's `agent/tests/test_mavlink_driver.py` shows the round trip: command pitch -30 and yaw 45, capture the encoded `COMMAND_LONG`, feed a `GIMBAL_DEVICE_ATTITUDE_STATUS` sample through `driver.on_attitude_status(...)`, and assert the state updates.
 
-## See also
+## Next steps
 
-- [Driver layer](/developers/driver-layer) for the contract.
-- [Hardware testing](/developers/hardware-testing) for the
-  ArduPilot SITL harness.
+<CardGroup cols={2}>
+  <Card title="Driver layer" href="/developers/driver-layer">
+    The shared contract and the manifest table.
+  </Card>
+  <Card title="MAVLink extensions" href="/developers/mavlink-extensions">
+    Own a MAVLink component id from a plugin.
+  </Card>
+  <Card title="Hardware testing" href="/developers/hardware-testing">
+    Mock routers and SITL.
+  </Card>
+  <Card title="LiDAR driver" href="/developers/lidar-driver">
+    The next driver kind.
+  </Card>
+</CardGroup>

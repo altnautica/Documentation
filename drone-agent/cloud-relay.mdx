@@ -1,173 +1,117 @@
 ---
-title: "Cloud Relay"
-description: "Three-layer cloud connectivity: Convex HTTP, MQTT telemetry, and WebRTC video."
+title: "Cloud relay"
+description: "Opt-in remote access for a Drone Agent: Convex heartbeat and commands, raw MAVLink over MQTT, and WebRTC video signaling."
 icon: "cloud"
-lastUpdated: "2026-06-23"
 ---
 
-# Cloud Relay
+import AgentConfigServer from "/snippets/generated/agent-config-server.mdx";
 
-The cloud relay (the native Rust `ados-cloud` service) lets you monitor and control your drone from anywhere. It works behind NAT, through firewalls, and over cellular networks without port forwarding. Cloud relay is the secondary path: on the same LAN, Mission Control reaches the agent directly (see [Pairing](/drone-agent/pairing)).
+The cloud relay (the native Rust `ados-cloud` service) lets you monitor and control a drone from outside its network. It works behind NAT, through firewalls and over cellular, with no port forwarding: every connection is outbound. The relay is opt-in and off by default. On the same LAN, Mission Control reaches the agent directly (see [Pairing](/drone-agent/pairing)).
 
-The relay uses three additive layers. Each adds more real-time capability on top of the last.
+<Warning>
+The relay carries flight commands to the drone from anywhere. Read [Safety](/operations/safety) before you fly a drone you reach over the relay, and turn on [MAVLink signing](/drone-agent/mavlink-signing).
+</Warning>
 
-## Three layers
+## What crosses the relay
 
-### Layer 1: Convex HTTP (baseline)
+| Traffic | Path | Cadence |
+|---|---|---|
+| Status heartbeat | HTTPS `POST {convex}/agent/status` | Every 5 s (fixed) |
+| Command queue | HTTPS poll of the Convex backend | Every 5 s |
+| Raw MAVLink | MQTT `ados/{deviceId}/mavlink/tx` (drone to GCS) and `ados/{deviceId}/mavlink/rx` (GCS to drone), QoS 0 | Continuous |
+| Raw MSP | MQTT `ados/{deviceId}/msp/tx` and `ados/{deviceId}/msp/rx`, QoS 0 | Continuous |
+| Video signaling | MQTT `ados/{deviceId}/webrtc/offer` (subscribed) and `ados/{deviceId}/webrtc/answer/{sessionId}` (published), QoS 1 | Per session |
+| Vision detections | MQTT `ados/{deviceId}/vision/detections` | When an extension publishes |
+| Extension streams | MQTT `ados/{deviceId}/plugin/{plugin_id}/{stream}`, QoS 0 | When an extension publishes |
+| Extension updates | MQTT `ados/{deviceId}/plugin/update_available`, QoS 1 | When an update needs a decision |
+| Video | WebRTC peer to peer between the drone and the browser | Live |
 
-The simplest layer. The agent POSTs status to a Convex HTTP endpoint every 5 seconds and polls for pending commands. Mission Control uses reactive Convex queries to display the data in near-real-time.
+The relay bridges the raw MAVLink stream to the broker so a remote Mission Control decodes it in the browser, exactly as it does over the LAN WebSocket. There is no separate telemetry topic.
 
-- **Latency:** 2-5 seconds
-- **Requires:** Internet connection (any)
-- **Used for:** Status updates, command queue, pairing
-- **Always active** when paired
+### Video signaling
 
-This layer works immediately with zero infrastructure beyond the Convex backend. It is the fallback when MQTT or WebRTC are unavailable.
+1. Mission Control publishes an SDP offer to `ados/{deviceId}/webrtc/offer`, tagged with its session id.
+2. `ados-cloud` POSTs the offer to the local MediaMTX WHEP endpoint.
+3. MediaMTX returns an SDP answer.
+4. `ados-cloud` publishes the answer to `ados/{deviceId}/webrtc/answer/{sessionId}`.
+5. The browser and the drone connect peer to peer, and video flows directly between them.
 
-### Layer 2: MQTT (real-time telemetry)
-
-The agent publishes telemetry to an MQTT broker over WebSocket transport (port 443, through Cloudflare). The default publish rate is 2 Hz (configurable).
-
-- **Latency:** 100-300 ms
-- **Requires:** MQTT broker access
-- **Topics:** `ados/{deviceId}/status`, `ados/{deviceId}/telemetry`
-- **Used for:** Live telemetry in Mission Control, fleet dashboards
-
-```yaml
-server:
-  telemetry_rate: 2    # Hz
-  mqtt_transport: "websockets"
-  mqtt_username: ""    # empty = the device id
-```
-
-Mission Control subscribes to these topics via browser MQTT.js and updates the dashboard in real-time. The MQTT bridge also writes to Convex for persistence (debounced at 3 seconds per device).
-
-### Layer 3: WebRTC P2P (video)
-
-For live video, the agent uses peer-to-peer WebRTC signaling relayed through MQTT. This avoids sending video through a central server.
-
-The flow:
-
-1. GCS publishes an SDP offer to `ados/{deviceId}/webrtc/offer` via MQTT
-2. The agent's cloud relay picks up the offer
-3. Agent forwards it to MediaMTX's WHIP endpoint
-4. MediaMTX generates an SDP answer
-5. Agent publishes the answer to `ados/{deviceId}/webrtc/answer`
-6. GCS receives the answer and establishes a direct WebRTC connection
-
-Once the peer connection is established, video flows directly between the drone and the browser. MQTT is only used for the initial handshake.
-
-- **Latency:** 50-200 ms (video)
-- **Requires:** STUN/TURN servers for NAT traversal
-- **Used for:** Live video in Mission Control
-
-<Note>
-P2P WebRTC works on most home and office networks. On symmetric NAT cellular carriers (~5-15% of mobile networks), the ICE negotiation may fail. In that case, the GCS falls back to Layer 1 for commands and telemetry. Video requires switching to a different network.
-</Note>
+The number of concurrent sessions is capped, and a session is torn down when the browser closes it. MQTT carries only the handshake. A network that blocks peer-to-peer WebRTC (for example a symmetric-NAT cellular carrier) still gets telemetry and commands over MQTT, but no video.
 
 ## Connection modes
 
-The agent supports three server modes:
-
 <Tabs>
-  <Tab title="Cloud (default)">
-    Connects to a hosted cloud backend. MQTT goes through the broker over WebSocket on port 443 via Cloudflare. Convex HTTP goes to the Convex site endpoint (port 3211, HTTP actions).
-
-    ```yaml
-    server:
-      mode: "cloud"
-      cloud:
-        url: "https://your-convex.example.com:3211"
-        mqtt_broker: "your-mqtt.example.com"
-        mqtt_port: 443
-    ```
-
-    This is the default for most users. No infrastructure to manage.
-  </Tab>
-
-  <Tab title="Self-hosted">
-    Connects to your own MQTT broker and Convex instance. Full control over your data.
-
-    ```yaml
-    server:
-      mode: "self_hosted"
-      self_hosted:
-        url: "https://your-convex.example.com:3211"
-        mqtt_broker: "your-mqtt.example.com"
-        mqtt_port: 8883
-        api_key: "your-api-key"
-    ```
-
-    You need to run your own Mosquitto MQTT broker, MQTT-to-Convex bridge, and Convex backend. See the `tools/mqtt-bridge/` directory in the Mission Control repo for Docker Compose files.
-  </Tab>
-
-  <Tab title="Local / cloud-off">
-    No cloud connectivity. The agent works fully locally: MAVLink proxy, video, and REST API all function. Only remote access is off. This is the default posture.
+  <Tab title="Local / cloud-off (default)">
+    No cloud connectivity. The MAVLink proxy, video and REST API all work locally; only remote access is off.
 
     ```yaml
     server:
       mode: "local"
     ```
 
-    Use this for air-gapped environments, testing, or when you only need local access.
+    Use this for air-gapped work, bench testing or LAN-only flying.
+  </Tab>
+
+  <Tab title="Cloud">
+    Opt-in; choose it in the dashboard **Settings > Cloud**. Connects to the hosted backend: MQTT over WSS on port 443, and Convex HTTP actions over HTTPS.
+
+    ```yaml
+    server:
+      mode: "cloud"
+      cloud:
+        url: "https://convex-site.altnautica.com"
+        mqtt_broker: "mqtt.altnautica.com"
+        mqtt_port: 443
+    ```
+  </Tab>
+
+  <Tab title="Self-hosted">
+    Connects to your own MQTT broker and Convex backend.
+
+    ```yaml
+    server:
+      mode: "self_hosted"
+      self_hosted:
+        url: "https://convex.example.com"
+        mqtt_broker: "mqtt.example.com"
+        mqtt_port: 8883
+        api_key: "your-api-key"
+    ```
+
+    You run the MQTT broker and the Convex backend. See [Self-hosting: MQTT broker](/developers/self-hosting/mqtt-bridge).
   </Tab>
 </Tabs>
 
-## MQTT topics
+All `server.*` keys:
 
-When connected to the cloud, the agent publishes to these MQTT topics:
+<AgentConfigServer />
 
-| Topic | Rate | Content |
-|-------|------|---------|
-| `ados/{deviceId}/status` | Every 5s | Full status (board, FC, services) |
-| `ados/{deviceId}/telemetry` | 2 Hz | Attitude, position, speed, battery |
-| `ados/{deviceId}/webrtc/answer` | On demand | SDP answer for video |
+## MQTT transport
 
-And subscribes to:
-
-| Topic | Content |
-|-------|---------|
-| `ados/{deviceId}/webrtc/offer` | SDP offer from GCS |
-
-## MQTT reliability
-
-The agent uses `paho-mqtt` with these settings for reliable operation:
-
-- `max_inflight_messages_set(1000)` to prevent message drops under load
-- WebSocket transport on port 443 to pass through corporate firewalls
-- Automatic reconnection with exponential backoff
-- QoS 0 for telemetry (fire and forget, optimized for real-time)
-- QoS 1 for command acknowledgments (at least once delivery)
+`ados-cloud` uses rumqttc over WSS/TLS (system webpki roots), QoS 0 for the MAVLink plane and QoS 1 for WebRTC signaling, and a bounded publish queue that drops when the broker is down. Each lane holds its own broker session with its own ClientID (`ados-{deviceId}` for MAVLink, `ados-{deviceId}-msp`, `ados-{deviceId}-webrtc`, `ados-{deviceId}-plugin-publish`, `ados-{deviceId}-plugin-update`), so the lanes never evict each other. A dropped session reconnects every 3 seconds and resubscribes on every reconnect.
 
 ## Heartbeat
 
-The agent sends a heartbeat to the cloud every 5 seconds (configurable):
-
-```yaml
-server:
-  heartbeat_interval: 5
-```
-
-Mission Control uses the heartbeat to determine if a drone is online. If no heartbeat is received for 30 seconds, the drone is marked offline.
+While paired, the agent POSTs its status to `{convex}/agent/status` every 5 s (fixed, not configurable), authenticated by its `X-ADOS-Key`. Mission Control reads the status row to show the drone online and to fill the per-drone view.
 
 ## Security
 
-All cloud traffic is encrypted:
+- MQTT uses WebSocket over TLS (`wss://`, port 443) in cloud mode.
+- Convex HTTP uses HTTPS.
+- WebRTC media is encrypted with DTLS-SRTP.
+- The agent authenticates with the API key it received at pairing.
 
-- MQTT uses WebSocket over TLS (wss://, port 443)
-- Convex HTTP uses HTTPS
-- WebRTC uses DTLS for media and HTTPS for signaling
-- The agent authenticates with its API key (set during pairing)
-
-No inbound ports are required on the drone's network. All connections are outbound.
+No inbound ports are required on the drone's network.
 
 ## Checking cloud status
 
 From the CLI:
 
 ```bash
-$ ados status --json | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('cloud', {}))"
+ados status --json | python3 -c "import sys,json; print(json.load(sys.stdin).get('cloud_choice', {}))"
 ```
+
+`cloud_choice` carries `mode`, `backend_url` and `paired`. Plain `ados status` prints the same as a **Cloud relay** line.
 
 From the REST API:
 
@@ -176,4 +120,19 @@ curl http://localhost:8080/api/status \
   -H "X-ADOS-Key: your_key"
 ```
 
-The status response includes cloud connectivity state, MQTT broker connection, and last successful publish timestamp.
+## Next steps
+
+<CardGroup cols={2}>
+<Card title="Cloud infrastructure" icon="server" href="/architecture/cloud-infrastructure">
+Backend architecture and the full MQTT topic reference.
+</Card>
+<Card title="Self-hosting" icon="house-signal" href="/developers/self-hosting/overview">
+Run the broker, bridge and backend yourself.
+</Card>
+<Card title="MAVLink signing" icon="lock" href="/drone-agent/mavlink-signing">
+Protect commands that travel over the relay.
+</Card>
+<Card title="Battery health" icon="battery-half" href="/drone-agent/battery-health">
+Per-pack health computed on the drone.
+</Card>
+</CardGroup>

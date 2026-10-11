@@ -1,189 +1,168 @@
 ---
-title: "MQTT bridge"
-description: "Run Mosquitto plus the MQTT bridge that forwards drone telemetry to your self-hosted Convex backend."
-lastUpdated: "2026-06-23"
+title: "Self-hosting: MQTT broker"
+sidebarTitle: "MQTT broker"
+description: "Run Mosquitto for the ADOS cloud relay with per-device auth, a deny-by-default ACL and credentials synced from Convex."
+icon: "tower-broadcast"
 ---
 
-The MQTT bridge is the real-time telemetry layer of the cloud relay. A
-Mosquitto broker receives the agent's status and telemetry publishes, and
-a small Node bridge subscribes to those topics and POSTs them to your
-Convex backend so Mission Control can display live data. You only need
-this layer when you want telemetry faster than the 5-second Convex poll,
-or when the GCS and the drone are not on the same LAN.
+The MQTT broker is the live-data layer of the cloud relay. The agent and the
+Mission Control browser meet on it: the agent publishes the MAVLink and MSP
+byte planes, answers WebRTC signaling and publishes vision detections and
+plugin streams, and the browser subscribes and sends its uplink. You only need
+this layer when the GCS and the drone are not on the same LAN.
 
-```
-agent (drone) ──MQTT──► Mosquitto ──subscribe──► bridge ──HTTP POST──► Convex
-                            ▲
-GCS browser ──MQTT/WSS──────┘  (also subscribes to ados/<device>/*)
+```text
+agent (drone) ──MQTT over TLS / WSS──► TLS front ──► Mosquitto ◄──WSS── GCS browser
+                                                        ▲
+                         mqtt-auth-sync ── passwd, acl ─┘ (pulled from Convex)
 ```
 
-The bridge and the broker live in the GCS repository at
-`tools/mqtt-bridge/`. Everything below uses the reference deployment under
-`tools/mqtt-bridge/deploy/`.
+Fleet status does not go through the broker. The agent POSTs its heartbeat to
+Convex over HTTPS. The topic list is on
+[Cloud infrastructure](/architecture/cloud-infrastructure).
+
+The broker assets live in the Mission Control repository at
+`tools/mqtt-bridge/deploy/`: `mosquitto.conf`, `acl.conf`, the auth-sync
+scripts, and a compose file for a standalone broker.
 
 <Note>
-This is the per-tool route. If you want the whole stack (Convex, GCS,
-broker, bridge, and video relay) on one host, the
-[all-in-one stack](/developers/self-hosting/all-in-one) wires the same
-broker and bridge for you.
+The [all-in-one stack](/developers/self-hosting/all-in-one) and the
+[deploy tool](/developers/self-hosting/deploy-tool) wire the same broker and
+auth sync for you. This page is for running the broker on its own.
 </Note>
 
 ## Prerequisites
 
-- A self-hosted Convex backend already running. The bridge POSTs to its
-  site origin (`:3211`), not the client API origin (`:3210`). See
-  [Mission Control and Convex](/developers/self-hosting/mission-control-and-convex)
-  for the split.
-- Docker and Docker Compose on the host.
-- The `mosquitto_passwd` tool, which ships inside the
-  `eclipse-mosquitto` image, so you do not need it on the host directly.
+- A self-hosted Convex backend. The auth sync reads its site origin (`:3211`).
+  See [Mission Control and Convex](/developers/self-hosting/mission-control-and-convex).
+- Docker and Docker Compose on the broker host. `mosquitto_passwd` ships inside
+  the `eclipse-mosquitto` image.
+- A TLS front for the broker: a tunnel or a reverse proxy. The agent never
+  dials plaintext, and an HTTPS GCS needs `wss://`.
 
 ## The compose stack
 
-The reference `tools/mqtt-bridge/deploy/docker-compose.yml` runs three
-services:
+`tools/mqtt-bridge/deploy/docker-compose.yml` runs two services:
 
 | Service | Image | Purpose |
 |---|---|---|
-| `mosquitto` | `eclipse-mosquitto:2` | The MQTT broker. Listens on 1883 (TCP) and 9001 (WebSocket). |
-| `bridge` | built from `deploy/Dockerfile` | Subscribes to telemetry topics and POSTs to Convex. |
-| `cloudflared` | `cloudflare/cloudflared:latest` | Optional. Exposes the WebSocket listener to browsers across networks. |
+| `mosquitto` | `eclipse-mosquitto:2` | The broker, with a TCP listener on 1883 and a WebSocket listener on 9001. |
+| `cloudflared` | `cloudflare/cloudflared:latest` | Optional. Puts the broker behind a Cloudflare tunnel, which terminates TLS. |
 
-The `bridge` service builds from the repository source (a small
-TypeScript program with one dependency, `mqtt`). The `cloudflared`
-service is only needed if browsers will reach the broker from outside the
-LAN; on a single-LAN setup you can drop it.
+The repository has no forwarding service between the broker and Convex. Fleet
+status reaches Convex through the agent's own heartbeat.
 
-## The ports: 1883 and 9001
+## Listeners and TLS
 
-Mosquitto runs two listeners, and they serve two different clients:
+`mosquitto.conf` declares two plaintext listeners and no TLS listener:
 
-- **TCP 1883** is plain MQTT. The drone agent and the bridge connect
-  here. The agent's MQTT client speaks native MQTT over TCP.
-- **WebSocket 9001** is MQTT over WebSockets (`protocol websockets` in
-  `mosquitto.conf`). The Mission Control browser connects here, because a
-  browser cannot open a raw TCP socket. When the GCS is served over
-  HTTPS, it connects with `wss://`, which the `cloudflared` tunnel
-  terminates in front of the 9001 listener.
+- **1883**, MQTT over TCP. Keep it on the host or the Docker network. The
+  agent does not use it.
+- **9001**, MQTT over WebSocket (`protocol websockets`). The TLS front forwards
+  to it.
 
-So a typical flow has agents and the bridge on 1883, and browsers on
-9001.
+The agent always connects over TLS:
 
-## Configure the environment
+- With the default `server.mqtt_transport: websockets`, the agent dials
+  `wss://<mqtt_broker>:443/mqtt`. Put a TLS-terminating proxy or tunnel on 443
+  that forwards `/mqtt` to the 9001 listener.
+- With `server.mqtt_transport: tcp`, the agent speaks MQTT over TLS on
+  `mqtt_port`. Add a TLS listener to `mosquitto.conf`, for example:
 
-Copy the example file and fill in your values:
+  ```ini
+  listener 8883
+  certfile /mosquitto/config/certs/fullchain.pem
+  keyfile  /mosquitto/config/certs/privkey.pem
+  ```
 
-```bash
-cd tools/mqtt-bridge/deploy
-cp .env.example .env
-```
+  and set the agent's `server.self_hosted.mqtt_port` to `8883`.
 
-The bridge reads four environment variables:
-
-| Variable | Default | Description |
-|---|---|---|
-| `MQTT_BROKER_URL` | `mqtt://localhost:1883` | The broker address. Inside the compose network this is `mqtt://mosquitto:1883`. |
-| `MQTT_USERNAME` | (none) | The bridge service account username. Use `ados`. |
-| `MQTT_PASSWORD` | (none) | The bridge service account password. Set a strong value. |
-| `CONVEX_URL` | (required) | Your Convex site origin. The bridge POSTs to `${CONVEX_URL}/agent/status`. |
-
-A filled `.env` looks like this. Use placeholders for your own host:
+The browser connects over `wss://` through the same front. Tell Mission Control
+where the broker is by setting `MQTT_BROKER_URL` on the Convex deployment to the
+full WebSocket URL, for example `wss://mqtt.example.com/mqtt`. The GCS reads it
+at run time through the public `clientConfig` query.
 
 ```bash
-MQTT_BROKER_URL=mqtt://mosquitto:1883
-MQTT_USERNAME=ados
-MQTT_PASSWORD=set-a-strong-password
-CONVEX_URL=https://your-convex.example.com:3211
-CLOUDFLARE_TUNNEL_TOKEN=your-tunnel-token-here
+npx convex env set MQTT_BROKER_URL "wss://mqtt.example.com/mqtt" \
+  --url http://<host>:3210 --admin-key <admin-key>
 ```
-
-<Warning>
-`CONVEX_URL` must point at the Convex **site** origin (`:3211`), the one
-that serves HTTP actions. If you point it at the client API origin
-(`:3210`), the bridge starts cleanly but every POST fails, and no live
-telemetry ever reaches the GCS. The bridge exits immediately if
-`CONVEX_URL` is unset.
-</Warning>
-
-`CLOUDFLARE_TUNNEL_TOKEN` is only consumed by the optional `cloudflared`
-service. Leave it as the placeholder (or remove the service) if you are
-not tunneling.
 
 ## Broker authentication
 
-The reference `mosquitto.conf` ships with authentication **on**:
-anonymous access is disabled, and the broker checks a password file and a
-topic ACL. Three principals connect:
+The reference `mosquitto.conf` ships with authentication on: anonymous access
+is off, and the broker checks a password file and a deny-by-default topic ACL.
 
-| Principal | Username | Permissions |
-|---|---|---|
-| Drone agent | its `deviceId` | read and write its own subtree, `ados/<deviceId>/#` |
-| Bridge service account | `ados` | read everything under `ados/#` |
-| GCS browser session | the viewer account | read across `ados/+/#` |
+| Principal | Username | Password | Permissions |
+|---|---|---|---|
+| Drone Agent | `ados-<deviceId>` | The device's pairing key, the same value it sends as `X-ADOS-Key` | read and write `ados/<deviceId>/#` |
+| GCS operator grant | `gcs-op-<random>` | Minted per operator by Convex and held in the browser tab's memory | read `ados/<deviceId>/#` for each owned device; write only `mavlink/rx`, `msp/rx` and `webrtc/offer` under it |
+| Service account | `ados` | `MQTT_PASSWORD` | read `ados/#` |
 
-The ACL (`acl.conf`) is deny-by-default. The agent's MQTT password is the
-same `apiKey` it received during pairing, the value it also sends as the
-`X-ADOS-Key` HTTP header. So a device's broker credential and its HTTP
-credential are one and the same.
+An operator grant writes only the three uplink topics. A write grant on the
+whole subtree would also let a browser publish the agent's own topics and fake
+telemetry for the aircraft. A publish the ACL refuses at QoS 0 is dropped
+silently, so confirm a publish by subscribing.
+
+The `ados` service account stays in the password file and the ACL. The auth
+sync writes it on every pass from `BRIDGE_MQTT_USERNAME` and
+`BRIDGE_MQTT_PASSWORD`.
 
 ### Keep the password file and ACL in sync
 
-Every paired agent logs in as `ados-<deviceId>` with its `apiKey`, and each
-live operator control grant logs in as its own `gcs-op-*` principal. Both
-come from Convex, so the broker's `passwd` and `acl.conf` are generated, not
-hand-written. `scripts/regenerate-passwd.sh` pulls them from the
-`/admin/mqtt-auth-entries` HTTP action, authenticated with
-`MQTT_AUTH_RELAY_SECRET`. It then rewrites both files in place and sends the
-broker a `SIGHUP`.
+Agent and operator credentials come from Convex, so `passwd` and `acl.conf` are
+generated, not hand-written. `scripts/regenerate-passwd.sh` fetches them from
+the `/admin/mqtt-auth-entries` HTTP action with
+`Authorization: Bearer $MQTT_AUTH_RELAY_SECRET`, rewrites both files in place
+and sends the broker a `SIGHUP`. It aborts if `MQTT_AUTH_RELAY_SECRET` is unset.
+
+`MQTT_AUTH_RELAY_SECRET` is required. Generate it once and set the same value
+in two places:
+
+```bash
+openssl rand -hex 32
+```
+
+```bash
+npx convex env set MQTT_AUTH_RELAY_SECRET "<value>" \
+  --url http://<host>:3210 --admin-key <admin-key>
+```
+
+and in the broker host's `.env` as `MQTT_AUTH_RELAY_SECRET=<value>`.
+
+How the sync runs:
 
 - **All-in-one stack.** The `mqtt-auth-sync` service in
-  `tools/selfhost/docker-compose.yml` runs the script every 30 seconds. It
-  shares the broker's process namespace to deliver the reload, so no Docker
-  socket is mounted. A newly paired drone can connect within one interval.
-- **Standalone broker.** Run the script from a systemd timer or cron on the
-  broker host, with `BROKER_CONTAINER` naming the broker container.
+  `tools/selfhost/docker-compose.yml` runs the script every 30 seconds
+  (`SYNC_INTERVAL_SECONDS`). It shares the broker's PID namespace to deliver
+  the reload, so no Docker socket is mounted. A failed pass retries on the same
+  interval, and a newly paired drone connects after the next good pass.
+- **Standalone broker.** Run `regenerate-passwd.sh` from a systemd timer or
+  cron on the broker host, with `CONVEX_HTTP_URL` set to your site origin and
+  `BROKER_CONTAINER` naming the broker container.
 
-Set the same `MQTT_AUTH_RELAY_SECRET` on the Convex deployment and in the
-broker host's environment. Before the broker's first start, create the files
-it mounts. Seed `acl.conf` from `tools/mqtt-bridge/deploy/acl.conf`, then
-create `passwd` with the bridge account:
+Before the broker's first start, create the two files it mounts, or Docker
+creates directories at those paths. Seed `acl.conf` from
+`tools/mqtt-bridge/deploy/acl.conf`, then create `passwd` with the service
+account:
 
 ```bash
 docker run --rm -v "$PWD:/work" eclipse-mosquitto:2 \
   mosquitto_passwd -b -c /work/passwd ados "$MQTT_PASSWORD"
 ```
 
-Re-pairing a device rotates its `apiKey`. The next sync picks up the new
+Re-pairing a device rotates its pairing key. The next sync picks up the new
 value.
 
 ### Bench mode (no auth)
 
-For a local bench or CI fixtures, `mosquitto.conf` carries a commented
-bench block that turns anonymous access on. It is for local use only.
-Never run an internet-facing broker with `allow_anonymous true`.
-
-## The topics
-
-The agent publishes under `ados/<deviceId>/...`. The bridge subscribes to
-exactly two topic patterns:
-
-| Topic | Carries |
-|---|---|
-| `ados/{deviceId}/status` | Agent status: online state, version, uptime |
-| `ados/{deviceId}/telemetry` | Flight telemetry: position, attitude, battery |
-
-All payloads are JSON. For each message, the bridge extracts the
-`deviceId` from the topic, parses the JSON body, and POSTs
-`{ deviceId, topic, ...payload }` to `${CONVEX_URL}/agent/status`. To
-protect the backend from telemetry bursts, the bridge debounces per
-device at 3 seconds: it forwards at most one message per device every 3
-seconds. Each POST has a 5-second timeout, and a failed POST is logged
-and dropped, never retried, so a slow backend cannot back up the bridge.
+For a local bench or CI fixtures, `mosquitto.conf` carries a commented bench
+block that turns anonymous access on. Never run an internet-facing broker with
+`allow_anonymous true`.
 
 ## Verify it works
 
-Once the stack is up and `passwd` is populated, confirm each principal
-behaves correctly. Run these inside the broker container:
+Once the stack is up and `passwd` is populated, check each principal from
+inside the broker container:
 
 ```bash
 docker compose exec mosquitto sh
@@ -192,48 +171,36 @@ docker compose exec mosquitto sh
 ```bash
 # A device can publish to its own subtree.
 mosquitto_pub -h localhost -p 1883 \
-  -u <deviceId> -P <apiKey> \
+  -u ados-<deviceId> -P <pairing-key> \
   -t "ados/<deviceId>/test" -m "hello"
-# Succeeds.
 
 # A device cannot publish to another device's subtree.
+# The ACL drops it silently; the broker log shows "Denied".
 mosquitto_pub -h localhost -p 1883 \
-  -u <deviceId> -P <apiKey> \
-  -t "ados/<other_device>/test" -m "should fail"
-# The ACL drops it. Watch the broker logs for "Denied".
+  -u ados-<deviceId> -P <pairing-key> \
+  -t "ados/<other-deviceId>/test" -m "should fail"
 
-# The bridge account can subscribe across all devices.
+# The service account can read every device's MAVLink downlink.
 mosquitto_sub -h localhost -p 1883 \
   -u ados -P <MQTT_PASSWORD> \
-  -t "ados/+/status" -C 1 -W 5
-# Prints one status message or times out cleanly.
+  -t "ados/+/mavlink/tx" -C 1 -W 5
 ```
 
-On the bridge side, the container logs each subscription and any failed
-Convex POST. Watch them with:
+The last command prints one message from a connected agent with a live flight
+controller, or exits after 5 seconds. Follow the sync from the all-in-one stack
+with:
 
 ```bash
-docker compose logs -f bridge
+docker compose logs -f mqtt-auth-sync
 ```
 
-A healthy bridge logs `Connected to MQTT broker` and
-`Subscribed to ados/+/status` plus `ados/+/telemetry` on startup. If you
-see repeated `Convex POST failed` lines, recheck `CONVEX_URL` against the
-warning above.
-
-## Where to go next
+## Next steps
 
 <CardGroup cols={2}>
-  <Card title="Mission Control and Convex" icon="window" href="/developers/self-hosting/mission-control-and-convex">
-    Stand up the backend the bridge POSTs to.
-  </Card>
   <Card title="Video relay" icon="video" href="/developers/self-hosting/video-relay">
-    Add live video alongside the telemetry layer.
+    Add live video alongside the data planes.
   </Card>
-  <Card title="All-in-one stack" icon="boxes-stacked" href="/developers/self-hosting/all-in-one">
-    Run the broker and bridge as part of the one-host stack.
-  </Card>
-  <Card title="Troubleshooting and ports" icon="wrench" href="/developers/self-hosting/troubleshooting-and-ports">
-    The full port table and common failure modes.
+  <Card title="Ports and troubleshooting" icon="wrench" href="/developers/self-hosting/troubleshooting-and-ports">
+    Every port in the stack and the common failure modes.
   </Card>
 </CardGroup>

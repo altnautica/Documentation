@@ -1,81 +1,91 @@
 ---
-title: "Troubleshooting"
-description: "Common problems and how to fix them: FC not detected, video frozen, cloud disconnected."
+title: "Drone Agent troubleshooting"
+sidebarTitle: "Troubleshooting"
+description: "Fix common Drone Agent problems: flight controller not detected, no video, radio link down, cloud disconnected, agent not starting."
 icon: "wrench"
-lastUpdated: "2026-06-18"
 ---
 
-# Troubleshooting
+Start with the agent's own checks. They read the same counters Mission Control does and name the broken hop, so you know which section below applies.
 
-This page covers the most common issues you might hit and how to diagnose them. Start with `ados` or `ados status --json`, then work through the relevant section below.
-
-## First step: check setup status
+## First step: run the agent's checks
 
 ```bash
-ados
-ados status --json
+ados                  # status page: services, MAVLink, video, network, next action
+ados diag video       # which hop of the video pipeline stopped
+ados diag link        # can the radio decode its peer, and how much is lost
+ados diag storage     # disk space, write rate and throttle history
 ```
 
-The terminal status page shows the local setup URL, service states, MAVLink,
-video, network, remote access, and the next action. The JSON output is useful
-for support tickets and scripts.
+- `ados diag video` answers "where does video die": it samples each hop twice over 2 s and names the first stalled one.
+- `ados diag link` answers "is the radio link working": `healthy`, `searching`, `deaf`, `mis_keyed` or `jammed`, plus measured packet loss.
+- `ados diag storage` answers "is the card full or wearing": space first, then write rate and power or thermal throttling.
+
+Add `--json` to any of them, or run `ados status --json`, for a support ticket or a script. See [Drone Agent diagnostics](/drone-agent/diagnostics) for every verdict.
+
+### Read the logs
+
+The Black Box log store is off by default, so the systemd journal is the log of record:
+
+```bash
+sudo journalctl -u ados-supervisor -n 100
+sudo journalctl -u ados-video --since "10 min ago"
+sudo journalctl -u 'ados-*' -p warning --since "1 hour ago"
+```
+
+With the [Black Box store](/drone-agent/black-box) turned on, use `ados logs query` and `ados logs tail` instead.
 
 ## Flight controller not detected
 
-**Symptoms:** `ados status` shows MAVLink is not connected. No telemetry appears in Mission Control.
+**Symptoms:** `ados` shows MAVLink not connected. No telemetry in Mission Control.
 
 <AccordionGroup>
   <Accordion title="Check the serial connection">
-    Verify the UART cable is connected between the FC and the companion computer. Make sure TX goes to RX and RX goes to TX (crossover). Check voltage levels (most FCs use 3.3V UART; some use 5V TTL, which can damage a 3.3V SBC input).
+    Verify the UART cable between the FC and the companion computer. TX goes to RX and RX to TX. Check voltage levels: most FCs use 3.3 V UART; a 5 V TTL port can damage a 3.3 V SBC input.
 
-    List available serial ports:
+    List the serial ports:
+
     ```bash
     ls /dev/tty{S,AMA,ACM,USB}*
     ```
 
-    If your FC is connected via USB, it usually appears as `/dev/ttyACM0` or `/dev/ttyUSB0`.
+    An FC on USB usually appears as `/dev/ttyACM0` or `/dev/ttyUSB0`.
   </Accordion>
 
   <Accordion title="Check baud rate">
-    The agent and FC must use the same baud rate. Common values:
-    - ArduPilot: 57600 (default TELEM1) or 921600
-    - PX4: 115200 or 921600
-    - Betaflight: 115200
-
-    Set it from the setup webapp MAVLink page or Mission Control Hardware tab,
-    then restart the MAVLink service if prompted.
+    The agent sweeps common bauds automatically. To force one, set both `mavlink.serial_port` and `mavlink.baud_rate`. See [What baud your drone is actually running](/drone-agent/mavlink-proxy#what-baud-your-drone-is-actually-running).
   </Accordion>
 
   <Accordion title="Check for serial port conflicts">
-    Another process might be holding the serial port. Check:
+    Another process may hold the port:
+
     ```bash
     sudo fuser /dev/ttyS0
     ```
-    If something else is using the port, stop it or configure the agent to use a different port.
+
+    Stop that process, or point the agent at a different port.
   </Accordion>
 
-  <Accordion title="Check MAVLink protocol version">
-    ArduPilot defaults to MAVLink 1 on some ports. The agent works with both MAVLink 1 and 2, but if you see garbled data, verify the FC's `SERIALN_PROTOCOL` is set to MAVLink (1 or 2).
+  <Accordion title="Check the MAVLink protocol setting">
+    The agent accepts MAVLink 1 and 2. If the port shows garbled data, confirm the FC's `SERIALn_PROTOCOL` for that port is set to MAVLink.
   </Accordion>
 
   <Accordion title="FC not sending heartbeats">
-    The agent waits for heartbeat messages to confirm the FC is alive. If the FC is not sending heartbeats, check:
-    - Is the FC powered on?
-    - Is the correct serial port configured on the FC side?
-    - Is the FC in a boot loop? (Check FC LED patterns)
+    The agent waits for heartbeats to confirm the FC is alive. If none arrive, check that the FC is powered, that MAVLink is enabled on the port you wired, and that the FC is not in a boot loop (watch its LEDs).
   </Accordion>
 </AccordionGroup>
 
 ## Video frozen or not starting
 
-**Symptoms:** Video feed is black in Mission Control. `ados status` shows video stopped or error. MediaMTX shows stopped.
+**Symptoms:** Black video in Mission Control. `ados diag video` reports a `stalled` hop.
 
 <AccordionGroup>
   <Accordion title="Check if a camera is detected">
     ```bash
     ls /dev/video*
+    v4l2-ctl --list-devices
     ```
-    If no `/dev/video*` devices exist, the camera is not recognized. For USB cameras, check `lsusb`. For CSI cameras, check that the ribbon cable is seated properly (gold contacts face the PCB on both ends for Radxa boards).
+
+    No `/dev/video*` device means the camera is not recognised. For USB cameras check `lsusb`. For CSI cameras, check that the ribbon cable is seated on both ends.
   </Accordion>
 
   <Accordion title="Check the video service">
@@ -83,83 +93,120 @@ for support tickets and scripts.
     sudo systemctl status ados-video
     sudo journalctl -u ados-video -n 50
     ```
-    Look for error messages about ffmpeg, camera access, or MediaMTX.
+
+    Look for errors about the encoder, camera access or mediamtx.
   </Accordion>
 
-  <Accordion title="Check MediaMTX">
+  <Accordion title="Check mediamtx">
     ```bash
-    curl http://localhost:9997/v3/paths/list
+    curl -s http://localhost:9997/v3/paths/list
     ```
-    If MediaMTX is running and the stream is active, you should see a path entry for `main`. If MediaMTX is not responding, check its logs:
+
+    With the stream up you see a path named `main`. If mediamtx does not answer, check its log lines:
+
     ```bash
     sudo journalctl -u ados-video --grep "mediamtx" -n 20
     ```
   </Accordion>
 
   <Accordion title="Check cgroup resource limits">
-    The video service has a MemoryMax cgroup limit. If ffmpeg or MediaMTX is being OOM-killed, you will see it in the logs:
+    The video service has a `MemoryMax` cgroup limit. An OOM kill shows in the journal:
+
     ```bash
-    sudo journalctl -u ados-video --grep "oom\|killed\|cgroup" -n 20
+    sudo journalctl -u ados-video --grep "oom|killed|cgroup" -n 20
     ```
-    Also check cgroup throttle stats:
+
+    Check the memory events counter:
+
     ```bash
-    cat /sys/fs/cgroup/system.slice/ados-video.service/memory.events
+    cat /sys/fs/cgroup/ados.slice/ados-video.service/memory.events
     ```
-    If `max` is incrementing, the service is hitting its memory limit.
+
+    A rising `max` count means the service is hitting its limit.
   </Accordion>
 
   <Accordion title="Camera permission denied">
-    The agent user needs access to `/dev/video*`. The install script adds the user to the `video` group, but if you installed manually, you may need to:
+    The installer adds the agent user to the `video` group. After a manual install you may need:
+
     ```bash
     sudo usermod -aG video $(whoami)
     ```
+
     Then log out and back in.
   </Accordion>
+</AccordionGroup>
 
-  <Accordion title="USB camera enumerates at wrong index">
-    Some boards enumerate cameras at `/dev/video1` or higher instead of `/dev/video0`. The agent scans all `/dev/video[0-9]*` devices, but if you see "no camera found" in logs while a camera exists, check:
+## Radio link not working
+
+**Symptoms:** No video over WFB-ng. The ground station shows no signal. `ados diag link` reports `deaf`, `mis_keyed` or `jammed`.
+
+<AccordionGroup>
+  <Accordion title="Check the WiFi adapter">
     ```bash
-    v4l2-ctl --list-devices
+    lsusb | grep -i realtek
+    ados radio adapters
     ```
+
+    You should see the RTL8812EU with an injection-capable verdict. If not, check the USB connection.
+  </Accordion>
+
+  <Accordion title="Check the kernel driver">
+    ```bash
+    lsmod | grep 8812eu
+    sudo dmesg | grep -i 8812eu
+    ```
+
+    If the `8812eu` module is missing, rebuild it:
+
+    ```bash
+    sudo ados radio install-driver --force
+    ```
+  </Accordion>
+
+  <Accordion title="Check channel match">
+    Open the dashboard [WFB Transmit](/drone-agent/dashboard-transmit) page on the drone and the [WFB Receive](/ground-agent/dashboard-receive) page on the ground station, or run `ados radio status` on both nodes. With auto-hop on, both sides return to the home channel (149 by default) when they lose each other; a different `channel` or `reg_domain` on the two rigs keeps them apart. See [Link automation](/drone-agent/wfb-ng#link-automation).
+  </Accordion>
+
+  <Accordion title="Check key match">
+    The drone holds `tx.key` and the ground station `rx.key`, complementary halves of one key pair created by a bind. They are not identical files. Compare the fingerprint in `ados radio pair status` on both nodes instead.
+
+    ```bash
+    ados radio pair status
+    ```
+
+    Different fingerprints, or `mis_keyed` from `ados diag link`, mean the two rigs come from different binds. Re-bind them; see [WFB-ng pairing](/drone-agent/wfb-pairing).
   </Accordion>
 </AccordionGroup>
 
 ## Cloud disconnected
 
-**Symptoms:** Drone does not appear in Mission Control. `ados status` shows cloud as disconnected. No telemetry in the dashboard.
+**Symptoms:** The drone does not appear in Mission Control over the cloud. `ados` shows cloud disconnected.
 
 <AccordionGroup>
   <Accordion title="Check internet connectivity">
     ```bash
-    ping -c 3 8.8.8.8
-    ping -c 3 your-mqtt.example.com   # your configured MQTT broker host
+    ping -c 3 example.com
+    ping -c 3 mqtt.example.com   # your configured MQTT broker host
     ```
-    If pings fail, the board has no internet. Check WiFi, Ethernet, or cellular connection.
+
+    If both fail, the board has no internet. Check WiFi, Ethernet or cellular.
   </Accordion>
 
   <Accordion title="Check pairing">
-    ```bash
-    ados
-    ```
-    If the agent is not paired, open the setup URL and follow the [Pairing](/drone-agent/pairing) guide.
+    Run `ados`. If the agent is not paired with Mission Control, follow [Pairing](/drone-agent/pairing).
   </Accordion>
 
-  <Accordion title="Check MQTT connection">
+  <Accordion title="Check the MQTT connection">
     ```bash
     sudo journalctl -u ados-cloud -n 50
     ```
-    Look for MQTT connection errors. Common issues:
-    - DNS resolution failure (check `/etc/resolv.conf`)
-    - TLS certificate errors (clock skew on the SBC can cause this)
-    - Auth failure (API key mismatch)
+
+    Common causes: DNS resolution failure (check `/etc/resolv.conf`), TLS certificate errors from clock skew, or an API key mismatch.
   </Accordion>
 
   <Accordion title="Check clock synchronization">
-    MQTT over TLS requires accurate time. If the SBC clock is off by more than a few minutes, TLS handshakes fail:
-    ```bash
-    date
-    ```
-    Fix with NTP:
+    TLS needs an accurate clock. If `date` is off by more than a few minutes, enable NTP:
+
     ```bash
     sudo timedatectl set-ntp true
     ```
@@ -169,53 +216,14 @@ for support tickets and scripts.
     ```bash
     ados status --json
     ```
-    If remote access is disabled, open the setup webapp Remote Access page and
-    enable the cloud or tunnel path you want to use.
-  </Accordion>
-</AccordionGroup>
 
-## WFB-ng not working
-
-**Symptoms:** No video link, setup status shows video inactive, ground station sees no signal.
-
-<AccordionGroup>
-  <Accordion title="Check the WiFi adapter">
-    ```bash
-    lsusb | grep -i realtek
-    ```
-    You should see an RTL8812EU device. If not, check the USB connection.
-  </Accordion>
-
-  <Accordion title="Check the DKMS driver">
-    ```bash
-    dkms status
-    ```
-    Look for the `88x2eu` or `rtl8812eu` module. If it shows an error, rebuild:
-    ```bash
-    sudo dkms autoinstall
-    ```
-  </Accordion>
-
-  <Accordion title="Check channel match">
-    The air unit and ground station must use the same WFB-ng channel. Use the setup webapp Video or Ground Station page to confirm both sides are on the same channel.
-  </Accordion>
-
-  <Accordion title="Check key match">
-    Both sides need matching WFB-ng keys. The drone transmits with `tx.key` and the ground station receives with `rx.key`:
-    ```bash
-    # On the drone
-    cat /etc/ados/wfb/tx.key
-
-    # On the ground station
-    cat /etc/ados/wfb/rx.key
-    ```
-    With auto-bind these are exchanged automatically. If you pair manually, the keys must match across the link.
+    The agent is local-only by default. To use the cloud relay or a self-hosted server, open dashboard **Settings** → **Cloud** (see [Agent dashboard: Settings](/drone-agent/dashboard-settings)) and choose the server mode.
   </Accordion>
 </AccordionGroup>
 
 ## Agent not starting
 
-**Symptoms:** `ados status` returns "Agent is not running."
+**Symptoms:** `ados status` reports that the agent is not running.
 
 <AccordionGroup>
   <Accordion title="Check systemd">
@@ -225,75 +233,93 @@ for support tickets and scripts.
     ```
   </Accordion>
 
-  <Accordion title="Check Python and venv">
-    ```bash
-    /opt/ados/venv/bin/python --version
-    /opt/ados/venv/bin/pip list | grep ados
-    ```
-    If the venv is broken, reinstall:
+  <Accordion title="Reinstall over a broken install">
+    Re-run the installer with `--force` to clear its checkpoints and reinstall:
+
     ```bash
     curl -sSL https://raw.githubusercontent.com/altnautica/ADOSDroneAgent/main/scripts/install.sh | sudo bash -s -- --force
     ```
+
+    See [Install the Drone Agent](/drone-agent/installation) for every installer flag.
   </Accordion>
 
   <Accordion title="Check disk space">
     ```bash
     df -h /
+    ados diag storage
     ```
-    If the disk is full, the agent cannot start. Clean up old recordings or logs:
+
+    A full disk stops the agent. Recordings are stored in per-path subdirectories of `/var/ados/recordings`. Delete segments older than an hour and trim the journal:
+
     ```bash
-    sudo rm -rf /var/ados/recordings/*.mp4
+    sudo find /var/ados/recordings -name '*.mp4' -mmin +60 -delete
     sudo journalctl --vacuum-size=100M
     ```
+
+    Then run `ados diag storage` again to confirm the footprint dropped.
   </Accordion>
 </AccordionGroup>
 
 ## High CPU or temperature
 
 <AccordionGroup>
-  <Accordion title="Check which service is using resources">
+  <Accordion title="Check which process is using resources">
     ```bash
-    ados status
-    top -b -n 1 | head -20
+    top -b -n 1 -o %CPU
     ```
-    If `ffmpeg` is using high CPU, the video encoder may not be using hardware acceleration. Check that `hw_video_codecs` in your board profile includes `h264_enc`.
+
+    If the video encoder process is near the top, the board may be encoding in software. Check that your board profile lists `h264_enc` under `hw_video_codecs` (see [HAL and tiers](/drone-agent/hal-and-tiers)).
   </Accordion>
 
   <Accordion title="Thermal throttling">
     ```bash
     cat /sys/class/thermal/thermal_zone0/temp
+    ados diag storage
     ```
-    Divide by 1000 for Celsius. If above 80C, the SoC is throttling. Add a heatsink or fan. Reduce video resolution or FPS as a software workaround.
+
+    Divide the first value by 1000 for degrees Celsius. Above 80 °C the SoC throttles; `ados diag storage` shows whether throttling has occurred in the retained window. Add a heatsink or fan, or reduce video resolution or frame rate.
   </Accordion>
 </AccordionGroup>
 
 ## High control latency
 
-**Symptoms:** Manual control feels laggy. Mission Control shows a high or
-climbing `controlRttMs` on the drone card.
+**Symptoms:** Manual control feels laggy. Mission Control shows a high or climbing `controlRttMs` on the drone card.
 
 <AccordionGroup>
   <Accordion title="Check which path the GCS is using">
-    `controlRttMs` is the round-trip time of the control link, measured against the agent's `GET /api/ping` echo. A few tens of milliseconds is a healthy LAN link. Hundreds of milliseconds points to the MQTT relay or a busy network. Seconds means the GCS is on the cloud command-queue poll path, which is fine for monitoring but too slow for hands-on flying.
+    `controlRttMs` is the round-trip time of the control link, measured against the agent's `GET /api/ping`. A few tens of milliseconds is a healthy LAN link. Hundreds of milliseconds points to the MQTT relay or a busy network. Seconds means the GCS is on the cloud command-queue path, which suits monitoring but not hands-on flying.
 
-    For low-latency manual control, connect over the LAN: serve the GCS on plain HTTP (`http://localhost:4000` or `http://<lan-ip>:4000`) and pair the agent by IP, so the GCS uses the direct WebSocket path instead of the cloud poll.
+    For low-latency control, connect over the LAN: serve Mission Control over plain HTTP (`http://localhost:4000` or `http://<lan-ip>:4000`) and pair the agent by IP so the GCS uses the direct WebSocket path.
   </Accordion>
 
   <Accordion title="Confirm the agent is reachable directly">
-    From the GCS machine, check the agent responds quickly:
+    From the GCS machine:
+
     ```bash
-    curl -s -o /dev/null -w "%{time_total}\n" http://<agent-ip>:8080/api/ping
+    curl -s -o /dev/null -w "%{time_total}\n" http://192.168.1.50:8080/api/ping
     ```
-    A small number (well under a second) confirms a healthy direct link. If this is slow or times out while the cloud path works, the GCS is correctly falling back to the relay; fix the LAN reachability to get the fast path back.
+
+    Well under a second confirms a healthy direct link. If this is slow or times out while the cloud path works, fix LAN reachability to get the fast path back.
   </Accordion>
 </AccordionGroup>
 
 ## Getting help
 
-If the troubleshooting steps above do not solve your problem:
+If these steps do not solve the problem:
 
-1. Run `ados support-bundle` on the affected node, before rebooting it. It collects status, configuration, diagnostics, black-box records, and service journals into one redacted archive, and sends nothing anywhere.
+1. Run `ados support-bundle` on the affected node before rebooting it. It collects status, configuration, diagnostics, log records and service journals into one redacted archive, and sends nothing anywhere.
 2. Open an issue on [GitHub](https://github.com/altnautica/ADOSDroneAgent/issues) and attach it.
 3. Join the [Discord community](https://discord.gg/uxbvuD4d5q) for real-time help.
 
-See [Support escalation](/operations/support) for what the bundle contains and what makes a report diagnosable.
+See [Support](/operations/support) for what the bundle contains and what makes a report diagnosable.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Drone Agent diagnostics" icon="stethoscope" href="/drone-agent/diagnostics">
+    Every `ados diag` verdict and what it measures.
+  </Card>
+  <Card title="Troubleshooting by area" icon="life-ring" href="/operations/troubleshooting">
+    Ground station, mesh, extensions and self-hosting problems.
+  </Card>
+</CardGroup>

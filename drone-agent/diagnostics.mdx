@@ -1,11 +1,9 @@
 ---
-title: "Diagnostics with ados diag"
-description: "Per-hop verdicts on the video pipeline, the radio link and storage wear, from counters that can be trusted. Run this before you hand-probe anything."
+title: "Drone Agent diagnostics"
+sidebarTitle: "Diagnostics"
+description: "Per-hop verdicts on the video pipeline, the radio link and storage wear from ados diag, built on counters that can be trusted."
 icon: "stethoscope"
-lastUpdated: "2026-09-15"
 ---
-
-# Diagnostics with `ados diag`
 
 `ados diag` is the first thing to run on a misbehaving node. It is three thin
 renderers over the agent's own REST surface, so the CLI shows exactly what
@@ -226,10 +224,19 @@ counters as a delta over a 2 to 6 second window, confirm from the source which
 object is canonical before you probe it, and cross-check each hop with two
 independent reliable methods before changing a conclusion.
 
-## Related
+## Next steps
 
-- [Black Box log store](/drone-agent/black-box)
-- [Troubleshooting](/drone-agent/troubleshooting)
-- [Video pipeline](/drone-agent/video-pipeline)
-- [WFB-ng long-range link](/drone-agent/wfb-ng)
-- [Recovery](/operations/recovery)
+<CardGroup cols={2}>
+  <Card title="Drone Agent troubleshooting" icon="wrench" href="/drone-agent/troubleshooting">
+    Fixes by symptom once a verdict names the broken hop.
+  </Card>
+  <Card title="Black Box log store" icon="database" href="/drone-agent/black-box">
+    Turn on the durable recorder and query its history.
+  </Card>
+  <Card title="WFB-ng" icon="wifi" href="/drone-agent/wfb-ng">
+    Link automation, TX power and the key model.
+  </Card>
+  <Card title="Video pipeline" icon="video" href="/drone-agent/video-pipeline">
+    The hops `ados diag video` judges.
+  </Card>
+</CardGroup>

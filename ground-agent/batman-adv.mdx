@@ -1,94 +1,73 @@
 ---
-title: "Local Mesh (batman-adv)"
-description: "What batman-adv does for distributed receive, the carrier choice between 802.11s and IBSS, and the second-dongle hardware story."
+title: "Local mesh (batman-adv)"
+description: "How ground stations form the batman-adv mesh: the second adapter, 802.11s or IBSS carriers, mesh identity, gateway election and diagnostics."
 icon: "network-wired"
-lastUpdated: "2026-06-18"
 ---
 
-# Local Mesh (batman-adv)
+Distributed receive needs ground stations to find each other and exchange fragments without a central router. The agent uses **batman-adv**, the Linux kernel mesh routing layer. It decides who can reach whom, picks paths across several hops, notices a silent neighbour, and elects which node carries the cloud uplink. It exposes a virtual `bat0` interface that behaves like an ordinary Ethernet interface.
 
-Distributed Receive needs a way for two or three Ground Agents to find each other and exchange WFB-ng fragments without a central router. We use **batman-adv** (Better Approach To Mobile Ad-hoc Networking, advanced) - a Linux kernel mesh routing layer that has shipped with mainline since 2011.
+## The second adapter
 
-batman-adv handles every layer-2 routing decision: who can talk to whom, what the best path is when there are multiple hops, when a neighbor has gone silent, and which node should advertise the cloud uplink. It runs as a kernel module (`modprobe batman-adv`) and exposes a virtual `bat0` interface that looks like an ordinary Ethernet bridge to userspace.
+batman-adv runs on a second WFB-class adapter (RTL8812EU or RTL8812AU), separate from the one on the drone link.
 
-## Why batman-adv
-
-Three other options were on the table:
-
-| Option | Why we did not pick it |
-|---|---|
-| Ad-hoc IPv4 + manual routes | No self-healing, no auto-rejoin, fragile |
-| ZeroTier or Tailscale (overlay VPN) | Requires public internet to bootstrap; fails in the field |
-| Custom userspace router | Reinventing well-trodden ground; batman-adv has been in the kernel for 14 years |
-
-batman-adv gives us self-healing, automatic neighbor discovery, multi-hop routing, and cloud-gateway election out of the box. It handles a node leaving and rejoining the mesh in 3 to 5 seconds without operator action.
-
-## The second USB WiFi dongle
-
-batman-adv runs on **a second RTL8812EU adapter**, separate from the primary RTL8812EU that handles WFB-ng to the drone. Two adapters, same chipset, two jobs:
-
-| Adapter | Role | Default channel |
+| Adapter | Job | Default channel |
 |---|---|---|
-| Primary RTL8812EU | WFB-ng monitor mode for the drone link | 5 GHz, channel 149 |
-| Mesh carrier RTL8812EU | batman-adv mesh between Ground Agents | 2.4 GHz, channel 1 |
+| First adapter | WFB-ng receive from the drone | 5 GHz |
+| Second adapter | batman-adv mesh between ground stations | 2.4 GHz, channel 1 |
 
-The two adapters sit on separate bands (5 GHz for the drone link, 2.4 GHz for the mesh) so they do not interfere. If you change either channel, plan around it.
-
-Both adapters use the same RTL8812EU chipset. One driver, one antenna ecosystem, one inventory. See the supported-hardware page for the current adapter list.
+The two adapters sit on separate bands so they do not interfere. If you change either channel, plan around the other.
 
 ## Carrier: 802.11s or IBSS
 
-batman-adv carries traffic over either **802.11s** (the IEEE mesh spec, with proper authentication via SAE) or **IBSS** (ad-hoc, no authentication, fallback for drivers that lack 802.11s support).
-
-The default is `802.11s`. Configurable in `/etc/ados/config.yaml`:
+The mesh rides on either **802.11s**, authenticated with SAE, or **IBSS**, authenticated with IBSS-RSN from the same shared key, for drivers without 802.11s support. Neither carrier allows an unauthenticated join; if the secure join cannot come up, the node stays off the mesh.
 
 ```yaml
 ground_station:
   mesh:
     carrier: "802.11s"   # or "ibss"
-    channel: 1           # 2.4 GHz channel for the mesh dongle
+    channel: 1           # 2.4 GHz channel for the mesh adapter
     bat_iface: "bat0"
 ```
 
-802.11s requires the `wpasupplicant-mesh-sae` (or `wpad-mesh-wolfssl`) package, which the ground-station install path tries to pull in by default. If neither is available on your distro, fall back to IBSS by setting `carrier: ibss`.
+Both carriers use the stock `wpasupplicant` the installer adds. Every `ground_station.mesh` key is listed in [Drone Agent configuration](/drone-agent/configuration).
 
-## Mesh ID and PSK
+## Mesh id and shared key
 
-Two adjacent deployments on the same channel must not see each other's traffic. batman-adv uses two pieces of identity:
+Two neighbouring meshes on the same channel must not see each other's traffic, so every mesh has two pieces of identity:
 
-- **mesh_id** - a short string like `ados-XXXXXXXXXX` shared by every node in the deployment. It becomes the 802.11s SSID (or IBSS name).
-- **mesh_psk** - a 32-byte shared key that authenticates 802.11s mesh peers via SAE.
+- **Mesh id**: `ados-` followed by a short hex string, shared by every node, stored in `/etc/ados/mesh/id`. It becomes the 802.11s mesh id (or IBSS name).
+- **Shared key**: 32 random bytes in `/etc/ados/mesh/psk.key` (mode `0600`) that authenticate peers.
 
-Both are generated automatically on the **receiver** when the mesh services first come up. The mesh_id is derived from the receiver's `device_id` via SHA-256 truncation; the PSK is 32 random bytes from `secrets.token_bytes(32)` saved to `/etc/ados/mesh/psk.key` (mode 0600).
-
-Relays do not generate these. They receive both as part of the encrypted invite bundle during pairing and write them into the same locations on disk.
+The receiver generates both the first time its mesh services start; the first mesh id is derived from the receiver's device id. Relays receive both in the encrypted invite during [mesh pairing](/ground-agent/mesh-setup#mesh-pairing). Revoking a relay replaces both with fresh random values and re-sends them to the relays that are still paired, which apply them and restart their mesh service.
 
 ## What runs on the box
 
-When a node transitions to `relay` or `receiver` role, the supervisor starts `ados-batman.service`, which runs the `mesh_manager.py` service. That service:
+When a node changes to `relay` or `receiver`, two pieces start.
 
-1. `modprobe batman-adv`
-2. Brings the second USB WiFi dongle up in mesh or IBSS mode at the configured channel
-3. Joins the deployment by `mesh_id` and authenticates with the shared PSK
-4. Attaches the wireless interface to `bat0` via `batctl if add`
-5. Brings `bat0` up
-6. Sets the gateway mode (`batctl gw_mode server` or `gw_mode client`) based on the node's role and uplink state
-7. Polls `batctl n -H` and `batctl gwl -H` every 2 seconds for neighbors and gateways
-8. Publishes mesh state to `/run/ados/mesh-state.json` so the REST API and the GCS can read it
-9. Publishes `MeshEvent`s on the event bus when neighbors join or leave, when partition is detected, and when the selected gateway changes
+`ados-batman` (the mesh manager) joins and supervises the mesh:
+
+1. Loads `batman-adv`.
+2. Brings the second adapter up in 802.11s or IBSS mode on the configured channel.
+3. Joins by mesh id, authenticated with the shared key.
+4. Attaches the adapter to `bat0` and brings `bat0` up.
+5. Sets the gateway mode from the node's role and uplink.
+6. Re-joins and re-attaches if the interface, the join or the batman membership is lost, and re-evaluates the gateway mode as the uplink comes and goes.
+
+`ados-groundlink`, started by the relay or receiver role unit, polls the neighbours, gateways and partition state, writes `/run/ados/mesh-state.json`, and publishes mesh events.
 
 ## Cloud gateway election
 
-Any node on the mesh can carry an internet uplink (4G, Ethernet, WiFi client). batman-adv's gateway election picks one node to advertise as the gateway and the rest of the mesh routes their cloud-bound traffic through it.
+Any mesh node with an internet uplink (Ethernet, Wi-Fi client or cellular) can advertise itself as a gateway, and the rest of the mesh routes cloud traffic through the best one. Each node decides from `ground_station.cloud_uplink`:
 
-`mesh_manager` enables `gw server` on a node when:
+| Setting | Behaviour |
+|---|---|
+| `auto` (default) | Advertises this node as a gateway while the uplink router reports a working local uplink, and withdraws when it drops. |
+| `force_on` | Always advertises. |
+| `force_off` | Never advertises. |
 
-- `ground_station.cloud_uplink: force_on`
-- OR `cloud_uplink: auto` and `/run/ados/uplink-active` exists (uplink_router has confirmed the node has a working uplink)
+The receiver runs as a gateway client and picks the gateway with the best batman-adv link quality (TQ). When the selected gateway drops, batman-adv evicts it and the next best takes over. Mission Control's **Mesh & RX** tab shows the gateways, their link quality and which one is selected.
 
-The receiver runs `gw client` and picks the highest-TQ gateway. When the active gateway dies, batman-adv evicts it within a few seconds and the next-best gateway takes over. The Mesh tab in the ground-station panel shows the gateway list, their bandwidth class, their TQ, and which one is selected.
-
-You can pin a specific gateway:
+TQ measures mesh link quality, not uplink speed, so a nearby node with a slow modem can outrank a distant one with a fast link. Pin the gateway you want:
 
 ```bash
 curl -X PUT http://localhost:8080/api/v1/ground-station/mesh/gateway_preference \
@@ -96,7 +75,7 @@ curl -X PUT http://localhost:8080/api/v1/ground-station/mesh/gateway_preference 
   -d '{"mode": "pinned", "pinned_mac": "AA:BB:CC:DD:EE:01"}'
 ```
 
-Or release the pin and go back to auto:
+Release the pin:
 
 ```bash
 curl -X PUT http://localhost:8080/api/v1/ground-station/mesh/gateway_preference \
@@ -104,27 +83,33 @@ curl -X PUT http://localhost:8080/api/v1/ground-station/mesh/gateway_preference 
   -d '{"mode": "auto"}'
 ```
 
+On a `direct` node this route returns `404 E_NOT_IN_MESH`.
+
 ## Diagnostics
 
 ```bash
-# what the agent thinks the mesh state is
+# What the agent reports
 curl http://localhost:8080/api/v1/ground-station/mesh
 
-# raw batman-adv views
-sudo batctl n           # neighbors
-sudo batctl o           # originators (full routing table)
-sudo batctl gwl         # advertised gateways
-sudo batctl tg          # transglobal table
+# Raw batman-adv views
+sudo batctl n      # neighbours
+sudo batctl o      # originators
+sudo batctl gwl    # advertised gateways
 
-# is bat0 even up?
+# Is bat0 up?
 ip link show bat0
 ip addr show bat0
 ```
 
-The `mesh_manager` service writes its working snapshot to `/run/ados/mesh-state.json`. The REST `/api/v1/ground-station/mesh` route reads from that file, not from `batctl` directly, so a fresh `batctl` query and a stale REST snapshot can disagree by up to 2 seconds (the poll interval).
+`GET /api/v1/ground-station/mesh` reads `/run/ados/mesh-state.json`, not `batctl` directly, so it can trail a fresh `batctl` query by one poll.
 
-## Where to next
+## Next steps
 
-- [Three Deployment Roles](/ground-agent/setup#pick-a-role) - direct, relay, receiver.
-- [Field Tap-to-Pair](/ground-agent/setup#field-pairing-on-the-oled) - how nodes get the mesh ID and PSK in the first place.
-- [Mesh Troubleshooting](/ground-agent/mesh-troubleshooting) - when batman-adv does not come up.
+<CardGroup cols={2}>
+  <Card title="Build a mesh" icon="circle-nodes" href="/ground-agent/mesh-setup">
+    Pair relays and change roles.
+  </Card>
+  <Card title="Mesh troubleshooting" icon="wrench" href="/ground-agent/mesh-troubleshooting">
+    When the mesh does not come up.
+  </Card>
+</CardGroup>

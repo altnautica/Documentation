@@ -1,11 +1,8 @@
 ---
-title: "Multi-Camera"
+title: "Multi-camera"
 description: "Declare more than one video leg on one airframe: which leg rides the radio, which are LAN-only, and how the camera roster reconciles them."
 icon: "camera-rotate"
-lastUpdated: "2026-09-15"
 ---
-
-# Multi-Camera
 
 One airframe can carry several cameras: an EO, a wide EO, a thermal, a
 down-facing landing cam. Each one is a **leg**, and each leg is served as its own
@@ -31,8 +28,7 @@ video:
 
 Declaring `video.cameras` replaces it. When `video.cameras` is **absent** the
 agent resolves the single `video.camera` block verbatim as one primary leg with
-the id `main`, so an existing config is byte-identical after the multi-leg
-support landed.
+the id `main`, so a one-camera config needs no change.
 
 ```yaml
 video:
@@ -111,7 +107,7 @@ encode and radio pipeline reads none of them.
 | `name` | absent | Operator-facing display name, for example `Belly cam`. |
 | `orientation` | absent | Coarse physical mount: `forward`, `down`, `back`, `left`, `right`, `up`, `gimbal`, `custom`. Enough for extension binding; not full extrinsics. |
 | `purpose` | empty | What the leg is for, one or more of `feed`, `detect`, `navigation`, `precision-landing`, `thermal`, `mapping`, `recording`. |
-| `enabled` | `true` | Whether the operator has this leg on. Metadata today; the pipeline does not gate on it yet. |
+| `enabled` | `true` | Whether the operator has this leg on. Metadata only; the pipeline does not gate on it. |
 | `owner` | absent | Who declared the leg: `operator`, or a plugin id such as `com.altnautica.siyi-pod`. Absent means operator-owned. |
 | `fov_deg` | absent | Horizontal field of view in degrees, when known. |
 | `mount_pitch_deg` | absent | Mount pitch offset, for example a 45-degree-down inspection cam. |
@@ -127,7 +123,7 @@ be the detect source.
 | | Primary leg | Secondary leg |
 |---|---|---|
 | mediamtx path | Always `main`, whatever `id` you wrote | Its declared `id` |
-| WHEP URL | `:8889/main/whep` | `:8889/<id>/whep` |
+| WHEP URL | `http://<node>:8080/whep` | `http://<node>:8080/whep?camera=<id>` |
 | Rides the WFB radio | Yes | No |
 | Rides the cloud relay | Yes | No |
 | Carries the SEI metadata | Yes | No |
@@ -154,7 +150,9 @@ the same command builder as the primary.
 ## Airtime and the thumbnail profile
 
 One fleet shares one 20 MHz channel, so exactly one aircraft streams full video
-at a time. The primary leg's top-level `width` / `height` / `fps` /
+at a time. A drone with `video.mode: wfb` boots the thumbnail profile and
+streams full video only when promoted to hero; a drone in any other mode boots
+hero. The primary leg's top-level `width` / `height` / `fps` /
 `bitrate_kbps` are the **hero** profile. The `thumbnail` sub-block is the
 non-hero profile the drone falls back to while the operator's attention is on a
 different aircraft:
@@ -236,14 +234,25 @@ manage there.
 
 | Port | Surface |
 |---|---|
+| `8080` | The agent's front. WHEP at `/whep` (`?camera=<id>` for a secondary leg) and LL-HLS at `/hls/<id>/index.m3u8`, authenticated by the pairing key. |
 | `8554` | mediamtx RTSP. The encoder publishes to `rtsp://localhost:8554/main`. |
-| `8889` | mediamtx WebRTC and WHEP. `:8889/<id>/whep` per leg. |
+| `8889` | mediamtx WebRTC and WHEP, loopback only (`127.0.0.1:8889`, `/main/whep`, `/<id>/whep`). Not reachable off-box. |
+| `8189` | WebRTC media (UDP ICE), all interfaces. |
 | `9997` | mediamtx control API, loopback only. |
 
-## Related
+## Next steps
 
-- [Video pipeline](/drone-agent/video-pipeline)
-- [Configuration reference](/drone-agent/configuration)
-- [Camera driver extensions](/developers/camera-driver)
-- [Video stack architecture](/architecture/video-stack)
-- [Diagnostics with `ados diag`](/drone-agent/diagnostics)
+<CardGroup cols={2}>
+<Card title="Video pipeline" icon="video" href="/drone-agent/video-pipeline">
+Encoding, profiles, recording and snapshots for the primary leg.
+</Card>
+<Card title="Camera driver" icon="camera" href="/developers/camera-driver">
+Write an extension that declares its own camera legs.
+</Card>
+<Card title="Video stack" icon="diagram-project" href="/architecture/video-stack">
+End-to-end video architecture.
+</Card>
+<Card title="Drone Agent diagnostics" icon="stethoscope" href="/drone-agent/diagnostics">
+Check each video hop with `ados diag video`.
+</Card>
+</CardGroup>

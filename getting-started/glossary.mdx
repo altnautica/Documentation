@@ -1,0 +1,77 @@
+---
+title: "Glossary"
+description: "Short definitions of the terms used across the ADOS docs: nodes, profiles, roles, pairing, reach, cloud posture, extensions and more."
+icon: "book"
+keywords: ["ados", "glossary", "terms", "definitions", "pairing", "profile"]
+---
+
+import PairingKinds from "/snippets/pairing-kinds.mdx";
+
+Short definitions of the terms used across these docs. Plugin authors will find SDK and manifest terms in the [Plugin glossary](/developers/glossary).
+
+## Nodes and profiles
+
+**Agent.** The ADOS software that runs on a Linux or macOS computer: native Rust services plus a Python layer. The Drone Agent and the Ground Agent are the same agent installed with different profiles.
+
+**Node.** Any computer running the agent: a drone's companion computer, a ground station, a workstation or a compute box. Mission Control lists every paired node in its fleet.
+
+**Profile.** What a node is for, chosen at install time: `drone`, `ground_station`, `workstation` or `compute`. It decides which services start. See [Node profiles](/getting-started/node-profiles).
+
+**Ground-station role.** How a `ground_station` node takes part in receiving video: `direct` (a single ground station with its own radio, the default), `relay` (forwards what its radio hears to a receiver) or `receiver` (combines what relays send it). See [Mesh overview](/ground-agent/mesh-overview).
+
+**Board profile.** A description of one supported single-board computer (serial ports, camera paths, GPIO and capabilities) that the agent picks by detecting the board. See [Supported hardware](/drone-agent/supported-hardware).
+
+**Tier.** A number from 1 to 4 that ranks a board's compute class. Its only use is the plugin manifest's `min_tier`, which keeps an extension off boards below that tier. See [HAL and tiers](/drone-agent/hal-and-tiers).
+
+## Apps and surfaces
+
+**Mission Control.** The ADOS ground control station, in the browser or as a desktop app. See [Mission Control overview](/mission-control/overview).
+
+**Android GCS.** The native ground control station app for Android phones and tablets. See [Android GCS](/android/overview).
+
+**Cockpit.** Two things share the name. In Mission Control, **Cockpit** is the per-node tab you fly from. On a node, the agent serves its own on-box cockpit at `/cockpit/` on port 8080. See [Cockpit](/mission-control/cockpit).
+
+**Skill.** One action in the cockpit's **Skill bar**, such as **Arm**, take off, land or return home. **Arm** asks for confirmation before it enables the motors.
+
+**Demo mode.** Mission Control running with a simulated fleet and no hardware. See [Dashboard](/mission-control/dashboard).
+
+**SITL.** Software in the loop: the autopilot firmware running as a simulator on a computer, which Mission Control can connect to like a real flight controller. See [SITL testing](/mission-control/sitl-testing).
+
+**MCP.** The Model Context Protocol. The ADOS MCP server lets AI assistants read from and act on your nodes with scoped permissions. See [MCP server](/developers/mcp-server).
+
+## Links and connections
+
+**Pairing.**
+
+<PairingKinds />
+
+**Air link, WFB-ng.** The long-range digital radio link between a drone and a ground station, built on WFB-ng. See [WFB-ng](/drone-agent/wfb-ng).
+
+**Distributed receive, mesh.** Several ground stations working together: relays forward what their radios hear over a batman-adv mesh to a receiver, which combines it into one stream. See [Mesh overview](/ground-agent/mesh-overview).
+
+**Reach, bearer.** The path Mission Control uses to talk to a node, shown on each node: **Direct · LAN** (same network), **WFB · via** a ground station, **Cloud relay** (through the MQTT broker) or **Direct FC** (USB to the flight controller).
+
+**Cloud posture.** Whether a node uses a cloud backend: **Local only** (the default; no cloud), **Altnautica cloud**, or **Self-hosted** (your own servers). See [Cloud relay](/drone-agent/cloud-relay).
+
+**PIC.** Pilot in command. On a ground station, the arbiter decides which connected client holds the flight controls at any time, so two operators never fly at once.
+
+## Extensions and security
+
+**Extension, plugin.** "Extension" is the operator-facing name for an installable add-on, as in Mission Control's **Extensions** settings. "Plugin" is the developer-facing name for the same package: the `.adosplug` file, the plugin host and the `ados plugin` CLI. See [Extensions catalog](/drone-agent/extensions-catalog).
+
+**Capability, permission.** A named right an extension requests in its manifest, such as reading telemetry or sending flight commands. The operator grants permissions at install. See [Permissions](/developers/permissions).
+
+**Signer, first-party.** Every extension is signed. The signer is the key that signed it; first-party extensions are signed by Altnautica and may use runtime modes other extensions cannot. See [Signing keys](/developers/signing-keys).
+
+**Black Box store.** The agent's on-node log store. It ships off; until you turn it on, the systemd journal is the log of record. See [Black Box](/drone-agent/black-box).
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Node profiles" icon="layer-group" href="/getting-started/node-profiles">
+    The four profiles and what each one runs.
+  </Card>
+  <Card title="How ADOS works" icon="gears" href="/getting-started/how-it-works">
+    How the parts connect.
+  </Card>
+</CardGroup>

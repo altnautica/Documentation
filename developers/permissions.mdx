@@ -1,39 +1,43 @@
 ---
-title: "Permissions"
-description: "The capability catalog, the risk levels, and the install dialog flow."
-lastUpdated: "2026-09-24"
+title: "Plugin permissions"
+sidebarTitle: "Permissions"
+description: "The capability catalog for both plugin halves, the risk levels, how each capability is enforced, and the install dialog flow."
+keywords: ["ados", "plugin", "permissions", "capabilities", "risk"]
 ---
 
-A plugin can only do what its manifest declares and the operator
-approves. The capability catalog is generated from one source of truth
-(`capabilities.toml`) into the agent (Python and Rust) and the GCS
-(TypeScript) so the three halves cannot drift. This page lists the real
-catalog, the risk levels each capability carries, and how the install
-dialog presents them.
+import AgentCapabilities from '/snippets/generated/agent-capabilities.mdx';
 
-There are 52 agent capabilities and 24 GCS capabilities. The GCS set is
-12 UI slot registrations plus 12 data, command, cloud and bus
+A plugin can only do what its manifest declares and the operator
+grants. The capability catalog is generated from one source
+(`capabilities.toml`) into the agent (Python and Rust) and Mission
+Control (TypeScript), so the halves cannot drift. This page is the
+canonical list of capabilities, their counts and their risk levels.
+
+There are 53 agent capabilities and 26 GCS capabilities. The GCS set is
+13 UI slot capabilities plus 13 data, command, cloud and bus
 capabilities. A plugin can also define capabilities of its own for the
-data it shares (see [Plugin-declared capabilities](#plugin-declared-capabilities)).
+data it shares (see
+[Plugin-declared capabilities](#plugin-declared-capabilities)).
 
 ## Risk levels
 
-Every capability in the catalog carries a risk level. The install
-dialog badges each requested capability by its level and surfaces an
-overall risk for the plugin. The manifest also declares a top-level
-`risk` field (`low`, `medium`, `high`, or `critical`).
+Every capability carries a risk level. The install dialog badges each
+requested capability by its level. The manifest also declares a
+top-level `risk` for the whole plugin (`low`, `medium`, `high` or
+`critical`, default `medium`).
 
-| Level | Meaning | Visual |
-|-------|---------|--------|
-| **Low** | Sandboxed or read-only. No flight or hardware effect. | Plain badge. |
-| **Medium** | Touches shared hardware, opens the network, reads frames, or registers a sensor. | Yellow badge. |
-| **High** | Can command the vehicle, inject into the estimator, drive output hardware, accept inbound connections, or spawn subprocesses. | Orange badge. |
-| **Critical** | Direct attitude and rate control of the aircraft (`flight.rate_setpoint`). Also the top manifest-level band. | Red badge with warning icon. |
+| Level | Meaning |
+|-------|---------|
+| **Low** | Sandboxed or read-only. No flight or hardware effect. |
+| **Medium** | Touches shared hardware, opens the network, reads frames, or registers a sensor. |
+| **High** | Can command the vehicle, inject into the estimator, drive output hardware, accept inbound connections, or spawn subprocesses. |
+| **Critical** | Direct attitude and rate control of the aircraft (`flight.rate_setpoint`). |
 
 ## Declaring permissions
 
 Permissions go in the `agent.permissions` and `gcs.permissions` lists.
-Each entry is an object with an `id` and an optional `required` flag:
+Each entry is an object with an `id`, an optional `required` flag and an
+optional `degraded_behavior`; a bare string means required.
 
 ```yaml
 agent:
@@ -42,180 +46,66 @@ agent:
       required: true
     - id: recording.write
       required: false
+      degraded_behavior: "Runs without saving clips."
 ```
 
-Required permissions are pinned on in the install dialog; the operator
-cannot install while leaving them off. Optional permissions default to
-off and the operator flips them on when wanted.
+Required permissions are pinned on in the install dialog. Optional
+permissions are shown with a toggle the operator sets. An id that is not
+in the catalog is a warning, not an error: the manifest loads, but the
+permission grants nothing.
 
-## Agent capabilities
+## How capabilities are enforced
 
-52 capabilities, grouped by namespace. The risk column is the value
-carried in the catalog.
+44 of the 53 agent capabilities are enforced, by one of three
+mechanisms:
 
-<Note>
-44 of the 52 are enforced: a grant changes what the plugin can actually
-do, through one of three mechanisms. The wire-dispatch gate re-resolves
-the required capability from the method on every request and rejects an
-ungranted call. A handler-side check covers what a method alone cannot
-classify (an event topic, a MAVLink message id). The generated unit's
-sandbox covers the rest: the cgroup device policy, the socket address
-families and bind ports, and the mount namespace.
+- **The dispatch gate** re-resolves the required capability from the
+  method on every request and rejects an ungranted call.
+- **A handler-side check** covers what a method alone cannot classify,
+  such as an event topic or a MAVLink message id.
+- **The generated unit's sandbox** covers the rest: the device policy,
+  the socket address families and bind ports, and the mount namespace.
+  See the [security model](/developers/security-model).
 
-The other eight are advisory metadata: `mavlink.component.camera`,
+The other nine are advisory metadata: `mavlink.component.camera`,
 `mavlink.component.gimbal`, `mavlink.component.payload`,
-`mavlink.component.peripheral`, `sensor.depth.register`,
-`sensor.lidar.register`, `sensor.imu.register` and
-`sensor.payload.register`.
-</Note>
+`mavlink.component.peripheral`, `sensor.camera.register`,
+`sensor.depth.register`, `sensor.lidar.register`, `sensor.imu.register`
+and `sensor.payload.register`.
 
-### `event.*` (event bus)
+GCS capabilities are enforced by the Mission Control bridge, which
+resolves the capability each call needs and checks it against the grant.
 
-| Capability | Risk | Lets the plugin... |
-|------------|------|-----|
-| `event.publish` | Low | Publish events on topics it has been granted. |
-| `event.subscribe` | Low | Receive events from granted topics. |
+## The catalog
 
-### `mavlink.*` and `msp.*` (flight controller link)
+The table covers both halves. Rows whose **Enforced** column reads `n/a`
+are GCS capabilities; an id listed twice (such as `event.publish` or
+`mission.write`) exists on both halves, one row for each.
 
-| Capability | Risk | Lets the plugin... |
-|------------|------|-----|
-| `mavlink.read` | Low | Observe the live MAVLink message stream. |
-| `mavlink.write` | High | Inject MAVLink commands (mode, arm, param writes). |
-| `mavlink.tunnel` | High | Exchange application payloads over MAVLink TUNNEL frames. |
-| `mavlink.component.camera` | Medium | Register as a MAVLink camera component. |
-| `mavlink.component.gimbal` | Medium | Register as a MAVLink gimbal component. |
-| `mavlink.component.payload` | Medium | Register as a MAVLink payload component. |
-| `mavlink.component.peripheral` | Medium | Claim a generic MAVLink peripheral component id. |
-| `mavlink.component.vio` | High | Register as a visual-inertial-odometry source feeding the EKF. |
-| `msp.read` | Low | Observe the MSP stream from a Betaflight, iNav or KISS flight controller. |
-| `msp.write` | High | Write MSP commands, including the RC channel values that fly the aircraft. |
+<AgentCapabilities />
 
-### Flight commands
+### Telemetry topics
 
-| Capability | Risk | Lets the plugin... |
-|------------|------|-----|
-| `flight.guided_setpoint` | High | Emit guided-mode position or velocity setpoints. |
-| `flight.rate_setpoint` | Critical | Emit attitude or body-rate setpoints with collective thrust. |
-| `estimator.pose.inject` | High | Push pose samples directly into the autopilot estimator. |
-| `mission.read` | Low | Read the active mission, fences, and rally points. |
-| `mission.write` | High | Upload or modify missions, fences, and rally points. |
+On the GCS half, declare one `telemetry.subscribe.<topic>` per stream
+you read (for example `telemetry.subscribe.battery`). The bridge checks
+the topic-scoped id exactly; the bare `telemetry.subscribe` grants no
+stream.
 
-### `telemetry.*`
+### Commands and designation
 
-| Capability | Risk | Lets the plugin... |
-|------------|------|-----|
-| `telemetry.read` | Low | Read the same telemetry feed the GCS consumes. |
-| `telemetry.extend` | Low | Add new fields to the telemetry stream sent to the GCS. |
+`command.send` lets a GCS half ask for takeoff, land or return-to-launch
+on its bound drone; the operator confirms each one and every other
+command is refused. Retargeting the drone's follow tracker
+(`command.send` with `vision.designate`) needs the separate
+`vision.track.designate` capability.
 
-### `sensor.*.register`
-
-| Capability | Risk | Lets the plugin... |
-|------------|------|-----|
-| `sensor.camera.register` | Medium | Register a camera as a system sensor. |
-| `sensor.depth.register` | Medium | Register a depth or stereo sensor. |
-| `sensor.lidar.register` | Medium | Register a LiDAR. |
-| `sensor.imu.register` | Medium | Register an auxiliary IMU. |
-| `sensor.payload.register` | Medium | Register a payload device (sprayer, dropper, sampler). |
-
-### `hardware.*`
-
-| Capability | Risk | Lets the plugin... |
-|------------|------|-----|
-| `hardware.uart` | Medium | Open UART serial ports. |
-| `hardware.i2c` | Medium | Read and write I2C devices. |
-| `hardware.spi` | Medium | Read and write SPI devices. |
-| `hardware.gpio` | Medium | Read input and drive output GPIO pins. |
-| `hardware.gpio_out` | High | Drive a GPIO output line or a bounded buzzer or LED pattern. |
-| `hardware.usb` | Medium | Claim raw USB devices for bulk transfers. |
-| `hardware.usb.uvc` | Medium | Read frames from USB UVC cameras. |
-| `hardware.camera.csi` | Medium | Read frames from MIPI CSI cameras. |
-| `hardware.gpu` | Medium | Open the host's GPU and neural-accelerator device nodes (DRM render nodes, Mali, RKNPU, NVIDIA) for inference or rendering. Without it the plugin runs in a private `/dev` with no accelerator. |
-
-### `vision.*` and video
-
-| Capability | Risk | Lets the plugin... |
-|------------|------|-----|
-| `vision.frame.read` | Medium | Subscribe to normalized frames from the vision engine. |
-| `vision.model.register` | Medium | Register an inference model with the vision engine. |
-| `vision.model.read` | Low | Read where its own declared models were delivered, and why one was not. |
-| `vision.detection.publish` | Low | Publish detections (boxes, labels, track ids). |
-| `vision.detection.subscribe` | Low | Receive detection batches plus the tracker's lock state. |
-| `vision.track.designate` | Medium | Choose which object the single-object tracker locks onto. |
-| `video.source.set` | Medium | Declare the camera and stream sources the video pipeline serves. Applying a new list restarts the pipeline. |
-
-### Node
-
-| Capability | Risk | Lets the plugin... |
-|------------|------|-----|
-| `node.info.read` | Low | Read what kind of node it runs on: the profile, the board and whether it has a neural accelerator, the ground-station role, whether the camera pipeline is up, and the main stream's size and frame rate. No telemetry, imagery, credentials or configuration values. |
-
-### Network, cloud, and storage
-
-| Capability | Risk | Lets the plugin... |
-|------------|------|-----|
-| `network.outbound` | Medium | Open outbound TCP, UDP, and HTTP connections, and find services on the local network over mDNS through the agent (`ctx.mdns.browse`). The agent's own loopback services stay closed, and the grant is refused while the plugin host's loopback guard is unavailable. |
-| `network.listen` | High | Let a declared service bind the TCP ports it lists in `listen_ports`, and advertise those ports on the local network over mDNS through the agent (`ctx.mdns.advertise`). Every other port stays closed, the plugin's main process never listens, and the agent's own service types cannot be advertised. |
-| `cloud.publish` | Medium | Publish messages of at most 64 KiB on its own stream through the agent's cloud relay. Publishing onto the shared detection topic also needs `vision.detection.publish`. |
-| `cloud.records` | Medium | Write JSON records of at most 64 KiB into its own collection in the operator's cloud account, where its GCS half can read them back. |
-| `recording.write` | Low | Write into the agent recording store. |
-| `filesystem.host` | Medium | Read and write files outside its own data dir. |
-| `process.spawn` | High | Launch subprocesses from its manifest spawn allowlist. |
-
-### Radio, onboard UI, and AI control
-
-| Capability | Risk | Lets the plugin... |
-|------------|------|-----|
-| `radio.aux_stream` | High | Open an auxiliary stream on the radio link. |
-| `display.oled.page` | Low | Contribute a page to the onboard display. |
-| `button.subscribe` | Medium | Receive front-panel button press events. |
-| `mcp.expose` | Medium | Publish its declared tools, resources and prompts to an MCP client. Each tool still acts only through the plugin's other grants. |
-
-## GCS capabilities
-
-24 capabilities: 12 UI slot registrations plus 12 data, command, cloud
-and bus capabilities. UI slot capabilities mount a contribution in a
-named slot; the slot value itself goes in the contribution (see the
-[Manifest reference](/developers/manifest)).
-
-### UI slots
+### Node-scoped UI slots
 
 `ui.slot.node-detail-tab`, `ui.slot.node-agent-page`,
-`ui.slot.node-surface`, `ui.slot.cockpit-panel`, and
-`ui.slot.flight-skill` are scoped to the currently selected node; the
-other seven are fleet-level.
-
-| Capability | Risk | Mounts |
-|------------|------|--------|
-| `ui.slot.fc-tab` | Low | A tab in the flight controller panel. |
-| `ui.slot.hardware-tab` | Low | A tab on the hardware page. |
-| `ui.slot.mission-template` | Low | A mission template. |
-| `ui.slot.map-overlay` | Low | An overlay on the map. |
-| `ui.slot.video-overlay` | Low | An overlay on the live video. |
-| `ui.slot.notification-channel` | Low | Notifications in the GCS. |
-| `ui.slot.settings-section` | Low | A section on the Settings page. |
-| `ui.slot.flight-skill` | Medium | A flight Skill in the cockpit. |
-| `ui.slot.node-detail-tab` | Low | A tab in the node detail panel. |
-| `ui.slot.cockpit-panel` | Low | A panel in the cockpit quick settings. |
-| `ui.slot.node-agent-page` | Low | A page in a node's Agent sidebar, next to the built-in companion and configuration pages (`gcs.contributes.agent_pages`). |
-| `ui.slot.node-surface` | Low | A top-level tab on a node's detail panel for the profiles it declares (`gcs.contributes.node_surfaces`). |
-
-### Data, command, cloud, and bus
-
-| Capability | Risk | Lets the plugin... |
-|------------|------|-----|
-| `telemetry.subscribe` | Low | Read live telemetry for paired drones. A topic-scoped form such as `telemetry.subscribe.battery` limits it to one topic. |
-| `command.send` | Medium | Ask for takeoff, land or return-to-launch (or a follow-target change) on its bound drone. The operator confirms each one in a prompt naming the drone; every other command is refused. |
-| `recording.write` | Low | Save recordings to the GCS library. |
-| `mission.read` | Low | Read mission plans loaded in the GCS. |
-| `mission.write` | High | Upload, edit, or replace missions in the GCS planner. |
-| `cloud.read` | Low | Read shared fleet data from the cloud backend. |
-| `cloud.records` | Low | List, read, write and delete records in its own cloud collection for the signed-in operator. Records are keyed by plugin, so a plugin never reads another plugin's records. Each record is capped at 64 KiB and each plugin at 5000 records. |
-| `perception.read` | Low | Read the drone's perception state: where detection runs, the bound compute node, and the live session health. |
-| `perception.subscribe` | Low | Subscribe to the live detection stream the cockpit renders. |
-| `event.publish` | Low | Publish on the in-tab GCS event bus that other plugin panels subscribe to. |
-| `event.subscribe` | Low | Receive from the in-tab GCS event bus. |
-| `mcp.expose` | Medium | Publish its GCS-half tools, resources and prompts to an MCP client. |
+`ui.slot.node-surface`, `ui.slot.cockpit-panel`,
+`ui.slot.cockpit-widget` and `ui.slot.flight-skill` are scoped to the
+selected drone; the other seven are fleet-level. Where each slot renders
+is on [Contribution points](/developers/contribution-points#the-slot-taxonomy).
 
 ## Plugin-declared capabilities
 
@@ -232,38 +122,50 @@ and mesh topics. See
 
 ## Two-stage install
 
-1. The operator drags a `.adosplug` into the install dialog.
-2. The host parses the archive in memory: it validates the manifest,
-   verifies the Ed25519 signature, and returns a summary with the
-   requested permissions, the signer id, and the risk level. Nothing is
-   written to disk.
-3. The dialog renders the summary plus a permission grid. The operator
-   flips optional toggles and clicks **Install**.
-4. Only then does the host commit the install, unpacking the archive and
-   writing state to disk.
+1. The operator opens the drone's **Extensions** tab and chooses
+   **Install from file**, or picks an extension from the list.
+2. The agent parses the archive in memory: it validates the manifest,
+   verifies the Ed25519 signature, checks compatibility, and returns a
+   summary with the requested permissions, the signer and the risk.
+   Nothing is written to disk.
+3. The review shows the summary, the board compatibility and the
+   permission grid grouped by category, with required permissions
+   pinned. The operator sets the optional toggles and chooses
+   **Install**, a button that names how many permissions it grants.
+4. Only then does the agent unpack the archive and write the install
+   record, and Mission Control grants the approved permissions.
 
-A plugin that never makes it past step 3 leaves no traces.
+A plugin that never gets past step 3 leaves no trace. From a shell,
+`ados plugin install` shows the same summary and asks for approval; see
+the [Plugin CLI reference](/developers/cli-reference#install).
 
-## Re-prompt on update
+## Permissions on update
 
-Installing a newer version that requests one new optional permission
-re-opens the dialog with only the new permission highlighted. Existing
-grants are preserved. A new required permission is shown with emphasis
-and the operator must approve it. Removing permissions in an update is
-silent: the host drops the no-longer-declared grants on load.
+Auto-update does not apply a version that asks for new permissions; the
+node reports `update_available` with the new permissions, and the
+operator reinstalls to approve them. Grants are recorded per permission,
+independent of enable and disable. An operator can grant or revoke a
+declared permission at any time from Mission Control or with
+`ados plugin perms`; the change takes effect at once, with no restart.
 
 ## Capability tokens on the wire
 
-Every plugin process runs with a capability token the supervisor mints
-at start, bound to the plugin id, the granted capability set, a session
-id, and an expiry. The agent IPC server checks the token and the
-required capability before routing each request. The plugin cannot forge
-a capability by lying in the envelope; the host re-resolves the required
-capability from the method (and, for the event bus, from the topic) and
-rejects an ungranted call with `permission_denied`.
+Every plugin process runs with a capability token the host mints, bound
+to the plugin id, the granted capability set, a session id and an
+expiry. The host checks the token and the required capability before
+routing each request. A plugin cannot claim a capability by lying in
+the envelope: the host re-resolves the required capability from the
+method (and, for the event bus, from the topic) and rejects an ungranted
+call. The agent replies `capability_denied: <cap>`; the Mission Control
+bridge replies `permission_denied`.
 
-## See also
+## Next steps
 
-- [Manifest reference](/developers/manifest)
-- [Event hooks and bus](/developers/event-hooks-and-bus)
-- [Lifecycle](/developers/lifecycle)
+<CardGroup cols={2}>
+  <Card title="Manifest" href="/developers/manifest">
+    Where permissions are declared, and every other field.
+  </Card>
+  <Card title="Security model" href="/developers/security-model">
+    What each capability exposes if a plugin misbehaves.
+  </Card>
+</CardGroup>

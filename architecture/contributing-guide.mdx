@@ -1,247 +1,162 @@
 ---
-title: "Contributing Guide"
-description: "How to set up the dev environment, add features, and submit pull requests."
+title: "Code recipes"
+description: "Step-by-step patterns for common code changes: a flight controller panel, a MAVLink decoder, a Zustand store and an agent service."
 icon: "code-pull-request"
-lastUpdated: "2026-06-18"
+keywords: ["ados", "contributing", "code recipes", "mission control", "drone agent"]
 ---
 
-# Contributing Guide
+These recipes show where code goes for the most common changes. Setting up a development environment, branch names and pull request rules are on [Contributing](/getting-started/contributing). Directory layouts are on [Project structure](/architecture/project-structure). To add a board, follow [HAL and tiers](/drone-agent/hal-and-tiers).
 
-ADOS Mission Control and ADOS Drone Agent are open-source under GPLv3. Contributions are welcome. This guide covers the dev setup for both repos, the patterns for adding common feature types, and the pull request process.
+## Test against ArduPilot SITL
 
-## Dev environment setup
+Most Mission Control recipes end with a test against a simulated autopilot. The SITL tool in `tools/sitl/` builds ArduPilot and bridges it to a WebSocket:
 
-### Mission Control (GCS)
+```bash
+cd tools/sitl
+npm install
+npm run setup   # fetch and build ArduPilot into ~/.ardupilot
+npm start
+```
 
-<Steps>
-  <Step title="Clone the repo">
-    ```bash
-    git clone https://github.com/altnautica/ADOSMissionControl.git
-    cd ADOSMissionControl
-    ```
-  </Step>
-  <Step title="Install dependencies">
-    ```bash
-    npm install
-    ```
+The bridge binds the IPv6 loopback and accepts only clients that present a per-run token. Copy the `ws://[::1]:5760/?token=...` URL it prints. In Mission Control, open the connect dialog, choose **Flight Controller**, then **WebSocket**, pick the **SITL #1** preset and paste the full URL, token included. The token changes on every start.
 
-    Requires Node.js 20+ and npm 10+.
-  </Step>
-  <Step title="Start the dev server">
-    ```bash
-    npm run dev
-    ```
+<Warning>
+SITL accepts arm, takeoff and mission commands like a real autopilot. Before you point the same code at hardware, read [Safety](/operations/safety).
+</Warning>
 
-    Opens at `http://localhost:4000`. Turbopack provides fast hot module replacement.
-  </Step>
-  <Step title="Launch demo mode">
-    Open the app in your browser. The welcome modal offers a "Try Demo" button that starts the simulated fleet. No hardware needed.
-  </Step>
-</Steps>
+## Add a flight controller panel (Mission Control)
 
-### SITL testing
-
-To test with a real ArduPilot simulator:
-
-<Steps>
-  <Step title="Build ArduPilot from source">
-    Follow the [ArduPilot build docs](https://ardupilot.org/dev/docs/building-setup-linux.html). The SITL tool expects the ArduPilot repo at `~/.ardupilot`.
-  </Step>
-  <Step title="Launch SITL">
-    ```bash
-    cd tools/sitl
-    npm install
-    npm start
-    ```
-
-    This starts ArduPilot SITL with full physics simulation and a TCP-to-WebSocket bridge. Mission Control connects to `ws://localhost:5760`.
-  </Step>
-  <Step title="Connect from Mission Control">
-    In Mission Control, click Connect > WebSocket and enter `ws://localhost:5760`. You now have a real autopilot with simulated GPS, IMU, and battery.
-  </Step>
-</Steps>
-
-The agent is a Rust and Python hybrid. The long-running services are Rust binaries in `crates/`; Python carries AI and vision, the plugin runtime, setup, HAL detection, and the residual web API. A full dev setup needs both a Rust toolchain and Python.
-
-<Steps>
-  <Step title="Clone the repo">
-    ```bash
-    git clone https://github.com/altnautica/ADOSDroneAgent.git
-    cd ADOSDroneAgent
-    ```
-  </Step>
-  <Step title="Create a Python virtual environment">
-    ```bash
-    python3 -m venv venv
-    source venv/bin/activate
-    pip install -e ".[dev]"
-    ```
-
-    Requires Python 3.11+. (`uv` works too if you prefer it.)
-  </Step>
-  <Step title="Build the Rust services">
-    ```bash
-    cd crates
-    cargo build
-    cargo test
-    ```
-
-    Requires a recent stable Rust toolchain. The Cargo workspace lives in `crates/`.
-  </Step>
-  <Step title="Run the CLI">
-    ```bash
-    ados --help
-    ados status
-    ```
-  </Step>
-  <Step title="Run the terminal status page">
-    ```bash
-    ados
-    ```
-
-    The read-only terminal page shows setup URLs and agent status over SSH.
-  </Step>
-</Steps>
-
-## Adding a configure panel (Mission Control)
-
-Configure panels are the most common contribution. Each panel lets the user adjust a group of flight controller parameters.
+Configuration panels live under `src/components/fc/<area>/`. Every panel reads and writes parameters through `usePanelParams`, which works the same for MAVLink parameters and MSP virtual parameters.
 
 <Steps>
   <Step title="Create the component">
-    Add a new file in `src/components/configure/`:
+    ```tsx
+    // src/components/fc/misc/MyNewPanel.tsx
+    import { usePanelParams } from "@/hooks/use-panel-params";
+    import { usePanelCommit } from "@/hooks/use-panel-commit";
 
-    ```typescript
-    // src/components/configure/MyNewPanel.tsx
-    import { usePanelParams } from "@/hooks/use-panel-params"
-
-    const PARAMS = [
-      "MY_PARAM_1",
-      "MY_PARAM_2",
-      "MY_PARAM_3",
-    ]
+    const paramNames = ["MY_PARAM_1", "MY_PARAM_2"];
 
     export function MyNewPanel() {
-      const { values, setParam, isLoading } = usePanelParams(PARAMS)
+      const {
+        params,
+        loading,
+        dirtyParams,
+        setLocalValue,
+        saveAllToRam,
+        commitToFlash,
+        revertAll,
+      } = usePanelParams({ paramNames, panelId: "my-new-panel", autoLoad: true });
+      const { saving, save, flash } = usePanelCommit({ saveAllToRam, commitToFlash, revertAll });
 
-      if (isLoading) return <PanelSkeleton />
-
-      return (
-        <div>
-          <h3>My New Panel</h3>
-          <NumberInput
-            label="Parameter 1"
-            value={values.MY_PARAM_1}
-            onChange={(v) => setParam("MY_PARAM_1", v)}
-          />
-          {/* ... more inputs */}
-        </div>
-      )
+      // Render inputs bound to params.get(name) and setLocalValue(name, value),
+      // and the save and flash buttons wired to save() and flash().
     }
     ```
+
+    `src/components/fc/safety/FailsafePanel.tsx` is a complete example, including the unsaved-changes guard.
   </Step>
-  <Step title="Register the panel">
-    Add the panel to the navigation in `src/components/configure/DroneConfigureTab.tsx`:
+  <Step title="List it in the panel navigation">
+    Add an entry to `FC_NAV_ITEMS` in `src/components/drone-detail/fc-nav-items.tsx`:
 
-    ```typescript
-    {
-      id: "my-new-panel",
-      label: "My New Panel",
-      icon: MyIcon,
-      component: lazy(() => import("./MyNewPanel")),
-      requiredCapability: "supportsParams",
-    }
+    ```tsx
+    { id: "my-new-panel", labelKey: "myNewPanel", icon: <Sliders size={14} />, requiredCapability: "supportsParameters", section: "Tuning" },
     ```
+
+    `requiredCapability` hides the panel on firmwares that lack the capability. `vehicleClasses`, `requiredVehicleType` and `excludeFirmware` narrow it further.
+  </Step>
+  <Step title="Route the id to the component">
+    In `src/components/drone-detail/FcPanelRouter.tsx`, add a `dynamic()` import for the panel and a `case "my-new-panel":` that returns it.
+  </Step>
+  <Step title="Add the label">
+    Add `"myNewPanel"` under the `fcNav` namespace in `locales/en.json`. English is the source locale.
   </Step>
   <Step title="Test with SITL">
-    Launch SITL, connect, and verify the panel loads, reads parameters, and writes them back.
+    Connect to SITL, open the panel, and check that it loads, edits and writes the parameters.
   </Step>
 </Steps>
 
-The `usePanelParams` hook handles all protocol details. It works with MAVLink native parameters (ArduPilot, PX4) and MSP virtual parameters (Betaflight) without any changes to your panel code.
-
-## Adding a MAVLink decoder (Mission Control)
-
-When you need to handle a new MAVLink message type:
+## Add a MAVLink decoder (Mission Control)
 
 <Steps>
-  <Step title="Add constants">
-    In `src/lib/protocol/mavlink-crc-extra.ts`, add the message ID, CRC_EXTRA, and payload length:
+  <Step title="Register the message's CRC and length">
+    In `src/lib/protocol/mavlink-crc-extra.ts`, add the message id to both maps:
 
     ```typescript
-    export const MSG_MY_NEW_MSG = 999
-    export const CRC_EXTRA: Record<number, number> = {
-      // ... existing entries
-      [MSG_MY_NEW_MSG]: 0xAB,  // from MAVLink XML definition
+    // CRC_EXTRA
+    [999, 0xab],   // MY_NEW_MSG, from the MAVLink XML definition
+    // PAYLOAD_LENGTHS
+    [999, 24],     // MY_NEW_MSG, full (untrimmed) payload length
+    ```
+
+    Without a CRC_EXTRA entry the parser cannot validate the frame.
+  </Step>
+  <Step title="Write the decoder">
+    Add a typed `decode*` function to the matching file in `src/lib/protocol/messages/`:
+
+    ```typescript
+    export interface MyNewMsg {
+      field1: number;
+      field2: number;
     }
-    export const PAYLOAD_LENGTHS: Record<number, number> = {
-      // ... existing entries
-      [MSG_MY_NEW_MSG]: 24,
+
+    export function decodeMyNewMsg(dv: DataView): MyNewMsg {
+      return {
+        field1: dv.getFloat32(0, true),
+        field2: dv.getUint16(4, true),
+      };
     }
     ```
   </Step>
-  <Step title="Add the decoder">
-    In `src/lib/protocol/mavlink-adapter.ts`, add a case to `handleMessage()`:
+  <Step title="Add the callback">
+    Add a callback type in `src/lib/protocol/types/callbacks.ts`, a `myNewMsgCallbacks` array to `CallbackStore` in `src/lib/protocol/mavlink-adapter-callbacks.ts`, and an `onMyNewMsg` entry in `bindCallbackMethods`. Declare `onMyNewMsg?(callback: MyNewMsgCallback): () => void;` on `DroneProtocol` in `src/lib/protocol/types/protocol.ts`. Making it optional means the MSP and mock adapters do not have to implement it.
+  </Step>
+  <Step title="Handle and route the frame">
+    Add a handler to the matching file in `src/lib/protocol/handlers/` that decodes the payload and calls each callback, then add a case to `routeFrame()` in `src/lib/protocol/mavlink-adapter-frame-handlers.ts`:
 
     ```typescript
-    case MSG_MY_NEW_MSG: {
-      const field1 = view.getFloat32(0, true)
-      const field2 = view.getUint16(4, true)
-      this._onMyNewMsg.forEach((cb) => cb({ field1, field2 }))
-      break
-    }
+    case 999: handleMyNewMsg(p, c.myNewMsgCallbacks); break
     ```
   </Step>
-  <Step title="Add the callback to DroneProtocol">
-    In `src/lib/protocol/drone-protocol.ts`:
-
-    ```typescript
-    onMyNewMsg(cb: (msg: MyNewMsg) => void): Unsubscribe
-    ```
-  </Step>
-  <Step title="Subscribe in DroneManager">
-    In `src/stores/drone-manager.ts` inside `bridgeTelemetry()`:
-
-    ```typescript
-    protocol.onMyNewMsg?.((msg) => {
-      myStore.update(msg)
-    })
-    ```
+  <Step title="Bridge it into a store">
+    Subscribe in `bridgeTelemetry()` in `src/stores/drone-manager-bridge.ts` and push the data into a store. Add the returned unsubscribe function to the array the bridge returns.
   </Step>
 </Steps>
 
-## Adding a Zustand store (Mission Control)
+## Add a Zustand store (Mission Control)
 
 <Steps>
   <Step title="Create the store">
     ```typescript
     // src/stores/my-new-store.ts
-    import { create } from "zustand"
+    import { create } from "zustand";
 
     interface MyNewState {
-      value: number
-      setValue: (v: number) => void
+      value: number;
+      setValue: (v: number) => void;
     }
 
     export const useMyNewStore = create<MyNewState>((set) => ({
       value: 0,
       setValue: (v) => set({ value: v }),
-    }))
+    }));
     ```
   </Step>
-  <Step title="Use selectors in components">
+  <Step title="Select specific fields">
     ```typescript
-    const value = useMyNewStore((s) => s.value)
+    const value = useMyNewStore((s) => s.value);
     ```
 
-    Always select specific fields. Never destructure the entire store.
+    Never subscribe to the whole store.
   </Step>
 </Steps>
 
-If the store needs to persist across page reloads, use the `persist` middleware with a version number:
+If the store must survive a reload, wrap it in `persist` with a storage name, a version and a migration:
 
 ```typescript
-import { persist } from "zustand/middleware"
+import { create } from "zustand";
+import { persist, createJSONStorage } from "zustand/middleware";
+import { indexedDBStorage } from "@/lib/storage";
 
 export const useMyNewStore = create<MyNewState>()(
   persist(
@@ -250,163 +165,98 @@ export const useMyNewStore = create<MyNewState>()(
       setValue: (v) => set({ value: v }),
     }),
     {
-      name: "my-new-store",
+      name: "altcmd:my-new-store",
+      storage: createJSONStorage(indexedDBStorage.storage),
       version: 1,
-    }
-  )
-)
+      migrate: (persisted, _version) => persisted as MyNewState,
+    },
+  ),
+);
 ```
 
-## Adding a board profile (Drone Agent)
+Bump `version` and branch on the old version in `migrate` whenever the stored shape changes.
+
+If the store is fed by live telemetry, do not call `set()` per message. Mutate the data in place and notify through a coalesced version bumper, as `telemetry-store` does:
+
+```typescript
+import { createVersionBumper } from "./coalesced-version";
+
+const bumper = createVersionBumper(() =>
+  useMyNewStore.setState((s) => ({ _version: s._version + 1 })),
+);
+// after each in-place update:
+bumper.scheduleVersionBump();
+```
+
+A store with a bumper must call `bumper.cancelVersionBump()` from its `clear()` action.
+
+## Add an agent service (Drone Agent)
+
+New long-running services are Rust binaries in the `crates/` workspace, installed to `/opt/ados/bin/`. The supervisor runs every unit through `systemctl`; it never spawns processes itself. The design is explained on [Agent services](/architecture/agent-services).
 
 <Steps>
-  <Step title="Create the YAML profile">
-    ```yaml
-    # src/ados/hal/boards/my-board.yaml
-    name: "My Board Name"
-    vendor: "Board Manufacturer"
-    soc: "RK3566"
-    arch: "aarch64"
-    model_patterns:
-      - "My Board Model String"
-    default_tier: 3
-    uart_paths:
-      - /dev/ttyS0
-    gpio_pins: [5, 6, 13, 19]
-    hw_video_codecs:
-      - h264_enc
-      - h264_dec
-    video:
-      csi_ports: 1
-      max_encode_resolution: "1920x1080"
-      encoder_api: rkmpp
-    buses:
-      i2c:
-        - id: i2c3
-    ```
-
-    `model_patterns` are matched against `/proc/device-tree/model` and `/proc/cpuinfo` for auto-detection.
+  <Step title="Create the crate">
+    Add `crates/ados-my-service/` with a binary target and add it to the workspace members in `crates/Cargo.toml`. Use `ados-protocol` for any socket you read or write, so framing and contract versions stay in one place.
   </Step>
-  <Step title="Test detection">
-    On the target board, run:
-
-    ```bash
-    ados status --json
-    ```
-
-    This prints setup, service, board, and runtime status for inspection.
-  </Step>
-</Steps>
-
-## Adding an agent service (Drone Agent)
-
-New long-running or safety-critical services are written as Rust crates under `crates/` and run a binary from `/opt/ados/bin/`. An ancillary Python-backed service is still fine for ecosystem-bound work (AI, drivers, setup glue); the steps below show the Python case. Either way, the unit is registered in the supervisor catalog.
-
-<Steps>
-  <Step title="Create the service module">
-    Add a new file in `src/ados/services/my_service/`:
-
-    ```python
-    # src/ados/services/my_service/__main__.py
-    import asyncio
-    import structlog
-
-    log = structlog.get_logger()
-
-    async def main():
-        log.info("my_service.started")
-        while True:
-            # Service logic here
-            await asyncio.sleep(1)
-
-    if __name__ == "__main__":
-        asyncio.run(main())
-    ```
-  </Step>
-  <Step title="Create the systemd unit">
-    Add `data/systemd/ados-my-service.service`:
+  <Step title="Write the unit file">
+    Add `data/systemd/ados-my-service.service`, following the existing units:
 
     ```ini
     [Unit]
     Description=ADOS My Service
-    After=ados-supervisor.service
     PartOf=ados-supervisor.service
 
     [Service]
+    Slice=ados.slice
     Type=simple
-    User=ados
-    ExecStart=/opt/ados/venv/bin/python -m ados.services.my_service
-    Restart=on-failure
+    ExecStart=/opt/ados/bin/ados-my-service
+    Restart=always
     RestartSec=3
-    MemoryMax=64M
+    Environment=ADOS_CONFIG=/etc/ados/config.yaml
+    NoNewPrivileges=yes
+    ProtectSystem=strict
+    ReadWritePaths=/run/ados
+    MemoryMax=50M
     CPUQuota=25%
+    StandardOutput=journal
+    StandardError=journal
+    SyslogIdentifier=ados-my-service
 
     [Install]
     WantedBy=ados-supervisor.service
     ```
+
+    Set `MemoryMax`, `CPUQuota` and `ReadWritePaths` to what the service really needs.
   </Step>
-  <Step title="Register in the supervisor">
-    Add the unit to the `SERVICE_REGISTRY` in `crates/ados-supervisor/src/registry.rs` with its category (core, hardware, on-demand), its profile gate, and any ground-station role gate. The supervisor drives the unit through `systemctl`; it does not spawn the process itself.
+  <Step title="Register it in the unit table">
+    Add a `UnitSpec` row to `UNITS` in `crates/ados-protocol/src/units.rs`. The supervisor's catalog, the installer's enable, start, teardown and health lists, the REST restart allowlist and the armed interlock's link-dropping class are all derived from that table, and a test fails if a unit file in `data/systemd/` has no row (or a row has no unit file):
+
+    ```rust
+    UnitSpec {
+        name: "ados-my-service.service",
+        category: Some(Hardware),
+        profiles: DRONE,
+        ..BASE
+    },
+    ```
+
+    Set `idle_ok: true` if the service exits 0 on purpose when the node has nothing for it to do, and `drops_link: true` if restarting it drops a command, telemetry, video, RC, mesh, access-point or cloud link.
+  </Step>
+  <Step title="Ship the binary">
+    Add the binary to the installer's prebuilt catalog in `crates/ados-installer/src/binaries.rs` for the profiles that run it. CI publishes every service binary as an asset of the per-commit `rev-<sha>` release, and the installer fetches the assets for the active profile from there.
   </Step>
 </Steps>
 
-## Pull request guidelines
+## Next steps
 
-### Before submitting
-
-- Run `tsc --noEmit` for Mission Control (zero errors required)
-- Run `python -m py_compile` on any modified Python files
-- Run `cargo fmt --check`, `cargo clippy`, and `cargo test` for any Rust crate changes
-- Check for em dashes in any user-facing strings (there should be none)
-- Test with demo mode or SITL for Mission Control changes
-- Bump the version in `src/ados/__init__.py` for agent changes
-
-### PR format
-
-```markdown
-## What
-
-Brief description of the change.
-
-## Why
-
-What problem does this solve or what feature does it add.
-
-## How to test
-
-Steps to verify the change works.
-
-## Screenshots
-
-If the change affects the UI, include before/after screenshots.
-```
-
-### Branch naming
-
-- `feature/short-description` for new features
-- `fix/short-description` for bug fixes
-- `docs/short-description` for documentation
-
-### Review process
-
-1. Open a PR against `main`
-2. Automated checks run (TypeScript build, linting)
-3. A maintainer reviews the code
-4. Once approved, the maintainer merges
-
-<Tip>
-For large features, open a draft PR early with a description of what you plan to build. This helps avoid wasted effort if the design needs changes.
-</Tip>
-
-## Code style
-
-**Mission Control:** Follow the existing patterns. Zustand for state, `usePanelParams` for configure panels, selectors for subscriptions. Tailwind for styling. No CSS modules.
-
-**Drone Agent (Python):** Use `structlog` for logging, `asyncio` for async code, Pydantic for config models. Type hints on all function signatures. `black` for formatting.
-
-**Drone Agent (Rust):** Format with `cargo fmt`, lint with `cargo clippy`, and keep the IPC wire contracts defined in the `ados-protocol` crate as the single source of truth.
-
-## Getting help
-
-- [Discord](https://discord.gg/uxbvuD4d5q) for questions, architecture discussion, and PR review
-- [GitHub Issues](https://github.com/altnautica/ADOSMissionControl/issues) for bug reports and feature requests with a clear use case
+<CardGroup cols={2}>
+  <Card title="Contributing" icon="code-branch" href="/getting-started/contributing">
+    Development setup, branches and pull requests.
+  </Card>
+  <Card title="Project structure" icon="folder-tree" href="/architecture/project-structure">
+    Where every module lives.
+  </Card>
+  <Card title="HAL and tiers" icon="microchip" href="/drone-agent/hal-and-tiers">
+    Add a board profile.
+  </Card>
+</CardGroup>

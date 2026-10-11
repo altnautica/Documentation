@@ -1,12 +1,11 @@
 ---
 title: "Versioning and updates"
-description: "Semver discipline, compatibility ranges, additive vs breaking permission changes."
-lastUpdated: "2026-06-23"
+description: "Semver discipline, compatibility ranges, automatic updates, rollback, and additive versus breaking permission changes."
 ---
 
 A plugin lives across many host versions and many of its own versions.
 Semver gives operators a way to predict what an upgrade will and will not
-change.
+change, and the agent's automatic updates rely on it.
 
 ## Semver for plugins
 
@@ -18,9 +17,9 @@ Use `MAJOR.MINOR.PATCH`:
 | MINOR | Additive features. New optional permissions are fine; new required permissions are not. New slot contributions, new patterns, new drivers. |
 | MAJOR | Breaking changes. Removed features, renamed config fields, new required permissions, changed default behavior. |
 
-The rule of thumb: an operator running an old config on a new MINOR
-version should see a working plugin. A new MAJOR version warrants reading
-the changelog.
+The rule of thumb: an operator running an old config on a new MINOR version
+should see a working plugin. A new MAJOR version warrants reading the
+changelog.
 
 ## Compatibility ranges
 
@@ -33,8 +32,8 @@ compatibility:
   supported_boards: []
 ```
 
-The host parses each range as comma-separated atoms, where every atom is
-an operator followed by a semver. The supported operators:
+The host parses each range as comma-separated atoms, where every atom is an
+operator followed by a semver:
 
 | Operator | Meaning |
 |---------|---------|
@@ -44,58 +43,79 @@ an operator followed by a semver. The supported operators:
 | `>1.2.3` | Strictly above 1.2.3. |
 | `<2.0.0` | Strictly below 2.0.0. |
 
-Combine atoms with a comma (logical AND): `">=0.10.0,<1.0.0"`. A bare
-semver with no operator means exact match. The pre-release and build
-suffixes are stripped before comparison, so `1.2.3-rc.1` compares as
-`1.2.3`. Caret (`^`) and tilde (`~`) shorthand are not supported; write
-the bounds out explicitly.
+Combine atoms with a comma (logical AND): `">=0.10.0,<1.0.0"`. A bare semver
+with no operator means exact match. Pre-release and build suffixes are
+stripped before comparison, so `1.2.3-rc.1` compares as `1.2.3`. Caret (`^`)
+and tilde (`~`) shorthand are not supported; write the bounds out.
 
-`supported_boards` is matched as an exact board-id list. The default is
-an empty list, which means any board. To restrict the plugin, list the
-exact board ids it runs on; there is no wildcard, so an empty list (or
-omitting the field) is the way to mean "any board".
+`supported_boards` is an exact board-id list. An empty list, an absent field
+or `["*"]` means any board. To restrict the plugin, list the board ids it
+runs on; the ids are on [Supported hardware](/drone-agent/supported-hardware).
 
-The compatibility check runs at install time. If the running agent
-version is outside `ados_version`, the install (or the install of a newer
-archive over an existing plugin) is rejected. A `gcs_version` range is
-checked on the Mission Control side against the running build.
+The compatibility check runs at install time. If the running agent version
+is outside `ados_version`, the install (or the install of a newer archive
+over an existing plugin) is rejected. Mission Control checks `gcs_version`
+against its own build.
 
 ## `ados_version` vs `gcs_version`
 
-`ados_version` matches the running ADOS Drone Agent version (reported by
-setup status or `/api/version`). `gcs_version` matches the running
-Mission Control build. They move independently, so a plugin can support a
-wide agent range and a narrow GCS range or vice versa.
+`ados_version` matches the running ADOS Drone Agent version. `gcs_version`
+matches the running Mission Control build. They move independently, so a
+plugin can support a wide agent range and a narrow GCS range or the reverse.
 
-The `compatibility` block and its `ados_version` field are both required
-on every manifest, even for a GCS-only plugin. Set `ados_version` to the
-agent range the plugin needs (or a wide range if it does not depend on a
-specific agent). `gcs_version` is optional; omit it for an agent-only
-plugin. The agent host enforces `ados_version` at install; Mission
-Control enforces `gcs_version` against its own build.
+The `compatibility` block and its `ados_version` field are required on
+every manifest, even for a GCS-only plugin; set a wide range if the plugin
+does not depend on a specific agent. `gcs_version` is optional; omit it for
+an agent-only plugin.
 
-## Update flow
+## Manual update
 
-1. Operator drops a newer `.adosplug` into the install dialog for an
-   already-installed plugin.
-2. The host parses the archive. If the new version's compatibility range
-   does not match the running host, the update is rejected.
-3. The host diffs the new manifest's permissions against the existing
-   grants:
-   - **Removed permissions**: silently dropped.
-   - **Added optional permissions**: shown with an off-by-default toggle.
-   - **Added required permissions**: shown with emphasis; the operator
-     must approve.
-4. The operator clicks Install. The host stops the running plugin,
-   removes the old install directory, unpacks the new archive,
-   regenerates the systemd unit, and re-runs the permission grants.
-5. On the next start the plugin's lifecycle hooks run in order
-   (`on_install`, `on_enable`, `on_configure`, `on_start`). Read your
-   live config through `ctx.config_kv` and migrate your data directory if
-   needed.
+1. The operator installs a newer `.adosplug` over the installed plugin.
+2. The host parses the archive and checks the signature, compatibility and
+   board. A failing check rejects the update and leaves the old version
+   running.
+3. Grants the new version still declares carry over, permissions it no
+   longer declares are dropped, and a newly requested permission starts
+   ungranted until the operator approves it.
+4. The host stops the running plugin, replaces the install directory,
+   re-renders the units and starts the new version.
+5. On start the lifecycle hooks run in order (`on_install`, `on_enable`,
+   `on_configure`, `on_start`). Read your live config through
+   `ctx.config_kv` and migrate your data directory if needed.
 
-The whole flow is one click for additive updates, plus a confirmation
-when a new required permission is involved.
+The install methods are on
+[Local install](/developers/distribution-local-install).
+
+## Automatic updates
+
+Once a day the agent compares every enabled plugin with the newest version
+the registry publishes and does one of the following:
+
+- **Installs it silently** when the update is a patch or minor bump with an
+  unchanged permission set and code surface, still supports the board, and
+  is signed by the same key as the installed version. It goes through the
+  normal install checks; prior grants are restored and the plugin is
+  re-enabled. A refused archive leaves the old version in place.
+- **Notifies the operator** for a major bump, a permission change, a change
+  to what the plugin can run (risk, declared services, spawn allowlist,
+  binaries, payload files), a dropped board, or a different signer. The
+  operator decides. A signer change is refused as an update; it needs a
+  remove and a fresh install.
+- **Skips it** when the plugin is pinned, auto-update is off for it, or
+  nothing newer exists.
+
+The whole cycle is deferred while the vehicle counts as armed (unknown or
+stale state counts as armed), because an update stops the plugin. Control
+it per plugin:
+
+```bash
+ados plugin pin com.example.battery 1.4.2      # stay on this version
+ados plugin unpin com.example.battery
+ados plugin auto-update com.example.battery off
+```
+
+To get silent updates, keep patch and minor releases additive and sign
+every release with the same key.
 
 ## Additive vs breaking permission changes
 
@@ -112,6 +132,9 @@ Breaking (MAJOR required):
 - Renaming a config field without a migration.
 - Changing the wire format of a `plugin.<id>.*` event topic.
 - Changing default behavior in a way the operator would notice.
+
+Any permission change, additive or not, turns an automatic update into a
+notification.
 
 ## Config migration
 
@@ -143,33 +166,46 @@ async def on_start(self, ctx):
         marker.write_text("3")
 ```
 
-Forward migration is the contract; reading new data with an older plugin
-is best-effort.
+Forward migration is the contract; reading new data with an older plugin is
+best-effort.
 
-## Downgrades
+## Rollback
 
-Reinstalling an older version on top of a newer one is not the supported
-path. To roll back, remove the plugin and install the older version. The
-data directory persists across remove, so your data survives the rollback
-(your migration code still has to tolerate it).
+Installing an older version over a newer one is refused (rollback
+protection). To roll back:
+
+```bash
+ados plugin remove com.example.battery --keep-data
+ados plugin install ./com.example.battery-1.3.0.adosplug
+```
+
+Without `--keep-data` the data directory is deleted. With it, your older
+version reads data a newer version may have migrated, so your code has to
+tolerate that. Pin the plugin afterwards if auto-update would otherwise
+bring the newer version back.
 
 ## Pre-release versions
 
 Pre-releases use semver pre-release identifiers (`1.0.0-rc.1`). Treat a
 pre-release as older than its equivalent release, so `1.0.0` supersedes
 `1.0.0-rc.1`. Do not ship `-rc` builds to operators who did not ask for
-them; the local-install path will happily take one.
+them; the local-install path accepts one.
 
 ## Communicating breaking changes
 
-A MAJOR version is contract-breaking. Update the README with a migration
-section, optionally ship a one-shot migration path that imports old state
-into the new format, and bump `ados_version` if the change required a new
-host feature. The host does not detect "user data lost" on upgrade; that
-responsibility is the plugin author's.
+A MAJOR version is contract-breaking. Add a migration section to the
+README, optionally ship a one-shot migration that imports old state into
+the new format, and raise `ados_version` if the change needs a newer host.
+The host does not detect lost user data on upgrade; that responsibility is
+the plugin author's.
 
-## See also
+## Next steps
 
-- [Manifest reference](/developers/manifest)
-- [Permissions](/developers/permissions)
-- [Lifecycle](/developers/lifecycle)
+<CardGroup cols={2}>
+  <Card title="Local install" icon="box-archive" href="/developers/distribution-local-install">
+    Install and update a packed archive on a node.
+  </Card>
+  <Card title="Performance and budgets" icon="gauge" href="/developers/performance-and-budgets">
+    Resource caps, throttling and profiling.
+  </Card>
+</CardGroup>

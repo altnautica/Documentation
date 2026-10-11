@@ -48,31 +48,35 @@
       "youtube": "https://www.youtube.com/@altnautica"
     }
   },
+  "metadata": {
+    "timestamp": true
+  },
   "navigation": {
     "tabs": [
       {
-        "tab": "Getting Started",
+        "tab": "Get started",
         "icon": "rocket",
         "groups": [
           {
-            "group": "Introduction",
+            "group": "Start here",
             "pages": [
               "getting-started/introduction",
               "getting-started/how-it-works",
-              "getting-started/node-profiles"
+              "getting-started/node-profiles",
+              "getting-started/install-paths",
+              "getting-started/glossary"
             ]
           },
           {
-            "group": "Quickstart",
+            "group": "Quickstarts",
             "pages": [
               "getting-started/quickstart-mission-control",
               "getting-started/quickstart-drone-agent",
-              "getting-started/quickstart-ground-agent",
-              "getting-started/install-paths"
+              "getting-started/quickstart-ground-agent"
             ]
           },
           {
-            "group": "First Steps",
+            "group": "First flight",
             "pages": [
               "getting-started/your-first-flight",
               "getting-started/your-first-mission"
@@ -93,64 +97,79 @@
         "icon": "display",
         "groups": [
           {
-            "group": "Overview",
+            "group": "Get started",
             "pages": [
               "mission-control/overview",
               "mission-control/installation",
-              "mission-control/connecting",
-              "mission-control/firmware-comparison",
-              "mission-control/inav-guide"
+              "mission-control/desktop-app",
+              "mission-control/connecting"
             ]
           },
           {
-            "group": "Flying",
+            "group": "Fly",
             "pages": [
               "mission-control/dashboard",
+              "mission-control/nodes-fleet-view",
+              "mission-control/cockpit",
               "mission-control/flight-control",
               "mission-control/telemetry",
               "mission-control/video-feed"
             ]
           },
           {
-            "group": "Fleet & Nodes",
-            "pages": [
-              "mission-control/nodes-fleet-view",
-              "mission-control/node-configuration"
-            ]
-          },
-          {
-            "group": "Mission Planning",
+            "group": "Plan and review",
             "pages": [
               "mission-control/mission-planning",
               "mission-control/pattern-generators",
               "mission-control/geofences-rally",
-              "mission-control/file-formats"
+              "mission-control/file-formats",
+              "mission-control/flight-logs"
             ]
           },
           {
-            "group": "Configuration",
+            "group": "Firmware support",
             "pages": [
+              "mission-control/firmware-comparison",
+              "mission-control/inav-guide"
+            ]
+          },
+          {
+            "group": "Configure the flight controller",
+            "pages": [
+              "mission-control/calibration",
               "mission-control/fc-configuration",
-              "mission-control/mavlink-signing",
               "mission-control/parameters",
-              "mission-control/firmware-flashing",
-              "mission-control/flash-tool",
-              "mission-control/calibration"
+              "mission-control/mavlink-signing",
+              "mission-control/flash-tool"
             ]
           },
           {
-            "group": "Extensions",
+            "group": "Nodes",
             "pages": [
-              "mission-control/installing-plugins"
+              "mission-control/node-configuration",
+              "mission-control/ground-station-panel"
             ]
           },
           {
-            "group": "Advanced",
+            "group": "Test without hardware",
             "pages": [
               "mission-control/simulation",
+              "mission-control/sitl-testing"
+            ]
+          },
+          {
+            "group": "Cloud, AI and settings",
+            "pages": [
               "mission-control/cloud-features",
-              "mission-control/sitl-testing",
+              "mission-control/mcp",
               "mission-control/settings"
+            ]
+          },
+          {
+            "group": "Android GCS",
+            "pages": [
+              "android/overview",
+              "android/install"
             ]
           }
         ]
@@ -160,92 +179,73 @@
         "icon": "microchip",
         "groups": [
           {
-            "group": "Getting Started",
+            "group": "Get started",
             "pages": [
               "drone-agent/overview",
               "drone-agent/supported-hardware",
-              "drone-agent/installation"
+              "drone-agent/installation",
+              "drone-agent/updating"
             ]
           },
           {
-            "group": "Using the Agent",
+            "group": "Set up and use",
             "pages": [
-              "drone-agent/cli-reference",
-              "drone-agent/tui-dashboard",
               "drone-agent/pairing",
-              "drone-agent/configuration"
+              "drone-agent/configuration",
+              "drone-agent/tui-dashboard",
+              "drone-agent/cli-reference"
             ]
           },
           {
-            "group": "Browser Dashboard",
+            "group": "Browser dashboard",
+            "root": "drone-agent/dashboard-overview",
             "pages": [
-              "drone-agent/dashboard-overview",
-              "drone-agent/dashboard-per-profile",
               "drone-agent/dashboard-home",
-              "drone-agent/dashboard-telemetry",
-              "drone-agent/dashboard-video",
               "drone-agent/dashboard-pairing",
+              {
+                "group": "Drone pages",
+                "expanded": true,
+                "pages": [
+                  "drone-agent/dashboard-telemetry",
+                  "drone-agent/dashboard-video",
+                  "drone-agent/dashboard-transmit"
+                ]
+              },
+              "drone-agent/dashboard-extensions",
               "drone-agent/dashboard-peripherals",
-              "drone-agent/dashboard-plugins",
               "drone-agent/dashboard-logs",
               "drone-agent/dashboard-diagnostics",
               "drone-agent/dashboard-settings"
             ]
           },
           {
-            "group": "Core Systems",
+            "group": "Link, video and flight systems",
             "pages": [
               "drone-agent/mavlink-proxy",
               "drone-agent/mavlink-signing",
-              "drone-agent/battery-health",
               "drone-agent/video-pipeline",
               "drone-agent/multi-camera",
-              "drone-agent/cloud-relay",
-              "drone-agent/swarm-bus",
               "drone-agent/wfb-ng",
               "drone-agent/wfb-pairing",
+              "drone-agent/cloud-relay",
+              "drone-agent/swarm-bus",
+              "drone-agent/battery-health"
+            ]
+          },
+          {
+            "group": "Reference",
+            "pages": [
               "drone-agent/rest-api",
+              "drone-agent/systemd-services",
+              "drone-agent/hal-and-tiers",
               "drone-agent/black-box"
             ]
           },
           {
-            "group": "Extensions",
+            "group": "Diagnose",
             "pages": [
-              "drone-agent/plugins",
-              "drone-agent/extensions-catalog",
-              "drone-agent/extensions/world-engine"
-            ]
-          },
-          {
-            "group": "Operations",
-            "pages": [
-              "drone-agent/updating",
-              "drone-agent/hal-and-tiers",
-              "drone-agent/systemd-services",
-              "drone-agent/setup-webapp",
               "drone-agent/diagnostics",
               "drone-agent/troubleshooting"
-            ]
-          },
-          {
-            "group": "Vision Navigation",
-            "pages": [
-              "drone-agent/vision-nav-overview",
-              "drone-agent/vision-nav-getting-started",
-              "drone-agent/vision-nav-how-it-works",
-              "drone-agent/vision-nav-hardware",
-              "drone-agent/vision-nav-install",
-              "drone-agent/vision-nav-modes",
-              "drone-agent/vision-nav-mode-comparison",
-              "drone-agent/vision-nav-features",
-              "drone-agent/vision-nav-optical-flow",
-              "drone-agent/vision-nav-calibration",
-              "drone-agent/vision-nav-calibration-math",
-              "drone-agent/vision-nav-vio",
-              "drone-agent/vision-nav-fallback-methods",
-              "drone-agent/vision-nav-troubleshooting",
-              "drone-agent/vision-nav-architecture",
-              "drone-agent/vision-nav-faq"
             ]
           }
         ]
@@ -255,7 +255,7 @@
         "icon": "tower-broadcast",
         "groups": [
           {
-            "group": "Getting Started",
+            "group": "Get started",
             "pages": [
               "ground-agent/overview",
               "ground-agent/supported-hardware",
@@ -265,55 +265,83 @@
             ]
           },
           {
-            "group": "Connecting Your Devices",
+            "group": "Connect your devices",
             "pages": [
               "ground-agent/wifi-ap",
               "ground-agent/usb-tether",
-              "ground-agent/hdmi-kiosk",
               "ground-agent/android-client"
             ]
           },
           {
-            "group": "Browser Dashboard",
+            "group": "At the ground station",
             "pages": [
-              "ground-agent/dashboard-overview",
-              "drone-agent/dashboard-per-profile",
-              "drone-agent/dashboard-home",
-              "ground-agent/dashboard-receive",
-              "ground-agent/dashboard-mesh",
-              "ground-agent/dashboard-sources",
-              "ground-agent/dashboard-io",
-              "drone-agent/dashboard-pairing",
-              "drone-agent/dashboard-peripherals",
-              "drone-agent/dashboard-plugins",
-              "drone-agent/dashboard-logs",
-              "drone-agent/dashboard-diagnostics",
-              "drone-agent/dashboard-settings"
+              "ground-agent/display",
+              "ground-agent/hdmi-kiosk",
+              "ground-agent/elrs-crsf-control-lane"
             ]
           },
           {
-            "group": "Distributed Receive & Mesh",
+            "group": "Browser dashboard",
+            "root": "ground-agent/dashboard-overview",
+            "pages": [
+              "ground-agent/dashboard-receive",
+              "ground-agent/dashboard-mesh",
+              "ground-agent/dashboard-io"
+            ]
+          },
+          {
+            "group": "Mesh and distributed receive",
             "pages": [
               "ground-agent/mesh-overview",
+              "ground-agent/mesh-setup",
               "ground-agent/batman-adv",
               "ground-agent/mesh-troubleshooting"
             ]
           },
           {
-            "group": "Relay & Fleet",
+            "group": "Network and fleet",
             "pages": [
-              "ground-agent/transitive-enrollment",
-              "ground-agent/elrs-crsf-control-lane"
+              "ground-agent/uplink-matrix",
+              "ground-agent/transitive-enrollment"
             ]
           },
           {
-            "group": "Operations",
+            "group": "Diagnose",
             "pages": [
-              "ground-agent/physical-ui",
-              "ground-agent/display",
-              "ground-agent/uplink-matrix",
-              "ground-agent/hardware-tab",
               "ground-agent/troubleshooting"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Extensions",
+        "icon": "puzzle-piece",
+        "groups": [
+          {
+            "group": "Use extensions",
+            "pages": [
+              "drone-agent/extensions-catalog",
+              "mission-control/installing-plugins",
+              "drone-agent/plugins"
+            ]
+          },
+          {
+            "group": "Extension guides",
+            "pages": [
+              "drone-agent/extensions/world-engine",
+              {
+                "group": "Vision Navigation",
+                "root": "drone-agent/vision-nav-overview",
+                "pages": [
+                  "drone-agent/vision-nav-hardware",
+                  "drone-agent/vision-nav-install",
+                  "drone-agent/vision-nav-optical-flow",
+                  "drone-agent/vision-nav-modes",
+                  "drone-agent/vision-nav-calibration",
+                  "drone-agent/vision-nav-troubleshooting",
+                  "drone-agent/vision-nav-architecture"
+                ]
+              }
             ]
           }
         ]
@@ -323,7 +351,7 @@
         "icon": "shield-halved",
         "groups": [
           {
-            "group": "Before You Fly",
+            "group": "Before you fly",
             "pages": [
               "operations/safety",
               "operations/operating-limits",
@@ -332,8 +360,9 @@
             ]
           },
           {
-            "group": "When Things Go Wrong",
+            "group": "When things go wrong",
             "pages": [
+              "operations/troubleshooting",
               "operations/recovery",
               "operations/support"
             ]
@@ -341,18 +370,42 @@
         ]
       },
       {
-        "tab": "Architecture",
+        "tab": "Platform",
         "icon": "sitemap",
         "groups": [
           {
             "group": "Architecture",
             "pages": [
               "architecture/system-overview",
+              "architecture/agent-services",
               "architecture/mavlink-protocol",
               "architecture/state-management",
-              "architecture/agent-services",
               "architecture/video-stack",
-              "architecture/cloud-infrastructure",
+              "architecture/cloud-infrastructure"
+            ]
+          },
+          {
+            "group": "Self-hosting",
+            "root": "developers/self-hosting/overview",
+            "pages": [
+              "developers/self-hosting/deploy-tool",
+              "developers/self-hosting/all-in-one",
+              "developers/self-hosting/mission-control-and-convex",
+              "developers/self-hosting/agent",
+              "developers/self-hosting/mqtt-bridge",
+              "developers/self-hosting/video-relay",
+              "developers/self-hosting/troubleshooting-and-ports"
+            ]
+          },
+          {
+            "group": "Integrations",
+            "pages": [
+              "developers/mcp-server"
+            ]
+          },
+          {
+            "group": "Contribute to the code",
+            "pages": [
               "architecture/project-structure",
               "architecture/contributing-guide"
             ]
@@ -375,27 +428,24 @@
           {
             "group": "Tutorials",
             "pages": [
-              "developers/quickstart",
-              "developers/your-first-plugin"
+              "developers/your-first-plugin",
+              "developers/scaffolder-walkthrough"
             ]
           },
           {
             "group": "Reference",
             "pages": [
               "developers/manifest",
-              "developers/lifecycle",
-              "developers/permissions",
-              "developers/event-hooks",
-              "developers/cli-reference",
-              "developers/troubleshooting"
-            ]
-          },
-          {
-            "group": "Contribution points",
-            "pages": [
               "developers/contribution-points",
               "developers/parameter-schema",
-              "developers/scaffolder-walkthrough"
+              "developers/permissions",
+              "developers/lifecycle",
+              "developers/event-hooks",
+              "developers/event-hooks-and-bus",
+              "developers/state-and-storage",
+              "developers/vendor-binaries",
+              "developers/cli-reference",
+              "developers/troubleshooting"
             ]
           },
           {
@@ -408,68 +458,208 @@
           },
           {
             "group": "Driver layer",
+            "root": "developers/driver-layer",
+            "expanded": false,
             "pages": [
-              "developers/driver-layer",
               "developers/camera-driver",
               "developers/gimbal-driver",
               "developers/lidar-driver",
               "developers/gps-driver",
               "developers/esc-driver",
-              "developers/payload-actuator-driver",
-              "developers/vendor-binaries",
-              "developers/hardware-testing"
+              "developers/payload-actuator-driver"
             ]
           },
           {
-            "group": "Ship it",
-            "pages": [
-              "developers/distribution-local-install",
-              "developers/contributing-repos"
-            ]
-          },
-          {
-            "group": "Distribution and registry",
-            "pages": [
-              "developers/distribution-url-install",
-              "developers/linting",
-              "developers/distribution-registry",
-              "developers/submitting-to-the-registry",
-              "developers/signing-keys",
-              "developers/revocation-and-incidents",
-              "developers/legal-and-licensing"
-            ]
-          },
-          {
-            "group": "Advanced topics",
+            "group": "Deep dives",
             "pages": [
               "developers/agent-plugin-deep-dive",
               "developers/gcs-plugin-deep-dive",
-              "developers/state-and-storage",
-              "developers/event-hooks-and-bus",
               "developers/multi-component-plugins",
               "developers/mavlink-extensions",
               "developers/vision-plugins",
-              "developers/mission-and-suite-plugins",
+              "developers/mission-plugins",
               "developers/performance-and-budgets",
-              "developers/versioning-and-updates",
-              "developers/mcp-server"
+              "developers/versioning-and-updates"
             ]
           },
           {
-            "group": "Self-hosting",
+            "group": "Test and distribute",
             "pages": [
-              "developers/self-hosting/overview",
-              "developers/self-hosting/agent",
-              "developers/self-hosting/mission-control-and-convex",
-              "developers/self-hosting/mqtt-bridge",
-              "developers/self-hosting/video-relay",
-              "developers/self-hosting/all-in-one",
-              "developers/self-hosting/deploy-tool",
-              "developers/self-hosting/troubleshooting-and-ports"
+              "developers/hardware-testing",
+              "developers/linting",
+              "developers/distribution-local-install",
+              "developers/signing-keys",
+              "developers/distribution-url-install",
+              "developers/distribution-registry",
+              "developers/revocation-and-incidents",
+              "developers/legal-and-licensing",
+              "developers/contributing-repos"
             ]
           }
         ]
       }
     ]
-  }
+  },
+  "redirects": [
+    {
+      "source": "/getting-started",
+      "destination": "/getting-started/introduction",
+      "permanent": true
+    },
+    {
+      "source": "/mission-control",
+      "destination": "/mission-control/overview",
+      "permanent": true
+    },
+    {
+      "source": "/drone-agent",
+      "destination": "/drone-agent/overview",
+      "permanent": true
+    },
+    {
+      "source": "/ground-agent",
+      "destination": "/ground-agent/overview",
+      "permanent": true
+    },
+    {
+      "source": "/operations",
+      "destination": "/operations/safety",
+      "permanent": true
+    },
+    {
+      "source": "/architecture",
+      "destination": "/architecture/system-overview",
+      "permanent": true
+    },
+    {
+      "source": "/developers",
+      "destination": "/developers/overview",
+      "permanent": true
+    },
+    {
+      "source": "/developers/self-hosting",
+      "destination": "/developers/self-hosting/overview",
+      "permanent": true
+    },
+    {
+      "source": "/android",
+      "destination": "/android/overview",
+      "permanent": true
+    },
+    {
+      "source": "/drone-agent/config",
+      "destination": "/drone-agent/configuration",
+      "permanent": true
+    },
+    {
+      "source": "/drone-agent/follow-me-overview",
+      "destination": "/drone-agent/extensions-catalog#follow-me",
+      "permanent": false
+    },
+    {
+      "source": "/drone-agent/mavlink-gimbal-v2-overview",
+      "destination": "/drone-agent/extensions-catalog#mavlink-gimbal-v2",
+      "permanent": false
+    },
+    {
+      "source": "/drone-agent/siyi-pod-overview",
+      "destination": "/drone-agent/extensions-catalog#siyi-optical-pod",
+      "permanent": false
+    },
+    {
+      "source": "/drone-agent/thermal-camera-overview",
+      "destination": "/drone-agent/extensions-catalog#thermal-camera",
+      "permanent": false
+    },
+    {
+      "source": "/drone-agent/vision-nav-getting-started",
+      "destination": "/drone-agent/vision-nav-install",
+      "permanent": true
+    },
+    {
+      "source": "/drone-agent/vision-nav-how-it-works",
+      "destination": "/drone-agent/vision-nav-overview",
+      "permanent": true
+    },
+    {
+      "source": "/drone-agent/vision-nav-features",
+      "destination": "/drone-agent/vision-nav-overview",
+      "permanent": true
+    },
+    {
+      "source": "/drone-agent/vision-nav-vio",
+      "destination": "/drone-agent/vision-nav-overview",
+      "permanent": true
+    },
+    {
+      "source": "/drone-agent/vision-nav-mode-comparison",
+      "destination": "/drone-agent/vision-nav-modes",
+      "permanent": true
+    },
+    {
+      "source": "/drone-agent/vision-nav-fallback-methods",
+      "destination": "/drone-agent/vision-nav-modes",
+      "permanent": true
+    },
+    {
+      "source": "/drone-agent/vision-nav-calibration-math",
+      "destination": "/drone-agent/vision-nav-calibration",
+      "permanent": true
+    },
+    {
+      "source": "/drone-agent/vision-nav-faq",
+      "destination": "/drone-agent/vision-nav-troubleshooting",
+      "permanent": true
+    },
+    {
+      "source": "/drone-agent/dashboard-per-profile",
+      "destination": "/drone-agent/dashboard-overview",
+      "permanent": true
+    },
+    {
+      "source": "/drone-agent/dashboard-plugins",
+      "destination": "/drone-agent/dashboard-extensions",
+      "permanent": true
+    },
+    {
+      "source": "/drone-agent/setup-webapp",
+      "destination": "/drone-agent/dashboard-overview",
+      "permanent": true
+    },
+    {
+      "source": "/ground-agent/dashboard-sources",
+      "destination": "/ground-agent/dashboard-mesh",
+      "permanent": true
+    },
+    {
+      "source": "/ground-agent/physical-ui",
+      "destination": "/ground-agent/display",
+      "permanent": true
+    },
+    {
+      "source": "/ground-agent/hardware-tab",
+      "destination": "/mission-control/ground-station-panel",
+      "permanent": true
+    },
+    {
+      "source": "/mission-control/firmware-flashing",
+      "destination": "/mission-control/flash-tool",
+      "permanent": true
+    },
+    {
+      "source": "/developers/quickstart",
+      "destination": "/developers/your-first-plugin",
+      "permanent": true
+    },
+    {
+      "source": "/developers/submitting-to-the-registry",
+      "destination": "/developers/distribution-registry",
+      "permanent": true
+    },
+    {
+      "source": "/developers/mission-and-suite-plugins",
+      "destination": "/developers/mission-plugins",
+      "permanent": true
+    }
+  ]
 }

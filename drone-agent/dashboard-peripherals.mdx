@@ -1,60 +1,54 @@
 ---
-title: "Peripherals"
-description: "Every USB, I2C, SPI, and serial peripheral the agent enumerates, with live status."
+title: "Agent dashboard: Peripherals"
+sidebarTitle: "Peripherals"
+description: "Registered peripheral manifests with live connection state on the agent's browser dashboard."
 icon: "cpu"
-lastUpdated: "2026-06-18"
 ---
 
-# Peripherals
+Peripherals is a shared page at `/peripherals`: registered peripheral manifests with live connection state. Plug a known device and the agent picks it up automatically. Raw hardware detection lives in Home → Hardware.
 
-The Peripherals page lists every peripheral the agent has detected on
-this node: USB devices, cameras, GPS modules, OLEDs, SPI displays, and
-others. The list refreshes every eight seconds and reflects hot-plug
-events without a manual rescan.
-
-<Frame caption="Peripherals page.">
-  ![Peripherals page](/images/dashboard/drone/peripherals-full.png)
+<Frame caption="Peripherals with a registered device.">
+  ![Agent dashboard Peripherals page with a peripheral card showing its state badge and detail line](/images/drone-agent/dashboard/peripherals.png)
 </Frame>
 
-## Columns
+## Card fields
 
-| Column | Meaning |
-|---|---|
-| Name | Vendor + product string from the kernel or driver. |
-| Type | Bus type (`usb`, `i2c`, `spi`, `serial`). |
-| Category | What the agent treats the device as (`camera`, `gps`, `radio`, `display`, `compute`). |
-| Bus | Bus address (`usb:001:002`). |
-| Address | Vendor:product or unit address. |
-| Status | `ok`, `warning`, `missing`, `unknown`. |
-| Last reading | Most recent sample the agent pulled (model, firmware, rate). |
+Each registered peripheral is one card:
 
-## Profile gating
+- a status dot and the display name;
+- a state badge: connected, disconnected, missing, error or unknown;
+- the peripheral id;
+- a detail line: `transport · kind · vendor · category`;
+- the description;
+- `last seen` with the time since the agent last saw it.
 
-Shared route, visible on both profiles.
+The page refreshes every 8 s; **Refresh** reloads it at once.
 
-## Backend endpoints
+With nothing registered the page reads "No peripherals registered." Manifests come from pip packages and `/etc/ados/peripherals/*.yaml`; install a peripheral plugin and it appears here.
 
-| Method | Path | Purpose |
-|---|---|---|
-| GET | `/api/v1/peripherals` | List with status + manifest entries |
-| GET | `/api/peripherals` | Raw enumeration (lsusb-style) |
-| POST | `/api/peripherals/scan` | Trigger an explicit rescan |
+## Data sources
+
+| Endpoint | Used for |
+| --- | --- |
+| `GET /api/v1/peripherals` | the card list |
+
+Also available, not used by this page: `GET /api/v1/peripherals/{peripheral_id}` and `POST /api/v1/peripherals/{peripheral_id}/action`. A peripheral action is refused while the vehicle is armed (see [Safety interlocks](/drone-agent/dashboard-overview#safety-interlocks)).
 
 ## Troubleshooting
 
-<Accordion title="A USB device is plugged in but not listed">
-The agent only reports devices it recognises. Check `dmesg` via the
-Logs page for a kernel event. If the device is a serial UART, the
-agent treats it as an `unknown` row until a driver claims it.
-</Accordion>
+<AccordionGroup>
+  <Accordion title="A device is plugged in but not listed">
+    A device appears only when a manifest describes it. Check Home → Hardware for raw detection.
+  </Accordion>
+</AccordionGroup>
 
-<Accordion title="The list keeps flapping `ok` to `warning`">
-The kernel is renegotiating the USB link. Replace the cable or move
-the device to a powered hub. Persistent flapping shows up in
-Diagnostics as service restarts.
-</Accordion>
+## Next steps
 
-## Related
-
-- [HAL and tiers](/drone-agent/hal-and-tiers)
-- [Supported hardware](/drone-agent/supported-hardware)
+<CardGroup cols={2}>
+  <Card title="Logs" icon="scroll-text" href="/drone-agent/dashboard-logs">
+    Live agent log rows.
+  </Card>
+  <Card title="Home" icon="house" href="/drone-agent/dashboard-home">
+    The Hardware panel and Rescan.
+  </Card>
+</CardGroup>

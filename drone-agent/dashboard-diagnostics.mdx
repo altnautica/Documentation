@@ -1,100 +1,67 @@
 ---
-title: "Diagnostics"
-description: "Live CPU, memory, disk, temperatures, and systemd service health."
+title: "Agent dashboard: Diagnostics"
+sidebarTitle: "Diagnostics"
+description: "System metrics, agent services and the board reboot on the agent's browser dashboard."
 icon: "wrench"
-lastUpdated: "2026-06-18"
 ---
 
-# Diagnostics
+Diagnostics is a shared page at `/diagnostics`: system metrics, agent services, and recovery actions.
 
-The Diagnostics page is the agent's system-health surface: hardware
-utilization, temperatures, systemd unit state, and quick actions for
-restart and reboot.
-
-<Frame caption="Diagnostics page on a Raspberry Pi 4B.">
-  ![Diagnostics page](/images/dashboard/drone/diagnostics-full.png)
+<Frame caption="Diagnostics with the Agent services list populated.">
+  ![Agent dashboard Diagnostics page with CPU, Memory, Disk and Temp tiles and the Agent services list](/images/drone-agent/dashboard/diagnostics.png)
 </Frame>
 
-## System panel
+## System tiles
 
-CPU usage, core count, memory total / used / percent, disk total / used
-/ percent, and the temperature sensors the kernel exposes
-(`cpu_thermal`, SoC, board-level).
+| Tile | Shows |
+| --- | --- |
+| CPU | percent used and the core count |
+| Memory | percent used and used / total MB |
+| Disk | percent used and used / total GB |
+| Temp | the first temperature sensor only, with its name |
 
-The page polls `/api/system` every five seconds.
+## Agent services
 
-## Control-plane latency
+Each row shows the unit name, its state badge and **Restart**. The confirm **Restart `<unit>`?** says "The service drops out and ados-supervisor brings it back. Dependent services may also restart." **Refresh** reloads the list. The unit list itself is on [systemd services](/drone-agent/systemd-services).
 
-Mission Control measures the round-trip time of its control link to the agent
-and shows it as `controlRttMs` on the drone card and the agent status card. It
-is the time for a request to reach the agent and a response to come back, so it
-reflects the path the GCS is actually using (LAN WebSocket, MQTT relay, or the
-cloud poll), independent of the flight controller.
+## Reboot board
 
-The agent answers a lightweight `GET /api/ping` echo for this measurement, and
-the GCS also derives a value from its regular status poll, so a number shows up
-without any extra configuration.
+**Reboot board** sits at the top right. The confirm **Reboot the board?** explains that the agent shuts down all services and asks the kernel to reboot; the dashboard reconnects once the board is back up (typically 30 to 60 seconds).
 
-| Reading | What it means |
-|---|---|
-| Tens of milliseconds | Direct LAN connection, healthy. |
-| 100-300 ms | MQTT relay or a busy network. |
-| Seconds | Cloud command-queue poll, or a degraded link. Manual control will feel laggy. Prefer a LAN connection for hands-on flying. |
+<Warning>
+While the vehicle is armed, rebooting and restarting link services are refused. See [Safety interlocks](/drone-agent/dashboard-overview#safety-interlocks) and [Safety](/operations/safety).
+</Warning>
 
-A missing or steadily climbing value means the control path is unhealthy. Check
-the connection method (LAN versus cloud) and the network between the GCS and the
-agent.
+## Data sources
 
-## Services panel
-
-Every systemd unit in the agent's set. Each row shows unit name,
-active / inactive, sub-state (`running`, `dead`, `failed`), and PID.
-
-### Per-service actions
-
-| Action | Effect |
-|---|---|
-| Restart | `systemctl restart` on the unit. |
-| Stop | Stop without disabling. |
-| Logs | Filter the Logs page to this service. |
-
-### Reboot
-
-A reboot button at the bottom of the page calls `/api/v1/setup/reboot`.
-The reboot is graceful: the agent flushes state, stops services, and
-schedules the reboot.
-
-## Profile gating
-
-Shared route, visible on both profiles.
-
-## Backend endpoints
-
-| Method | Path | Purpose |
-|---|---|---|
-| GET | `/api/system` | CPU / memory / disk / temps |
-| GET | `/api/services` | Unit list |
-| GET | `/api/ping` | Lightweight echo for control-plane round-trip timing |
-| POST | `/api/services/{name}/restart` | Restart a unit |
-| POST | `/api/v1/setup/reboot` | Reboot the node |
+| Endpoint | Used for |
+| --- | --- |
+| `GET /api/system` | system tiles, every 5 s |
+| `GET /api/services` | Agent services, every 8 s |
+| `POST /api/services/{name}/restart` | **Restart** |
+| `POST /api/v1/setup/reboot` | **Reboot board** |
 
 ## Troubleshooting
 
-<Accordion title="Service list reads `service inventory unavailable`">
-The agent could not reach its own dbus connection to systemd. Run
-`systemctl status ados-supervisor` over SSH. A typical cause is a
-permission misconfiguration on the unit file.
-</Accordion>
+<AccordionGroup>
+  <Accordion title="Couldn't reach the service inventory">
+    The agent did not answer `GET /api/services`. Check `journalctl -u ados-supervisor` over SSH, then press **Retry**.
+  </Accordion>
+  <Accordion title="Couldn't query systemd from the agent">
+    `systemctl` is missing or blocked, so the inventory is unavailable; running services may still be alive. Check `journalctl -u ados-supervisor`.
+  </Accordion>
+  <Accordion title="A service keeps failing">
+    Filter the [Logs](/drone-agent/dashboard-logs) page by its logger name, or read `journalctl -u <unit>` over SSH.
+  </Accordion>
+</AccordionGroup>
 
-<Accordion title="A service keeps restarting">
-Open the service's logs from the row action. The most common causes
-are missing hardware (the service waits forever for a device), a
-config typo (the service crashes on parse), or an upstream dependency
-the service waits on. Restart with the dependency healthy.
-</Accordion>
+## Next steps
 
-## Related
-
-- [Systemd services](/drone-agent/systemd-services)
-- [Troubleshooting guide](/drone-agent/troubleshooting)
-- [Logs page](/drone-agent/dashboard-logs)
+<CardGroup cols={2}>
+  <Card title="Settings" icon="settings" href="/drone-agent/dashboard-settings">
+    Profile, network, cloud and security settings.
+  </Card>
+  <Card title="Agent diagnostics" icon="stethoscope" href="/drone-agent/diagnostics">
+    The `ados diag` harness and logs.
+  </Card>
+</CardGroup>

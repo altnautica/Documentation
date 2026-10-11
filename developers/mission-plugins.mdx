@@ -1,0 +1,137 @@
+---
+title: "Mission plugins"
+description: "Read the mission, replace it with operator approval, and contribute a mission template to the planner from a GCS plugin."
+keywords: ["mission", "waypoints", "mission.write", "mission template", "plugin"]
+---
+
+A GCS plugin can read the mission in Mission Control, replace it on its own drone after the operator approves, and contribute a mission template to the planner.
+
+<Warning>
+`mission.write` uploads a mission that the drone flies in an autonomous mode. Test generated missions in simulation first and read [Safety](/operations/safety) before flying one.
+</Warning>
+
+## Capabilities
+
+| Capability | Lets the plugin |
+|------------|-----------------|
+| `mission.read` | Read the mission, its progress and the current waypoint. |
+| `mission.write` | Replace the mission on the plugin's own drone, with operator approval. |
+| `ui.slot.mission-template` | Mount a template in the planner's pattern editor. |
+
+Risk levels are on [Permissions](/developers/permissions).
+
+## Reading the mission
+
+`ctx.mission.read` takes a mission id argument but ignores it, and returns the planner's current state:
+
+```ts
+const state = await ctx.mission.read("active");
+// {
+//   waypoints: Waypoint[],        // the planner's waypoints
+//   activeMission: { ..., waypoints: Waypoint[] } | null,
+//   progress: ...,
+//   currentWaypoint: ...,
+// }
+```
+
+The returned objects are copies; changing them does not change the planner.
+
+## Writing the mission
+
+`ctx.mission.write` replaces the mission. The payload is `{ waypoints: [...] }` and must hold at least one waypoint:
+
+```ts
+await ctx.mission.write({
+  missionId: "active",
+  payload: {
+    waypoints: [
+      { id: "wp1", lat: 12.97, lon: 77.59, alt: 30, frame: "relative" },
+      { id: "wp2", lat: 12.971, lon: 77.591, alt: 30, frame: "relative", holdTime: 5 },
+    ],
+  },
+});
+```
+
+Each waypoint needs a string `id` and finite `lat`, `lon` and `alt`. Optional fields:
+
+| Field | Values |
+|-------|--------|
+| `command` | A navigation command the planner accepts. Anything else is rejected. |
+| `frame` | Altitude frame: `relative`, `absolute` or `terrain`. Defaults to the planner's frame. |
+| `speed`, `holdTime`, `param1`, `param2`, `param3` | Finite numbers. |
+
+The host rebuilds every waypoint from these fields, so unknown fields are dropped and a malformed waypoint rejects the whole write with the first problem it found.
+
+The write targets the plugin's own drone, is refused unless the drone is disarmed with a live FC link, shows the operator a confirmation dialog, and rejects with code `refused` if denied. In order, the host:
+
+1. Validates the waypoints.
+2. Refuses if the plugin is not bound to a connected drone, or the drone is armed, its arm state is unknown, or its flight controller link is down.
+3. Runs the planner's own mission validator (geofence, zones, rally and the default altitude frame). An invalid mission is rejected with its errors.
+4. Shows the operator a dialog naming the drone, the waypoint count, the altitude frame and any advisory issues.
+5. After approval, reads the drone's state again and refuses if the arm state, link or flight controller changed while the dialog was open. The operator is notified of an approved write that was not uploaded.
+6. Replaces the planner's waypoints (undoable) and uploads them to that drone.
+
+The SDK waits for the operator's answer instead of timing out. Geofence and rally points are not writable through `mission.write`.
+
+## Contributing a mission template
+
+A template is a GCS bundle that mounts in the `mission.template` slot, inside the planner's pattern editor. It renders its own form, generates waypoints from the operator's input and writes them with `ctx.mission.write`, which shows the same confirmation dialog.
+
+Declare the template under `gcs.contributes.missionTemplates` (`mission_templates` is accepted too) along with the capabilities:
+
+```yaml
+gcs:
+  permissions:
+    - id: ui.slot.mission-template
+    - id: mission.read
+    - id: mission.write
+  contributes:
+    missionTemplates:
+      - id: grid-survey
+        title: "Grid survey"
+        entrypoint: "gcs/grid-survey.bundle.js"
+```
+
+The full field list is on [Contribution points](/developers/contribution-points).
+
+## Testing
+
+Run the mission path against the harness from `@altnautica/plugin-sdk/harness`. It applies the granted-capability check and records every RPC the plugin sends:
+
+```ts
+import { createPluginHarness } from "@altnautica/plugin-sdk/harness";
+
+const harness = createPluginHarness({
+  grantedCapabilities: ["mission.read", "mission.write"],
+  mount: async (ctx) => {
+    await ctx.mission.write({
+      missionId: "active",
+      payload: {
+        waypoints: [{ id: "wp1", lat: 12.97, lon: 77.59, alt: 30, frame: "relative" }],
+      },
+    });
+  },
+});
+
+await harness.start();
+expect(harness.calls).toContainEqual(
+  expect.objectContaining({ method: "mission.write" }),
+);
+await harness.teardown();
+```
+
+The harness does not run the host's waypoint checks or the confirmation dialog; test those against a simulated drone in Mission Control.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="GCS plugin deep dive" href="/developers/gcs-plugin-deep-dive">
+    The iframe sandbox, RPC and UI slots.
+  </Card>
+  <Card title="Contribution points" href="/developers/contribution-points">
+    Every `contributes` key and its fields.
+  </Card>
+  <Card title="Safety" href="/operations/safety">
+    Pre-flight checks before flying a plugin-generated mission.
+  </Card>
+</CardGroup>

@@ -1,11 +1,9 @@
 ---
 title: "Safety"
-description: "What to configure before the first flight, how arming is gated, and what happens when the link drops."
+description: "What to configure before the first flight, how arming is gated, what the agent refuses while armed, and what happens when the link drops."
 icon: "shield-halved"
-lastUpdated: "2026-07-31"
+keywords: ["ados", "safety", "failsafe", "arming", "kill switch", "armed interlock"]
 ---
-
-# Safety
 
 Read this before the first flight of any aircraft running ADOS.
 
@@ -17,14 +15,10 @@ The short version: ADOS does not fly your aircraft. The flight controller does. 
 The agent has no flight envelope of its own. There is no companion-side geofence and no companion-side return-to-launch. If the FC is not configured to protect the aircraft, nothing else will.
 </Warning>
 
-Concretely:
-
 - **No geofence enforcement in the agent.** The agent can republish a geofence breach the FC reports, as a notification. It never commands anything in response.
 - **No autonomous RTL.** `rtl` exists only as a command you send.
-- **No pre-arm checks of its own.** The agent relays your arm request to the flight controller and reports back what the FC decided, including the FC's own reason text when it refuses. Every arming rule that exists lives in the flight controller. If the FC's pre-arm checks are disabled, nothing in ADOS re-adds them.
+- **No pre-arm checks of its own.** The agent relays your arm request to the flight controller and reports back what the FC decided, including the FC's own reason text when it refuses. Every arming rule lives in the flight controller. If the FC's pre-arm checks are disabled, nothing in ADOS re-adds them.
 - **The swarm setpoint loop stops rather than substitutes.** When the vehicle is disarmed, the FC has left GUIDED, or the neighbour table has gone stale, it stops emitting and the FC holds on its own terms.
-
-Everything below is about configuring the FC and understanding what ADOS shows you about it.
 
 ## Before the first flight
 
@@ -40,11 +34,11 @@ Open the drone's **Failsafe** panel and the **Power** panel in Mission Control. 
 | Where are the boundaries, and what happens at them? | `FENCE_ENABLE`, `FENCE_ACTION`, `FENCE_ALT_MAX`, `FENCE_RADIUS` | Failsafe or Geofence panel |
 | How high does the aircraft climb before returning? | `RTL_ALT` | Parameters editor |
 
-Two of these are easy to miss. The **critical** battery tier is on the Power panel, not the Failsafe panel, so setting only the low tier from the Failsafe panel leaves the second stage unset. And no panel edits `RTL_ALT`, so it has to be set in the generic parameters editor. A default `RTL_ALT` that is lower than the trees between the aircraft and home is the classic way to lose one.
+Two of these are easy to miss. The **critical** battery tier is on the Power panel, not the Failsafe panel, so setting only the low tier from the Failsafe panel leaves the second stage unset. And no panel edits `RTL_ALT`, so set it in the generic parameters editor. A default `RTL_ALT` that is lower than the trees between the aircraft and home is the classic way to lose one.
 
 On a plane or VTOL the RC failsafe parameters are `THR_FAILSAFE` and `THR_FS_VALUE` instead.
 
-On PX4, the panel writes the equivalent PX4 parameters where a mapping exists: battery to `COM_LOW_BAT_ACT` and `BAT_LOW_THR`, the fence to `GF_ACTION`, `GF_MAX_VER_DIST`, and `GF_MAX_HOR_DIST`, and `RTL_ALT` to `RTL_RETURN_ALT`. PX4's link-loss *actions* are not surfaced by the panel, so set those in the parameters editor.
+On PX4, the panel writes the equivalent PX4 parameters where a mapping exists: battery to `COM_LOW_BAT_ACT` and `BAT_LOW_THR`, the fence to `GF_ACTION`, `GF_MAX_VER_DIST`, and `GF_MAX_HOR_DIST`, and `RTL_ALT` to `RTL_RETURN_ALT`. The panel does not surface PX4's link-loss actions, so set those in the parameters editor.
 
 On Betaflight the equivalents are `BF_FS_DELAY`, `BF_FS_OFF_DELAY`, `BF_FS_THROTTLE`, and `BF_FS_PROCEDURE`. On iNav, the failsafe panel exposes `failsafe_nav_mode`, `failsafe_min_distance_behaviour`, and `failsafe_min_distance`.
 
@@ -60,102 +54,102 @@ So do not treat GCS failsafe as your downlink-loss protection. **RC failsafe, ba
 
 ### 3. Work the pre-flight checklist
 
-Mission Control's cockpit checklist verifies 18 items, most of them against live telemetry rather than against your memory:
+Mission Control's cockpit checklist has 18 items, most of them verified against live telemetry rather than against your memory:
 
-- **Hardware:** battery above 20 percent, pack voltage above 10.5 V, props secured, frame intact, motors free
-- **Software:** 3D GPS fix, at least 8 satellites, EKF variances healthy, sensors healthy, pre-arm checks passing
+- **Hardware:** battery above 20 percent, at least 3.7 V per cell, props secured, frame intact, motors free to spin
+- **Software:** 3D GPS fix, at least 8 satellites, EKF variances within limits, sensors healthy, firmware pre-arm pass
 - **Environment:** wind acceptable, airspace clear, launch area clear, observers briefed
-- **Mission:** flight plan loaded, geofence set, RTL point set, emergency procedure reviewed
+- **Mission:** flight plan loaded, geofence set, return-to-launch set, emergency procedures reviewed
 
-Items with a telemetry source verify themselves. The rest you confirm by hand.
+Items with a telemetry source verify themselves, and drop back to pending when that telemetry goes stale. The rest you confirm by hand. A checklist belongs to one aircraft: completing it on one drone never vouches for another.
 
 <Note>
-The checklist's pre-arm item is derived from sensor health, not from the flight controller's own pre-arm text. Read the Health panel for the FC's actual pre-arm verdict and its named blockers. The two can disagree, and the FC is the one that decides whether the motors spin.
+The checklist's pre-arm item is derived from the sensor-health report, not from the flight controller's own pre-arm text. Read the Health panel for the FC's actual pre-arm verdict and its named blockers. The two can disagree, and the FC is the one that decides whether the motors spin.
 </Note>
 
 There is a second, shorter checklist in the mission planner. That one is advisory, is not persisted, and does not gate arming. The cockpit checklist is the one that matters.
 
 ## Arming
 
-Arming is a skill in the cockpit skill bar, not a button that can be brushed. It requires the aircraft to be disarmed, and it asks you to type **ARM** to confirm.
+Arming is a skill in the cockpit Skill Bar, not a button that can be brushed. It requires the aircraft to be disarmed, and each flight-critical skill opens a confirmation sheet with its own gesture:
 
-If the checklist is not complete, the confirmation escalates: the typed phrase becomes **OVERRIDE**, and the override is written to the audit log. That is the design point. Skipping the checklist stays possible, because a field sometimes demands it, but it cannot happen quietly.
+- **Arm** is a slide-to-confirm. If the pre-flight checklist is incomplete, the sheet lists the open items and the slide stays inert until you turn on **Override checklist**. The override is recorded as a safety event. Skipping the checklist stays possible, because a field sometimes demands it, but it cannot happen quietly.
+- **Disarm** is press-and-hold.
+- **Kill** opens with its guard armed for 3 seconds. Only a hold started inside that window cuts the motors; if the window lapses, the request is cancelled.
 
-Disarm requires typing **DISARM** and does not escalate.
+Every gesture can also be completed by holding Enter or the bound gamepad button. Default hotkeys and the full Skill Bar are on [Cockpit and Skills](/mission-control/cockpit).
 
 ### What a command confirmation means
 
-A command is not reported as successful until the flight controller acknowledges it. The agent
-sends the command, waits about 1.2 seconds, and resends up to two more times before giving up.
-If the FC replies that it has accepted the command but needs time, the agent waits up to
-8 seconds more for the outcome.
+A command is not reported as successful until the flight controller acknowledges it. The agent sends the command, waits about 1.2 seconds, and resends up to two more times before giving up. If the FC replies that it has accepted the command but needs time, the agent waits up to 8 seconds more for the outcome.
 
-If no acknowledgement arrives inside that budget, the agent reports the command as
-**not observed**. It never reports a success it did not see. Treat an unconfirmed command as
-one that may or may not have reached the aircraft, and check the vehicle's actual state before
-sending it again.
+If no acknowledgement arrives inside that budget, the agent reports the command as **not observed**. It never reports a success it did not see. Treat an unconfirmed command as one that may or may not have reached the aircraft, and check the vehicle's actual state before sending it again.
 
-When the FC refuses a command, its own reason text is attached to the refusal. That text is the
-authoritative explanation, not anything ADOS infers.
+When the FC refuses a command, its own reason text is attached to the refusal. That text is the authoritative explanation, not anything ADOS infers.
 
 ## The kill switch
 
 The cockpit offers a kill switch alongside arm and disarm. It is not a stronger disarm.
 
 <Warning>
-The kill switch is an emergency motor cut. It force-disarms immediately and **bypasses the
-flight controller's in-flight safety checks**, which normally refuse a disarm while airborne.
-An aircraft in the air will stop its motors and fall.
+The kill switch is an emergency motor cut. It force-disarms immediately and **bypasses the flight controller's in-flight safety checks**, which normally refuse a disarm while airborne. An aircraft in the air will stop its motors and fall.
 
-Use it when the alternative is worse than the aircraft falling where it currently is. Do not
-use it as a quicker way to disarm on the ground, because it is a habit that transfers into
-the air.
+Use it when the alternative is worse than the aircraft falling where it currently is. Do not use it as a quicker way to disarm on the ground, because it is a habit that transfers into the air.
 </Warning>
 
-A normal `disarm` is the safe command. It goes through the FC's checks, which is exactly why
-it will refuse while the aircraft is flying.
+A normal disarm is the safe command. It goes through the FC's checks, which is exactly why it will refuse while the aircraft is flying.
 
 Two more gates worth knowing:
 
 - **Fleet-wide arming needs a separate arm-the-broadcast step.** Broadcast controls stay inert until you arm the broadcast, and that arming expires by itself after 5 seconds.
-- **Extensions can never arm the aircraft.** Arm and disarm, motor test, calibration, and reboot are hard-blocked in the extension command path regardless of declared permissions. Extensions may command takeoff, land, and RTL only, with takeoff altitude clamped between 1 and 120 m.
+- **Extensions can never arm the aircraft.** Arm and disarm, motor test, calibration, and reboot are hard-blocked in the Extension command path regardless of declared permissions. Extensions may command takeoff, land, and RTL only, with takeoff altitude clamped between 1 and 120 m.
 
-### Editing parameters while armed
+## What the agent refuses while armed
 
-Most parameter panels stay usable while the aircraft is armed, with a banner warning that writes go live, and a confirmation at save time.
+The agent runs an armed interlock in front of its REST API. While the vehicle is armed, every action that can cut the command, telemetry, video, or RC link, or change how the aircraft flies, is refused with HTTP `409`:
 
-A small set is genuinely disabled while armed and connected: motor test, ESC and servo output configuration, DShot commands, PX4 actuator test, and frame class. Those are the ones where a write while armed spins a motor.
+```json
+{"error": "E_ARMED", "message": "Vehicle is armed", "override": "force"}
+```
 
-<Note>
-These blocks live in the interface, not in the agent. A parameter write that reaches the
-agent's API directly is not refused for being sent while armed. Treat the disabled panels as
-a guard against a mistake, not as an interlock that something else is enforcing on your behalf.
-</Note>
+The interlock covers:
+
+- rebooting the companion and restarting the supervisor;
+- restarting a unit that carries a link (every `ados-wfb*` unit, MAVLink, video, RC, mesh, access point, uplink, and cloud units), directly or through a peripheral action;
+- hopping the radio channel, changing transmit power, unpairing a radio, and opening a local radio bind;
+- changing the node's profile or ground-station role, and a ground-station factory reset;
+- enrolling or disabling MAVLink signing on the flight controller;
+- a flight-controller parameter write (`POST /api/params/{name}`) and an RC-module parameter write;
+- joining, leaving, or forgetting a Wi-Fi network, re-tagging an adapter's MAC, and the ground station's access point, uplink-share, client, Ethernet, and mesh writes;
+- installing, enabling, disabling, or removing a plugin, because a plugin may feed pose or setpoints to the flight controller;
+- `POST /api/v1/setup/apply` when the body carries a `profile`, `wfb`, `network`, or `regulatory` section;
+- `PUT /api/config` whose `key` is `agent.profile`, `ground_station.role`, `video.wfb.channel`, `video.wfb.tx_power_dbm`, `video.wfb.mcs`, or `network.regulatory`.
+
+The interlock fails closed. If the agent's vehicle state is missing or older than 3 seconds, the vehicle is treated as armed. It applies to every caller, including requests relayed over the radio. Profiles with no vehicle (no MAVLink router) are not guarded.
+
+To act anyway, send the override: `"force": true` in the JSON body, or `?force=1` on the query string for a request with no body. Use it only when you have decided the action is worth the risk to an armed aircraft.
+
+Mission Control adds its own layer on top. Most parameter panels stay usable while armed, with a banner warning that writes go live and a confirmation at save time. A small set is disabled while armed and connected: motor test, ESC and servo output configuration, DShot commands, PX4 actuator test, and frame class. Sensor calibrations (accelerometer, gyro, compass, level, airspeed, barometer, ESC and compass-motor) never start while the vehicle is armed or its arm state is unknown. The interface blocks and the agent interlock are independent; neither depends on the other.
 
 ### One parameter the agent refuses outright
 
-The agent will not write `SYSID_THISMAV`, or any other parameter that changes the vehicle's own
-MAVLink identity. The write is refused with a reason rather than accepted.
+The agent will not write `SYSID_THISMAV`, or any other parameter that changes the vehicle's own MAVLink identity. The write is refused with a reason rather than accepted.
 
-This is deliberate. The agent addresses the vehicle at system id 1. Changing the vehicle's
-system id would make it unreachable by the very connection needed to change it back, and would
-also stop `arm`, `disarm`, `mode`, and `rtl` reaching the aircraft. There is no way to undo it
-from the agent afterwards.
+The agent addresses the vehicle at system id 1. Changing the vehicle's system id would make it unreachable by the very connection needed to change it back, and would also stop arm, disarm, mode, and RTL commands reaching the aircraft. There is no way to undo it from the agent afterwards.
 
-If you genuinely need a non-default system id, set it with a parameter tool connected directly
-to the flight controller over USB.
+If you need a non-default system id, set it with a parameter tool connected directly to the flight controller over USB.
 
 ## When the link drops
 
 ### The radio link
 
-The receiving side does not treat silence alone as a fault. Video can be quiet for good reasons. It acts when video is silent **and** it has not heard the drone's presence beacon recently, which is the combination that means the link is genuinely gone rather than idle.
+The receiving side does not treat silence alone as a fault. Video can be quiet for good reasons. It acts when video is silent **and** it has not heard the drone's presence beacon recently, which is the combination that means the link is gone rather than idle.
 
 Recovery goes in that order: it first tries the channel the peer last announced, and only then sweeps the band. Both ends return to the configured home channel on link loss, so the two sides meet at a known place instead of hunting for each other.
 
 The transmit side runs its own check. A transmitter whose byte counter has stopped moving while it is still being fed is treated as dead and restarted, because a process that is running is not the same as a process that is transmitting.
 
-Link state is reported as one of `disconnected`, `unpaired`, `auto_pairing`, `binding`, `connecting`, `connected`, `degraded`, or `rf_unverified`. The last one deserves attention: it means the radio is transmitting but nothing has confirmed reception. A transmitter with no listener looks identical to a healthy transmitter from the transmit side alone, so it is reported honestly rather than shown as connected.
+Link state is reported as one of `disconnected`, `unpaired`, `auto_pairing`, `binding`, `connecting`, `connected`, `degraded`, or `rf_unverified`. The last one deserves attention: the radio is transmitting but nothing has confirmed reception. A transmitter with no listener looks identical to a healthy transmitter from the transmit side alone, so it is reported as unverified rather than shown as connected.
 
 ### The internet uplink
 
@@ -165,14 +159,23 @@ This ladder carries the ground station's internet traffic. **It does not carry t
 
 ### The management link
 
-If the network you administer the box over goes dead, a guardian climbs a repair ladder without rebooting: re-assert the regulatory domain, renew DHCP, reconnect WiFi, bounce the interface, restart the network backend. It is on by default, and stays on if its configuration is missing or malformed, on the grounds that a missing config should not silently disable the thing that recovers the box.
+If the network you administer the box over goes dead, a guardian climbs a repair ladder without rebooting: re-assert the regulatory domain, renew DHCP, reconnect WiFi, bounce the interface, restart the network backend. It is on by default, and stays on if its configuration is missing or malformed, so that a missing config does not silently disable the thing that recovers the box.
 
-If a wired primary link stays down and onboard WiFi has a usable path, the box can fall back to a heartbeat-only reach-back. You keep seeing the node in Mission Control, and video and full telemetry correctly show as unavailable, because that path carries status and not the data plane.
+If a wired primary link stays down and onboard WiFi has a usable path, the box can fall back to a heartbeat-only reach-back. You keep seeing the node in Mission Control, and video and full telemetry show as unavailable, because that path carries status and not the data plane.
 
-## Where to next
+## Next steps
 
-- [Operating limits](/operations/operating-limits) - what has been measured, and what has not.
-- [Regulatory](/operations/regulatory) - your obligations as the operator.
-- [Recovery](/operations/recovery) - reaching a box that has stopped answering.
-- [Geofences and rally points](/mission-control/geofences-rally) - drawing the boundaries the FC enforces.
-- [Your first flight](/getting-started/your-first-flight) - the walkthrough.
+<CardGroup cols={2}>
+  <Card title="Operating limits" icon="gauge" href="/operations/operating-limits">
+    What has been measured on ADOS hardware, and what has not.
+  </Card>
+  <Card title="Regulatory" icon="scale-balanced" href="/operations/regulatory">
+    Your obligations as the operator, and pinning a radio region.
+  </Card>
+  <Card title="Cockpit and Skills" icon="gamepad" href="/mission-control/cockpit">
+    The Skill Bar, confirmation gestures, and hotkeys.
+  </Card>
+  <Card title="Geofences and rally points" icon="draw-polygon" href="/mission-control/geofences-rally">
+    Draw the boundaries the flight controller enforces.
+  </Card>
+</CardGroup>

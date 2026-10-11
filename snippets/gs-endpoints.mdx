@@ -1,0 +1,11 @@
+export const GsEndpoints = ({ host }) => (
+  <table>
+    <thead><tr><th>Surface</th><th>Address</th></tr></thead>
+    <tbody>
+      <tr><td>Dashboard and REST API</td><td><code>{`http://${host}:8080/`}</code></td></tr>
+      <tr><td>On-box cockpit</td><td><code>{`http://${host}:8080/cockpit/`}</code></td></tr>
+      <tr><td>Video (WebRTC WHEP)</td><td><code>{`http://${host}:8080/whep`}</code></td></tr>
+      <tr><td>MAVLink WebSocket</td><td><code>{`ws://${host}:8765`}</code></td></tr>
+    </tbody>
+  </table>
+);

@@ -1,70 +1,66 @@
 ---
-title: "Mission Control and Convex"
-description: "Build and run the Mission Control web GCS as a Docker image, and stand up a self-hosted Convex backend for auth, fleet data, and cloud commands."
-lastUpdated: "2026-06-23"
+title: "Self-hosting: Mission Control and Convex"
+sidebarTitle: "Mission Control and Convex"
+description: "Build the Mission Control web GCS as a Docker image and stand up a self-hosted Convex backend for auth, fleet data and cloud commands."
+icon: "window"
 ---
 
 Mission Control is a Next.js app you can build into a single Docker image and
 run on your own host. It talks to a Convex backend for sign-in, fleet
-management, and the cloud command queue. This page covers building and running
-the GCS image, then standing up a self-hosted Convex backend and wiring the two
-together.
-
-Both halves live in
-[github.com/altnautica/ADOSMissionControl](https://github.com/altnautica/ADOSMissionControl)
-under GPL-3.0. The `Dockerfile` at the repo root builds the GCS; the `convex/`
-directory holds the functions and schema you push to the backend.
+management and the cloud command queue. Both halves live in
+[ADOSMissionControl](https://github.com/altnautica/ADOSMissionControl) under
+GPL-3.0: the root `Dockerfile` builds the GCS, and `convex/` holds the
+functions and schema you push to the backend.
 
 <Note>
-You do not need Convex at all to fly on the LAN. Served over plain HTTP,
-Mission Control connects straight to the agent and pairs over the local
-network with no backend. Convex is for cloud relay (cross-network access) and
-for auth. See the
-[self-hosting overview](/developers/self-hosting/overview) for the local-first
-path.
+You do not need Convex to fly on the LAN. Served over plain HTTP, Mission
+Control connects straight to the agent and pairs over the local network with no
+backend. Convex is for the cloud relay (cross-network access) and for auth.
 </Note>
 
 ## The two Convex origins
 
-Before any wiring, the one detail that trips people up: a self-hosted Convex
-backend exposes two origins that are not interchangeable.
+A self-hosted Convex backend exposes two origins that are not
+interchangeable:
 
-| Origin | Role | Who talks to it |
-|---|---|---|
-| `:3210` | client API | the GCS browser bundle (`NEXT_PUBLIC_CONVEX_URL`) and `convex deploy` |
-| `:3211` | site / HTTP actions | the drone agent heartbeat and the MQTT bridge (`CONVEX_URL` resolves to `${CONVEX_URL}/agent/status`); the agent's `server.self_hosted.url` and `pairing.convex_url` |
+- The **client API** origin (`:3210`) serves the GCS browser bundle
+  (`NEXT_PUBLIC_CONVEX_URL`) and every `npx convex deploy` and
+  `npx convex env set` call.
+- The **site** origin (`:3211`) serves HTTP actions: the agent heartbeat and
+  pairing (`server.self_hosted.url`, `pairing.convex_url`) and the broker auth
+  sync.
 
 Cross the two and the GCS loads but no drone ever appears, or sign-in works
-while commands never reach the agent. Keep `:3210` for browser and deploy,
-`:3211` for the agent and bridge.
+while commands never reach the agent. All published ports are in the
+[port table](/developers/self-hosting/troubleshooting-and-ports#ports).
 
 ## Build and run the GCS image
 
-The repo `Dockerfile` is a multi-stage build that produces a Next.js
-standalone server. The container listens on port `4000`.
-
-The build needs the Convex client-API origin baked in as a build argument,
-because `NEXT_PUBLIC_*` values are inlined at build time, not read at runtime.
-Point it at the `:3210` origin of the Convex backend the browser will reach.
+The `Dockerfile` is a multi-stage build that produces a Next.js standalone
+server listening on port `4000`. `NEXT_PUBLIC_*` values are inlined at build
+time, so pass the Convex client API origin the browser will reach as a build
+argument.
 
 <Steps>
   <Step title="Build the image">
     ```bash
     cd ADOSMissionControl
     docker build \
-      --build-arg NEXT_PUBLIC_CONVEX_URL=https://your-convex.example.com:3210 \
+      --build-arg NEXT_PUBLIC_CONVEX_URL=https://convex.cloud.example.com \
       -t ados-mission-control .
     ```
 
-    Other optional build args the `Dockerfile` accepts:
+    Build arguments the `Dockerfile` accepts:
 
     | Build arg | Purpose |
     |---|---|
-    | `NEXT_PUBLIC_CONVEX_URL` | Convex client API origin (`:3210`), required for cloud mode |
-    | `NEXT_PUBLIC_CESIUM_ION_TOKEN` | 3D terrain tiles (optional) |
-    | `NEXT_PUBLIC_DEMO_MODE` | `true` ships the build with the demo fleet |
-    | `NEXT_PUBLIC_PLUGIN_REGISTRY_URL` | plugin registry origin (optional) |
-    | `ADOS_MANIFEST_URL` | agent install manifest origin (optional) |
+    | `NEXT_PUBLIC_CONVEX_URL` | Convex client API origin (`:3210`). Required for cloud mode. |
+    | `NEXT_PUBLIC_CESIUM_ION_TOKEN` | 3D terrain tiles. Optional. |
+    | `NEXT_PUBLIC_DEMO_MODE` | `true` ships the build with the demo fleet. |
+    | `NEXT_PUBLIC_PLUGIN_REGISTRY_URL` | Plugin registry origin. Optional. |
+    | `ADOS_MANIFEST_URL` | Agent install manifest origin. Optional. |
+    | `NEXT_PUBLIC_ANALYTICS_SCRIPT_URL` | Analytics script URL. Optional. |
+    | `NEXT_PUBLIC_ANALYTICS_WEBSITE_ID` | Analytics site ID, used with the script URL. Optional. |
   </Step>
   <Step title="Run the container">
     ```bash
@@ -75,166 +71,147 @@ Point it at the `:3210` origin of the Convex backend the browser will reach.
     ```
 
     The GCS is now at `http://localhost:4000`. The container sets `PORT=4000`
-    and `HOSTNAME=0.0.0.0`, so it binds on all interfaces inside the
-    container; map `-p` to whatever host port you want.
+    and `HOSTNAME=0.0.0.0`; map `-p` to any host port you want.
   </Step>
 </Steps>
 
 <Tip>
 Cloud mode (relay through Convex and MQTT) only activates when the GCS is
-served over HTTPS. On `http://localhost` the GCS connects directly to the
-agent over the LAN. Put the container behind a TLS-terminating proxy (a
-reverse proxy or a tunnel) to reach a drone across networks.
+served over HTTPS. Over plain HTTP the GCS stays local and connects directly to
+agents on the LAN. Put the container behind a TLS proxy or a
+[Cloudflare tunnel](/developers/self-hosting/all-in-one#expose-the-stack-through-a-cloudflare-tunnel)
+to reach a drone across networks.
 </Tip>
 
 ## Stand up a self-hosted Convex backend
 
-You have two routes for Convex:
+You have two routes:
 
-- **Convex Cloud** is the easiest if you are fine with a hosted backend. Run
-  `npx convex init` and `npx @convex-dev/auth` in the `ADOSMissionControl`
-  directory, then `npx convex dev`.
-- **Self-hosted** runs the open-source backend in Docker. The rest of this
-  page covers that route.
+- **Convex Cloud** is a hosted backend. In the `ADOSMissionControl` directory
+  run `npx convex dev` to create and link a deployment, then
+  `npx @convex-dev/auth` to set up its auth keys.
+- **Self-hosted** runs the open-source backend image
+  [`ghcr.io/get-convex/convex-backend`](https://github.com/get-convex/convex-backend)
+  in Docker. The rest of this page covers that route.
 
-The self-hosted backend image is
-[`ghcr.io/get-convex/convex-backend`](https://github.com/get-convex/convex-backend).
-The [all-in-one stack](/developers/self-hosting/all-in-one) at
-`tools/selfhost/` bundles it with a `convex-dashboard` service, the GCS, and
-the relay layers in one compose file. To run just the backend:
+The [all-in-one stack](/developers/self-hosting/all-in-one) bundles the backend
+with its dashboard, the GCS and the relay layers in one compose file. To run
+the backend on its own:
 
 <Steps>
   <Step title="Start the backend">
-    Start the `convex-backend` service (from the all-in-one compose, or your
-    own compose pointing at the same image). On first boot it prints an admin
-    key:
+    Start the `convex-backend` service from the all-in-one compose file, or
+    your own compose file using the same image:
 
     ```bash
     docker compose up -d convex-backend
-    docker compose logs convex-backend   # copy the admin key
     ```
   </Step>
+  <Step title="Generate the admin key">
+    ```bash
+    docker compose exec convex-backend ./generate_admin_key.sh
+    ```
+
+    Store the key in a secrets manager. The commands below use it as
+    `<admin-key>`.
+  </Step>
   <Step title="Push functions and schema">
-    Deploy the GCS functions to the backend. Point the CLI at your own
-    `:3210` origin and admin key, run from a machine with the repo checked
-    out:
+    From a machine with the repo checked out, point the CLI at your own
+    client API origin and admin key:
 
     ```bash
     cd ADOSMissionControl
     npx convex deploy \
-      --url https://your-convex.example.com:3210 \
-      --admin-key <your-admin-key>
+      --url https://convex.cloud.example.com \
+      --admin-key <admin-key>
     ```
 
     <Warning>
-    On a self-hosted backend the CLI MUST target your own URL and admin key.
-    Miss the flags and the functions land on the wrong deployment and
+    On a self-hosted backend every Convex CLI call needs your own `--url` and
+    `--admin-key`. Without them the functions land on another deployment and
     sign-in fails with no visible error.
     </Warning>
   </Step>
   <Step title="Generate the auth keys">
-    A fresh self-hosted backend has no signing keys. Convex Auth signs
-    session JWTs with RS256, so you generate a key pair and set it on the
-    backend. The helper script exports `JWT_PRIVATE_KEY` and `JWKS` into your
-    shell:
+    A fresh backend has no signing keys. Convex Auth signs session JWTs with
+    RS256. The helper script prints `JWT_PRIVATE_KEY` and `JWKS` lines;
+    evaluate them into your shell:
 
     ```bash
-    node scripts/generate-auth-keys.mjs
+    eval "$(node scripts/generate-auth-keys.mjs | grep -E '^(JWT_PRIVATE_KEY|JWKS)=')"
     ```
   </Step>
   <Step title="Set the auth environment">
-    Set the generated keys plus the GCS site URL on the backend. `SITE_URL`
-    is the origin the browser loads the GCS from (the GCS container, port
-    `4000`), not a Convex origin:
+    Set the keys plus the GCS origin. `SITE_URL` is the origin the browser
+    loads the GCS from, not a Convex origin:
 
     ```bash
     npx convex env set JWT_PRIVATE_KEY "$JWT_PRIVATE_KEY" \
-      --url https://your-convex.example.com:3210 --admin-key <your-admin-key>
+      --url https://convex.cloud.example.com --admin-key <admin-key>
 
     npx convex env set JWKS "$JWKS" \
-      --url https://your-convex.example.com:3210 --admin-key <your-admin-key>
+      --url https://convex.cloud.example.com --admin-key <admin-key>
 
-    npx convex env set SITE_URL "https://your-gcs.example.com" \
-      --url https://your-convex.example.com:3210 --admin-key <your-admin-key>
+    npx convex env set SITE_URL "https://gcs.cloud.example.com" \
+      --url https://convex.cloud.example.com --admin-key <admin-key>
     ```
   </Step>
 </Steps>
 
-## Point the agent at the backend
+## Relay environment on Convex
 
-To put a drone on your self-hosted backend instead of the LAN-only local mode,
-set its `server.mode` to `self_hosted` and point the self-hosted URL at the
-Convex **site** origin (`:3211`). The agent heartbeat and pairing both target
-that origin.
-
-```yaml
-server:
-  mode: "self_hosted"
-  self_hosted:
-    url: "https://your-convex.example.com:3211"
-
-pairing:
-  convex_url: "https://your-convex.example.com:3211"
-```
-
-See the [agent configuration](/drone-agent/configuration) reference for the
-full `server` and `pairing` blocks, and the
-[agent self-hosting page](/developers/self-hosting/agent) for the install
-command.
-
-## Telemetry and video relay
-
-Convex carries auth, fleet state, and the cloud command queue (a 5 second poll
-baseline). For live telemetry at 2 Hz and up, and for browser video, add the
-MQTT bridge and the video relay. The GCS reads their URLs from a Convex
-environment variable at runtime, so a self-hosted deployment must set them or
-the GCS falls back to a broker and relay it cannot reach:
+Convex carries auth, fleet state and the cloud command queue. Live telemetry
+and browser video go through the MQTT broker and the video relay, and Convex
+needs four values for them:
 
 ```bash
-npx convex env set MQTT_BROKER_URL "wss://your-mqtt.example.com/mqtt" \
-  --url https://your-convex.example.com:3210 --admin-key <your-admin-key>
+# Public broker WebSocket URL the GCS connects to
+npx convex env set MQTT_BROKER_URL "wss://mqtt.cloud.example.com" \
+  --url https://convex.cloud.example.com --admin-key <admin-key>
 
-npx convex env set VIDEO_RELAY_URL "wss://your-video.example.com" \
-  --url https://your-convex.example.com:3210 --admin-key <your-admin-key>
+# Public video relay URL the GCS opens streams on
+npx convex env set VIDEO_RELAY_URL "wss://video.cloud.example.com" \
+  --url https://convex.cloud.example.com --admin-key <admin-key>
+
+# Signs five-minute viewer tokens; same value as the relay's VIDEO_RELAY_SECRET
+npx convex env set VIDEO_RELAY_SECRET "<openssl rand -hex 32>" \
+  --url https://convex.cloud.example.com --admin-key <admin-key>
+
+# Bearer the broker auth sync presents; same value as in the broker's env
+npx convex env set MQTT_AUTH_RELAY_SECRET "<openssl rand -hex 32>" \
+  --url https://convex.cloud.example.com --admin-key <admin-key>
 ```
 
-Those layers are covered on their own pages:
+Without `VIDEO_RELAY_SECRET` the GCS reports the relay as not configured.
+Without `MQTT_AUTH_RELAY_SECRET` the broker credential endpoint answers `503`
+and no device can log in to the broker.
 
-<CardGroup cols={2}>
-  <Card title="MQTT bridge" icon="tower-broadcast" href="/developers/self-hosting/mqtt-bridge">
-    Mosquitto plus the bridge that forwards live telemetry to Convex.
-  </Card>
-  <Card title="Video relay" icon="video" href="/developers/self-hosting/video-relay">
-    RTSP-to-WebSocket video so a browser can play the drone's stream.
-  </Card>
-</CardGroup>
+## Point the agent at the backend
+
+Set the drone's `server.mode` to `self_hosted` and point both
+`server.self_hosted.url` and `pairing.convex_url` at the site origin
+(`:3211`). The full procedure is on
+[Self-hosting: Drone Agent](/developers/self-hosting/agent).
 
 ## Verify
 
-Open the GCS in a browser. Over HTTPS it enters cloud mode; pair a drone and
-the node detail should show a Cloud badge and start receiving telemetry. A few
-quick checks:
+- `curl https://convex.cloud.example.com/version` returns a version, so the
+  backend answers on the client API origin.
+- Sign-in works in the GCS, so the auth keys are on the right deployment.
+- A paired drone appears in the fleet, so its heartbeat reached the site
+  origin.
 
-- `curl https://your-convex.example.com:3210/` returns a response, so the
-  backend is reachable on the client-API origin.
-- Sign-in works in the GCS, which confirms the auth keys are set on the right
-  deployment.
-- A paired drone appears in the fleet, which confirms its heartbeat reached the
-  `:3211` site origin.
+Over plain HTTP the GCS stays local; serve it behind TLS to use the cloud
+relay. If the GCS loads but no drone appears, recheck the `:3210` versus
+`:3211` wiring above.
 
-If the GCS loads but no drone ever appears, or sign-in works while commands
-never arrive, recheck the `:3210` versus `:3211` wiring above. The
-[troubleshooting and ports](/developers/self-hosting/troubleshooting-and-ports)
-page carries the full port table and the common failure modes.
-
-## Where to go next
+## Next steps
 
 <CardGroup cols={2}>
-  <Card title="All-in-one stack" icon="boxes-stacked" href="/developers/self-hosting/all-in-one">
-    One Docker Compose brings up Convex, the GCS, and the relay layers on a
-    single host.
-  </Card>
-  <Card title="Drone agent" icon="microchip" href="/developers/self-hosting/agent">
+  <Card title="Drone Agent" icon="microchip" href="/developers/self-hosting/agent">
     Install the agent and point it at your backend.
+  </Card>
+  <Card title="Ports and troubleshooting" icon="wrench" href="/developers/self-hosting/troubleshooting-and-ports">
+    The port table and the common failure modes.
   </Card>
 </CardGroup>

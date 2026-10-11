@@ -6,8 +6,8 @@
   "type": "module",
   "scripts": {
     "capture": "tsx capture-dashboard-screenshots.ts",
-    "capture:drone": "tsx capture-dashboard-screenshots.ts --target drone",
-    "capture:ground": "tsx capture-dashboard-screenshots.ts --target ground",
+    "capture:drone": "tsx capture-dashboard-screenshots.ts --profile drone",
+    "capture:ground": "tsx capture-dashboard-screenshots.ts --profile ground_station",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "devDependencies": {

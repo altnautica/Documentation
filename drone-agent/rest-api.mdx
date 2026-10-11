@@ -1,154 +1,106 @@
 ---
-title: "REST API"
-description: "HTTP API on port 8080, served by the native Rust front with a residual FastAPI behind it."
+title: "Agent REST API"
+sidebarTitle: "REST API"
+description: "The node's HTTP API on port 8080: base URL, authentication, conventions, and the full route reference."
 icon: "code"
-lastUpdated: "2026-09-24"
+keywords: ["ados", "rest api", "http", "drone agent", "x-ados-key", "routes"]
 ---
 
-# REST API
+import AgentRestRoutesNative from "/snippets/generated/agent-rest-routes-native.mdx";
+import AgentRestRoutesResidual from "/snippets/generated/agent-rest-routes-residual.mdx";
+import AgentRestRoutesPublic from "/snippets/generated/agent-rest-routes-public.mdx";
 
-Port 8080 is owned by the native Rust front (`ados-control`, an axum server). It serves migrated routes directly and reverse-proxies the rest to a residual FastAPI on an internal Unix socket (`/run/ados/api-internal.sock`). From a client's point of view it is one HTTP API for status, telemetry, commands, configuration, video, pairing, and everything else the agent can do.
+Port 8080 belongs to the native control front (`ados-control`). It serves most routes itself and forwards a fixed set of prefixes to a residual Python app over an internal Unix socket, authenticating them first. To a client it is one HTTP API for status, telemetry, commands, configuration, video, pairing and the rest. The CLI, the terminal dashboard, the browser dashboard and Mission Control all use it.
 
-The API is the backbone that the CLI, TUI, and Mission Control all talk to.
+Treat `:8080` as one API. Which process answers a route is not a contract.
 
-Callers do not need to know which process answers a given route. Treat `:8080` as one API; the internal boundary behind it is not a contract and it moves.
+<Warning>
+`/api/command`, the parameter write routes and the MAVLink WebSocket act on the flight controller. Read [Safety](/operations/safety) before scripting against a powered vehicle.
+</Warning>
 
 ## Base URL
 
-```
-http://<drone-ip>:8080
+```text
+http://<node>:8080
 ```
 
-On the drone itself: `http://localhost:8080`
+For example `http://192.168.1.50:8080` or `http://ados-9f2c1a.local:8080`. On the node itself use `http://localhost:8080`. The API is plain HTTP on the LAN; see [Hardening](/operations/hardening).
 
 ## Authentication
 
-Most endpoints require the `X-ADOS-Key` header. The key is generated during pairing and stored at `/etc/ados/pairing.json`.
+Send the pairing key in the `X-ADOS-Key` header. The key is created at pairing and stored in `/etc/ados/pairing.json`; it starts with `ados_`.
 
 ```bash
-curl http://localhost:8080/api/status \
-  -H "X-ADOS-Key: sk_live_your_key_here"
-```
-
-A few endpoints are exempt from auth (like `/api/pairing/info`) so that unpaired agents can still be discovered and paired.
-
-## Route domains
-
-The API is organized by domain.
-
-| Domain | Prefix | Purpose |
-|--------|--------|---------|
-| Status | `/api/status`, `/api/status/full` | Agent status, board, FC, health |
-| Configuration | `/api/config` | Read and write configuration |
-| Config schema | `/api/config/schema` | The build-time-embedded shape of the whole config surface. Build a settings UI against this. |
-| Commands | `/api/command`, `/api/commands` | Send MAVLink commands and list supported commands |
-| Telemetry | `/api/telemetry` | Cached telemetry snapshot |
-| Parameters | `/api/params`, `/api/params/{name}` | FC parameter reads and writes through the cache |
-| Video | `/api/video` | Pipeline config, snapshot, recording |
-| Diagnostics | `/api/diag/video` | Per-hop video pipeline verdict |
-| WFB-ng | `/api/wfb` | Link stats, channel, pairing |
-| MAVLink signing | `/api/mavlink/signing` | MAVLink2 signing capability and FC enrollment |
-| Pairing | `/api/pairing` | Pair, unpair, info, code |
-| Plugins | `/api/plugins`, `/api/v1/plugins/catalog` | Extension lifecycle, install, list, perms, config, state, and each extension's own API under `/api/plugins/{id}/x/` |
-| Services | `/api/services` | Systemd service control |
-| System | `/api/system`, `/api/v1/diagnostics` | Reboot, shutdown, diagnostics, resource reads |
-| Fleet | `/api/fleet` | Fleet enrollment and peers |
-| Swarm | `/api/swarm/neighbors` | The swarm neighbour table |
-| MCP | `/api/mcp/status`, `/api/mcp/tokens`, `/api/mcp/revoke` | AI-control token posture and lifecycle |
-| Peripherals | `/api/peripherals` | USB devices, sensors |
-| Vision | `/api/vision`, `/api/vision/models` | Vision state, detections, model registry |
-| Logs | `/api/logs`, `/api/observability` | Log retrieval (see also the `ados-logd` query API) |
-| Network | `/api/v1/network` | MAC pinning, WiFi client |
-| Ground station | `/api/v1/ground-station` | Ground-station status, network, PIC, mesh, UI, recording |
-| WHEP | `/whep` | WebRTC video playback signaling |
-| Setup | `/api/setup`, `/setup` | First-boot setup wizard webapp |
-
-The generated route table lives at `docs/api-surface.md` in the agent repo and a
-repository check resolves every client path literal against it, so a route that
-is documented here and absent there is a bug in one of the two.
-
-## Extension lifecycle
-
-The native front serves the whole extension lifecycle on every profile,
-including a macOS workstation. There is no Python behind these routes.
-Errors use one envelope, `{"ok": false, "code": N, "kind": "...", "detail": "..."}`.
-
-| Method | Path | What it does |
-|---|---|---|
-| `GET` | `/api/v1/plugins/catalog` | The first-party catalog bundled with this agent build. |
-| `GET` | `/api/plugins` | Installed extensions: `{installs: [...]}`. |
-| `POST` | `/api/plugins/parse` | Preview an uploaded archive (multipart `file`): manifest, signer, risk, permissions. Nothing is written. |
-| `POST` | `/api/plugins/install` | Install an uploaded archive. `?requested_permissions=a,b` grants what the operator approved; `?job_id=` streams progress. |
-| `POST` | `/api/plugins/parse_from_url` | Preview an archive from an allowlisted HTTPS URL. Returns its sha256 so the install can pin it. |
-| `POST` | `/api/plugins/install_from_url` | Install from an allowlisted HTTPS URL: `{url, expected_sha256?, requested_permissions?, job_id?, from_catalog}`. A catalog install must pin a sha256. |
-| `POST` | `/api/plugins/install_builtin` | Install one of the built-in plugins the agent ships: `{plugin_id}`. |
-| `WS` | `/api/plugins/jobs/{job_id}` | Install progress for a `job_id` passed to an install call. |
-| `GET` | `/api/plugins/{id}` | The install record, granted capabilities and the manifest summary with the GCS block. |
-| `DELETE` | `/api/plugins/{id}` | Stop and uninstall. |
-| `GET` | `/api/plugins/{id}/manifest` | The installed `manifest.yaml`, byte for byte. |
-| `GET` | `/api/plugins/{id}/attestation` | `{signature, files: [{path, sha256, payload?}]}`: the archive signature and every attested file's digest, payloads marked. Mission Control checks an inline GCS module against it before loading it. |
-| `GET` | `/api/plugins/{id}/readiness` | `{ok, plugin_id, services}`: each declared service that runs on this node, probed now. |
-| `GET` | `/api/plugins/{id}/gcs/{path}` | One file from the extension's GCS half, so a LAN-paired Mission Control mounts it with no cloud. |
-| `POST` | `/api/plugins/{id}/grant` | Grant one declared permission: `{permission_id}`. |
-| `DELETE` | `/api/plugins/{id}/perms/{permission_id}` | Revoke a permission. Takes effect at runtime. |
-| `POST` | `/api/plugins/{id}/enable`, `/disable` | Start or stop the extension. |
-| `POST` | `/api/plugins/{id}/pin`, `/unpin`, `/auto-update` | Update preferences. |
-| `POST` | `/api/plugins/capability-token` | Mint a short-lived capability token for the GCS half. |
-| `GET`, `PUT` | `/api/plugins/{id}/config` | Read the effective config, or write one key: `{key, value, scope?}`. |
-| `GET` | `/api/plugins/{id}/state` | The extension's latest published state. |
-| `POST` | `/api/plugins/{id}/tools/{tool}/invoke` | Run one of the extension's MCP tools. |
-| any | `/api/plugins/{id}/x/{path}` | The extension's own HTTP API. |
-
-### Extension HTTP passthrough
-
-An extension that declares `agent.http: true` serves its own API on a Unix
-socket the plugin host creates for it. `/api/plugins/{id}/x/{path}` forwards
-`GET`, `POST`, `PUT`, `PATCH` and `DELETE` there as `/{path}`, keeping the
-query string, and upgrades WebSockets. The pairing key authenticates the
-request before it is forwarded, and the route also works through a ground
-station's relay proxy. When the extension is not serving, the answer is `503`
-with `{"detail": "plugin <id> is not serving HTTP"}`.
-
-```bash
-curl -s -H "X-ADOS-Key: $KEY" \
-  http://localhost:8080/api/plugins/com.altnautica.world-engine/x/atlas/readiness
-```
-
-## Common endpoints
-
-### Status
-
-```bash
-# Full agent status
 curl http://localhost:8080/api/status \
   -H "X-ADOS-Key: $KEY"
 ```
 
-Response:
+Three more rules apply at the auth edge:
 
-```json
-{
-  "version": "<agent version>",
-  "uptime_seconds": 3847,
-  "board": {
-    "name": "Radxa ROCK 5C Lite (RK3582)",
-    "tier": 4,
-    "soc": "RK3582"
-  },
-  "fc_connected": true,
-  "fc_port": "/dev/ttyS0",
-  "fc_baud": 921600,
-  "health": {
-    "cpu_percent": 12.3,
-    "memory_percent": 34.2,
-    "disk_percent": 41.8,
-    "temperature": 52.3
-  }
-}
-```
+- **Public routes.** A few routes answer without a key so an unpaired node can be found and paired: `/api/pairing/info`, `/api/pairing/claim`, `/api/pairing/code`, `/api/ping`, `/api/version`, `/healthz` and the dashboard PIN routes. The full list is in [Public routes](#public-routes).
+- **The unpaired gate.** While a node is unpaired, its data routes answer on-box callers and the first-boot lifelines (link-local, the node's own hotspot at `192.168.4.1` and USB tether at `192.168.7.1`), require a dashboard PIN session from other callers on the operator LAN, and refuse remote callers. The pairing claim is refused to remote callers.
+- **Dashboard PIN session.** The browser dashboard exchanges its PIN at `POST /api/dashboard/pin/verify` and then sends the session in the `x-ados-dashboard-session` header instead of a key. The dashboard PIN itself is covered on [Agent dashboard overview](/drone-agent/dashboard-overview#access-and-authentication).
+
+A browser cannot set `X-ADOS-Key` on a WebSocket handshake. Mint a short-lived ticket with `POST /api/_ws/ticket` (authenticated with the key) and pass it as a subprotocol: `new WebSocket(url, ["ados-ws-ticket", ticket])`.
+
+## Conventions
+
+- **JSON.** Requests and responses are JSON unless a route says otherwise (for example `GET /api/video/snapshot` returns `image/jpeg`).
+- **Armed guard.** Actions that can drop the link or change how the vehicle flies (reboot, supervisor restart, link-carrying unit restarts, radio hop, TX power and unpair, profile or role changes, signing enrolment, parameter writes, extension install and lifecycle) answer `409` while the vehicle is armed:
+
+  ```json
+  {"error": "E_ARMED", "message": "Vehicle is armed", "override": "force"}
+  ```
+
+  Override with `"force": true` in the JSON body, or `?force=1` on a bodiless request.
+- **Residual routes.** A residual prefix answers `501` rather than `404` on a profile that does not run that feature.
+- **Relay-forbidden routes.** Pairing, unpair, MCP token, dashboard PIN set, signing disable and some setup routes refuse requests that arrive through a ground station's relay proxy. Call them on the node's own network.
+- **Extension errors.** The extension lifecycle routes use one envelope: `{"ok": false, "code": N, "kind": "...", "detail": "..."}`.
+
+## Route domains
+
+| Domain | Prefix | Purpose |
+|--------|--------|---------|
+| Status | `/api/status`, `/api/status/full` | Agent status, board, flight controller, health |
+| Ping, version, time | `/api/ping`, `/api/version`, `/api/time` | Liveness, agent version, node clock |
+| Configuration | `/api/config`, `/api/config/schema` | Read and write config; the embedded config schema |
+| Commands | `/api/command`, `/api/commands` | Send MAVLink commands and list supported commands |
+| Telemetry | `/api/telemetry` | Cached telemetry snapshot |
+| Parameters | `/api/params`, `/api/params/{name}` | Flight-controller parameter reads and writes through the cache |
+| MAVLink | `/api/mavlink/ports`, `/api/mavlink/signing` | Serial ports; MAVLink2 signing capability and FC enrolment |
+| Video | `/api/video` | Pipeline state, `config`, `cameras`, `roster`, `profile`, `latency`, `snapshot`, `record/start`, `record/stop` |
+| WHEP | `/whep` | WebRTC video playback signalling |
+| Battery | `/api/v1/battery` | Battery health and prediction |
+| Diagnostics | `/api/diag/video`, `/api/diag/storage`, `/api/v1/diagnostics` | Per-hop video verdict, storage wear, diagnostics |
+| WFB-ng | `/api/wfb` | Link stats, `history`, `channel`, `tx-power`, radio pairing |
+| Pairing | `/api/pairing` | Info, code, claim, accept, unpair |
+| Dashboard PIN | `/api/dashboard/pin/*`, `/api/v1/dashboard/snapshot` | PIN status, set, verify, clear; the dashboard snapshot |
+| WebSocket ticket | `/api/_ws/ticket` | Short-lived ticket for browser WebSockets |
+| Extensions | `/api/plugins`, `/api/v1/plugins/catalog` | Extension lifecycle, permissions, config, state, and each extension's own API under `/api/plugins/{id}/x/` |
+| Services | `/api/services` | Unit states and restart |
+| System | `/api/system`, `/api/v1/setup/reboot`, `/api/v1/system/restart-supervisor` | Resource reads; reboot and supervisor restart (both refused while armed) |
+| Cloud | `/api/cloud/link`, `/api/relay/peer-secret` | Cloud link state; relay peer secret |
+| Fleet | `/api/fleet` | Fleet enrolment and peers |
+| Swarm | `/api/swarm/neighbors` | The swarm neighbour table |
+| MCP | `/api/mcp/status`, `/api/mcp/tokens`, `/api/mcp/revoke` | AI-control token posture and lifecycle |
+| Peripherals | `/api/peripherals`, `/api/v1/peripherals` | USB devices and sensors |
+| Vision | `/api/vision` | Vision state, detections, model registry |
+| Logs | `/api/logs`, `/api/v2/observability/{*path}` | Log retrieval; the Black Box query API |
+| Network | `/api/v1/network` | MAC pinning, Wi-Fi client |
+| Display | `/api/v1/display` | Ground-station display page, snapshot, calibration |
+| Ground station | `/api/v1/ground-station` | Ground-station status, network, PIC, mesh, UI, recording, WFB invites |
+| Setup | `/api/v1/setup` | Setup facade: status, apply, cloud choice, Cloudflare, hardware check |
+| CAN | `/api/can/passthrough` | Answers `501`; CAN passthrough is not served |
+
+## Examples
+
+### Status
 
 ```bash
-# Consolidated full status (single request, replaces 4 separate calls)
+curl http://localhost:8080/api/status \
+  -H "X-ADOS-Key: $KEY"
+
+# Everything the dashboard needs in one request
 curl http://localhost:8080/api/status/full \
   -H "X-ADOS-Key: $KEY"
 ```
@@ -156,134 +108,127 @@ curl http://localhost:8080/api/status/full \
 ### Configuration
 
 ```bash
-# Read full config
 curl http://localhost:8080/api/config \
   -H "X-ADOS-Key: $KEY"
 
-# Set a value
 curl -X PUT http://localhost:8080/api/config \
   -H "X-ADOS-Key: $KEY" \
   -H "Content-Type: application/json" \
-  -d '{"key": "mavlink.baud_rate", "value": "115200"}'
+  -d '{"key": "video.camera.fps", "value": 25}'
 ```
 
-### Video
+The write response carries `persisted`; see [Configuration](/drone-agent/configuration#read-and-write-the-config).
+
+### Video snapshot
 
 ```bash
-# Video pipeline status
-curl http://localhost:8080/api/video \
-  -H "X-ADOS-Key: $KEY"
-
-# Capture snapshot
-curl -X POST http://localhost:8080/api/video/snapshot \
-  -H "X-ADOS-Key: $KEY"
+curl -o snap.jpg -H "X-ADOS-Key: $KEY" \
+  http://localhost:8080/api/video/snapshot
 ```
 
-### WFB-ng link
+Returns one JPEG grabbed live from the `main` path, with an `X-Captured-At` header. Nothing is written to disk. The route answers `503` with `E_NO_FRAME` when no frame is available.
+
+### WFB-ng link and parameters
 
 ```bash
-curl http://localhost:8080/api/wfb \
-  -H "X-ADOS-Key: $KEY"
-```
-
-Response:
-
-```json
-{
-  "state": "active",
-  "rssi_dbm": -42,
-  "snr_db": 28.5,
-  "channel": 149,
-  "packets_received": 184523,
-  "packets_lost": 12,
-  "fec_recovered": 8,
-  "fec_failed": 0,
-  "bitrate_kbps": 4200
-}
-```
-
-### Parameters
-
-```bash
-# Read cached FC parameters
-curl http://localhost:8080/api/params \
-  -H "X-ADOS-Key: $KEY"
-
-# Read a single parameter
-curl http://localhost:8080/api/params/RC1_MIN \
-  -H "X-ADOS-Key: $KEY"
+curl http://localhost:8080/api/wfb -H "X-ADOS-Key: $KEY"
+curl http://localhost:8080/api/params/RC1_MIN -H "X-ADOS-Key: $KEY"
 ```
 
 ### Pairing
 
 ```bash
-# Check pairing status (no auth required)
+# No key needed
 curl http://localhost:8080/api/pairing/info
 
-# Unpair
 curl -X POST http://localhost:8080/api/pairing/unpair \
-  -H "X-ADOS-Key: $KEY"
-```
-
-### Services
-
-```bash
-# List all systemd services and their states
-curl http://localhost:8080/api/services \
   -H "X-ADOS-Key: $KEY"
 ```
 
 ### Ground station
 
 ```bash
-# Ground station status (only in ground-station profile)
 curl http://localhost:8080/api/v1/ground-station/status \
   -H "X-ADOS-Key: $KEY"
 
-# Network info
-curl http://localhost:8080/api/v1/ground-station/network \
-  -H "X-ADOS-Key: $KEY"
-
-# PIC heartbeat
 curl -X POST http://localhost:8080/api/v1/ground-station/pic/heartbeat \
   -H "X-ADOS-Key: $KEY" \
   -H "Content-Type: application/json" \
   -d '{"client_id": "gcs-session-1"}'
 ```
 
+### Extension HTTP passthrough
+
+An extension that declares `agent.http: true` serves its own API on a Unix socket the plugin host creates for it. `/api/plugins/{id}/x/{path}` forwards `GET`, `POST`, `PUT`, `PATCH` and `DELETE` there as `/{path}`, keeping the query string, and upgrades WebSockets. The key is checked before the request is forwarded, and the route also works through a ground station's relay proxy. When the extension is not serving, the answer is `503` with `{"detail": "plugin <id> is not serving HTTP"}`.
+
+```bash
+curl -s -H "X-ADOS-Key: $KEY" \
+  http://localhost:8080/api/plugins/com.altnautica.world-engine/x/atlas/readiness
+```
+
+An installed extension record carries `failure_reason`: why the host stopped or refused the extension (for example `tampered: <detail>` or `signer_revoked`), or `null` when it has not failed. `GET /api/plugins/{id}/locales/{lang}` returns the extension's `locales/<lang>.json` bundle so Mission Control can show its labels in the extension's own words; `lang` is a bare tag of letters, digits, `-` and `_`.
+
+### Video attention profile
+
+`/api/video/profile` sets which video profile this drone streams. `POST {"profile": "hero"}` or `{"profile": "thumbnail"}` moves the base profile, which is what a ground station's fleet-hero assignment sends. A viewer can instead hold a lease: `POST {"profile": "hero", "holder": "<id>", "lease_s": 30}` creates or renews it, and `DELETE /api/video/profile?holder=<id>` (or a `thumbnail` POST with the same holder) releases it. The drone streams hero while any lease is live, and a lease lapses `lease_s` seconds (5 to 120, default 30) after its last renewal, so a viewer that goes away cannot leave a drone on hero. `holder` is 1 to 64 characters of letters, digits, `.`, `_`, `:` and `-`; `vision` is reserved. Every method answers `200` with the profile the encoder actually applied and the live `leases`, or `503` on a node with no video pipeline.
+
+```bash
+curl -s -X POST http://localhost:8080/api/video/profile \
+  -H "X-ADOS-Key: $KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"profile": "hero", "holder": "gcs-1", "lease_s": 30}'
+```
+
 ## CORS
 
-CORS is enabled by default with an allowlist, not a wildcard. The defaults cover the local Mission Control development origins (`localhost:4000`, `localhost:4001`). Add your own origins in config without dropping the defaults:
+CORS is on with an allowlist, not a wildcard. The defaults cover the local Mission Control development origins (`localhost:4000`, `localhost:4001`). Add origins without dropping the defaults:
 
 ```yaml
 security:
   api:
     cors_enabled: true
-    cors_origins_extra: ["https://command.altnautica.com"]
+    cors_origins_extra: ["https://gcs.example.com"]
 ```
 
-The effective allowlist is the union of the built-in defaults, `cors_origins`, and `cors_origins_extra`.
+The effective allowlist is the union of the built-in defaults, `cors_origins` and `cors_origins_extra`.
 
-## Interactive API docs
+## Machine-readable surfaces
 
-A standard install serves interactive documentation:
+The node does not serve Swagger UI or ReDoc. Use:
 
-- **Swagger UI:** `http://localhost:8080/docs`
-- **ReDoc:** `http://localhost:8080/redoc`
+- `GET /api/config/schema` for the build-time-embedded shape of the config surface, to drive a settings UI.
+- `docs/api-surface.md` in the agent repository, the generated table of every route and the process that serves it. The route reference below mirrors it.
+- `ados logs status --openapi` for the OpenAPI document of the Black Box query API.
 
-Both are present on a standard install and absent on a headless node. Check with
-one request rather than reasoning about the build:
+## Route reference
 
-```bash
-curl -o /dev/null -w '%{http_code}\n' http://localhost:8080/docs
-```
+Every route the node serves, generated from the agent's route table. `{name}` matches one path segment; `{*name}` matches the rest of the path. Method `WS` marks a route that answers only a WebSocket upgrade.
 
-`200` means they are there, `404` means this node does not serve them.
+### Public routes
 
-<Warning>
-Do not build an integration against the shape of `/docs`. It documents one
-internal process and its coverage moves. `GET /api/config/schema` is the stable,
-always-present machine-readable surface: it returns the committed,
-build-time-embedded shape of the config surface, so a schema-driven settings UI
-renders without hand-written forms.
-</Warning>
+These answer without a key.
+
+<AgentRestRoutesPublic />
+
+### Native routes
+
+Served by the control front itself.
+
+<AgentRestRoutesNative />
+
+### Residual routes
+
+Forwarded to the residual app on the same port after authentication.
+
+<AgentRestRoutesResidual />
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Agent CLI reference" icon="terminal" href="/drone-agent/cli-reference">
+    The `ados` commands built on this API.
+  </Card>
+  <Card title="Systemd services" icon="server" href="/drone-agent/systemd-services">
+    The units behind each route domain.
+  </Card>
+</CardGroup>

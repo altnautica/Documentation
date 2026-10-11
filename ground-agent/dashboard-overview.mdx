@@ -1,71 +1,69 @@
 ---
-title: "Browser Dashboard"
-description: "The ground-station view of the agent's web dashboard at port 8080."
+title: "Ground dashboard: Overview"
+sidebarTitle: "Overview"
+description: "What the agent's browser dashboard shows on a ground station, by role, and where the shared pages live."
 icon: "layout-dashboard"
-lastUpdated: "2026-06-18"
+keywords: ["ados", "ground agent", "ground station", "dashboard", "browser"]
 ---
 
-# Browser Dashboard
+A ground station runs the same Drone Agent dashboard on port `8080` as a drone, with ground-station pages in place of the drone pages. Opening it, the dashboard PIN, the layout and the profile rules are on the [Agent dashboard overview](/drone-agent/dashboard-overview#open-the-dashboard).
 
-The ground station shares the agent dashboard with the drone profile,
-but the home page changes to a receive-oriented layout and the sidebar
-adds Receive, Display & Joystick, and the role-gated Mesh and Sources
-entries.
-
-## Open the dashboard
-
-Same URLs as the drone profile:
-
-| Link | URL |
-|---|---|
-| mDNS | `http://<node-name>.local:8080` |
-| Hotspot | `http://192.168.4.1:8080` |
-| USB tether | `http://192.168.7.1:8080` |
-| LAN | `http://<node-ip>:8080` |
-
-## Ground Home
-
-<Frame caption="Ground-station home page in the `direct` role.">
-  ![Ground Home](/images/dashboard/ground/home-full.png)
+<Frame caption="Home on a ground station in the direct role.">
+  ![Ground dashboard Home with status tiles, charts, Video and WFB Receive panels](/images/ground-agent/dashboard/home.png)
 </Frame>
 
-The home page renders profile-aware tiles and panels:
+## Ground-station pages
 
-- **WFB Receive**. Adapter, channel, RSSI, packet loss, FEC,
-  active streams.
-- **Mesh**. Visible only in `relay` and `receiver` roles.
-- **Sources**. Visible only in the `receiver` role.
-- **Hardware**, **Network**, **Cloud Relay**, **Services**.
-  Shared with the drone home.
+| Page | Route | Roles |
+| --- | --- | --- |
+| [WFB Receive](/ground-agent/dashboard-receive) | `/receive` | every role |
+| [Display & Joystick](/ground-agent/dashboard-io) | `/io` | every role |
+| [Mesh](/ground-agent/dashboard-mesh) | `/mesh` | relay, receiver |
+| [Sources](/ground-agent/dashboard-mesh#sources-receiver-role) | `/sources` | receiver |
 
-For the full panel breakdown see [Home](/drone-agent/dashboard-home).
+The top bar's profile badge reads `ground_station · <role>`. The role (direct, relay or receiver) is set in **Settings → Profile**; see [Settings](/drone-agent/dashboard-settings#profile).
 
-## Sidebar map
+## Ground-only surfaces
 
-The ground sidebar adds three entries to the shared rail:
+- **Phone receivers** on the Pairing page: approve a phone after matching its key fingerprint. See [Pairing](/drone-agent/dashboard-pairing#phone-receivers-ground-station).
+- **Settings → Display:** the active kiosk display and the panels this board supports.
+- **Enter Cockpit:** the banner on Home opens the full-screen cockpit at `/cockpit`. An attached HDMI kiosk opens the same cockpit at `/cockpit/?kiosk=1`; see [HDMI kiosk](/ground-agent/hdmi-kiosk).
 
-| Entry | Direct | Relay | Receiver |
-|---|---|---|---|
-| Receive | yes | yes | yes |
-| Display & Joystick | yes | yes | yes |
-| Mesh | no | yes | yes |
-| Sources | no | no | yes |
+## Shared pages
 
-See the [Per-profile visibility matrix](/drone-agent/dashboard-per-profile)
-for the full nav inventory.
+These pages are the same on both profiles and are documented once, under Drone Agent:
 
-## Setup walkthrough
+<CardGroup cols={2}>
+  <Card title="Home" icon="house" href="/drone-agent/dashboard-home">
+    Tiles, charts and the ground-station panels.
+  </Card>
+  <Card title="Pairing" icon="link" href="/drone-agent/dashboard-pairing">
+    Mission Control owner and phone receivers.
+  </Card>
+  <Card title="Extensions" icon="puzzle" href="/drone-agent/dashboard-extensions">
+    Installed extensions and the catalog.
+  </Card>
+  <Card title="Peripherals" icon="cpu" href="/drone-agent/dashboard-peripherals">
+    Registered peripheral manifests.
+  </Card>
+  <Card title="Logs" icon="scroll-text" href="/drone-agent/dashboard-logs">
+    Live agent log rows.
+  </Card>
+  <Card title="Diagnostics" icon="wrench" href="/drone-agent/dashboard-diagnostics">
+    System metrics, services and reboot.
+  </Card>
+  <Card title="Settings" icon="settings" href="/drone-agent/dashboard-settings">
+    The sections a ground station shows.
+  </Card>
+</CardGroup>
 
-Brand-new ground stations open the
-[setup walkthrough](/ground-agent/setup#run-the-setup-wizard) on first boot. The
-walkthrough completes pairing, wires the kiosk, and finalizes the
-profile so the role-aware sidebar entries become visible.
+## Next steps
 
-## Related
-
-- [Receive](/ground-agent/dashboard-receive)
-- [Mesh](/ground-agent/dashboard-mesh)
-- [Sources](/ground-agent/dashboard-sources)
-- [Display & Joystick](/ground-agent/dashboard-io)
-- [Three roles](/ground-agent/setup#pick-a-role)
-- [Set up a ground station](/ground-agent/setup)
+<CardGroup cols={2}>
+  <Card title="WFB Receive" icon="antenna" href="/ground-agent/dashboard-receive">
+    Receive-side link status.
+  </Card>
+  <Card title="Set up a ground station" icon="tower-broadcast" href="/ground-agent/setup">
+    Profile, role and first bring-up.
+  </Card>
+</CardGroup>

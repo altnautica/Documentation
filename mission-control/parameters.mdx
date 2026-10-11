@@ -1,144 +1,85 @@
 ---
-title: "Parameters"
-description: "Browse, search, edit, and import/export flight controller parameters."
+title: "Flight controller parameters"
+sidebarTitle: "Parameters"
+description: "Browse, search, edit, compare, export and reset flight controller parameters in a node's Parameters tab."
 icon: "table-list"
 ---
 
-The Parameters panel gives you direct access to every parameter on your flight controller. ArduPilot drones typically have 800+ parameters. This panel lets you browse, search, filter, edit, and bulk-manage them.
+The **Parameters** tab of a node gives direct access to every parameter on its flight controller. Open the node and click **Parameters**, or press `Ctrl+K` (`⌘K` on macOS) and search for a parameter name to jump straight to it.
 
-<Frame caption="Parameter browser with search, categories, and value editing">
-  <img src="/images/dashboard/parameters.png" alt="Parameters panel showing parameter tree with search and value editing" />
+<Frame caption="Parameters tab with the toolbar, column settings and the Options column.">
+  ![Parameters tab listing parameters with Export, Export QGC, Compare and Write to FC in the toolbar](/images/mission-control/parameters.png)
 </Frame>
 
-## Reading Parameters
+The tab needs a connected flight controller. A progress bar shows the download as the parameter list arrives.
 
-When you open the Parameters panel and click "Read from FC," Mission Control requests the full parameter list from the flight controller. The loading progress bar shows how many parameters have been received out of the total.
+If the link drops parameters and the download does not finish, the tab still lists what arrived and shows **N of M received. Retry missing** in the header. Click **Refresh** to download the list again. A partial list is never cached as the flight controller's parameter set.
 
-For ArduPilot, this typically takes 5-15 seconds depending on the connection speed and number of parameters (usually 800-1500).
+## Columns
 
-## Browsing Parameters
+| Column | Shown by default | Content |
+|---|---|---|
+| Index | Yes | Parameter index |
+| Name | Yes | Parameter name, for example `ARMING_CHECK` |
+| Value | Yes | Current value. Click to edit; enum parameters use a dropdown |
+| Range | Yes | Valid minimum and maximum |
+| Units | Yes | Units such as %, m or m/s |
+| Options | Yes | Named values for enum and bitmask parameters |
+| Description | No | What the parameter does |
+| Type | No | Data type |
 
-Parameters are displayed in a table with configurable columns:
+Use the column settings button in the toolbar to show or hide columns. Hover a parameter for its full description, range, default and options from the built-in ArduPilot and PX4 metadata.
 
-| Column | Description |
-|--------|-------------|
-| Index | Parameter index number |
-| Name | Parameter name (e.g., `ARMING_CHECK`, `BATT_CAPACITY`) |
-| Description | Human-readable description of what the parameter does |
-| Value | Current value. Click to edit. |
-| Range | Min/max valid range |
-| Units | Parameter units (%, m, m/s, etc.) |
-| Type | Data type (float, int, etc.) |
+## Search and filters
 
-You can show or hide columns from the column visibility settings.
+The search box matches parameter names and descriptions, ignoring case. Typing `BATT` shows the battery parameters.
 
-## Searching
+| Filter | Shows |
+|---|---|
+| **Modified** | Parameters you have edited in this session but not written to the flight controller |
+| **Non-Default** | Parameters whose value differs from the firmware default. **View diff** opens a full comparison against the defaults |
+| **Favorites** | Parameters you have starred |
 
-The search box at the top filters parameters by name or description. Typing `BATT` shows all battery-related parameters. Typing `failsafe` shows parameters related to failsafe behavior.
+## Edit and write
 
-Search is case-insensitive and matches partial strings.
+1. Click a value and enter the new value. The row is marked as changed.
+2. Click **Write to FC (N)**, where N is the number of changed parameters. The button shows progress while writing.
+3. **Revert** discards unsaved edits without touching the flight controller.
 
-## Filtering
-
-Beyond search, several filter modes help you focus:
-
-| Filter | Description |
-|--------|-------------|
-| **Modified only** | Show only parameters that have been changed from their default values |
-| **Non-default** | Show parameters where the current value differs from the firmware default |
-| **Favorites** | Show only parameters you have starred |
-| **Category** | Filter by parameter group (e.g., ARMING, BATT, GPS, RC) |
-
-### Filter Presets
-
-Save frequently used filter combinations as presets. A preset stores:
-- Search text
-- Category selection
-- Modified/non-default/favorites toggles
-
-Load a preset to instantly apply that filter combination.
-
-## Editing Parameters
-
-Click on a parameter's value to edit it:
-
-1. A text input or dropdown appears (dropdowns for enum-type parameters).
-2. Enter the new value.
-3. The parameter is highlighted as "dirty" (unsaved).
-4. Click "Save" to write the value to the FC.
+If the aircraft is armed, writing opens the **Vehicle is armed** confirmation and you click **Write Anyway** to send the changes. **Reset to Default** (every parameter back to factory defaults) is disabled while armed.
 
 <Warning>
-Some parameter changes require a flight controller reboot to take effect. A banner appears at the top of the panel when a reboot is needed. Reboot from the actions menu or by power-cycling the FC.
+Some parameter changes need a reboot of the flight controller before they apply. Armed writes take effect immediately. See [Safety](/operations/safety).
 </Warning>
 
-### Value Validation
+## Export, compare and restore
 
-The panel validates values before writing:
-- Values outside the min/max range are rejected with an error message
-- Enum parameters only accept valid options
-- Type mismatches are caught (e.g., entering text in a numeric field)
+| Action | What it does |
+|---|---|
+| **Export** | Downloads every parameter as a Mission Planner `.param` file (`NAME,VALUE` per line) |
+| **Export QGC** | Downloads a QGroundControl `.params` file |
+| **Compare** | Loads a `.param` or `.params` file and compares it with the flight controller. Select the rows to apply and write them |
 
-## Import and Export
+Example `.param` file:
 
-### Exporting Parameters
-
-Click "Export" to download a `.param` file containing all current parameters. The file format is plain text:
-
-```
+```text
 ARMING_CHECK,1
 BATT_CAPACITY,5200
 BATT_MONITOR,4
 GPS_TYPE,1
-...
 ```
 
-Use this to back up your configuration before making changes, or to share settings with others.
+To clone a configuration between identical aircraft, export from one, then use **Compare** on the other and write only the rows that differ. The Firmware panel also has parameter backup and restore around a flash. See [Flash Tool](/mission-control/flash-tool#back-up-and-restore-parameters).
 
-### Importing Parameters
+File layouts are described in [Mission file formats](/mission-control/file-formats#parameter-files).
 
-Click "Import" to load a `.param` file. Mission Control:
+## Next steps
 
-1. Reads the file and parses name-value pairs
-2. Compares imported values against current FC values
-3. Shows a diff table highlighting what will change
-4. Lets you select which parameters to apply
-5. Writes the selected parameters to the FC
-
-<Tip>
-Import is useful for cloning configurations between identical drones. Export from one, import to another, and only the parameters that differ are written.
-</Tip>
-
-### Backup and Restore
-
-The firmware panel includes backup and restore features that work with parameter files:
-
-- **Backup:** Save the current parameter state
-- **Restore:** Load a backup and write all differing parameters to the FC
-
-## Parameter Descriptions
-
-Mission Control includes built-in parameter metadata for ArduPilot and PX4. When you hover over or select a parameter, you see:
-
-- **Full description** of what the parameter controls
-- **Valid range** (min and max)
-- **Default value** for the firmware version
-- **Units** if applicable
-- **Options** for enum-type parameters (e.g., `BATT_MONITOR`: 0=Disabled, 3=Analog Voltage Only, 4=Analog Voltage and Current)
-
-## Keyboard Shortcuts
-
-| Shortcut | Action |
-|----------|--------|
-| `Ctrl+F` / `Cmd+F` | Focus search box |
-| `Enter` | Confirm edit |
-| `Escape` | Cancel edit |
-| `Tab` | Move to next parameter value |
-| `Shift+Tab` | Move to previous parameter value |
-
-## Working with Many Parameters
-
-For drones with 1000+ parameters:
-- Use search to narrow down. Most tasks only need 5-10 parameters.
-- Use category filters to browse by subsystem.
-- The "Modified only" filter shows what you have changed in this session.
-- "Non-default" highlights everything that differs from the firmware defaults, which is useful for auditing a configuration.
+<CardGroup cols={2}>
+  <Card title="MAVLink signing" icon="key" href="/mission-control/mavlink-signing">
+    Sign the link to the flight controller.
+  </Card>
+  <Card title="Flight controller setup" icon="sliders" href="/mission-control/fc-configuration">
+    Use the guided panels instead of raw parameters.
+  </Card>
+</CardGroup>

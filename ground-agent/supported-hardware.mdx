@@ -1,161 +1,119 @@
 ---
-title: "Supported Hardware"
-description: "Which boards, radios, and peripherals work with the ADOS Ground Agent."
-icon: "circuit-board"
-lastUpdated: "2026-06-18"
+title: "Ground Agent supported hardware"
+sidebarTitle: "Supported hardware"
+description: "Boards, radios, front-panel parts and gamepads that work with the ADOS Ground Agent."
+icon: "microchip"
 ---
 
-# Supported Hardware
-
-The Ground Agent runs on any Linux ARM single-board computer that can host a USB WiFi adapter in monitor mode. The bench build uses a Raspberry Pi 4B. Production builds target Radxa CM3 and CM4 boards.
+A ground station is a Linux single-board computer, a WFB-ng USB radio for the drone link, and a USB-C power source. Everything else is optional.
 
 ## Required components
 
-Every ground station needs these three things:
+1. **A supported board.** See the table below.
+2. **An RTL8812EU or RTL8812AU USB Wi-Fi adapter** for the WFB-ng receive path on 5 GHz.
+3. **A USB-C power source** that sustains the board under radio load. Sizing is on [Power and runtime](/ground-agent/power-and-runtime).
 
-1. **A Linux SBC** with at least 1 GB RAM, USB 2.0, and a 64-bit ARM processor
-2. **An RTL8812EU USB WiFi adapter** for WFB-ng receive on 5 GHz
-3. **A USB-C power source** that can sustain the required output under radio load
+## Tested ground-station boards
 
-Everything else (OLED, buttons, HDMI, 4G modem) is optional but recommended.
+These boards carry a ground-station block in their hardware profile.
+
+| Board | Default role | Roles | USB tether | HDMI kiosk | Local display |
+|---|---|---|---|---|---|
+| Raspberry Pi 4B | `direct` | direct, relay, receiver | Yes | Yes | I2C OLED, SPI LCD, or HDMI touch panel |
+| Radxa Cubie A7Z | `receiver` | direct, relay, receiver | No | No | SPI LCD |
+
+The Cubie A7Z profile does not include the video relay, USB tether or HDMI kiosk features. Use a Raspberry Pi 4B when the ground station itself must serve live video.
+
+The Raspberry Pi 3 and the Radxa ROCK 5C Lite also carry a supported SPI LCD, see [Front panel](/ground-agent/display#supported-boards). The full board list for every profile is on [Drone Agent supported hardware](/drone-agent/supported-hardware).
 
 ## Bench build (Raspberry Pi 4B)
 
-This is the fastest way to get a ground station running. Every part is commodity hardware available globally.
+| Part | Role |
+|---|---|
+| Raspberry Pi 4B (2 GB or 4 GB) | Ground board |
+| 32 GB storage card (A2 class) | Boot and logs |
+| RTL8812EU USB adapter (for example LB-LINK BL-M8812EU2) | WFB-ng receive radio |
+| 2x 5 dBi SMA dual-band antennas | Reception |
+| USB-C data cable (1 m) | Tether to a laptop |
+| USB-C wall adapter or PD power bank | Power |
+
+### SPI LCD build (Radxa Cubie A7Z)
 
 | Part | Role |
-|------|------|
-| Raspberry Pi 4B (2 GB or 4 GB) | Ground SBC |
-| 32 GB SD card (A2 class) | Boot and logs |
-| LB-LINK BL-M8812EU2 (RTL8812EU) | WFB-ng radio receiver |
-| 2x 5 dBi SMA dual-band antenna | Signal reception |
-| USB-C data cable (1 m) | Tether to laptop |
-| 5V / 3A USB-C power supply or USB-C PD power bank | Bench or field power |
+|---|---|
+| Radxa Cubie A7Z | Ground board |
+| Waveshare 3.5" RPi LCD (A) | 480x320 touch display |
+| RTL8812EU USB adapter | WFB-ng receive radio |
+| USB-C power source | Power |
 
-### Physical UI (recommended)
+### Front panel (optional)
 
 | Part | Role |
-|------|------|
-| SSD1306 128x64 I2C OLED (0.96" or 1.3") | Status display |
-| 4x tactile pushbuttons (6mm) | Menu navigation |
-| Dupont jumper wires (M-F, 20 pack) | GPIO wiring |
-| Protoboard or JST-XH housing | Wire management |
+|---|---|
+| SSD1306 or SH1106 I2C OLED, 128x64 or 128x32 | Status display |
+| Waveshare 3.5" RPi LCD (A) | Touch display |
+| 4x tactile pushbuttons (6 mm) | LCD navigation |
+| Jumper wires | GPIO wiring |
 
 ### Standalone flight add-ons (optional)
 
 | Part | Role |
-|------|------|
-| Micro-HDMI to HDMI cable (1.5 m) | Display output |
-| 7" HDMI monitor (1024x600) | Pilot display |
-| USB gamepad (Logitech F310 or similar) | Pilot input |
+|---|---|
+| Micro-HDMI to HDMI cable | Display output on a Pi 4B |
+| HDMI monitor | Cockpit display |
+| USB or Bluetooth gamepad | Cockpit input |
 
-### 4G modem (optional)
+### Cellular modem (optional)
 
 | Part | Role |
-|------|------|
-| SIM7600G-H 4G LTE USB modem | Cellular uplink |
-| SIM card with data plan | Cellular service |
+|---|---|
+| USB LTE modem | Cellular uplink |
+| SIM with a data plan | Cellular service |
 
-## Production tiers
+## The radio adapter
 
-<Tabs>
-  <Tab title="Lite">
-    - Radxa CM3 (RK3566) on a baseboard
-    - Single RTL8812EU radio
-    - OLED + 4 buttons on the front panel
-    - HDMI output
-    - WiFi AP on the onboard radio
-    - Compact palm-sized enclosure
-
-    Good for field pilots, bench engineers, and single-drone operations.
-  </Tab>
-  <Tab title="Pro">
-    - Radxa CM4 (RK3588S2) on a baseboard
-    - Two RTL8812EU radios for antenna diversity
-    - OLED + 4 buttons on the front panel
-    - HDMI output
-    - Internal M.2 slot for 4G modem
-    - WiFi AP on the onboard radio
-    - Rugged field enclosure
-
-    Good for fleet operators, long-range operations, and commercial use.
-  </Tab>
-</Tabs>
-
-## RTL8812EU details
-
-The RTL8812EU chipset is required for WFB-ng monitor mode reception. It supports 5 GHz operation at up to 29 dBm TX power (800 mW+), though the ground side only uses RX mode.
+The WFB-ng receive path needs an adapter that the agent recognises as a WFB radio: the RTL8812EU or the RTL8812AU, by USB ID or by driver.
 
 <Warning>
-Not all USB WiFi adapters work. The adapter must use the RTL8812EU or RTL8812AU chipset. Generic "WiFi 6" or "AC1200" adapters almost certainly use a different chipset that does not support monitor mode. The LB-LINK BL-M8812EU2 is the tested reference adapter.
+Not every USB Wi-Fi adapter works. Generic "Wi-Fi 6" or "AC1200" adapters usually use a chipset without monitor-mode injection. The LB-LINK BL-M8812EU2 (RTL8812EU) is the reference adapter.
 </Warning>
 
-**Driver note:** The RTL8812EU requires a DKMS kernel module. The `install.sh` script handles this automatically. If DKMS build fails (missing kernel headers), the install script reports the error and retries on the next boot after an `apt upgrade`.
+The RTL8812EU needs a DKMS kernel module, which the installer builds. If the build fails (usually missing kernel headers), the installer continues and reports it. Install the headers for your running kernel and re-run the installer with `--upgrade`.
 
 ## OLED display
 
-Any SSD1306-based or SH1106-based 128x64 I2C OLED works. The agent probes I2C address `0x3C` (some clones use `0x3D`). The display connects with four wires: SDA, SCL, VCC (3.3 V), and GND.
-
-The 1.3" size is better for field use. The 0.96" size works fine on the bench.
+Any SSD1306 or SH1106 I2C OLED at 128x64 or 128x32 works. The agent probes I2C address `0x3C`, then `0x3D`. Wire SDA, SCL, VCC (3.3 V) and GND. Controller and size settings are on [Front panel](/ground-agent/display#oled-status-display).
 
 ## GPIO buttons
 
-Four tactile momentary pushbuttons wired between GPIO pins and GND. The agent enables internal pull-ups, so no external resistors are needed for the bench build.
+Four momentary pushbuttons, each wired between a GPIO pin and GND. The agent enables internal pull-ups, so no external resistors are needed.
 
-| Button | Pi 4B GPIO | Header pin |
-|--------|-----------|------------|
-| B1 (Up / Record) | GPIO 5 | Pin 29 |
-| B2 (Down / WiFi toggle) | GPIO 6 | Pin 31 |
-| B3 (Select / Pair) | GPIO 13 | Pin 33 |
-| B4 (Back / Factory reset) | GPIO 19 | Pin 35 |
-
-<Tip>
-On boards other than the Pi 4B, the GPIO pin numbers are defined in the HAL board profile YAML. The agent reads the profile at boot and maps buttons accordingly.
-</Tip>
-
-## Gamepad support
-
-Any USB HID gamepad works for standalone HDMI flight. The Web Gamepad API in Chromium handles mapping. Tested controllers:
-
-- Logitech F310 (USB, reference controller)
-- Xbox Series controller (USB or Bluetooth)
-- PS4 DualShock (USB or Bluetooth)
-- PS5 DualSense (USB or Bluetooth)
-- 8BitDo Pro 2 (USB or Bluetooth)
-
-Bluetooth gamepads pair through the setup webapp or the OLED menu.
-
-## Power source
-
-The Ground Agent does not require an internal battery. Power it from a wall adapter on the bench or a USB-C PD power bank in the field.
-
-| Operating mode | Planning draw | Power source guidance |
-|---|---:|---|
-| Direct/headless node | ~7.5 W | 5 V / 2 A minimum, stronger source preferred on Pi-class boards |
-| HDMI kiosk, dual-radio, or uplink-heavy node | ~9-11 W | 5 V / 3 A or equivalent USB-C PD source |
-| Supply ceiling | 15 W | Use for margin and brownout prevention |
-
-Laptop USB-C back-power is not a reliable field power source. It may work during setup, but use separate power when video, WiFi AP, HDMI, or a second radio is active.
-
-[Power and Runtime](/ground-agent/power-and-runtime) has runtime estimates for common power bank sizes.
-
-## Mesh role hardware
-
-If you plan to deploy this node as a `relay` or `receiver` in a multi-node mesh, you need one extra item beyond the bench build:
-
-| Item | Default | Notes |
+| Button | BCM GPIO | Header pin |
 |---|---|---|
-| Second RTL8812EU USB adapter | Yes | The default mesh carrier. Same chip as the primary for inventory simplicity and matched 29 dBm TX power. Plug into a different USB port from the primary. Runs 802.11s for batman-adv on 2.4 GHz (channel 1 by default), a separate band from the primary WFB-ng radio on 5 GHz UNII-3. |
-| MT7612U USB adapter (e.g. ALFA AWUS036ACM) | Alternative | Mainline `mt76` driver. 20 dBm TX power. Good fit when mainline kernel coverage is preferred on the mesh side. |
-| MT7921AU USB adapter (e.g. Brostrend AX9L) | Alternative | Mainline `mt7921u` driver. WiFi 6. 20-23 dBm TX power. Good fit when mesh scales to 3+ nodes and OFDMA helps. |
+| B1 | GPIO 5 | Pin 29 |
+| B2 | GPIO 6 | Pin 31 |
+| B3 | GPIO 13 | Pin 33 |
+| B4 | GPIO 19 | Pin 35 |
 
-The first RTL8812EU stays on the drone-facing radio job. The second adapter handles batman-adv between Ground Agents. A `direct`-mode node does not need a second adapter.
+A board profile can declare other pins in a `buttons` block; these four are the fallback. What each button does is on [Front panel](/ground-agent/display#buttons).
 
-[Read more about mesh hardware planning in the Local Mesh page](/ground-agent/batman-adv).
+## Gamepads
 
-## What is next
+Any USB HID gamepad works in the on-box cockpit through the browser's Gamepad API. Pair Bluetooth gamepads from Mission Control (node panel, **Buttons** tab) or with the agent's Bluetooth routes (`POST /api/v1/ground-station/bluetooth/scan`, then `POST /api/v1/ground-station/bluetooth/pair`).
 
-- [Installation](/ground-agent/installation) to set up your ground station
-- [Power and Runtime](/ground-agent/power-and-runtime) to size field power
-- [Physical UI](/ground-agent/physical-ui) for OLED and button details
-- [HDMI Kiosk](/ground-agent/hdmi-kiosk) for standalone flight setup
+## Mesh hardware
+
+A node in the `relay` or `receiver` role needs a **second RTL8812EU or RTL8812AU adapter** in another USB port. The first adapter stays on the drone link; the second carries the batman-adv mesh on 2.4 GHz (channel 1 by default). The agent counts WFB-class radios when it decides whether a node can join a mesh, so adapters with other chipsets do not qualify. A `direct` node needs no second adapter.
+
+See [Local mesh (batman-adv)](/ground-agent/batman-adv).
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Power and runtime" icon="battery-full" href="/ground-agent/power-and-runtime">
+    Size the power source for your build.
+  </Card>
+  <Card title="Install the Ground Agent" icon="download" href="/ground-agent/installation">
+    One command on the board.
+  </Card>
+</CardGroup>

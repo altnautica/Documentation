@@ -1,143 +1,75 @@
 ---
-title: "Flight Control"
-description: "Manual flight with gamepad, keyboard, and guided mode commands."
-icon: "gamepad"
-lastUpdated: "2026-06-18"
+title: "Flight tab"
+description: "The drone Flight tab in Mission Control: HUD, readouts, health, the action panel, Fly Here from the map and mission progress."
+icon: "paper-plane"
 ---
 
-The per-drone Overview surface is your cockpit. Select a drone in the fleet sidebar to open its detail view; the Overview tab shows live telemetry, the video feed, and manual flight controls. This is where you fly your drone.
-
-<Frame caption="Per-drone Overview with video feed, telemetry strip, and flight controls">
-  <img src="/images/dashboard/flight-control.png" alt="Per-drone overview showing the live flight interface" />
-</Frame>
-
-## Overview Layout
-
-The Overview surface has several areas:
-
-- **Video feed** (center): Live camera stream from the drone, with OSD overlay
-- **Telemetry strip** (bottom or side): Attitude, speed, altitude, battery, GPS
-- **Actions panel** (right): Arm/disarm, mode change, guided commands
-- **Fleet sidebar** (left): Drone selection when multiple are connected
-- **Mini-map** (corner): Overhead view of drone position
-
-The per-drone detail view also carries an Extensions tab for extension surfaces installed on that drone (Follow-Me, Orbit, thermal overlay, gimbal control, and similar behaviors ship as extensions). See [Installing extensions](/mission-control/installing-plugins).
-
-## Gamepad Control
-
-Mission Control supports gamepad and HOTAS input at 50 Hz using the Web Gamepad API. When a gamepad is connected, the GCS sends `MANUAL_CONTROL` MAVLink messages directly to the flight controller.
-
-**Supported input devices:**
-- Xbox controllers (wired and wireless)
-- PlayStation DualShock/DualSense
-- Logitech gamepads
-- HOTAS (Hands On Throttle And Stick) setups
-- Any HID gamepad recognized by the Web Gamepad API
-
-### How It Works
-
-1. Connect a gamepad to your computer (USB or Bluetooth).
-2. The browser detects it automatically via the Gamepad API.
-3. Mission Control polls the gamepad at 50 Hz (every 20ms).
-4. Stick positions are mapped to roll, pitch, throttle, and yaw.
-5. `MANUAL_CONTROL` messages are sent to the flight controller at 50 Hz.
+The **Flight** tab is a drone's live telemetry surface: instruments and actions on the left, a full map on the right. It has no video; video, the HUD and the Skill Bar live on the [Cockpit](/mission-control/cockpit) tab.
 
 <Warning>
-Gamepad control sends real stick inputs to the flight controller. Make sure you understand your FC's flight mode behavior before flying with a gamepad. Start in a stabilized mode.
+The action panel and the map menu command a real aircraft. Read [Safety](/operations/safety) before you arm.
 </Warning>
 
-### Input Mapping
+<Frame caption="A drone's Flight tab with the action panel and map.">
+  ![Mission Control drone Flight tab showing the HUD, telemetry readout, action panel and map](/images/mission-control/flight-tab.png)
+</Frame>
 
-The default mapping follows standard RC conventions:
+## Layout
 
-| Gamepad Axis | Channel | Function |
-|-------------|---------|----------|
-| Right stick X | Roll | Bank left/right |
-| Right stick Y | Pitch | Pitch forward/back |
-| Left stick Y | Throttle | Climb/descend |
-| Left stick X | Yaw | Rotate left/right |
+Select a drone and open **Flight**. The left column holds, top to bottom:
 
-You can customize the input mapping in [Settings > Input](/mission-control/settings).
+- **HUD**: artificial horizon with pitch ladder and roll arc, speed and altitude tapes, heading, battery, GPS, mode, armed state, signal and flight timer. You can detach it to a separate window.
+- **Telemetry readout**: ALT, SPD, HDG and VS, with satellites, battery, mode and a **link silent** warning when telemetry stops. Its controls open the [telemetry deck](/mission-control/telemetry#telemetry-deck).
+- **Action panel** (below).
+- **Health and info**: the sensor health grid, health percentage, voltage, satellites and fix type, then vehicle, identity and statistics.
+- **RC input**, when the drone has no ExpressLRS CRSF lane, and the FC status text feed.
 
-## Keyboard Control
+The map on the right shows the drone, its path, home and the active mission. The handle on its left edge hides or shows the telemetry column.
 
-For quick commands without a gamepad, keyboard shortcuts are available:
+## Action panel
 
-| Key | Action |
-|-----|--------|
-| `Space` | Arm / Disarm (with confirmation) |
-| `R` | Return to Launch |
-| `L` | Land |
-| `T` | Takeoff |
-| `G` | Enter Guided mode |
-| Arrow keys | Nudge position in guided mode |
-| `+` / `-` | Adjust altitude in guided mode |
+| Control | What it does |
+|---|---|
+| **Loadout** | Picks the battery and equipment fitted for this flight. It is frozen into the flight record when you arm. |
+| **Pre-Flight Check {n}/18** | Opens the pre-flight checklist (hardware, software, environment and mission items). It turns green when the checklist is ready. |
+| **ARM** / **DISARM** | Arms with a slide confirmation or disarms with a hold. Disabled with **No flight-controller link** while the arm state is unknown. |
+| Mode select | Switches flight mode. The list comes from the connected firmware. |
+| Pause | Pauses a mission in Auto, resumes a paused mission, or holds position. Shown on vehicles with autonomous navigation. |
+| RTL | Return to home. |
+| Takeoff altitude | 1 to 120 m, default 10 m. Shared with takeoff fired from a hotkey or gamepad button. |
+| Takeoff | Arms and climbs to the takeoff altitude. |
+| Land | Lands at the current position. |
+| Abort | Commands an immediate land. Always shown. |
+| Kill | Cuts all motors after a guarded hold. Always shown. Emergency only. |
+| **Follow Me** | Shown when armed on a vehicle with autonomous navigation. The drone follows this device's GPS position. |
 
-<Note>
-Keyboard controls work in guided mode for position nudging. For full 4-axis manual flight control, use a gamepad or HOTAS.
-</Note>
+Every button is a Skill with the same confirmation, hotkey and stale-link rules as the cockpit. See [Skill bar and confirmations](/mission-control/cockpit#skill-bar-and-confirmations) and [Default hotkeys](/mission-control/cockpit#default-hotkeys). Hotkeys and gamepad buttons work on the Flight tab too, but stick control streams only from the Cockpit tab.
 
-## Guided Mode
+## Map actions
 
-Guided mode lets you command the drone to fly to specific positions. In this mode, you can:
+Right-click the map for the context menu.
 
-- **Click the map** to set a guided waypoint. The drone flies to that position.
-- **Set altitude** before sending the goto command.
-- **Use keyboard arrows** to nudge the drone's position incrementally.
+- **Fly Here** (shortcut G), **Fly Here at Alt...**, **Loiter Here** and **Land Here**: shown when the drone is connected, armed and in Guided, Auto, Guided NoGPS or Loiter. PX4 copters also get **Orbit Here...**.
+- **Point Camera Here**, **Clear Camera ROI**, **Trigger Camera**, **Set Home Here**, **Set EKF Origin** and **Add Rally Point** when connected.
+- **Add POI Marker**, **Copy Coordinates** and **Measure from Drone**.
 
-A confirmation dialog appears before sending guided commands, showing the target position and distance from the drone's current location.
+Fly Here opens a confirmation with the target's latitude, longitude, distance and ETA, and an altitude field (2 to 120 m, starting at the current relative altitude). Hold **Hold to Confirm** for 1.5 s to send it.
 
-## Automated Flight Behaviors
+## Mission progress
 
-Higher-level flight behaviors (Follow-Me, Orbit, QuickShots, obstacle avoidance, precision landing) ship as extensions through the ADOS Extensions registry rather than as a built-in catalog. Browse the [Extensions tab](/mission-control/installing-plugins) on the per-drone view to install behaviors that match your hardware and mission.
+During a mission the map shows the mission path and progress, with an overlay to pause or resume. Plan missions on the **Plan** tab; see [Mission planning](/mission-control/mission-planning).
 
-Extensions contribute their own UI tabs and controls scoped to the drone you install them on, so a behavior available on one drone in your fleet does not have to be active on the others.
+## Extensions
 
-## Actions Panel
+Extension surfaces installed on a drone appear as extra node tabs. Install extensions from the drone's **Agent → Extensions** page; see [Install extensions from Mission Control](/mission-control/installing-plugins).
 
-The actions panel on the right side provides direct control buttons:
+## Next steps
 
-- **Arm / Disarm** with a safety confirmation dialog
-- **Flight mode selector** showing all available modes for the connected firmware
-- **Return to Launch (RTL)** button
-- **Land** button
-- **Takeoff** button with altitude input
-- **Pre-flight checklist** to verify readiness before flight
-- **Failsafe alert banner** showing active failsafe conditions
-
-## Pre-Flight Checklist
-
-Before arming, the pre-flight checklist helps you verify that your drone is ready:
-
-- GPS lock status
-- Battery level
-- Pre-arm check results from the FC
-- Sensor health
-- RC input status
-- Geofence configured (if applicable)
-
-Items that fail show warnings with explanations. You can acknowledge warnings and proceed, or fix the issues first.
-
-## OSD Overlay
-
-When video is active, an on-screen display (OSD) overlay shows key telemetry data on top of the video feed:
-
-- Altitude, speed, heading
-- Battery voltage and percentage
-- Flight mode
-- GPS satellite count
-- Home direction and distance
-- Armed status
-
-## Telemetry Strip
-
-The telemetry strip at the bottom shows real-time flight data in a compact format. See the [Telemetry](/mission-control/telemetry) page for details on all available readouts.
-
-## Mission Execution
-
-When a mission is active, the Overview surface shows mission execution progress:
-
-- Current waypoint indicator
-- Distance to next waypoint
-- Mission completion percentage
-- Elapsed time
+<CardGroup cols={2}>
+  <Card title="Cockpit and Skills" icon="gamepad" href="/mission-control/cockpit">
+    Video, HUD, the Skill Bar and gamepad control.
+  </Card>
+  <Card title="Telemetry" icon="chart-line" href="/mission-control/telemetry">
+    Every readout, the deck and freshness rules.
+  </Card>
+</CardGroup>

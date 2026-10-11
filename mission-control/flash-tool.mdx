@@ -1,102 +1,182 @@
 ---
 title: "Flash Tool"
-description: "Mission Control's universal flasher for flight controller firmware and companion-computer agents."
-icon: "wand-magic-sparkles"
-lastUpdated: "2026-06-18"
+description: "Flash ArduPilot, PX4 and Betaflight firmware, update AP_Periph CAN nodes, back up parameters and install the ADOS agents from Mission Control."
+icon: "bolt"
+keywords: ["flash tool", "firmware", "ardupilot", "px4", "betaflight", "ap_periph", "dfu"]
 ---
 
-The Flash Tool is the universal flashing UI inside Mission Control at **Settings, then Flash Tool**. It handles both flight controller firmware and companion-computer agents from one place. You never need a separate flashing tool.
+The **Flash Tool** flashes flight controller firmware, updates DroneCAN peripheral nodes and gives you the install command for the ADOS agents, all from one panel.
 
-## What it does
+<Frame caption="Flash Tool on the Firmware step with the ArduPilot stack, a board and a Stable version selected.">
+  ![Flash Tool Firmware step with the ArduPilot stack, CubeOrangePlus board, ArduCopter Stable version and flash methods](/images/mission-control/flash-tool.png)
+</Frame>
 
-The Flash Tool covers two jobs:
+## Open the Flash Tool
 
-- **Flight controller firmware.** Flash ArduPilot, Betaflight, PX4, or iNav onto the FC from the browser. The STM32 boards (ArduPilot, Betaflight, iNav) flash over WebUSB DFU; PX4 flashes through its serial bootloader over WebSerial.
-- **Companion computer agents.** Install the ADOS Drone Agent (air-side) or ADOS Ground Agent (ground-side) onto your SBC. The Flash Tool surfaces a `curl` install command for your board, which you paste over SSH.
+- **Settings** → **Flash Tool** (route `/config/firmware`)
+- The ⚡ **Flash Tool** button in the top bar
+- A node's **Setup** tab → **SYSTEM** → **Firmware**
 
-It is the same panel for both. Pick your stack, pick the board, and the Flash Tool shows the right flow.
+Links can preselect a stack and an AP_Periph node with `/config/firmware?stack=<stack>&target=<node id>`, for example `?stack=ap-periph&target=10`.
 
-## Choosing your stack
+## Choose a stack
 
-When you open the Flash Tool, the first selector picks the stack:
+| **Firmware Stack** | Target | Flash path |
+|---|---|---|
+| ArduPilot | Flight controller | ArduPilot bootloader over USB, USB DFU or ST ROM (UART) |
+| Betaflight | Flight controller | USB DFU or ST ROM (UART) |
+| PX4 | Flight controller | PX4 bootloader over USB, or USB DFU |
+| AP_Periph (CAN nodes) | DroneCAN peripheral | DroneCAN firmware update over SLCAN or through the agent |
+| ADOS Drone Agent | Companion computer | Install command |
+| ADOS Ground Agent | Companion computer | Install command |
 
-| Stack | Where it runs | Flow |
-|-------|---------------|------|
-| ArduPilot | Flight controller (STM32) | WebUSB DFU |
-| Betaflight | Flight controller (STM32) | WebUSB DFU |
-| PX4 | Flight controller (STM32) | WebSerial bootloader |
-| iNav | Flight controller (STM32) | WebUSB DFU |
-| ADOS Drone Agent | Companion computer (air-side) | Install command |
-| ADOS Ground Agent | Companion computer (ground-side) | Install command |
+Mission Control does not flash iNav. Use iNav Configurator, then connect the board to Mission Control to configure it.
 
-For flight controller firmware, see [Firmware Flashing](/mission-control/firmware-flashing). The rest of this page covers the companion-agent install flow.
+<Note>
+Flashing needs WebUSB (DFU) and Web Serial (bootloader paths): Chrome or Edge on desktop, or the [desktop app](/mission-control/desktop-app). Firefox and Safari support neither. The agent install command works in any browser because it runs on the board.
+</Note>
 
-## Install command flow
+## Flight controller firmware
 
-The companion agents install on a board that already runs a stock vendor OS (Raspberry Pi OS, Radxa OS, Ubuntu, JetPack, and similar). The Flash Tool surfaces a `curl ... | sudo bash` install command pre-filled for your board. SSH into the board and paste it. The install script handles the rest.
+### Flash methods
+
+Pick a **Flash Method**, or leave it on **Auto**.
+
+| Stack | Method | What it does |
+|---|---|---|
+| ArduPilot | **Auto** | ArduPilot bootloader over USB; USB DFU only when a DFU device is present |
+| ArduPilot | **Bootloader (USB)** | ArduPilot bootloader over USB with the `.apj` image |
+| ArduPilot | **USB DFU** | STM32 USB DFU with the `_with_bl.hex` image |
+| ArduPilot | **ST ROM (UART)** | ST ROM bootloader over a UART with BOOT0 held |
+| Betaflight | **Auto** | USB DFU, then the ST ROM bootloader on the same port |
+| Betaflight | **USB DFU** | Native USB DFU |
+| Betaflight | **ST ROM (UART)** | ST ROM bootloader over a UART with BOOT0 held |
+| PX4 | **Auto** | PX4 bootloader over USB |
+| PX4 | **PX4 Bootloader** | PX4 bootloader (the `px_uploader` protocol) |
+| PX4 | **USB DFU** | Native USB DFU, for absolute `.hex` images only |
+
+### Flash ArduPilot
 
 <Steps>
-  <Step title="Pick the board">
-    In the Flash Tool, pick **ADOS Drone Agent** or **ADOS Ground Agent** and select your board (Pi 4B, Pi Zero 2 W, Radxa CM3, CM4, Rock 5C Lite, Cubie A7Z, and similar).
+  <Step title="Connect the flight controller">
+    Plug it in over USB. If it is connected in Mission Control, the panel shows **FC Connected via MAVLink** and the board details from `AUTOPILOT_VERSION`. A board already in bootloader mode shows **DFU Device Connected**.
   </Step>
-  <Step title="Copy the install command">
-    The Flash Tool shows a single command pre-filled for your selected board. Click **Copy**.
+  <Step title="Pick the firmware">
+    Choose the **Vehicle Type** (ArduCopter, ArduPlane, ArduRover or ArduSub) and the **Version**: a stable release (marked Recommended), **Latest Beta**, **Latest Build** or **Development (Unstable)**. Check that the board target matches your hardware.
   </Step>
-  <Step title="Paste over SSH">
-    SSH into the board and paste the command. The install script installs Python, dependencies, the agent itself, and the systemd services. It detects the board profile, picks the right tier, and starts the agent.
+  <Step title="Confirm the checklist">
+    Tick the pre-flash checklist. **Flash Firmware** stays disabled until every item is ticked.
   </Step>
-  <Step title="Watch the installer output">
-    The script logs its progress. On a fast network and a Class 10 SD card, expect 3 to 10 minutes.
+  <Step title="Flash">
+    Click **Flash Firmware**. The board reboots into its bootloader and the progress bar tracks the write. Do not unplug the board.
   </Step>
-  <Step title="Confirm the agent is up">
-    After the script exits, run `ados status` on the board. You should see services in the `active (running)` state.
+  <Step title="Reconnect">
+    The board reboots into the new firmware. Reconnect and check the version in the board details.
   </Step>
 </Steps>
 
-The install command runs on the board over SSH, so any browser that displays Mission Control will show you the command. A Chromium-family browser is only needed for the flight controller firmware flow, which uses WebUSB and WebSerial.
+PX4 and Betaflight follow the same flow with their own target and version pickers. A Betaflight board that cannot reboot into DFU from software needs its boot button held while you plug in USB.
 
-## After install: pairing
+<Warning>
+Flashing the wrong target can leave the flight controller unbootable until you reflash it in DFU mode. Always check the detected board against the target you pick.
+</Warning>
 
-Once the agent is running, the board joins your fleet through the same pairing flow. The default and primary path is local, over the LAN.
+### Pre-flash checklist
+
+| Stack | Items |
+|---|---|
+| ArduPilot, Betaflight, PX4 | I have backed up my parameters. All propellers are removed. Flight battery is disconnected (USB power only). |
+| AP_Periph | Props removed from any prop-driving nodes. Drone disarmed. I understand the node will reboot mid-flash. |
+| ADOS agents | Data on the board's storage will be erased. Board is powered via USB only (no external supply). I have backed up any user data on the board. |
+
+### DFU mode
+
+| Way in | When |
+|---|---|
+| Software reboot to bootloader | Most boards. The Flash Tool triggers it |
+| Boot button | Hold it while plugging in USB, for example when the firmware no longer responds |
+| Boot pads | Some boards need two pads shorted at power-on. Check the board's documentation |
+
+## AP_Periph CAN nodes
+
+The **AP_Periph (CAN nodes)** stack flashes AP_Periph firmware to DroneCAN peripheral nodes such as GPS, compass and airspeed units on the CAN bus.
 
 <Steps>
-  <Step title="Open the setup webapp">
-    Open `http://<board-ip>:8080` in a browser, or join the board's `ados-setup-<id>` Wi-Fi network and follow the captive portal. The setup webapp walks you through identity, MAVLink, video, network, and Mission Control.
+  <Step title="Choose the transport">
+    Under **Connection**, pick **SLCAN** (needs a direct USB connection to the flight controller) or **CAN_FORWARD (via agent)**, which routes CAN frames through the connected Drone Agent.
   </Step>
-  <Step title="Add the node in Mission Control">
-    In Mission Control's Fleet view, use **Add a Node** and enter the board's hostname or IP. Mission Control pairs with the agent directly over the LAN. Cloud relay is a secondary, opt-in path for remote access.
+  <Step title="Pick the target node">
+    **Target node** lists the DroneCAN nodes on the bus with their ID, name and software version. Select the node to update.
   </Step>
-  <Step title="Confirm the drone is live">
-    The board shows up in Fleet view. Telemetry, video, and configuration are now available.
+  <Step title="Confirm and flash">
+    Tick the AP_Periph checklist and flash. The node reboots during the update.
   </Step>
 </Steps>
 
-For the full pairing walkthrough, see [Pairing](/drone-agent/pairing) or, for ground-side nodes, [Set Up a Ground Station](/ground-agent/setup).
+The **DroneCAN** panel (Setup → **DEBUG**) shows the nodes on the bus and links a node straight to this stack.
+
+## Back up and restore parameters
+
+Back up before every flash: a major firmware upgrade can reset parameters.
+
+- **Backup Parameters** in the Flash Tool saves the flight controller's parameters to a file.
+- **Restore Parameters** loads a backup, compares it with the flight controller and writes the values you select with **Restore**. It is disabled while the aircraft is armed.
+
+You can also export from the [Parameters](/mission-control/parameters) tab and load the file with **Compare** after the flash. Some parameters change name or meaning between firmware versions, so review the diff before writing.
+
+## Companion computers
+
+The **ADOS Drone Agent** and **ADOS Ground Agent** stacks install the agent on a companion computer that already runs a stock OS (Raspberry Pi OS, Radxa OS, Ubuntu and similar).
+
+<Frame caption="Flash Tool with the ADOS Drone Agent stack, a target board selected and the install command card.">
+  ![Flash Tool ADOS Drone Agent stack showing the target board picker and the Install on a board running stock OS card](/images/mission-control/flash-tool-agent.png)
+</Frame>
+
+<Steps>
+  <Step title="Pick the stack and board">
+    Choose **ADOS Drone Agent** or **ADOS Ground Agent**, then your board. The board list matches [Supported hardware](/drone-agent/supported-hardware).
+  </Step>
+  <Step title="Copy the command">
+    The **Install on a board running stock OS** card shows the install command for that stack. Click **Copy**.
+  </Step>
+  <Step title="Run it on the board">
+    SSH into the board and paste the command. The installer detects the board, installs the agent and its services, and starts them.
+  </Step>
+  <Step title="Check the agent">
+    Run `ados status` on the board.
+  </Step>
+</Steps>
+
+The command for the Drone Agent is the standard installer. The Ground Agent command adds the ground-station profile. See [Drone Agent installation](/drone-agent/installation) and [Ground Agent installation](/ground-agent/installation) for the flags.
+
+### Add the board to your fleet
+
+When the agent is running, open `http://<board-ip>:8080` to finish its setup. Then in Mission Control click **+** at the top of the Fleet sidebar and add the board by hostname or IP in the **Companion Computer** column of the Connect dialog. See [Pairing](/drone-agent/pairing) or, for a ground station, [Set up a ground station](/ground-agent/setup).
 
 ## Troubleshooting
 
 <AccordionGroup>
+  <Accordion title="Board not detected">
+    Check that the flight controller is powered and connected with a data-capable USB cable. On Linux, your user needs serial port access (the `dialout` group).
+  </Accordion>
+  <Accordion title="Flash fails partway">
+    Do not unplug the board. Try again. If the firmware no longer boots, enter DFU mode with the boot button and reflash. The bootloader is separate from the firmware and is not overwritten.
+  </Accordion>
+  <Accordion title="Parameters reset after flashing">
+    Restore your backup with **Restore Parameters** and review the diff.
+  </Accordion>
   <Accordion title="The install command fails on the board">
-    Check that the board has internet access (`ping 1.1.1.1`). The install script downloads Python packages and any kernel-side modules. If your board is behind a corporate proxy, configure `http_proxy` and `https_proxy` before pasting the command. The full troubleshooting list is in [Drone Agent troubleshooting](/drone-agent/troubleshooting).
-  </Accordion>
-  <Accordion title="The board does not show up in Fleet view">
-    Confirm the agent is running with `ados status` on the board. Then use **Add a Node** with the board's hostname or IP. Mission Control resolves `.local` names over mDNS server-side. If you are on a different network, the LAN path will not reach the board.
-  </Accordion>
-  <Accordion title="The captive portal does not load">
-    Some phones cache an old captive portal. Forget the `ados-setup-<id>` network and rejoin. On Android, toggling Wi-Fi off and on usually fixes it. On iOS, open `http://192.168.4.1` directly. If you still cannot reach the portal, the board may not have started its AP yet. Wait 30 seconds after the LED indicates boot complete.
+    Check that the board has internet access. Behind a proxy, set `http_proxy` and `https_proxy` before running the command. See [Drone Agent troubleshooting](/drone-agent/troubleshooting).
   </Accordion>
 </AccordionGroup>
 
-## What's next
+## Next steps
 
 <CardGroup cols={2}>
-  <Card title="Install paths" icon="route" href="/getting-started/install-paths">
-    Decision tree for picking the right flow for your hardware.
+  <Card title="Sensor calibration" icon="compass" href="/mission-control/calibration">
+    Calibrate after a fresh flash.
   </Card>
-  <Card title="Drone Agent installation" icon="download" href="/drone-agent/installation">
-    Canonical curl install for stock-OS boards.
-  </Card>
-  <Card title="Supported hardware" icon="microchip" href="/drone-agent/supported-hardware">
-    Boards and companion computers the agent runs on.
+  <Card title="Choose what to install" icon="route" href="/getting-started/install-paths">
+    Pick the install path for your hardware.
   </Card>
 </CardGroup>

@@ -1,174 +1,122 @@
 ---
-title: "Systemd Services"
-description: "All service units, dependencies, startup order, resource limits, and log access."
+title: "Drone Agent systemd services"
+sidebarTitle: "Systemd services"
+description: "Every Drone Agent systemd unit per profile, start order, restart and crash-loop behaviour, limits and log access."
 icon: "server"
-lastUpdated: "2026-09-24"
 ---
 
-# Systemd Services
+import AgentSystemdUnits from "/snippets/generated/agent-systemd-units.mdx";
+import AgentUnitsDrone from "/snippets/generated/agent-units-drone.mdx";
+import AgentUnitsGroundStation from "/snippets/generated/agent-units-ground-station.mdx";
+import AgentUnitsWorkstation from "/snippets/generated/agent-units-workstation.mdx";
 
-The agent runs as a collection of systemd services. Each service handles one responsibility: MAVLink, video, cloud, health, and so on. The supervisor (`ados-supervisor`, a native Rust orchestrator) manages the lifecycle of all child services through `systemctl`.
+The agent runs as a set of systemd units, one per job: MAVLink, video, radio, cloud, logging and so on. The supervisor (`ados-supervisor`, a native Rust orchestrator) starts, watches and restarts the other units through systemd. Every long-running unit runs inside the `ados.slice` cgroup.
 
-The unit names are a stable interface: you type the same `systemctl restart ados-<name>` commands regardless of which language a unit runs. Most units now exec a native Rust binary; a few stay Python by design (AI and vision, hardware-detection and bootstrap glue, the residual API, and some ground-station hardware managers). The "Runs" and "Lang" columns below show which is which.
+The unit names are a stable interface: you type the same `systemctl restart ados-<name>` whichever language a unit runs. This page is the canonical unit list. For why the services are split this way, see [Agent services](/architecture/agent-services).
 
-This architecture gives you per-service restart, resource isolation via cgroups, and clean dependency ordering.
+## Units by profile
 
-## Service list
+Which units run is decided by the node profile (and, on a ground station, the mesh role), not by the board. See [Node profiles](/getting-started/node-profiles).
 
-### Core services (all profiles)
+<Tabs>
+  <Tab title="drone">
+    <AgentUnitsDrone />
+  </Tab>
+  <Tab title="ground_station">
+    <AgentUnitsGroundStation />
+  </Tab>
+  <Tab title="workstation and compute">
+    <AgentUnitsWorkstation />
+  </Tab>
+</Tabs>
 
-| Service | Runs | Lang | Description |
-|---------|------|------|-------------|
-| `ados-supervisor` | supervisor | Rust | Parent orchestrator, starts and monitors children |
-| `ados-mavlink` | `ados-mavlink-router` | Rust | FC serial connection and MAVLink router (WS on `:8765`) |
-| `ados-control` | `ados-control` | Rust | HTTP front on port 8080. The installer enables it by default, so it is the LAN surface and it proxies the residual Python API behind itself. |
-| `ados-api` | `ados.services.api` | Python | Residual FastAPI behind the front, on an internal socket |
-| `ados-swarmbus` | `ados-swarmbus` | Rust | Decentralized swarm state bus. Every drone broadcasts a 20-byte position and velocity beacon at 2 Hz and every node hears every other node. Drone and ground-station profiles only. |
-| `ados-cloud` | `ados-cloud` | Rust | MQTT and Convex cloud relay |
-| `ados-logd` | `ados-logd` | Rust | Black-box logging store and query API |
-| `ados-health` | `ados.services.health` | Python | CPU, RAM, disk, temperature monitoring |
-| `ados-discovery` | mDNS | Python | mDNS advertisement (`_ados._tcp.local.`) |
-| `ados-plugin-host` | plugin host | Rust | Extension host. Runs each installed extension as its own `ados-plugin-<id>` unit, on every profile. |
-| `ados-peripherals` | peripherals manager | Python | USB hot-plug, sensor manager |
+Each installed extension also runs as its own `ados-plugin-…` unit, on every profile. The unit name carries the extension id and a short hash. See [Extensions](/drone-agent/plugins).
 
-### Drone profile services
+## Every unit
 
-| Service | Runs | Lang | Description |
-|---------|------|------|-------------|
-| `ados-video` | `ados-video` | Rust | Camera detection, encoding, MediaMTX |
-| `ados-wfb` | `ados-radio` | Rust | WFB-ng video transmitter |
-| `ados-vision` | `ados-vision` | Rust | Vision host (on capable boards) |
-| `ados-gpio` | `ados-gpio` | Rust | GPIO output substrate (ships disabled until enabled) |
-| `ados-vision-rknn` | `ados.services.vision.rknn_sidecar` | Python | NPU inference sidecar (RKNN). Self-gates on the NPU runtime library, so it is a clean no-op on a board without one. |
+The full table, with the API restart permission, whether a restart drops the vehicle link, and each unit's memory cap (`MemoryMax`):
 
-### Ground station services (ground_station profile only)
+<AgentSystemdUnits />
 
-| Service | Runs | Lang | Description |
-|---------|------|------|-------------|
-| `ados-wfb-rx` | `ados-groundlink` | Rust | WFB-ng video receiver (relay/receiver base) |
-| `ados-oled` | `ados-display` | Rust | OLED/LCD display UI |
-| `ados-display-probe` | `ados-display-probe` | Rust | Display panel detection |
-| `ados-pic` | `ados-pic` | Rust | Panel-in-charge input arbiter |
-| `ados-oled-i2c` | `ados-oled-i2c` | Rust | Optional I2C status OLED. Coexists with the HDMI cockpit and self-skips cleanly when no panel answers on the bus. |
-| `ados-input` | `ados-input` | Rust | Bluetooth and USB gamepad input manager |
-| `ados-buttons` | superseded | Python | Retired. `ados-pic` reads the front-panel buttons in-process, the packaged button module is gone, and the install prunes this unit from disk on every run. |
-| `ados-uplink-router` | `ados-net` | Rust | Internet uplink priority and data cap |
-| `ados-ethernet` | superseded | Python | Retired. `ados-net` owns the wired uplink in-process under `ados-uplink-router`, the packaged manager is gone, and the install prunes this unit from disk on every run. |
-| `ados-wifi-client` | superseded | Python | Retired. `ados-net` owns the WiFi station in-process, and the install stops and disables this unit on every ground-station run (and tears it down on every other profile). |
-| `ados-modem` | superseded | Python | Retired. `ados-net` owns the cellular uplink in-process, the packaged manager is gone, and the install prunes this unit and its modem udev rule on every run. |
-| `ados-hostapd` | `ground_station.hostapd_manager` | Python | WiFi hotspot (manages hostapd) |
-| `ados-mediamtx-gs` | `ground_station.mediamtx_manager` | Python | MediaMTX for ground-side video relay |
-| `ados-kiosk` | kiosk service | Python | HDMI kiosk mode (Chromium + cage Wayland) |
-| `ados-dnsmasq-gs` | dnsmasq | C | DHCP and DNS for the hotspot |
-| `ados-setup-captive` | captive DNS | Python | Captive portal DNS responder |
-| `ados-usb-gadget` | superseded | Python | Retired. The USB CDC-NCM/RNDIS tether is composed in-process by `ados-net` under `ados-uplink-router`, and the install always stops this unit. |
-| `ados-batman` | `ground_station.mesh_manager` | Python | batman-adv mesh carrier (gated) |
-| `ados-wfb-relay` / `ados-wfb-receiver` | `ados-groundlink` | Rust | Mesh relay / receiver roles (gated) |
-| `ados-mesh-pairing` | pairing daemon | Python | Mesh tap-to-pair daemon (gated) |
+Notes on specific units:
 
-### Cross-profile hardware services (drone and ground station)
+- **`ados-control`** is the HTTP front on port 8080 on every profile. The residual Python API (`ados-api`) runs behind it on an internal socket.
+- **`ados-logd`** ships masked; see [Black Box](/drone-agent/black-box). The supervisor starts it only when `logging.store.enabled` is on.
+- **`ados-hostapd`** runs `hostapd` directly. The access point it serves is configured by `ados-net`, which runs under `ados-uplink-router`.
+- **`ados-pic`** is the pilot-in-command arbiter on a ground station. It also reads the front-panel buttons.
+- **`ados-mediamtx-gs`** is the ground-side MediaMTX relay that serves received video to browsers.
+- **Boot helpers.** The units with no category in the table (`ados-power`, `ados-usb-otg-host`, `ados-camera-probe`, `ados-display-probe` and `ados-fbcon-detach`) are one-shot boot helpers. systemd runs them at boot; they are not in the supervisor's registry.
 
-| Service | Runs | Lang | Description |
-|---------|------|------|-------------|
-| `ados-crsf` | `ados-crsf` | Rust | CRSF / ExpressLRS RC control lane. Gates on the `/etc/ados/crsf-enabled` marker, which mirrors `radio.crsf.enabled`. |
-| `ados-tunnel-config` | `ados-tunnel-config` | Rust | Config-over-radio channel: a MAVLink-TUNNEL request and response lane so a node reachable only over the radio can have its `/api/config` read and written from the ground. Gates on `/etc/ados/tunnel-enabled`. |
+### The headless keep set
 
-`ados-gpio` and `ados-peripherals` are cross-profile too; they are listed above.
+A lean headless node boots only the Rust core. Enable it with `agent.headless: true` in `/etc/ados/config.yaml`. The supervisor's headless gate then permits exactly six units and blocks everything else, including `ados-api`:
 
-### Workstation and compute profile services
+`ados-mavlink`, `ados-swarmbus`, `ados-logd`, `ados-video`, `ados-wfb`, `ados-control`.
 
-No core unit is specific to these two profiles. They run the core services
-above except the MAVLink router and the swarm bus, which need a flight-capable
-profile. The World Engine extension, which the installer adds on them by
-default, brings its own units:
+`ados-control` is in the set because it is the node's only HTTP surface. `ados-logd` is in it because a lean flight node is the node an operator cannot reach, so it most needs its own flight recorder (it still runs only when the store is enabled).
 
-| Unit | Profile | Description |
-|------|---------|-------------|
-| `ados-plugin-com-altnautica-world-engine` | every profile it is installed on | The extension's main process. |
-| `ados-plugin-com-altnautica-world-engine-node` | `workstation`, `compute` | The compute node: ingest, reconstruction jobs, artifacts and perception offload serving on `:8092`. |
-| `ados-plugin-com-altnautica-world-engine-capture` | `drone` | Keyframe capture for the world model. |
+## Start order
 
-See [World Engine](/drone-agent/extensions/world-engine).
+The supervisor starts units by category: Core (for example mavlink, swarmbus, api, cloud, logd) → Hardware (video, wfb, vision, ground station units) → OnDemand (for example control). Hardware units start when their hardware is present; `ados-video`, for example, starts when a camera or a network video source is configured.
 
-### The headless KEEP set
+Unit files add these orderings:
 
-A lean headless node boots only the Rust core. The supervisor's headless gate
-permits exactly six units and blocks everything else, including `ados-api`:
+- `ados-video`, `ados-wfb`, `ados-cloud`, `ados-control` and `ados-plugin-host` are `After=ados-mavlink.service`.
+- `ados-control` and `ados-plugin-host` are owned by systemd: the installer enables them and they start with the supervisor. The supervisor watches them but does not start them itself.
+- Units that can have nothing to do on a node (for example `ados-swarmbus` with no fleet slot, or `ados-logd` with the store off) exit 0 and stay idle instead of restarting.
 
-`ados-mavlink`, `ados-swarmbus`, `ados-logd`, `ados-video`, `ados-wfb`,
-`ados-control`.
+## Restart and crash loops
 
-`ados-control` is in the set because the headless profile binds it on `:8080` in
-place of FastAPI. `ados-logd` is in it because a lean flight node is the node an
-operator cannot reach, so it is the one that most needs its own flight recorder.
-
-## Startup order
-
-The supervisor starts first and brings up child services in dependency order:
-
-```
-ados-supervisor
-  │
-  ├── ados-mavlink        (starts immediately)
-  ├── ados-control        (starts immediately, owns :8080)
-  ├── ados-api            (starts immediately, behind the front)
-  ├── ados-health         (starts immediately)
-  ├── ados-logd           (starts immediately)
-  ├── ados-discovery      (starts immediately)
-  │
-  ├── ados-video          (after camera detected)
-  ├── ados-wfb            (after ados-video)
-  ├── ados-cloud          (after ados-control)
-  ├── ados-plugin-host    (after ados-control)
-  └── ados-peripherals    (after ados-control)
-```
-
-Hardware-dependent services (video, wfb) only start when the relevant hardware is detected. The cellular uplink is hardware-gated too, but it is a probe inside `ados-net` rather than a unit of its own.
-
-## Resource limits
-
-Each service runs with cgroup resource limits to prevent any single service from consuming all system resources:
+Units restart on their own:
 
 ```ini
-# Example from ados-mavlink.service
 [Service]
-MemoryMax=50M
-CPUQuota=25%
+Restart=always
+RestartSec=3
 ```
 
-Memory caps configured on a representative drone profile:
+Most units also set `StartLimitIntervalSec=0`, so systemd never stops retrying them. Units that have nothing to do on this node exit 0 and stay parked instead of restarting (`RestartPreventExitStatus=0`).
 
-| Service | MemoryMax | Typical usage |
-|---------|-----------|---------------|
-| ados-mavlink | 50M | ~20 MB |
-| ados-control | 128M | ~25 MB |
-| ados-api | 128M | ~40 MB |
-| ados-video | 512M | ~100-200 MB |
-| ados-cloud | 256M | ~30 MB |
-| ados-health | 20M | ~15 MB |
-
-This leaves headroom for the OS, ffmpeg, and MediaMTX.
-
-## Circuit breaker
-
-The supervisor implements a circuit breaker: if a service fails 5 times within 60 seconds, the circuit breaker opens and stops restarting it. This prevents crash loops from consuming all system resources.
-
-The circuit breaker state is visible through the REST API:
+After 5 failures within 60 s the supervisor labels the unit `crash_looping` (visible in `GET /api/services`) and keeps retrying it on a fixed parked cadence, so it recovers when the cause clears.
 
 ```bash
 curl http://localhost:8080/api/services \
   -H "X-ADOS-Key: $KEY"
 ```
 
-## Managing services
+See [REST API](/drone-agent/rest-api) for authentication.
 
-### Check service status
+## Resource limits
+
+Each unit runs with cgroup limits so one service cannot starve the rest. For example, `ados-mavlink.service`:
+
+```ini
+[Service]
+MemoryMax=50M
+CPUQuota=25%
+```
+
+The memory cap for every unit is in the [Every unit](#every-unit) table.
+
+## Dependencies on a ground station
+
+The ground station units with explicit ordering:
+
+```text
+ados-kiosk         After=ados-mediamtx-gs ados-control ados-api
+ados-uplink-router After=NetworkManager.service
+ados-dnsmasq-gs    After=ados-hostapd  Requires=ados-hostapd
+```
+
+## Manage services
+
+### Check status
 
 ```bash
-# All services
+# All agent units
 sudo systemctl list-units "ados-*" --all
 
-# Specific service
+# One unit
 sudo systemctl status ados-video
 ```
 
@@ -178,84 +126,65 @@ sudo systemctl status ados-video
 sudo systemctl restart ados-video
 ```
 
-### View service logs
+### View logs
+
+The journal is the log of record.
 
 ```bash
-# Last 50 lines from a specific service
+# Last 50 lines from one unit
 sudo journalctl -u ados-video -n 50
 
 # Follow live
 sudo journalctl -u ados-video -f
 
-# All agent logs combined
+# All agent units together
 sudo journalctl -u "ados-*" -f
 
-# Since a specific time
+# Since a time
 sudo journalctl -u ados-mavlink --since "10 minutes ago"
 ```
 
-### Stop everything
+### Stop and start everything
 
 ```bash
 sudo systemctl stop ados-supervisor
-```
-
-This stops the supervisor and all child services.
-
-### Start everything
-
-```bash
 sudo systemctl start ados-supervisor
 ```
 
-## Service dependencies
+Stopping the supervisor stops the units it manages.
 
-Ground station services have explicit dependency ordering:
+## Unit files
 
-```
-ados-kiosk
-  └── After=ados-mediamtx-gs.service
-       └── After=ados-wfb-rx.service
+The unit files are installed at:
 
-ados-uplink-router
-  └── After=ados-hostapd.service
-       └── After=ados-dnsmasq-gs.service
-```
-
-This ensures the WiFi hotspot is up before the uplink router starts, and the video relay is ready before the kiosk opens the HUD page.
-
-## Automatic restart
-
-All services are configured with automatic restart on failure:
-
-```ini
-[Service]
-Restart=on-failure
-RestartSec=3
-```
-
-The supervisor detects when a child service restarts and logs the event. Combined with the circuit breaker, this means transient failures self-heal while persistent failures are contained.
-
-## Viewing all service files
-
-The systemd unit files are installed at:
-
-```
+```text
 /etc/systemd/system/ados-*.service
 ```
 
-To see the contents of a specific service file:
+To read one:
 
 ```bash
-cat /etc/systemd/system/ados-video.service
+systemctl cat ados-video
 ```
 
 <Note>
-Do not edit the service files directly. They are overwritten on each upgrade. If you need to customize a service (e.g., add environment variables or change resource limits), use a systemd override:
+Do not edit the unit files directly. Upgrades overwrite them. To customize a unit (for example to add an environment variable or change a limit), use a drop-in override, which persists across upgrades:
 
 ```bash
 sudo systemctl edit ados-video
 ```
-
-This creates a drop-in override file that persists across upgrades.
 </Note>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="HAL and tiers" icon="layer-group" href="/drone-agent/hal-and-tiers">
+    Board detection and the default tier.
+  </Card>
+  <Card title="Black Box" icon="box-archive" href="/drone-agent/black-box">
+    Turn on the durable logging store.
+  </Card>
+  <Card title="Drone Agent diagnostics" icon="stethoscope" href="/drone-agent/diagnostics">
+    Check service health and the link.
+  </Card>
+</CardGroup>

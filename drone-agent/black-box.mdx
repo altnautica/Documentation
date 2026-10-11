@@ -1,11 +1,11 @@
 ---
-title: "Black Box Log Store"
+title: "Black Box log store"
+sidebarTitle: "Black Box"
 description: "The durable on-node log, telemetry, event and hardware store: what it records, how to query it, and why it ships off."
 icon: "database"
-lastUpdated: "2026-09-15"
 ---
 
-# Black Box Log Store
+import AgentCliLogs from "/snippets/generated/agent-cli-logs.mdx";
 
 The Black Box is one WAL-mode SQLite database on the node that holds logs from
 every agent process plus telemetry history, discrete events and hardware
@@ -104,8 +104,8 @@ analysis works without `sudo`.
 
 ## Query it
 
-Every subcommand takes the same three transport flags: `--host`, `--key` and
-`--json`.
+`query`, `tail`, `aggregate`, `sessions` and `status` take `--host`, `--key`
+and `--json`; `export` takes `--host`/`--key`; `push` is local-only.
 
 | Flag | Meaning |
 |---|---|
@@ -263,14 +263,27 @@ store that re-quarantines, a full `/var`, a writer wedged against the unit's
 able to clear it: `ados logs query` and `ados logs tail` returned nothing and
 every producer's log layer dropped silently.
 
-The store is in the lean headless keep set. It is Rust, so it holds no Python
+The store is kept on lean headless installs. It is Rust, so it holds no Python
 dependency, and a lean flight node is exactly the node an operator cannot reach,
 which makes it the one that most needs its own recorder.
 
-## Related
+## Command reference
 
-- [Diagnostics with `ados diag`](/drone-agent/diagnostics)
-- [CLI reference](/drone-agent/cli-reference)
-- [Dashboard logs view](/drone-agent/dashboard-logs)
-- [Recovery](/operations/recovery)
-- [System overview](/architecture/system-overview)
+<AgentCliLogs />
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Drone Agent diagnostics" icon="stethoscope" href="/drone-agent/diagnostics">
+    Per-hop verdicts that work with the store on or off.
+  </Card>
+  <Card title="Agent dashboard: Logs" icon="scroll" href="/drone-agent/dashboard-logs">
+    Browse the same records in the browser.
+  </Card>
+  <Card title="Agent CLI reference" icon="terminal" href="/drone-agent/cli-reference">
+    Every `ados` command.
+  </Card>
+  <Card title="Recovery" icon="life-ring" href="/operations/recovery">
+    What to do when a node stops answering.
+  </Card>
+</CardGroup>

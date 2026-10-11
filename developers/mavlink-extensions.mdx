@@ -1,88 +1,65 @@
 ---
 title: "MAVLink extensions"
-description: "Subscribe to MAVLink messages, send frames to the flight controller, and register as a MAVLink component."
-lastUpdated: "2026-06-23"
+description: "Read and send MAVLink, register as a MAVLink component, inject visual odometry, talk MSP, and send guided setpoints from an agent plugin."
 ---
 
-The agent already speaks MAVLink to the flight controller and routes it
-to the GCS. A plugin extends that in three ways through the `ctx.mavlink`
-facade: subscribe to messages, send frames, and register itself as a
-MAVLink component.
+The agent already speaks MAVLink to the flight controller and routes it to the GCS. An agent plugin extends that through these facades:
+
+- `ctx.mavlink`: subscribe to messages, send frames, register a MAVLink component.
+- `ctx.vision`: register as the visual-odometry source and inject pose.
+- `ctx.msp`: the raw MSP byte plane to Betaflight, iNav and KISS flight controllers.
+- `ctx.flight`: scoped guided-mode and attitude/rate setpoint senders.
+
+<Warning>
+`mavlink.write`, `msp.write`, `flight.guided_setpoint` and `flight.rate_setpoint` can move the aircraft. Bench-test with props off and read [Safety](/operations/safety) before flying a plugin that uses them.
+</Warning>
 
 ## Capabilities
 
-| Capability | Lets the plugin... |
-|------------|-----|
+| Capability | Lets the plugin |
+|------------|-----------------|
 | `mavlink.read` | Subscribe to MAVLink messages from the link. |
 | `mavlink.write` | Send MAVLink frames to the flight controller. |
 | `mavlink.component.{camera,gimbal,payload,peripheral,vio}` | Register as a MAVLink component of that kind. |
 | `mavlink.tunnel` | Exchange application payloads over MAVLink `TUNNEL` frames. |
-| `vehicle.command` | Issue high-level vehicle commands (arm, takeoff, RTL, mode change) through the agent's command pipeline. |
-| `estimator.pose.inject` | Push pose samples directly into the autopilot state estimator. |
+| `msp.read`, `msp.write` | Receive and send MSP bytes. |
+| `flight.guided_setpoint` | Send guided-mode position, velocity or acceleration setpoints. |
+| `flight.rate_setpoint` | Send attitude and body-rate setpoints with thrust. |
 
-`mavlink.tunnel`, `vehicle.command`, and `estimator.pose.inject` are all
-high-risk permissions, alongside `mavlink.write`. The `vio` component kind
-is high-risk too, since a visual-odometry source feeds the EKF.
-
-`mavlink.write` is a high-risk permission. Operators see a warning badge
-in the install dialog, because a plugin that can write raw MAVLink can
-arm motors, change modes, and alter parameters in flight.
+Risk levels and the install-dialog badges for each are on [Permissions](/developers/permissions).
 
 ## Subscribing to messages
 
-`ctx.mavlink.subscribe` registers a callback for a message name. The
-callback fires for each matching frame and receives the message name, the
-raw MAVLink frame bytes, and a timestamp. Decode the frame with your own
-MAVLink library:
+`ctx.mavlink.subscribe` registers a callback for one message name. The callback receives the message name, the raw frame bytes and a timestamp. Decode the frame with your own MAVLink library:
 
 ```python
 async def on_start(self, ctx) -> None:
-    async def on_battery(msg):
+    async def on_battery(msg: dict) -> None:
         # msg["msg_name"], msg["frame"] (raw bytes), msg["timestamp_ms"]
         self.decode_and_store(msg["frame"])
 
     await ctx.mavlink.subscribe("BATTERY_STATUS", on_battery)
 ```
 
-Subscriptions are coalesced by the host: ten plugins subscribed to
-`BATTERY_STATUS` cause one underlying stream from the flight controller.
-Inbound frames are read once and fanned out to subscribers; there is no
-per-plugin parser running on the link.
+The host reads each inbound frame once and fans it out to every subscriber; no per-plugin parser runs on the link.
 
 ## Sending frames
 
-`ctx.mavlink.send` writes a MAVLink frame to the flight controller. Build
-the frame with a MAVLink encoder, then send the bytes. An optional
-`component_id` tags the sender when the plugin owns a registered
-component:
+`ctx.mavlink.send` writes an encoded frame to the flight controller. Pass `component_id` to send under a component the plugin has registered:
 
 ```python
 frame = encode_command_long(
     target_system=1,
     target_component=1,
-    command=2000,  # MAV_CMD_DO_DIGICAM_CONTROL
+    command=203,  # MAV_CMD_DO_DIGICAM_CONTROL
     params=[0, 0, 0, 0, 1, 0, 0],
 )
 await ctx.mavlink.send(frame)
 ```
 
-The host serializes outbound writes per flight-controller link. Two
-plugins sending at the same time queue on one single-producer queue;
-neither blocks the other for more than a few milliseconds.
-
 ## Registering as a component
 
-A plugin that should appear on the MAVLink bus as a camera, gimbal,
-payload, peripheral, or visual-odometry source registers a component id.
-The capability is `mavlink.component.<kind>`:
-
-```python
-async def on_start(self, ctx) -> None:
-    # Claim component id 100 as a camera component.
-    await ctx.mavlink.register_component(100, "camera")
-```
-
-Declare the component in the manifest so the host knows to claim the id:
+A plugin that should appear on the MAVLink bus as a camera, gimbal, payload, peripheral or visual-odometry source registers a component id. Declare it in the manifest so the host reserves the id, and hold the matching `mavlink.component.<kind>` capability:
 
 ```yaml
 agent:
@@ -94,67 +71,101 @@ agent:
       sub_id: 1
 ```
 
-The kinds are `camera`, `gimbal`, `payload`, `peripheral`, and `vio`.
-Each maps to the matching `mavlink.component.<kind>` capability. The
-gimbal extension registers component id 154 as a Gimbal v2 manager; the
-thermal-camera extension registers a camera component.
+```python
+async def on_start(self, ctx) -> None:
+    await ctx.mavlink.register_component(100, "camera")
+```
+
+The kinds are `camera`, `gimbal`, `payload`, `peripheral`, `vio` and `generic`. The first five map to `mavlink.component.<kind>`. The SIYI pod extension registers camera 100 and gimbal 154; the Follow-Me and MAVLink Gimbal v2 extensions declare component 191 as `generic`.
 
 ### Visual odometry
 
-A visual-odometry plugin registers the `vio` component, then sends pose
-estimates to the flight controller. The vision SDK wraps this: it
-registers the visual-odometry component once, then builds a
-`VISION_POSITION_ESTIMATE` from a pose (or an `ODOMETRY` message from a
-pose plus body-frame twist) and sends it under the visual-odometry
-component id.
+A visual-odometry plugin registers the `vio` component once, then sends pose estimates. The helpers are on `ctx.vision` and need the `mavlink.component.vio` grant:
 
 ```python
 async def on_start(self, ctx) -> None:
-    await self.vio.register_vio_component()  # claims the vio component
+    self.ctx = ctx
+    await ctx.vision.register_vio_component()
 
 async def on_pose(self, pose) -> None:
-    await self.vio.inject_pose(pose)  # sends VISION_POSITION_ESTIMATE
+    await self.ctx.vision.inject_pose(pose)  # VISION_POSITION_ESTIMATE
 ```
 
-That path keeps the pose stream on the normal MAVLink link. The separate
-`estimator.pose.inject` capability is for plugins that push pose samples
-directly into the autopilot state estimator instead of going over
-MAVLink. Both are high-risk: a bad pose stream feeds the EKF and can
-produce unsafe position commands.
+`inject_odometry(odometry)` sends an `ODOMETRY` message (pose plus body-frame twist) under the same component. A bad pose stream feeds the flight controller's estimator and can produce unsafe position control.
 
 ## Re-publishing decoded data
 
-A common pattern is a plugin that decodes a message and re-publishes it
-as a clean event other plugins consume, so the raw MAVLink stays in one
-place:
+A common pattern decodes one message and re-publishes a clean event, so raw MAVLink stays in one plugin. Publish on your own namespace for your own use, and declare a shared topic for other plugins:
+
+```yaml
+id: com.example.rangefinder
+agent:
+  permissions:
+    - id: mavlink.read
+    - id: event.publish
+  contributes:
+    shared_topics:
+      - topic: plugin.rangefinder.reading
+        subscribe_capability: mavlink.read
+```
 
 ```python
 async def on_start(self, ctx) -> None:
-    async def on_rangefinder(msg):
+    async def on_distance(msg: dict) -> None:
         distance_m = self.decode_distance(msg["frame"])
-        await ctx.events.publish(
-            "rangefinder.reading", {"distance_m": distance_m}
-        )
+        await ctx.events.publish(f"plugin.{ctx.plugin_id}.reading", {"distance_m": distance_m})
+        await ctx.events.publish("plugin.rangefinder.reading", {"distance_m": distance_m})
 
-    await ctx.mavlink.subscribe("DISTANCE_SENSOR", on_rangefinder)
+    await ctx.mavlink.subscribe("DISTANCE_SENSOR", on_distance)
 ```
 
-Another plugin then subscribes to
-`plugin.com.example.rangefinder.rangefinder.reading` without touching
-MAVLink. Publishing and subscribing on the plugin's own topics use the
-`event.publish` and `event.subscribe` capabilities.
+Another plugin with `event.subscribe` and `mavlink.read` then subscribes to `plugin.rangefinder.reading` without touching MAVLink. Your `plugin.com.example.rangefinder.*` topics stay private to your plugin. See [Agent event bus](/developers/event-hooks-and-bus#plugin-to-plugin).
 
-## High-level vehicle commands
+## MSP flight controllers
 
-For the canonical command set (arm, takeoff, RTL, land, mode change),
-`vehicle.command` routes through the agent's command pipeline rather than
-raw MAVLink. It is a high-risk capability because it can arm or fly the
-aircraft. Use it instead of `mavlink.write` when the action is one of the
-canonical commands; reserve raw `mavlink.write` for messages the command
-pipeline does not cover.
+For Betaflight, iNav and KISS flight controllers, `ctx.msp` moves raw MSP bytes. The host moves bytes only; build and parse frames with `ados.plugins.msp`. `send` needs `msp.write` and `subscribe` needs `msp.read`. MSP has no per-message topic, so the callback receives every chunk the flight controller sends:
 
-## See also
+```python
+async def on_start(self, ctx) -> None:
+    async def on_bytes(chunk: dict) -> None:
+        self.parser.feed(chunk["bytes"])  # chunk["timestamp_ms"] too
 
-- [Permissions](/developers/permissions)
-- [Event hooks and bus](/developers/event-hooks-and-bus)
-- [Agent plugin deep dive](/developers/agent-plugin-deep-dive)
+    await ctx.msp.subscribe(on_bytes)
+    await ctx.msp.send(self.build_request())
+```
+
+## Guided setpoints
+
+A flight-behavior plugin commands the vehicle in guided mode through `ctx.flight` instead of raw MAVLink writes, so one capability gates the flight-command surface. `guided_setpoint` needs `flight.guided_setpoint`; the host encodes the matching `SET_POSITION_TARGET_*` message:
+
+```python
+await ctx.flight.guided_setpoint(
+    kind="local_ned",          # or "global_int" (lat/lon in 1e7, alt in m)
+    coordinate_frame=1,        # MAV_FRAME_LOCAL_NED
+    type_mask=0b0000_1101_1100_0111,  # velocity only
+    vx=2.0, vy=0.0, vz=0.0,
+)
+```
+
+`kind` picks the frame family, `coordinate_frame` is a `MAV_FRAME_*` value and `type_mask` is the ignore-axis bitmask. Unset axes default to zero. The call returns `{"ok": bool, ...}`, or a `not_available` shape when the MAVLink router is unreachable.
+
+`rate_setpoint` sends `SET_ATTITUDE_TARGET` (attitude quaternion and/or body rates plus normalized thrust) and needs `flight.rate_setpoint`.
+
+A GCS half does not send MAVLink. It calls `ctx.command.send` with one of the host's named commands (`takeoff`, `land`, `rtl`), gated on `command.send`; the operator approves each command in a dialog before it reaches the vehicle.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Vision plugins" href="/developers/vision-plugins">
+    Frames, inference and detections on the vision engine.
+  </Card>
+  <Card title="Agent event bus" href="/developers/event-hooks-and-bus">
+    Publish and subscribe rules and shared topics.
+  </Card>
+  <Card title="Permissions" href="/developers/permissions">
+    Every capability and its risk level.
+  </Card>
+  <Card title="Safety" href="/operations/safety">
+    Pre-flight checks before flying a plugin that commands the aircraft.
+  </Card>
+</CardGroup>

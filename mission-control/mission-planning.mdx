@@ -1,172 +1,210 @@
 ---
-title: "Mission Planning"
-description: "Plan waypoint missions with terrain following, validation, and batch editing."
+title: "Mission planning"
+description: "Build, validate and upload waypoint missions in the Plan tab, with terrain profiles, patterns, templates and the Copilot."
 icon: "route"
 ---
 
-The Plan tab is a full mission planner built on a Leaflet map. Create waypoint missions, add commands, configure terrain following, and validate everything before uploading to your flight controller.
+The **Plan** tab is the mission planner. You work on one flight plan at a time: pick or create a plan in the library, place waypoints and actions on the map, review the mission, then upload it to the flight controller.
 
-<Frame caption="Plan tab with waypoints, terrain profile, and mission editor">
-  <img src="/images/dashboard/mission-planning.png" alt="Mission planner showing waypoints on a map with terrain chart" />
+<Frame caption="Plan tab with a loaded mission, the right panel open and the Terrain Profile expanded.">
+  ![Plan tab showing a waypoint mission on the map with the Terrain Profile section open](/images/mission-control/plan-mission.png)
 </Frame>
 
-## Creating a Mission
+<Warning>
+Uploading a mission changes what the aircraft flies in AUTO. Read [Safety](/operations/safety) before you fly a new mission.
+</Warning>
+
+## Layout
+
+| Area | What it holds |
+|---|---|
+| **FLIGHT PLANS** library (left) | Saved plans and folders, search, sort (Name, Date, WPs), **New Plan**, **New Folder**, **Import**, **From Drone** |
+| Tool dock (on the map) | Drawing tools, undo and redo, clear, map overlays, offline area download and shortcut help |
+| Right panel, **Setup** band | **Mission Setup** (name, target drone), **Defaults** (altitude, speed, **Accept Radius**, **Altitude Frame**) |
+| Right panel, **Build** band | **Copilot**, **Flight Patterns**, **Mission Templates**, **Waypoints**, **Batch Edit** (when several waypoints are selected), **Geofence**, **Rally Points**, **Points of Interest**, **Transform Mission** |
+| Right panel, **Review** band | **Terrain Profile**, **Mission Validation**, site conditions (**Sun & golden hour**, **Weather**), **Energy estimate**, **Pre-flight checklist** |
+| Footer | **Save Mission**, **Upload to FC**, **Simulate in 3D** and a menu with the import and export actions |
+| Stats bar (bottom left of the map) | Waypoint count, total distance, estimated time, maximum altitude, average speed |
+
+## Create a mission
 
 <Steps>
-  <Step title="Open the Plan tab">
-    Click "Plan" in the top navigation bar. The map fills the screen with a toolbar on the left and a mission editor on the right.
+  <Step title="Open or create a plan">
+    Click **Plan** in the top navigation. Pick a plan in the **FLIGHT PLANS** library, or click **New Plan**. The map tools stay inactive until a plan is open.
   </Step>
-  <Step title="Add waypoints">
-    Click on the map to place waypoints. Each click adds a numbered waypoint at that location. Waypoints are connected by lines showing the flight path.
+  <Step title="Set the defaults">
+    In **Defaults**, set the default altitude, speed, accept radius and altitude frame: **Relative (Home)**, **Absolute (MSL)** or **Terrain Following**. New waypoints take these values.
   </Step>
-  <Step title="Edit waypoint properties">
-    Click a waypoint marker to select it. The right panel shows its properties: latitude, longitude, altitude, speed, delay, and command type.
+  <Step title="Place waypoints">
+    Choose the Waypoint tool (`W`) and click the map. Use the Takeoff (`K`), Land (`J`), Loiter (`O`) and ROI (`R`) tools for those commands. Click a waypoint to select it; expand it in **Waypoints** to edit its command, altitude, speed and attached actions.
   </Step>
-  <Step title="Set altitude mode">
-    Choose between relative (above home), absolute (above sea level), or terrain-following altitude for each waypoint.
+  <Step title="Review">
+    Open **Mission Validation** (`I`). Issues update as you edit. Blocking issues disable **Upload to FC** and the button shows the error count. Check the **Terrain Profile** (`T`) for ground clearance.
   </Step>
-  <Step title="Validate the mission">
-    Click the validate button. The validation engine checks for common issues before upload.
-  </Step>
-  <Step title="Upload to FC">
-    Send the mission to the flight controller. The upload progress is shown in real time.
+  <Step title="Save and upload">
+    Click **Save Mission** to store the plan in the library, then **Upload to FC**. A pill next to the buttons shows whether the plan on the aircraft matches the plan in the editor.
   </Step>
 </Steps>
 
-## Map Toolbar
+## Map tools
 
-The left-side toolbar provides drawing and editing tools:
+| Key | Tool | Use |
+|---|---|---|
+| `V` | Select | Select and drag waypoints |
+| `W` | Waypoint | Add a navigation waypoint |
+| `K` | Takeoff | Add a takeoff point |
+| `J` | Land | Add a landing point |
+| `O` | Loiter | Add a loiter point |
+| `R` | Region of interest | Add an ROI |
+| `Y` | Rally point | Add a rally point |
+| `B` | Point of Interest | Add a point of interest |
+| `D` | Set datum | Set the altitude datum |
+| `P` | Polygon | Draw a polygon (survey area, fence, boundary) |
+| `C` | Circle | Draw a circle |
+| `M` | Measure | Measure distance and bearing |
 
-| Tool | Function |
-|------|----------|
-| Waypoint | Click to place individual waypoints |
-| Polygon | Draw a boundary for pattern generators |
-| Circle | Draw a circular area for orbit or geofence |
-| Measure | Measure distance and bearing between points |
-| Select | Click to select and move existing waypoints |
+Right-click the map for the context menu, for example to insert a waypoint at that point.
 
-Right-click the map to open a context menu with additional options: insert waypoint here, set home position, center map, and more.
+## Commands
 
-## Mission Editor
+A waypoint's own command is always a navigation command. Actions attach to a waypoint through its action timeline.
 
-The right panel shows the mission as an ordered list of waypoints and commands:
+**Navigation commands**
 
-- **Reorder** waypoints by dragging
-- **Delete** individual waypoints
-- **Edit** properties inline (altitude, speed, delay, command type)
-- **Add commands** between waypoints (DO_SET_SERVO, DO_CHANGE_SPEED, DO_SET_CAM_TRIGG_DIST, etc.)
+| Label | Behaviour |
+|---|---|
+| Waypoint | Fly to the point |
+| Spline Waypoint | Fly a smooth curve through the point |
+| Takeoff | Climb to the waypoint altitude |
+| Land | Land at the point |
+| Loiter (unlimited) | Hold at the point until the mission is advanced |
+| Loiter (Time) | Hold for a set time |
+| Loiter (Turns) | Circle a set number of turns |
+| Return to Launch | Fly home |
+| VTOL Takeoff | Vertical takeoff (VTOL aircraft) |
+| VTOL Land | Vertical landing (VTOL aircraft) |
+| Payload Place | Descend and release a payload |
+| Land Start | Mark the start of a landing sequence |
 
-### Supported Commands
+**Attached actions**
 
-Mission Control supports the standard MAVLink mission item commands:
+| Group | Actions |
+|---|---|
+| Camera | `DO_SET_CAM_TRIGG`, `DO_DIGICAM`, `DO_MOUNT_CONTROL`, `ROI`, `DO_SET_ROI_NONE` |
+| Movement | `DO_SET_SPEED`, `CONDITION_YAW` |
+| Payload | `DO_SET_SERVO`, `DO_GRIPPER`, `DO_WINCH`, `DO_AUX_FUNCTION` |
+| Flow | `DO_JUMP`, `DELAY`, `CONDITION_DISTANCE` |
+| System | `DO_FENCE_ENABLE`, `DO_SET_HOME` |
 
-| Command | Description |
-|---------|-------------|
-| NAV_WAYPOINT | Fly to a waypoint |
-| NAV_LOITER_UNLIM | Loiter at a position indefinitely |
-| NAV_LOITER_TURNS | Loiter for a set number of turns |
-| NAV_LOITER_TIME | Loiter for a set duration |
-| NAV_RETURN_TO_LAUNCH | Return to home |
-| NAV_LAND | Land at a position |
-| NAV_TAKEOFF | Takeoff to altitude |
-| NAV_SPLINE_WAYPOINT | Smooth spline path through waypoint |
-| DO_SET_SPEED | Change flight speed |
-| DO_CHANGE_SPEED | Change speed mid-mission |
-| DO_SET_CAM_TRIGG_DIST | Camera trigger by distance |
-| DO_SET_SERVO | Set a servo output |
-| DO_JUMP | Jump to a waypoint (looping) |
-| DO_SET_ROI | Point camera at a region of interest |
-| DO_VTOL_TRANSITION | Switch between VTOL and fixed-wing |
+<Note>
+iNav flies only three attached actions: `ROI`, `DO_JUMP` and `CONDITION_YAW`. Upload to an iNav flight controller refuses any other action. See [iNav guide](/mission-control/inav-guide).
+</Note>
 
-## Terrain Following
+## Terrain profile
 
-Enable terrain following to maintain a consistent altitude above ground level (AGL), even over hilly terrain.
+With the **Terrain Following** frame, or to check clearance on any plan, the planner looks up ground elevation for each waypoint from the Open Elevation API and caches the results. The **Terrain Profile** section plots ground elevation against the flight path and marks legs with low clearance. Validation reports a blocking issue when clearance is too low, and an advisory when terrain could not be checked.
 
-**How it works:**
-1. The planner fetches elevation data from the Open Elevation API for each waypoint.
-2. Waypoint altitudes are adjusted so the drone maintains your specified AGL at every point.
-3. The terrain profile chart at the bottom shows ground elevation vs. flight altitude.
+## Batch edit
 
-<Tip>
-Terrain data is cached with an LRU cache keyed by rounded coordinates (4 decimal places). When you plan surveys in the same area, subsequent requests use the cache.
-</Tip>
+Select several waypoints (Shift-click). The **Batch Edit** section appears with four operations: set altitude, set speed, set command, and delete the selected waypoints.
 
-The Terrain Profile Chart shows:
-- Ground elevation line
-- Flight path altitude line
-- AGL clearance at each waypoint
-- Warnings where clearance is below a threshold
+## Transform mission
 
-## Batch Editor
+**Transform Mission** moves, rotates or scales the whole mission around its centre. Relative positions and altitudes stay the same.
 
-The batch editor lets you modify multiple waypoints at once:
+## Mission validation
 
-- **Set altitude** for all selected waypoints
-- **Set speed** for all selected waypoints
-- **Adjust altitude** by a relative offset (e.g., raise all by 10m)
-- **Apply terrain following** to a selection
-
-Select multiple waypoints by holding Shift and clicking, or by drawing a selection rectangle. Then open the batch editor to apply changes.
-
-## Mission Transforms
-
-Move, rotate, or scale an entire mission without editing individual waypoints:
-
-- **Move:** Drag the mission to a new location. All waypoints shift by the same offset.
-- **Rotate:** Spin the mission around its center point. Enter a rotation angle in degrees.
-- **Scale:** Grow or shrink the mission. Enter a scale factor.
-
-These are pure geometry operations that preserve the relative positions and altitudes of all waypoints.
-
-## Mission Stats Bar
-
-The bottom bar shows live statistics about your mission:
-
-- Total distance
-- Estimated flight time (based on configured speed)
-- Number of waypoints
-- Altitude range (min and max)
-- Estimated battery usage
-
-## Validation
-
-Before uploading, the validation engine checks your mission for issues:
+Validation runs continuously. Blocking issues stop the upload; advisories are shown but do not.
 
 <AccordionGroup>
-  <Accordion title="Errors (must fix)">
-    - No waypoints in mission
-    - Waypoints outside geofence (if one is set)
-    - Altitude below minimum safe altitude
-    - Missing takeoff command at the start
-    - Invalid command parameters
+  <Accordion title="Blocking issues">
+    - Empty mission
+    - Mission starts above the ground with no Takeoff command
+    - An action used as a navigation command, or an action with no location
+    - Invalid coordinates (waypoints, actions or rally points)
+    - Duplicate sequence numbers
+    - Altitude above the ceiling or below the minimum
+    - Waypoint outside the geofence or inclusion zone, or inside an exclusion zone
+    - A leg that crosses an exclusion zone
+    - Invalid `DO_JUMP` target, or a jump loop with no exit
+    - Terrain clearance too low
+    - RTL altitude too low
+    - Rally point outside the fence or inside an exclusion zone
   </Accordion>
-  <Accordion title="Warnings (should review)">
-    - Very high altitude waypoints
-    - Long distances between waypoints
-    - Speed changes that may exceed airframe limits
-    - Mission exceeds estimated battery capacity
-    - No RTL or Land command at the end
+  <Accordion title="Advisories">
+    - Too few waypoints, first waypoint is not Takeoff, home not set
+    - No Land or Return to Launch at the end
+    - Duplicate waypoints and excessive leg distance
+    - Leg or waypoint beyond the link range
+    - Turn radius too tight for the aircraft
+    - `DO_JUMP` that repeats forever or targets an unreachable item
+    - Altitude or terrain not checked
+    - Self-intersecting fence, rally point above the fence ceiling
   </Accordion>
 </AccordionGroup>
 
-## Download and Upload
+The **Energy estimate** section gives a rough energy, flight-time and battery-swap figure from a default power draw. Check it against your own power curve.
 
-| Action | Description |
-|--------|-------------|
-| **Upload to FC** | Send the mission to the connected flight controller via MAVLink MISSION protocol |
-| **Download from FC** | Read the current mission stored on the flight controller |
-| **Save to file** | Export to `.waypoints`, `.plan`, KML, KMZ, or CSV format |
-| **Load from file** | Import a mission from any supported file format |
-| **Save to library** | Store the mission in the plan library for later reuse |
+## Copilot
 
-See [File Formats](/mission-control/file-formats) for details on each format.
+**Copilot** sets up a mission from plain language, on the device with no network. Type a request such as `survey at 80m, 75% overlap` and click **Apply**, or click **Map this area** to run a survey over the current map view. It understands patterns, altitude, overlap and speed.
 
-## Keyboard Shortcuts
+## Mission templates
+
+**Mission Templates** build a ready-to-fly plan from the current map view, for example **Grid survey**, **Property mapping**, **Orbit inspection** and **Corridor scan**. A template uses your drawn boundary, or a box around the map centre when there is none, and asks before replacing the current plan.
+
+## Map aids
+
+- **Place search** (`/`) centres the map on a place.
+- **Overlays** (`L`) shows KML and raster (GeoTIFF) overlays. See [File formats](/mission-control/file-formats).
+- **Offline area download** in the tool dock saves map tiles for the visible area.
+- **Sun & golden hour** and **Weather** in the Review band show conditions at the first waypoint.
+
+## Import, export and download
+
+| Action | Where |
+|---|---|
+| **Upload to FC** | Footer. Sends the mission over the MAVLink mission protocol (MSP on iNav) |
+| **Download from Drone** | Footer menu, or **From Drone** in the library. Reads the mission stored on the flight controller |
+| **Import boundary (KML/SHP)** | Footer menu |
+| Export | Footer menu: `.altmission`, `.waypoints`, `.plan` (QGC), KML, `.kmz`, CSV, and a **Flight brief (PDF)** |
+| **Copy share link** | Footer menu. Encodes the plan in a link; large plans need file export |
+| **Import** | Library. Loads a plan file |
+
+See [File formats](/mission-control/file-formats) for each format.
+
+## Keyboard shortcuts
+
+`Ctrl` is `⌘` on macOS. Tool keys are in [Map tools](#map-tools).
 
 | Shortcut | Action |
-|----------|--------|
-| `Delete` / `Backspace` | Remove selected waypoint |
-| `Ctrl+Z` | Undo last action |
-| `Ctrl+Shift+Z` | Redo |
-| `Ctrl+A` | Select all waypoints |
-| `Escape` | Deselect all |
+|---|---|
+| `T` | Toggle the Terrain Profile |
+| `G` | Toggle Flight Patterns |
+| `I` | Toggle Mission Validation |
+| `/` | Search for a place |
+| `L` | Toggle map overlays |
+| `Ctrl+Z` / `Ctrl+Shift+Z` or `Ctrl+Y` | Undo / redo |
+| `Ctrl+C` / `Ctrl+V` | Copy / paste a waypoint |
+| Arrow keys | Nudge the selected waypoint |
+| `Del` | Delete the selection |
+| `Esc` | Cancel or clear |
+| `Ctrl+S` / `Ctrl+Shift+S` | Save plan / save plan as |
+| `Ctrl+N` | New plan (desktop app only) |
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Pattern generators" icon="grip" href="/mission-control/pattern-generators">
+    Generate surveys, orbits, corridors and search patterns.
+  </Card>
+  <Card title="Geofences and rally points" icon="shield" href="/mission-control/geofences-rally">
+    Add a fence and safe landing points before upload.
+  </Card>
+  <Card title="3D mission preview" icon="cube" href="/mission-control/simulation">
+    Fly the plan in a 3D preview before the real flight.
+  </Card>
+  <Card title="File formats" icon="file-export" href="/mission-control/file-formats">
+    Import and export plans.
+  </Card>
+</CardGroup>

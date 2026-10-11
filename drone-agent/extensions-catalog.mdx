@@ -1,162 +1,169 @@
 ---
 title: "Extensions catalog"
-description: "First-party extensions shipped by Altnautica through the public ADOSExtensions repo."
+description: "The first-party extensions Altnautica publishes in the public ADOSExtensions repository: what each does, its status and its permissions."
 icon: "boxes-stacked"
-lastUpdated: "2026-10-09"
+keywords: ["ados", "extensions", "catalog", "first-party", "plugins"]
 ---
 
-# Extensions catalog
+import ExtensionsCatalog from '/snippets/generated/extensions-catalog.mdx';
+import ExtensionMavlinkGimbalV2 from '/snippets/generated/extension-mavlink-gimbal-v2.mdx';
+import ExtensionVisionNav from '/snippets/generated/extension-vision-nav.mdx';
+import ExtensionFollowMe from '/snippets/generated/extension-follow-me.mdx';
+import ExtensionSiyiPod from '/snippets/generated/extension-siyi-pod.mdx';
+import ExtensionThermalFlirLeptonUsb from '/snippets/generated/extension-thermal-flir-lepton-usb.mdx';
+import ExtensionWorldEngine from '/snippets/generated/extension-world-engine.mdx';
 
-These are the first-party extensions Altnautica publishes through the public [`ADOSExtensions`](https://github.com/altnautica/ADOSExtensions) repo. Each one ships as a signed `.adosplug` archive on GitHub Releases and installs from the Mission Control [Extensions tab](/mission-control/installing-plugins) on any drone you've connected. The archive carries a detached Ed25519 signature; the agent verifies it against the matching public key enrolled at `/etc/ados/plugin-keys/` and refuses the install if no enrolled key verifies it. First-party archives are signed with `altnautica-2026-A`.
+These are the first-party extensions Altnautica publishes through the public [`ADOSExtensions`](https://github.com/altnautica/ADOSExtensions) repository. Each released extension ships as a signed `.adosplug` archive on GitHub Releases and installs from a node's **Extensions** page in Mission Control or with `ados plugin install`. Every extension is licensed GPL-3.0-or-later.
 
-Every extension is licensed GPL-3.0-or-later; hardware reference designs ship CC0 1.0.
+Each archive carries a `SIGNATURE` entry: the signer id and an Ed25519 signature over the archive's canonical payload hash (every entry except `SIGNATURE`). The agent verifies it against `/etc/ados/plugin-keys/<signer-id>.pem`, refuses a signer, archive or release (`<plugin_id>@<version>`) listed in `/etc/ados/plugin-revocations.json`, and refuses the install when no enrolled key verifies it. See [Signatures and trust](/drone-agent/plugins#signatures-and-trust).
 
-## ADOS MAVLink Gimbal v2 Controller
+<ExtensionsCatalog />
+
+The agent refuses an install on a board that is not in the extension's board list (`*` means any board).
+
+## MAVLink Gimbal v2
 
 | Field | Value |
 |---|---|
 | Plugin id | `com.altnautica.mavlink-gimbal-v2` |
-| Version | 1.4.0 |
+| Status | Released |
 | Risk | medium |
-| Type | Hybrid (agent subprocess + GCS iframe) |
-| Hardware | A MAVLink gimbal-manager gimbal on component 154 (optional) |
+| Type | Agent subprocess (Python) and Mission Control iframe |
+| Hardware | A MAVLink gimbal-manager gimbal on component 154 |
 | FC firmware | ArduPilot or PX4 forwarding the gimbal-manager messages |
-| Supported boards | any |
+| Resources | 64 MB RAM, 15% CPU, 8 processes |
 
-Drives a MAVLink gimbal-manager on component 154. Beyond manual pitch and yaw it runs an on-companion visual servo: click a detected subject in the cockpit and the gimbal keeps it centred. A lock-state gate stops commanding the moment the vision engine reports the subject uncertain or lost, and it never silently re-locks onto a different subject. Cockpit Skills arm the aim behaviour, recenter, point nadir, and switch between angle and rate control.
+Drives a MAVLink gimbal-manager on component 154. Beyond manual pitch and yaw it runs a visual servo on the companion: click a detected subject in the cockpit and the gimbal keeps it centred. It stops commanding the moment the vision engine reports the subject uncertain or lost, and it never re-locks onto a different subject by itself. Cockpit Skills: **Aim** (`G`), **Recenter** (`Shift+C`), **Nadir** (`Shift+V`) and **Rate mode** (`Shift+G`).
 
-It speaks MAVLink Gimbal v2 only. There are no vendor serial drivers, so a gimbal that does not present a gimbal-manager to the flight controller is out of scope.
+It speaks MAVLink Gimbal v2 only. A gimbal that does not present a gimbal-manager to the flight controller is not supported.
 
-**Permissions:** MAVLink read and write, the gimbal component, vision detection subscribe, event publish and subscribe, MCP tool exposure.
+<ExtensionMavlinkGimbalV2 />
 
-**Resources:** 64 MB max RAM, 15% CPU, 8 PIDs.
-
-## ADOS Vision Navigation
+## Vision Navigation
 
 | Field | Value |
 |---|---|
 | Plugin id | `com.altnautica.vision-nav` |
-| Version | 0.4.1 |
+| Status | Released |
 | Risk | high |
-| Type | Hybrid (Rust agent binary + GCS iframe) |
-| Hardware | USB UVC global-shutter or rolling-shutter camera, or CSI via V4L2; optional rangefinder (TF-Luna, Garmin LIDAR-Lite, ST VL53L1X) |
+| Type | Agent binary (Rust) and Mission Control iframe |
+| Hardware | Downward USB UVC or CSI camera; optional rangefinder (TF-Luna on a companion serial port, or any rangefinder the flight controller publishes) |
 | FC firmware | ArduPilot 4.5+, PX4 1.14+, iNav 7.0+ |
-| Supported boards | cm4, cm5, rk3582, rk3588s2, rk3576, rpi5, pi-zero-2w |
+| Resources | 512 MB RAM, 80% CPU, 24 processes |
 
-Position hold when GPS is unreliable: indoors, under bridges, in urban canyons. A downward camera plus the flight controller's gyro produce a 30 Hz angular-flow measurement over MAVLink, so position-hold, loiter and missions keep working unchanged.
+Position hold when GPS is unreliable. A downward camera plus the flight controller's gyro produce an optical-flow measurement about 30 times a second, sent as `OPTICAL_FLOW` to ArduPilot and iNav and as `OPTICAL_FLOW_RAD` to PX4. Three modes: optical flow with a rangefinder, optical flow without one (barometer height for scale, or GPS height in outdoor mode), or off. It does no visual-inertial odometry. The **Engage** Skill (`Shift+N`) turns it on and off.
 
-Three modes: optical flow with a rangefinder (low altitude over textured ground), optical flow without one (barometer or GPS height for scale, which drifts above 5 m), or Off. There is no visual-inertial odometry mode and no vendor VIO binary in the archive. Every tick the plugin checks itself; if flow quality drops or the scale source goes unhealthy it steps down the scale ladder and warns the GCS at each step, and a sustained degraded streak flips the companion node to CRITICAL.
+<ExtensionVisionNav />
 
-**Permissions:** shared vision frame bus read (the plugin never opens a camera itself), UART and I2C for the rangefinder, telemetry extend, event publish, MAVLink read and write plus the peripheral component.
+See the [Vision Navigation guide](/drone-agent/vision-nav-overview).
 
-**Resources:** 512 MB max RAM, 80% CPU, 24 PIDs.
-
-See the [Vision Navigation overview](/drone-agent/vision-nav-overview) for the full operator guide.
-
-## ADOS Follow-Me
+## Follow-Me
 
 | Field | Value |
 |---|---|
 | Plugin id | `com.altnautica.follow-me` |
-| Version | 0.2.9 |
+| Status | Released |
 | Risk | high |
-| Type | Hybrid (agent subprocess + GCS iframe) |
+| Type | Agent subprocess (Python) and Mission Control iframe |
 | Hardware | USB UVC or CSI camera bound to the vision pipeline; a gimbal is optional |
-| FC firmware | ArduPilot or PX4 in a guided position-hold mode (ArduPilot Guided, PX4 Offboard/position) |
-| Supported boards | cm4, cm5, rk3582, rk3588s2, rk3576, rpi5, cubie-a7s, a733, sun60iw2 |
+| FC firmware | ArduPilot or PX4 in a guided position-hold mode (ArduPilot Copter Guided or Guided NoGPS, Plane and QuadPlane Guided, Rover Guided; PX4 Offboard) |
+| Resources | 128 MB RAM, 25% CPU, 4 processes |
 
-Click a subject in the live video and the drone follows it at a fixed distance and height. A detector on the companion produces detections, the operator designates one, and the companion locks that track, projects its image position onto the ground and feeds the flight controller guided position setpoints at 6 Hz.
+Click a subject in the live video and the drone follows it at a fixed distance and height. A detector on the companion produces detections, you designate one, and the companion locks that track, projects it onto the ground and streams guided position setpoints to the flight controller.
 
-A lock-state gate stops commanding the instant the tracker reports the subject uncertain or lost, and it never silently re-locks onto a different subject. The Follow-Me Skill in the cockpit Skill Bar arms and disarms the behaviour. There is deliberately no start tool for an assistant: a follow begins only when an operator designates a subject.
+It stops commanding the instant the tracker reports the subject uncertain or lost, and never re-locks onto a different subject by itself. The **Follow-Me** Skill (`Shift+F`) arms and disarms the behaviour and asks for confirmation first. An AI client gets two tools, `follow_status` and `stop_follow`, and no way to start a follow: a follow begins only when an operator designates a subject.
 
-**Permissions:** vision detection subscribe, MAVLink read and write, guided setpoint, event publish and subscribe, MCP tool exposure.
+<ExtensionFollowMe />
 
-**Resources:** 128 MB max RAM, 25% CPU, 4 PIDs.
+<Warning>
+Follow-Me flies the drone with guided setpoints. Read [Safety](/operations/safety) before you use it.
+</Warning>
 
-## ADOS SIYI Optical Pod
+## SIYI optical pod
 
 | Field | Value |
 |---|---|
 | Plugin id | `com.altnautica.siyi-pod` |
-| Version | 0.5.0 |
+| Status | Released |
 | Risk | high |
-| Type | Agent subprocess + GCS iframe |
-| Hardware | A SIYI pod (A2 mini, A8 mini, ZR10, ZR30, ZT6, ZT30) on the pod network `192.168.144.x`, or a TTL serial port |
-| Supported boards | cm4, cm5, rk3582, rk3588s2, rk3576, rpi5, x86 |
+| Type | Agent subprocess (Python) and Mission Control iframe |
+| Hardware | A SIYI pod (A2 mini, A8 mini, ZR10, ZR30, ZT6, ZT30) on the pod network (`192.168.144.x`) or a TTL serial port |
+| Resources | 128 MB RAM, 25% CPU, 4 processes |
 
-Speaks the SIYI Gimbal Camera External SDK over UDP, TCP or TTL serial directly, so the agent drives what a stock autopilot mount cannot: thermal palette and gain, the laser rangefinder, and subject geolocation. On start it queries firmware and the hardware id, resolves that model's capability profile, and exposes only the controls the model supports.
+Speaks the SIYI Gimbal Camera External SDK over UDP, TCP or TTL serial, so the agent drives what a stock autopilot mount cannot: thermal palette and gain, the laser rangefinder and subject geolocation. On start it queries the firmware and hardware id, picks that model's capability profile, and exposes only the controls the model supports.
 
-Until the pod answers the identity query it is sent nothing at all. The negotiation retries on a fixed interval with no attempt cap, so a pod that is unpowered at boot comes online without a restart. Laser range plus gimbal angles plus the flight controller pose resolve a subject latitude and longitude that drops a marker on the map. Gimbal attitude and laser range are mirrored to the flight controller as standard MAVLink, so the built-in gimbal panel works too.
+Until the pod answers the identity query it is sent nothing. The query retries on a fixed interval with no attempt limit, so a pod powered on after boot comes online without a restart. Laser range plus gimbal angles plus the flight controller's pose resolve a subject latitude and longitude, which the geolocate tool reports. Gimbal attitude and laser range are mirrored to the flight controller as standard MAVLink, so the built-in gimbal panel works too.
 
-**Permissions:** outbound network, UART, MAVLink read and write, the gimbal and camera components, telemetry extend, video source set, event publish, MCP tool exposure.
+<ExtensionSiyiPod />
 
-**Resources:** 128 MB max RAM, 25% CPU, 4 PIDs.
-
-## ADOS Thermal Camera FLIR Lepton USB UVC
+## Thermal camera
 
 | Field | Value |
 |---|---|
 | Plugin id | `com.altnautica.thermal-flir-lepton-usb` |
-| Version | 1.3.1 |
+| Status | Development preview |
 | Risk | medium |
-| Type | Agent subprocess (Python) + GCS iframe |
+| Type | Agent subprocess (Python) and Mission Control iframe |
 | Hardware | FLIR Lepton 3.5 on a PureThermal 2 USB UVC dongle (firmware 1.2.2 or newer) |
-| Supported boards | cm4, cm5, rk3582, rk3576, rk3566, x86 |
+| Resources | 192 MB RAM, 35% CPU, 16 processes |
 
-A radiometric thermal driver for a FLIR Lepton 3.5 on a PureThermal 2 dongle. It locks the radiometric linear resolution so raw Y16 counts convert to degrees Celsius, meters a centre-reticle spot plus the frame minimum and maximum, and colorizes the feed with one of three palettes that match between the agent and the cockpit overlay. High and low gain trade temperature sensitivity against range, and a one-touch flat field correction recalibrates the sensor.
+Development preview: no release archive is published, and capture needs a native UVC backend that the agent does not supply. With no backend, no device on the bus or a failed open, the extension publishes an explicit unavailable state with the reason and never reports a temperature.
 
-Cockpit Skills cycle the palette (`p`) and run a flat field correction (`Shift+F`). When a colorized stream endpoint is configured, the thermal feed is also offered to the video pipeline as its own selectable stream.
+The driver targets a FLIR Lepton 3.5 on a PureThermal 2 dongle. It locks the radiometric linear mode so raw counts convert to degrees Celsius, meters a centre spot plus the frame minimum and maximum, and colourizes the feed with palettes that match between the agent and the cockpit overlay. Cockpit Skills: **Cycle palette** (`Shift+O`) and **Flat field correction** (`Shift+I`).
 
-Capture needs a native UVC backend that the agent supplies; the extension does not bundle one. With no backend, no device on the bus, or a failed open, it publishes an explicit unavailable state with the reason and never synthesises a temperature.
+<ExtensionThermalFlirLeptonUsb />
 
-**Permissions:** USB UVC hardware, video source set, telemetry extend, event publish.
-
-**Resources:** 192 MB max RAM, 35% CPU, 16 PIDs.
-
-## ADOS World Engine
+## World Engine
 
 | Field | Value |
 |---|---|
 | Plugin id | `com.altnautica.world-engine` |
-| Version | 1.0.1 |
+| Status | Released |
 | Risk | high |
-| Type | Hybrid (Rust agent binaries on every profile + inline GCS module) |
-| Hardware | Any camera the vision engine publishes frames for; a workstation or compute node on the drone's LAN (an NVIDIA or Apple Silicon GPU speeds reconstruction) |
-| Profiles | drone, ground station, workstation, compute |
-| Supported boards | any |
+| Type | Agent binaries (Rust) on every profile and an inline Mission Control module |
+| Hardware | Any camera the vision engine publishes frames for; a workstation or compute node on the drone's LAN |
+| Profiles | `drone`, `ground_station`, `workstation`, `compute` |
+| Resources | heavy class, 16 GB RAM, 800% CPU, 1024 processes |
 
-Builds a 3D world model from a flight. The drone selects pose-tagged keyframes and streams them to a compute node on the same network, which reconstructs a Gaussian splat, point cloud, mesh and occupancy grid that Mission Control views live and after landing. The same node runs perception offload for a drone with no on-board accelerator, returning detections to the drone's own detection bus.
+Builds a 3D world model from a flight. The drone selects pose-tagged keyframes and streams them to a compute node on the same network, which reconstructs a Gaussian splat, point cloud, mesh and occupancy grid that Mission Control shows live and after landing. The same node runs perception offload for a drone with no on-board accelerator, returning detections to the drone's own detection bus.
 
-The node installer turns it on by default for workstation and compute nodes. Its binaries download at install for the node's own architecture, each checked against a sha256 pinned in the signed manifest.
+The installer turns it on by default for workstation and compute nodes. Its binaries download at install for the node's own architecture, each checked against a SHA-256 pinned in the signed manifest.
 
-**Permissions:** telemetry read and extend, node info, event publish, vision frame read and detection publish, the radio auxiliary stream, outbound network and inbound listen (the compute node's `:8092`), GPU access, cloud publish and cloud records.
+<ExtensionWorldEngine />
 
-**Resources:** heavy class, 16 GB max RAM, 800% CPU, 1024 PIDs.
+See [World Engine](/drone-agent/extensions/world-engine) for setup, configuration and the API.
 
-See the [World Engine](/drone-agent/extensions/world-engine) page for setup, configuration and the API.
-
-## Installing one
+## Install one
 
 From Mission Control:
 
-1. Open the node from the fleet and switch to the **Extensions** tab.
-2. Point the install dialog at the extension's `.adosplug`: paste the release URL or upload a downloaded file.
-3. Approve the two-stage install dialog.
+1. Open the node, go to **Agent**, and under **Software** click **Extensions**.
+2. Pick the extension from the list of available extensions and click **Install**, or click **Install from file** and upload a downloaded `.adosplug`.
+3. Read the review page and click **Install**. The button names how many permissions the install grants.
 
-See [Installing extensions](/mission-control/installing-plugins) for the exact surface.
+See [Install extensions from Mission Control](/mission-control/installing-plugins).
 
-From the agent CLI, `ados plugin install` takes a first-party catalog id, a release URL or a local archive path. It shows the permission prompt, installs, and grants what you approve.
+From the agent CLI, `ados plugin install` takes a first-party catalog id, a release URL or a local archive:
 
 ```bash
 ados plugin install com.altnautica.world-engine
-ados plugin install https://github.com/altnautica/ADOSExtensions/releases/download/<release>/<extension>.adosplug
-ados plugin install ./<extension>.adosplug
+ados plugin install https://github.com/altnautica/ADOSExtensions/releases/download/<tag>/<file>.adosplug
+ados plugin install ./<file>.adosplug
 ```
 
-A URL must be HTTPS on the agent's download allowlist (GitHub release hosts included). See [Distribution: install from a URL](/developers/distribution-url-install).
+A catalog id installs the version pinned in the agent's bundled catalog, which can lag the releases listed above. For the current release, install its URL. An id that is not in the bundled catalog installs only from its release URL or file. See [Extensions on the agent](/drone-agent/plugins).
 
-The signature is verified against the keys in `/etc/ados/plugin-keys/` before the archive is unpacked.
+## Publish your own
 
-## Submitting an extension
+Build an extension with the SDK, sign it with your own key, and install it from a local file or a URL; see [Your first plugin](/developers/your-first-plugin) and [Distribution: local install](/developers/distribution-local-install). To list it in the registry, see [Distribution: the registry](/developers/distribution-registry).
 
-Community extensions land via the [hosted registry](/developers/distribution-registry) submission flow when the registry hits v1.0. Until then, first-party extensions live in the public [`ADOSExtensions`](https://github.com/altnautica/ADOSExtensions) repo and any plugin you build with the [SDK](/developers/sdk-python) installs cleanly via the local `.adosplug` path documented in [Distribution: local install](/developers/distribution-local-install).
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Install from Mission Control" icon="display" href="/mission-control/installing-plugins">
+    The per-node Extensions page and the install review.
+  </Card>
+  <Card title="Extensions on the agent" icon="puzzle-piece" href="/drone-agent/plugins">
+    The CLI, signatures, permissions and isolation.
+  </Card>
+</CardGroup>

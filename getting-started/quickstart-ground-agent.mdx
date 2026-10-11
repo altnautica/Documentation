@@ -1,324 +1,82 @@
 ---
 title: "Quickstart: Ground Agent"
-description: "Set up a ground station node to receive long-range video and relay it to your devices."
+sidebarTitle: "Ground Agent"
+description: "Install the ADOS agent as a ground station, check the receiver is running, and open it from a laptop or phone."
 icon: "tower-broadcast"
-lastUpdated: "2026-06-18"
+keywords: ["ados", "ground agent", "ground station", "quickstart", "wfb-ng"]
 ---
 
-## What You Will Build
+import PairingKinds from "/snippets/pairing-kinds.mdx";
+import InstallGroundAgent from "/snippets/install-ground-agent.mdx";
 
-By the end of this page, you will have an ADOS Ground Agent running on a small SBC. It will receive WFB-ng video from your drone over a 5.8GHz radio link and relay that video to your laptop, phone, or HDMI monitor. You will be able to open Mission Control in your browser and see live video with under 100ms latency.
+The Ground Agent is the ADOS agent installed with the `ground_station` profile. It receives WFB-ng video and telemetry from a drone and serves them to your laptop, phone or an HDMI monitor. By the end of this page a ground station runs its receiver and access point, and you have opened it from a browser.
 
-## What is the Ground Agent?
+## Hardware
 
-The Ground Agent is the same ADOS Drone Agent software running in **ground-station** profile mode. At boot, the agent detects ground-station hardware (OLED display, GPIO buttons, RTL8812EU WiFi adapter, and the absence of a flight controller) and automatically configures itself as a receiver instead of a transmitter.
+| Component | Example | Purpose |
+|---|---|---|
+| Single-board computer | A board from [Ground Agent supported hardware](/ground-agent/supported-hardware) | Runs the agent |
+| WFB-ng adapter | RTL8812EU USB adapter | Receives the drone's radio link |
+| Antennas | Two 5.8 GHz SMA antennas | Range |
+| Power | USB-C wall adapter or PD power bank | See [Power and runtime](/ground-agent/power-and-runtime) |
 
-Its core job: receive video from the air, relay it to your screen.
+Optional for field use without a laptop: a small display and four buttons ([Display](/ground-agent/display)), an HDMI monitor ([HDMI kiosk](/ground-agent/hdmi-kiosk)) and a USB gamepad.
 
-```mermaid
-flowchart LR
-    subgraph Drone
-        TX[WFB-ng TX<br/>RTL8812EU]
-    end
+The drone needs the Drone Agent with a matching WFB-ng adapter. See [Quickstart: Drone Agent](/getting-started/quickstart-drone-agent).
 
-    subgraph Ground Station
-        RX[WFB-ng RX<br/>RTL8812EU]
-        SBC[SBC<br/>Ground Agent]
-        OLED[OLED Display]
-        BTNS[4 Buttons]
-    end
+## Install
 
-    subgraph Your Devices
-        LAPTOP[Laptop Browser<br/>Mission Control]
-        PHONE[Phone]
-        TV[HDMI Monitor]
-    end
+Flash a 64-bit OS image for your board with SSH enabled, plug in the WFB-ng adapter, SSH in, and run:
 
-    TX -.->|5.8 GHz<br/>1-3 km stock antennas| RX
-    RX --> SBC
-    SBC -->|WiFi AP| LAPTOP
-    SBC -->|WiFi AP| PHONE
-    SBC -->|HDMI| TV
-    SBC -->|USB tether| LAPTOP
-    SBC --- OLED
-    SBC --- BTNS
-```
+<InstallGroundAgent />
 
-## Hardware You Need
+The profile is chosen at install time, never detected from the hardware. Without `--profile ground_station` the installer opens its wizard in an interactive terminal; choose **This receives on the ground (Ground station)** on the **Role** screen. A non-interactive install with no profile installs a drone.
 
-### Minimum Setup (bench testing)
+<Frame caption="Flash Tool with the Ground Agent stack selected and the board picker open.">
+  ![Mission Control Flash Tool board picker with the ADOS Ground Agent stack selected](/images/mission-control/flash-tool-ground-agent.png)
+</Frame>
 
-| Component | Example | Approx. Cost |
-|-----------|---------|-------------|
-| SBC | Raspberry Pi 4B (2GB+ RAM) | $45 |
-| WiFi adapter | RTL8812EU USB dongle | $15-20 |
-| Antennas | 2x 5.8GHz SMA (dipole or patch) | $10-15 |
-| USB-C data cable | Laptop tether | $5 |
-| USB-C power source | Wall adapter or PD power bank | $10+ |
+Mission Control's [Flash Tool](/mission-control/flash-tool) can also show the command: pick the Ground Agent stack and your board. Its command already carries the ground profile flag. Board-specific steps are on [Install the Ground Agent](/ground-agent/installation).
 
-### Full Standalone Setup (field use)
-
-Add these for standalone operation without a laptop:
-
-| Component | Purpose | Approx. Cost |
-|-----------|---------|-------------|
-| OLED display | 1.3" SSD1306 I2C | $5 |
-| 4x tactile buttons | Physical controls | $2 |
-| HDMI cable + portable monitor | Standalone video display | $50-100 |
-| USB gamepad | Manual flight control in kiosk mode | $20-30 |
-
-### On the Drone Side
-
-Your drone needs the matching transmitter:
-
-- ADOS Drone Agent running on a companion SBC
-- An RTL8812EU USB WiFi adapter configured as WFB-ng TX
-- A camera feeding the video pipeline
-
-<Note>
-The RTL8812EU chipset is the key component. It supports 5.8GHz monitor mode, which WFB-ng needs for its broadcast protocol. Other chipsets (RTL8812AU, RTL8811CU) may work but are less tested. The BL-M8812EU2 module is a common, affordable choice.
-</Note>
-
-## Installation
-
-### Step 1: Flash Your SBC
-
-Start with a fresh OS image on your SBC:
-
-- **Raspberry Pi 4B:** Raspberry Pi OS Lite (Bookworm, 64-bit). Flash with Raspberry Pi Imager.
-- **Radxa boards:** Official Debian or Ubuntu image from the Radxa wiki.
-
-Enable SSH during image creation. Set a hostname (for example, `ados-ground`).
-
-### Step 2: Boot and SSH In
-
-Insert the SD card, connect Ethernet or WiFi, power on, and SSH in:
-
-```bash
-ssh pi@ados-ground.local
-# or use the IP address
-ssh pi@192.168.1.XX
-```
-
-### Step 3: Plug in the RTL8812EU Adapter
-
-Connect the USB WiFi adapter. Verify it is detected:
-
-```bash
-lsusb | grep -i realtek
-# Should show something like:
-# Bus 001 Device 003: ID 0bda:8812 Realtek Semiconductor Corp. RTL8812EU
-```
-
-### Step 4: Install the Agent
-
-The recommended path is to open Mission Control's [Flash Tool](/mission-control/flash-tool), pick **ADOS Ground Agent**, select your board, and paste the install command it shows over SSH. See [Install paths](/getting-started/install-paths) for the full decision tree.
-
-The install script detects the ground-station hardware fingerprint:
-
-- RTL8812EU adapter present? Yes.
-- Flight controller on serial ports? No.
-- OLED on I2C bus? Check.
-- GPIO buttons wired? Check.
-
-Based on these signals, it automatically sets `profile: ground-station` in the configuration. No flags needed. No manual profile selection.
-
-<Tip>
-The auto-detect logic uses a scoring system. If it finds an RTL8812EU adapter and no flight controller, the score tips toward ground-station profile. You can override this in `/etc/ados/config.yaml` if needed, but you almost never have to.
-</Tip>
-
-### Step 5: Verify
+## Verify
 
 ```bash
 ados status
+journalctl -u ados-wfb-rx -n 30 --no-pager
 ```
 
-You should see:
+`ados status` shows the node name, the `ground_station` profile and the addresses the node answers on. `ados-wfb-rx` is the WFB-ng receiver unit. Once a drone is paired and in range, `ados diag link` reports whether the link is healthy. The full unit list for this profile is on [systemd services](/drone-agent/systemd-services).
 
-```
-▌ ADOS  gs-rooftop · ground-station   v<version>
-  setup         100%    ● paired
+If you fitted a display, its link stats page shows the radio link, decoder and system state:
 
-▌ Reach this agent
-  ➜  http://ground-station.local:8080
-  ➜  http://192.168.4.1:8080
-
-  MAVLink FC    not connected
-  Video         idle
-  Cloud relay   paired (https://cloud.example.com)
-  Cloudflare    disabled
-
-Next: Open Mission Control or continue optional remote access setup
-```
-
-The reach block lists every address the node answers on, best first. The
-`▌` bars and `➜` arrows fall back to `|` and `->` when the terminal
-locale is not UTF-8, and colour drops out under `NO_COLOR`.
-
-For the unit-by-unit view, ask systemd:
-
-```bash
-systemctl list-units 'ados-*'
-```
-
-On a fresh ground station that shows `ados-supervisor`, `ados-api`,
-`ados-health`, `ados-wfb-rx`, `ados-hostapd`, `ados-dnsmasq-gs`,
-`ados-mediamtx-gs` and `ados-oled` running. The full inventory is in
-[systemd services](/drone-agent/systemd-services).
-
-The WiFi AP is already running. The WFB-ng receiver is listening for a drone signal.
-
-## Connecting Your Devices
-
-You have four ways to connect to the Ground Agent.
-
-### Option 1: Laptop over WiFi
-
-1. On your laptop, join the WiFi network `ADOS-GS-abc123` (the SSID includes your device ID)
-2. Open your browser and go to `http://192.168.4.1:8080`
-3. A captive portal / setup wizard may appear on first connection
-4. The node dashboard loads on the Ground Agent's Hardware tab
-5. When the drone is in range, video appears automatically
-
-Nothing on the ground station listens on port 4000. That port belongs to a
-Mission Control dev server or a self-hosted GCS container, which you run on
-your laptop or a server, not on the node.
-
-### Option 2: Laptop over USB Tether
-
-Plug a USB-C cable from the Ground Agent SBC to your laptop. The SBC exposes a CDC-NCM network gadget.
-
-- **macOS (Sonoma+):** Works natively. A new network interface appears. The SBC is at `192.168.7.1`.
-- **Windows 11:** Works natively with CDC-NCM. The SBC is at `192.168.7.1`.
-- **Windows 10:** Falls back to RNDIS. May need a one-time driver install.
-- **Linux:** Works natively. Run `ip addr` to find the new interface.
-
-Open `http://192.168.7.1:8080` in your browser.
-
-<Tip>
-USB tether is the most reliable data path. It does not depend on WiFi signal quality, and latency is consistently low. Use separate wall power or a USB-C power bank when video, WiFi AP, HDMI, or extra radios are active.
-</Tip>
-
-### Option 3: HDMI Kiosk (No Laptop)
-
-Connect an HDMI cable to the SBC and a portable monitor. The Ground Agent runs Chromium in kiosk mode, displaying the Mission Control HUD directly.
-
-Pair a USB or Bluetooth gamepad for manual flight control. The HUD shows the video feed, attitude, altitude, battery, and GPS overlaid on the video.
-
-This is the "backpack ground station" setup. SBC in a case, USB-C power bank, portable monitor, and gamepad. No laptop required.
-
-<Frame caption="Link screen on the ground station display: radio signal, FEC recovery and lost packets.">
-  <img src="/images/ground-agent/display/carousel/link.png" alt="Ground station display link screen showing WFB-ng signal strength and packet recovery" />
+<Frame caption="Link stats page on the ground station LCD.">
+  ![Ground station LCD link stats page showing link, decoder and system bands](/images/ground-agent/display/link-stats.png)
 </Frame>
 
-### Option 4: Phone or Tablet
+## Connect a laptop or phone
 
-Connect your phone to the Ground Agent's WiFi AP and open `http://192.168.4.1:8080`. The node dashboard is responsive and works on mobile screens. For flying, the on-box cockpit is at `http://192.168.4.1:8080/cockpit/`.
+1. Join the Wi-Fi network `ADOS-GS-XXXX`, where `XXXX` comes from the device ID. The passphrase is generated for each unit on first boot. Read it from the installer's completion summary, the `wifi key` row of `ados`, or `sudo ados network ap-passphrase`.
+2. Open `http://192.168.4.1:8080` for the ground station dashboard, or `http://192.168.4.1:8080/cockpit/` for the on-box cockpit.
 
-A native ADOS Android app with lower-latency video decoding is on a separate track. The browser path is the supported way to view from a phone today.
+Over a USB-C data cable the same pages are at `http://192.168.7.1:8080`. See [USB tether](/ground-agent/usb-tether). For the Android app, see [Android GCS](/android/overview).
 
-## The Physical UI
+Before video appears, the ground station and the drone must be paired over the air. [Ground Agent setup](/ground-agent/setup) walks through it.
 
-If you have wired the OLED display and 4 tactile buttons, the Ground Agent provides a physical interface.
+<PairingKinds />
 
-### OLED Display (1.3" SSD1306, I2C)
-
-Five screens, cycled by pressing the navigation buttons:
-
-| Screen | Shows |
-|--------|-------|
-| Link | WFB-ng signal strength, FEC stats, lost packets, bitrate |
-| Drone | FC status, armed state, flight mode, battery, GPS fix |
-| GCS | Connected clients (WiFi, USB, HDMI), active video streams |
-| Net | Active uplinks (WiFi client, Ethernet, 4G), IP addresses, data usage |
-| System | CPU, RAM, temperature, disk, uptime |
-
-### Buttons
-
-Four GPIO buttons with short-press and long-press actions:
-
-| Button | Short Press | Long Press |
-|--------|------------|------------|
-| Up | Previous screen | (reserved) |
-| Down | Next screen | (reserved) |
-| Select | Toggle detail view | Enter setup mode |
-| Back | Return to main | Factory reset (requires confirm) |
-
-## Setup Wizard
-
-On first boot (or after factory reset), the Ground Agent serves a captive portal setup wizard at `http://192.168.4.1:8080`. This webapp walks you through:
-
-1. Setting the WFB-ng channel (must match the drone's TX channel)
-2. Connecting to an existing WiFi network for internet access (optional)
-3. Pairing with a Mission Control cloud account (optional)
-4. Changing the WiFi AP passphrase (the agent generates one per unit on first boot)
-
-The wizard is vanilla HTML and JS, about 50KB gzipped. It works on any device with a browser.
-
-## Uplink Matrix
-
-The Ground Agent can connect to the internet through multiple paths simultaneously. This lets it relay cloud telemetry from the drone to Mission Control even when your laptop is on the Ground Agent's local WiFi AP.
-
-| Uplink | How | When |
-|--------|-----|------|
-| WiFi AP | Always running | Local device connections |
-| WiFi client | Join existing network | Relay cloud telemetry, software updates |
-| Ethernet | Plug in cable (Pi 4B has GbE) | Fixed ground station installations |
-| USB tether | Laptop shares internet | Piggyback on laptop's connection |
-| 4G LTE | SIM7600G-H modem (optional) | Remote field deployments |
-
-Multiple uplinks can be active at the same time. The agent uses priority-based failover and health checks against the configured cloud endpoint to pick the best route. If 4G is enabled, a configurable data cap (default 5GB/month) prevents runaway usage.
-
-## Troubleshooting
-
-**No WiFi AP visible:**
-```bash
-# Check if hostapd is running
-sudo systemctl status ados-hostapd
-
-# Check the WiFi adapter
-iwconfig
-```
-
-**WFB-ng not receiving:**
-```bash
-# Check the WFB service
-journalctl -u ados-wfb -n 30 --no-pager
-
-# Verify the adapter is in monitor mode
-iwconfig wlan1  # or whatever the RTL8812EU is assigned
-
-# Make sure the channel matches the drone's TX channel in the setup webapp
-```
-
-**USB tether not working:**
-```bash
-# Check if the USB gadget is composed (the ados-net daemon builds it in-process)
-ls /sys/kernel/config/usb_gadget/ados_gs 2>/dev/null
-
-# Restart the daemon that owns the tether
-sudo systemctl restart ados-uplink-router
-```
-
-## Next Steps
+## Next steps
 
 <CardGroup cols={2}>
-  <Card title="Your First Flight" icon="plane" href="/getting-started/your-first-flight">
-    You have the stack set up. Time to fly.
+  <Card title="Ground Agent setup" icon="list-check" href="/ground-agent/setup">
+    Pair with a drone and finish the setup steps.
   </Card>
-  <Card title="Hardware Tab" icon="display" href="/ground-agent/hardware-tab">
-    Manage the ground station from Mission Control.
+  <Card title="Wi-Fi access point" icon="wifi" href="/ground-agent/wifi-ap">
+    Access point name, passphrase and clients.
   </Card>
-  <Card title="WFB-ng Configuration" icon="wifi" href="/drone-agent/wfb-ng">
-    Tune channels, FEC, and power settings.
+  <Card title="Display" icon="display" href="/ground-agent/display">
+    Pages and buttons on the ground station display.
   </Card>
-  <Card title="Physical UI" icon="toggle-on" href="/ground-agent/physical-ui">
-    Customize OLED screens and button mappings.
-  </Card>
-  <Card title="Mesh & Distributed Receive" icon="share-nodes" href="/ground-agent/mesh-overview">
-    Run two or three Ground Agents together for obstructed flight areas.
-  </Card>
-  <Card title="Three Deployment Roles" icon="shapes" href="/ground-agent/setup#pick-a-role">
-    direct, relay, receiver. When to pick which.
+  <Card title="Ground Agent troubleshooting" icon="life-ring" href="/ground-agent/troubleshooting">
+    No AP, no video, or a deaf link.
   </Card>
 </CardGroup>

@@ -1,207 +1,174 @@
 ---
-title: "MAVLink Protocol"
-description: "How ADOS Mission Control speaks MAVLink v2 and MSP, with the adapter pattern that supports multiple firmware."
+title: "MAVLink and MSP protocol layer"
+sidebarTitle: "MAVLink protocol"
+description: "How Mission Control parses MAVLink v2 and MSP, the DroneProtocol interface every adapter implements, and the transports that carry the bytes."
 icon: "code"
-lastUpdated: "2026-06-18"
 ---
 
-# MAVLink Protocol Layer
+Mission Control talks to flight controllers in MAVLink v2 (ArduPilot and PX4) and MSP (Betaflight and iNav). One TypeScript interface, `DroneProtocol`, hides the difference so the rest of the app does not care which firmware is on the other end.
 
-ADOS Mission Control talks to flight controllers using the MAVLink v2 protocol (for ArduPilot and PX4) and the MSP protocol (for Betaflight). A `DroneProtocol` TypeScript interface abstracts the differences so the rest of the app does not care which firmware is on the other end.
+## MAVLink v2 framing
 
-## MAVLink v2 basics
+MAVLink v2 is a binary protocol. Every frame has the same layout:
 
-MAVLink v2 is a binary protocol. Each message has a fixed structure:
-
-```
-| STX (0xFD) | LEN | INC | CMP | SEQ | SYS | COMP | MSG_ID (3 bytes) | PAYLOAD | CRC-16 |
+```text
+| STX (0xFD) | LEN | INC_FLAGS | CMP_FLAGS | SEQ | SYSID | COMPID | MSGID (3 bytes) | PAYLOAD | CRC (2 bytes) | SIGNATURE (13 bytes, optional) |
 ```
 
-- **STX** is always `0xFD` for v2 (v1 uses `0xFE`)
-- **LEN** is the payload length in bytes
-- **MSG_ID** is 3 bytes (v2 supports up to 16 million message types, v1 only 256)
-- **CRC-16** uses the X.25 algorithm with a per-message **CRC_EXTRA** byte
+- **STX** is `0xFD` for v2.
+- **LEN** is the payload length. v2 trims trailing zero bytes from the payload, so the receiver restores the full length before decoding.
+- **MSGID** is 3 bytes.
+- **CRC** is CRC-16/MCRF4XX over the frame, seeded with a per-message **CRC_EXTRA** byte.
+- **SIGNATURE** is present when bit 0 of `INC_FLAGS` is set: link id, a 48-bit timestamp and a 6-byte signature. `src/lib/protocol/mavlink-signer.ts` builds and checks it.
 
 ### CRC_EXTRA
 
-Every MAVLink message definition has a CRC_EXTRA constant that acts as a schema version check. The transmitter and receiver must agree on the message layout. If a message was redefined (fields added or reordered), the CRC_EXTRA changes and the receiver rejects the packet.
+Every MAVLink message definition has a CRC_EXTRA constant derived from its field layout. If the sender and the receiver disagree on a message's layout, the CRC fails and the frame is dropped. Mission Control keeps the CRC_EXTRA value and the full payload length for every message it decodes in `src/lib/protocol/mavlink-crc-extra.ts` (`CRC_EXTRA` and `PAYLOAD_LENGTHS`).
 
-ADOS Mission Control ships CRC_EXTRA values for the decoded message types. These are defined in `src/lib/protocol/mavlink-crc-extra.ts` alongside the expected payload lengths.
+## Parser
 
-## Parser architecture
+`src/lib/protocol/mavlink-parser.ts` is a streaming parser. It accumulates bytes from the transport in whatever chunks they arrive, scans for `0xFD`, reads the header and payload, restores zero-trimmed payloads, checks the CRC and emits a typed `MAVLinkFrame`.
 
-The MAVLink parser is a streaming state machine in `src/lib/protocol/mavlink-parser.ts`. It processes raw bytes from the WebSocket or WebSerial connection:
-
+```text
+bytes in -> find 0xFD -> read header -> read payload -> restore trimmed bytes -> check CRC -> emit frame
 ```
-Bytes in -> Find STX -> Read header -> Read payload -> Verify CRC -> Emit message
-```
-
-The parser handles:
-
-- **Interleaved v1 and v2 packets** on the same stream
-- **Partial reads** (bytes arrive in arbitrary chunks over WebSocket)
-- **Zero-copy parsing** for performance-critical paths (attitude, GPS, battery messages arrive at 10-50 Hz)
 
 ## The DroneProtocol interface
 
-`DroneProtocol` is the TypeScript interface that every protocol adapter must implement. It defines about 50 methods covering connection lifecycle, parameter management, telemetry callbacks, and command execution.
-
-Key method groups:
+`DroneProtocol` is defined in `src/lib/protocol/types/protocol.ts`. Every adapter implements it: `MAVLinkAdapter`, `MSPAdapter`, and the demo-mode `MockProtocol`. Its methods fall into groups:
 
 ```typescript
 interface DroneProtocol {
-  // Connection
-  connect(transport: Transport): Promise<void>
-  disconnect(): void
+  readonly protocolName: string;
 
-  // Parameters
-  getParameter(name: string): Promise<ParamValue>
-  setParameter(name: string, value: number): Promise<SetParamResult>
-  commitParamsToFlash(): void
+  // Connection
+  connect(transport: Transport): Promise<VehicleInfo>;
+  disconnect(): Promise<void>;
 
   // Commands
-  sendCommand(cmd: number, params: number[]): Promise<CommandResult>
-  arm(): Promise<CommandResult>
-  disarm(): Promise<CommandResult>
-  setMode(mode: number): Promise<CommandResult>
-  takeoff(altitude: number): Promise<CommandResult>
+  arm(): Promise<CommandResult>;
+  disarm(): Promise<CommandResult>;
+  setFlightMode(mode: UnifiedFlightMode): Promise<CommandResult>;
+  takeoff(altitude: number): Promise<CommandResult>;
+  returnToLaunch(): Promise<CommandResult>;
+  commitParamsToFlash(): Promise<CommandResult>;
 
-  // Telemetry callbacks
-  onAttitude(cb: (msg: AttitudeMsg) => void): Unsubscribe
-  onGps(cb: (msg: GpsMsg) => void): Unsubscribe
-  onBattery(cb: (msg: BatteryMsg) => void): Unsubscribe
-  onHeartbeat(cb: (msg: HeartbeatMsg) => void): Unsubscribe
-  // ... ~46 more callbacks
+  // Parameters
+  getAllParameters(): Promise<ParameterValue[]>;
+  getParameter(name: string): Promise<ParameterValue>;
+  setParameter(name: string, value: number): Promise<CommandResult>;
 
-  // Capabilities
-  capabilities: ProtocolCapabilities
+  // Telemetry subscriptions, each returning an unsubscribe function
+  onAttitude(callback: AttitudeCallback): () => void;
+  onPosition(callback: PositionCallback): () => void;
+  onBattery(callback: BatteryCallback): () => void;
+  onGps(callback: GpsCallback): () => void;
+  onHeartbeat(callback: HeartbeatCallback): () => void;
+
+  // What this firmware supports
+  getCapabilities(): ProtocolCapabilities;
 }
 ```
 
-The `ProtocolCapabilities` type tells the UI which features are available:
+The real interface has many more members, including optional ones (marked `?`) that only some firmwares implement, such as iNav safehomes and geozones or fence and rally upload.
 
-```typescript
-type ProtocolCapabilities = {
-  supportsParams: boolean
-  supportsParamExtended: boolean
-  supportsMission: boolean
-  supportsCalibration: boolean
-  supportsVtol: boolean
-  supportsFirmwareFlash: boolean
-  supportsOsd: boolean
-  // ... more
-}
-```
-
-Configure panels in the UI check capabilities before rendering. A Betaflight-connected drone does not see the MAVLink-only failsafe panel.
+`ProtocolCapabilities` (in `src/lib/protocol/types/core.ts`) is a set of booleans such as `supportsParameters`, `supportsMissionUpload`, `supportsCalibration`, `supportsFailsafe`, `supportsOsd` and `supportsFirmwareFlash`. The UI reads it before showing a feature. A flight controller configuration panel that depends on one names it as its `requiredCapability`, so the panel does not appear for a firmware that lacks it.
 
 ## MAVLink adapter
 
-`MAVLinkAdapter` implements `DroneProtocol` for ArduPilot and PX4. It contains:
+`MAVLinkAdapter` (`src/lib/protocol/mavlink-adapter.ts`) implements `DroneProtocol` for ArduPilot and PX4. Its work is split across sibling files:
 
-- **83 message decoders** in the `handleMessage()` switch statement, each pulling typed fields from the binary payload
-- **33 MAV_CMD handlers** for arm, disarm, takeoff, land, set mode, calibrate, RTL, waypoint commands, VTOL transition, ROI targeting, and more
-- **Parameter protocol** with `PARAM_REQUEST_LIST`, `PARAM_SET`, and `PARAM_VALUE` message handling. ArduPilot auto-saves parameters to EEPROM on `PARAM_SET`, so `commitParamsToFlash()` is fire-and-forget
-- **Mission protocol** with `MISSION_REQUEST_LIST`, `MISSION_ITEM_INT`, `MISSION_COUNT`, and `MISSION_ACK` for uploading waypoints
+| File | Role |
+|------|------|
+| `mavlink-adapter-frame-handlers.ts` | `routeFrame()`: the switch from message id to handler, plus the stateful parameter, mission and version exchanges |
+| `handlers/*.ts` | Stateless decoders grouped by area (telemetry, navigation and safety, calibration, CAN, vision, info, debug) that decode a payload and call the subscribers |
+| `messages/*.ts` | The typed `decode*` functions for each message |
+| `mavlink-adapter-callbacks.ts` | The subscriber lists behind every `on*` method |
+| `mavlink-adapter-commands.ts` | `COMMAND_LONG` and `COMMAND_INT` commands, with acknowledgement tracking |
+| `mavlink-adapter-params.ts` | The parameter protocol (`PARAM_REQUEST_LIST`, `PARAM_REQUEST_READ`, `PARAM_SET`, `PARAM_VALUE`) |
+| `mavlink-adapter-missions.ts` | The mission protocol (`MISSION_COUNT`, `MISSION_REQUEST_INT`, `MISSION_ITEM_INT`, `MISSION_ACK`) |
+| `mavlink-adapter-ftp.ts`, `mavlink-adapter-logs.ts` | MAVLink FTP and onboard log download |
 
-### Firmware-specific behavior
+ArduPilot and PX4 share MAVLink but differ in parameter names, mode numbers and some command meanings. The adapter learns the firmware from the heartbeat and from `AUTOPILOT_VERSION`, then applies the matching mode map and parameter metadata.
 
-ArduPilot and PX4 share the MAVLink protocol but differ in parameter names, mode numbers, and some command semantics. The adapter handles this through a `firmware` field set during heartbeat detection:
+## MSP adapter
 
-- **ArduPilot:** 200+ mapped parameters, 18 flight modes, 9 calibration types
-- **PX4:** 63+ mapped parameters, 18 flight modes, 3 PX4-specific panels (Airframe, Actuator, MavlinkShell)
+`MSPAdapter` (`src/lib/protocol/msp-adapter.ts`) implements `DroneProtocol` for Betaflight and iNav. MSP is a different kind of protocol:
 
-## MSP adapter (Betaflight)
+- Request and response, with one request outstanding at a time. `msp/msp-serial-queue.ts` serializes requests and matches each reply.
+- MSPv1 framing with an XOR checksum, and MSPv2 framing with a CRC-8 DVB-S2 checksum. The parser in `msp/msp-parser.ts` also handles jumbo frames.
+- No named parameters. Configuration lives in binary blocks (PID profile, rate profile, OSD layout, serial ports and so on).
 
-`MSPAdapter` implements `DroneProtocol` for Betaflight and iNav. MSP (MultiWii Serial Protocol) is fundamentally different from MAVLink:
-
-- Binary with MSPv1 and MSPv2 framing
-- CRC-8 DVB-S2 for v2 (XOR checksum for v1)
-- One message in flight at a time (serial queue)
-- No parameter names, only numeric configuration blocks
-
-The MSP implementation includes:
-
-- **34 message decoders** for status, attitude, GPS, battery, motor output, PID, rates, OSD, VTX, and more
-- **21 message encoders** for setting PIDs, rates, OSD layout, VTX config, and serial ports
-- **~105 virtual parameters** that map MSP configuration blocks to the `usePanelParams` hook interface, so existing configure panels work with Betaflight without code changes
-- **19-state streaming parser** handling MSPv1, MSPv2, and jumbo frames
+The adapter delegates to `msp-adapter-telemetry.ts` (polled telemetry), `msp-adapter-commands.ts` (commands) and `msp-adapter-params.ts` (virtual parameters).
 
 ### Virtual parameters
 
-Betaflight does not have a parameter-value store like ArduPilot. Instead, it has binary configuration blocks (PID profile, rate profile, mixer config, etc.). The MSP adapter maps these blocks to virtual parameter names like `BF_PID_ROLL_P`, `BF_RATE_RC_EXPO`, and `BF_OSD_ITEM_0_POS`.
+Because Betaflight and iNav have no parameter store, the MSP adapter maps fields of the configuration blocks to virtual parameter names such as `BF_RC_RATE`, `BF_RC_EXPO` and `BF_ROLL_RATE`. The definitions live in `src/lib/protocol/msp/virtual-params/`. This lets the `usePanelParams` hook, which every configuration panel uses, read and write Betaflight settings the same way it handles MAVLink parameters.
 
-This lets the `usePanelParams` hook (which powers every configure panel) work identically with MAVLink and MSP connections. Panel code never touches protocol details.
+## Encoders
 
-## Encoder architecture
+MAVLink encoding lives in `src/lib/protocol/encoders/`. `index.ts` re-exports every module, and `src/lib/protocol/mavlink-encoder.ts` re-exports the barrel.
 
-MAVLink message encoding is split across eight modules under `src/lib/protocol/encoders/`:
-
-| Module | Purpose |
+| Module | Encodes |
 |--------|---------|
-| `core.ts` | Heartbeat, system status, statustext |
-| `params.ts` | PARAM_SET, PARAM_REQUEST_LIST, PARAM_REQUEST_READ |
-| `control.ts` | MANUAL_CONTROL (50 Hz stick input), SET_MODE |
-| `mission.ts` | MISSION_COUNT, MISSION_ITEM_INT, MISSION_REQUEST_LIST, MISSION_ACK |
-| `frame.ts` | MAVLink v2 frame builder (header + CRC-16 with CRC_EXTRA) |
-| `peripheral.ts` | MAV_CMD_PREFLIGHT_CALIBRATION, MAV_CMD_DO_SET_SERVO, gimbal commands |
-| `ekf-source.ts` | EKF source selection for navigation |
-| `can-forward.ts` | CAN bus frame forwarding |
+| `frame.ts` | The v2 frame itself: header, sequence numbers and the CRC with CRC_EXTRA |
+| `core.ts` | `HEARTBEAT`, `COMMAND_LONG`, `COMMAND_INT`, `SET_MODE`, `REQUEST_DATA_STREAM`, `SET_GPS_GLOBAL_ORIGIN` |
+| `params.ts` | `PARAM_REQUEST_LIST`, `PARAM_REQUEST_READ`, `PARAM_SET` |
+| `control.ts` | `MANUAL_CONTROL` stick input |
+| `mission.ts` | `MISSION_COUNT`, `MISSION_ITEM_INT`, `MISSION_REQUEST_LIST`, `MISSION_REQUEST_INT`, `MISSION_ACK`, `MISSION_CLEAR_ALL` |
+| `peripheral.ts` | `SERIAL_CONTROL` and the onboard log requests (`LOG_REQUEST_LIST`, `LOG_REQUEST_DATA`, `LOG_ERASE`, `LOG_REQUEST_END`) |
+| `ekf-source.ts` | EKF source-set selection |
+| `can-forward.ts` | CAN forwarding, `CAN_FRAME`, `CANFD_FRAME` and `CAN_FILTER_MODIFY` |
+| `ftp.ts` | `FILE_TRANSFER_PROTOCOL`: the 12-byte FTP header and data inside the MAVLink payload |
+| `bounds.ts` | Range-checked integer writes, so an out-of-range value raises an error instead of wrapping into a different, valid-looking value on the wire |
 
-The `index.ts` barrel re-exports every module, and `mavlink-encoder.ts` re-exports them for convenience.
+## Transports
 
-## Transport layer
+The adapters do not care how bytes arrive. Each transport implements the `Transport` interface in `src/lib/protocol/types/transport.ts`; the implementations are in `src/lib/protocol/transport/`.
 
-The protocol adapters do not care how bytes arrive. A `Transport` abstraction handles the connection:
+| Transport | File | Use |
+|-----------|------|-----|
+| WebSocket | `websocket.ts` | The agent's MAVLink WebSocket on `:8765` (HMAC ticket), a local MAVLink router, or the SITL bridge in `tools/sitl/` |
+| Web Serial | `webserial.ts` | A flight controller on USB, straight from the browser |
+| UDP and TCP | `net-mavlink.ts` | Classic UDP or TCP MAVLink links. The desktop app opens native sockets; in a browser the bytes go through a small local bridge over WebSocket |
+| Bluetooth | `ble.ts` | Web Bluetooth to flight controllers with a Nordic UART Service module |
+| MQTT (cloud) | `mqtt-mavlink.ts` | Raw MAVLink or MSP frames relayed through the cloud broker on `ados/{id}/mavlink/tx` and `/rx` (or the `msp` lane) when the node is not on your network |
+| CAN | `slcan.ts`, `can-transport.ts`, `mavlink-can-forward-transport.ts` | DroneCAN, either over SLCAN on the flight controller's USB port or tunnelled through MAVLink `CAN_FORWARD` |
 
-| Transport | Use case |
-|-----------|----------|
-| WebSocket | Remote connection to drone agent or ground station. Default for LAN and cloud. The agent serves the MAVLink WebSocket on `:8765` with HMAC-ticket auth |
-| WebSerial | Direct USB connection to a flight controller from the browser. Used for configuration and firmware flashing |
-| SITL TCP-to-WS bridge | ArduPilot SITL simulator for development. The bundled `tools/sitl/` bridges TCP to WebSocket |
-| Mock | Demo mode. Generates synthetic telemetry for the simulated fleet |
+Demo mode does not use a transport to a real device. `MockProtocol` implements `DroneProtocol` directly and feeds the same stores a real connection would. The demo fleet is described on [Dashboard](/mission-control/dashboard).
 
 ## The agent-side router
 
-On the aircraft, MAVLink does not reach the browser directly. The drone agent runs a native Rust router (`ados-mavlink-router`, the `ados-mavlink` unit) that reads the flight controller's serial link, fans frames out on the `/run/ados/mavlink.sock` IPC socket for other agent services, and exposes the stream to Mission Control over a WebSocket on `:8765`. That WebSocket is gated by a short-lived HMAC ticket, so a client proves it is authorized before the router bridges it to the flight controller. The framing, message decoding, and adapter logic described below run in the browser on whatever stream the transport delivers.
+On a node, MAVLink does not go from the flight controller to the browser directly. The agent's native router (`ados-mavlink-router`, run by the `ados-mavlink` unit) owns the flight controller's serial link, fans frames out on `/run/ados/mavlink.sock` for other agent services, and serves the stream to Mission Control over the WebSocket on `:8765`. A client needs a short-lived HMAC ticket before the router bridges it to the flight controller. See [MAVLink proxy](/drone-agent/mavlink-proxy).
 
 ## Message flow example
-
-A typical telemetry flow from flight controller to browser:
 
 ```mermaid
 %%{init: {'theme': 'dark'}}%%
 sequenceDiagram
-    participant FC as Flight Controller
+    participant FC as Flight controller
     participant Agent as Drone Agent
     participant GS as Ground Agent
     participant Browser as Mission Control
 
     FC->>Agent: UART MAVLink ATTITUDE (msg 30)
-    Agent->>Agent: Parse, write to /run/ados/mavlink.sock
-    Agent->>GS: WFB-ng (binary MAVLink)
-    GS->>Browser: WebSocket (binary MAVLink)
-    Browser->>Browser: MAVLink parser extracts fields
-    Browser->>Browser: MAVLinkAdapter.handleMessage()
-    Browser->>Browser: onAttitude callback fires
-    Browser->>Browser: telemetryStore updates
-    Browser->>Browser: React re-renders HUD
+    Agent->>Agent: Router fans the frame out on /run/ados/mavlink.sock
+    Agent->>GS: WFB-ng auxiliary lane (binary MAVLink)
+    GS->>Browser: WebSocket :8765 (binary MAVLink)
+    Browser->>Browser: mavlink-parser emits a MAVLinkFrame
+    Browser->>Browser: routeFrame() calls handleAttitude()
+    Browser->>Browser: onAttitude subscribers fire
+    Browser->>Browser: bridgeTelemetry() pushes to telemetry-store
+    Browser->>Browser: React re-renders the subscribed components
 ```
 
-## Adding a new decoder
+## Next steps
 
-To add support for a new MAVLink message:
-
-1. Add the message ID, CRC_EXTRA, and payload length to `mavlink-crc-extra.ts`
-2. Add a `case` in `MAVLinkAdapter.handleMessage()` that decodes the payload bytes
-3. Add a callback method to `DroneProtocol` (e.g., `onNewMessage`)
-4. Subscribe to the callback in `DroneManager.bridgeTelemetry()`
-5. Update the relevant Zustand store with the decoded data
-
-See [Contributing Guide](/architecture/contributing-guide) for a detailed walkthrough.
-
-## What is next
-
-- [State Management](/architecture/state-management) for how telemetry reaches the UI
-- [Agent Services](/architecture/agent-services) for the server-side MAVLink proxy
-- [Video Stack](/architecture/video-stack) for the video pipeline
+<CardGroup cols={2}>
+  <Card title="State management" icon="database" href="/architecture/state-management">
+    How decoded telemetry reaches the stores and the UI.
+  </Card>
+  <Card title="Code recipes" icon="code-pull-request" href="/architecture/contributing-guide">
+    Add a MAVLink decoder or a configuration panel step by step.
+  </Card>
+</CardGroup>

@@ -1,27 +1,27 @@
 ---
-title: "Video Stack"
-description: "The video path from camera sensor to browser, hop by hop: encode, WFB-ng radio, MediaMTX, WebRTC."
+title: "Video stack architecture"
+sidebarTitle: "Video stack"
+description: "The video path from camera sensor to browser, hop by hop: encode, WFB-ng radio, MediaMTX and WebRTC, with the measured latency."
 icon: "video"
-lastUpdated: "2026-09-15"
+keywords: ["ados", "video", "latency", "wfb-ng", "mediamtx", "webrtc"]
 ---
-
-# Video Stack
 
 ADOS carries live HD video from the drone's camera to a browser using open-source
 parts at every stage: V4L2 for capture, ffmpeg for encode, WFB-ng for the radio
 hop, MediaMTX for serving, WebRTC for delivery.
 
 On the aircraft the `ados-video` unit supervises the encoder and the local
-MediaMTX instance. On the ground station `ados-wfb-rx` owns the radio receiver
-and the fan-out, and `ados-mediamtx-gs` owns the ingest and the ground MediaMTX
-instance.
+MediaMTX instance. On the ground station `ados-groundlink` owns the radio
+receiver and the fan-out, and its `--ground-video` mode (the `ados-mediamtx-gs`
+unit) runs a second MediaMTX instance that reads the radio stream and serves the
+browser.
 
 ## The hop map
 
 This is the list to measure against. Numbers in brackets are the hop labels used
 by `ados diag video`.
 
-```
+```text
 DRONE
   [1]  camera (/dev/video0, CSI or USB UVC) via V4L2
   [2]  encoder: one ffmpeg process, H.264, GOP = fps/2
@@ -32,17 +32,20 @@ DRONE
 GROUND
   [7]  wfb_rx -p 0 -u 5599 -l 1000   decodes and FEC-recovers
   [8]  fan-out :5599 -> :5600 (MediaMTX ingest) + :5605 (on-box display)
-  [9]  ingest ffmpeg: -f sdp -i /etc/ados/wfb/video.sdp, -c:v copy
+  [9]  ground MediaMTX reads RTP natively from udp+rtp://127.0.0.1:5600 (no ffmpeg)
   [10] ground MediaMTX `main` path
-  [11] :8889/main/whep -> cockpit or Mission Control
+  [11] :8080/whep (ados-control, relayed to MediaMTX on 127.0.0.1:8889) -> cockpit or Mission Control
 ```
 
-Telemetry does not share this path. It rides its own radio port (`wfb_tx -p 1` to
-`wfb_rx -p 1`, UDP 5803 at both ends), so a dark video feed and a live telemetry
-link are a normal combination and point at hops 2 to 10.
+Telemetry does not share this path. MAVLink, node status and identity ride the
+auxiliary lane (radio ports 2 and 3, UDP 5602 and 5603), separate from video
+(radio port 0) and from the frequency-hop control plane (radio port 1, UDP 5803
+and 5810). A dark video feed with a live telemetry link is therefore a normal
+combination, and it points at hops 2 to 10.
 
-`main` is the canonical path name on both nodes. WHEP is served at
-`:8889/main/whep`. Nothing publishes to `/ados`, so a zero byte count on that
+`main` is the canonical path name on both nodes. MediaMTX serves WHEP at
+`127.0.0.1:8889/main/whep`, on loopback only; browsers reach it through
+`ados-control` at `:8080/whep`. Nothing publishes to `/ados`, so a zero byte count on that
 path is not evidence of a video fault.
 
 ## Stage 1: Capture
@@ -109,7 +112,7 @@ an older one.
 The GOP is the recovery mechanism. A decoder that loses sync re-bootstraps at the
 next IDR, which is at most 500 ms away at 30 fps with `-g 15`.
 
-There is no PLI or keyframe-request path, and adding one is not on the roadmap.
+There is no PLI or keyframe-request path.
 The shipped encoder leaves (`ffmpeg` CLI, `rpicam-vid`, `gst-launch-1.0`) expose
 no runtime control channel an IDR could be requested through, and MediaMTX does
 not forward a WebRTC receiver's PLI to an RTSP publisher. The most a request
@@ -118,7 +121,7 @@ event that only happens after loss the FEC did not recover. Respawning the
 encoder to force an IDR costs a 1 to 2 second blackout, which is strictly worse
 than waiting.
 
-### H.265 is not the launch codec
+### H.264 is the default codec
 
 H.264 is the shipped wire codec. H.265 saves bandwidth at the same quality, and
 `video.camera.codec` accepts it, but browser WebRTC support for H.265 is not
@@ -144,7 +147,7 @@ The framing between the encoder and the radio is RTP (RFC 6184), payload type 96
 SSRC `0xCAFE`, `pkt_size` 1316, on UDP 5600. RTP is the contract, not a detail: a
 lost RTP packet costs at most one NAL fragment, where a lost chunk of a raw byte
 stream corrupts everything up to the next start code. The receiver depayloads
-against the SDP at `/etc/ados/wfb/video.sdp`.
+against the SDP in its MediaMTX path config (`rtpSDP`, shown in Stage 4).
 
 <Note>
 On CSI boards the encoder is `rpicam-vid` or `gst-launch-1.0` publishing through a
@@ -163,39 +166,28 @@ a link that looks perfect on a bench dies at 150 m.
 ## Stage 4: Ground receive and serve
 
 `wfb_rx -p 0` decodes the radio packets and FEC-recovers gaps, then the fan-out
-forwards them to the MediaMTX ingest on UDP 5600 and to the on-box display on
-5605. The ingest is one ffmpeg in copy mode:
+forwards them to the ground MediaMTX on UDP 5600 and to the on-box display on
+5605. No ffmpeg sits in between. `ados-groundlink --ground-video` writes a
+MediaMTX config whose `main` path has a native UDP RTP source and the SDP that
+describes it:
 
-```bash
-ffmpeg -protocol_whitelist file,udp,rtp \
-  -probesize 20M -analyzeduration 20M \
-  -max_delay 200000 -reorder_queue_size 16 \
-  -f sdp -i /etc/ados/wfb/video.sdp \
-  -c:v copy -bsf:v dump_extra=freq=keyframe \
-  -muxdelay 0 -muxpreload 0 -flush_packets 1 \
-  -f rtsp -rtsp_transport tcp rtsp://127.0.0.1:8554/main
+```yaml
+paths:
+  main:
+    source: udp+rtp://127.0.0.1:5600
+    rtpSDP: |
+      m=video 5600 RTP/AVP 96
+      a=rtpmap:96 H264/90000
 ```
 
-The reorder window is deliberately small. `wfb_rx` emits fragments in
-block and fragment order and recovers a gap before forwarding, so the demuxer
-never sees genuine reordering, only genuine loss. A deep queue buys nothing and
-costs the one thing this path cannot afford: at the old 256-packet depth the
-demuxer held roughly 170 ms on any gap, and up to the full 2 s `max_delay` in the
-pathological case. That is the "video is a second behind after a link blip"
-symptom. 200 ms and 16 packets absorbs a scheduler hiccup and nothing more; a
-genuine stall is caught by the delta-counter watchdogs, which are a detector
-rather than a buffer.
-
-The probe window is large for the opposite reason. The SDP carries only the
-encoding name and clock rate, so width, height, profile and level arrive in the
-first IDR. A cold restart under load can wait past 5 s for one, and a tighter
-window produced an `unspecified size` death loop with a mandatory 5 s backoff
-between retries. The probe exits as soon as an IDR is found, so 20 s is invisible
-on a healthy boot.
+The same process supervises MediaMTX. It restarts MediaMTX 3 seconds after any
+exit, with no attempt cap. A watchdog polls every 2 seconds and restarts
+MediaMTX when its inbound byte count stalls for 12 seconds while the radio
+statistics (fresh within 10 seconds) show packets still arriving.
 
 | Endpoint | URL | Protocol |
 |----------|-----|----------|
-| WHEP | `http://<ground-node>:8889/main/whep` | WebRTC (H.264 RTP) |
+| WHEP | `http://<ground-node>:8080/whep` | WebRTC (H.264 RTP), relayed by `ados-control` to MediaMTX on loopback |
 | RTSP | `rtsp://<ground-node>:8554/main` | RTSP, for tools like VLC |
 
 MediaMTX does no transcoding. The H.264 stream passes through to WebRTC as it
@@ -239,8 +231,8 @@ The browser receives H.264 RTP over WebRTC and decodes with the platform hardwar
 decoder. Mission Control's `src/lib/video/webrtc-client.ts` handles WHEP
 negotiation, ICE gathering, track attachment and connection health.
 
-WebRTC directly from the drone is not the launch path. Video reaches a browser
-either from the ground station over the radio hop above, or over the cloud relay.
+Video reaches a browser either from the ground station over the radio hop above,
+or over the cloud relay described below.
 
 ## Video transport modes
 
@@ -253,16 +245,22 @@ Mission Control's transport switcher offers four modes:
 | `p2p-mqtt` | WebRTC with the SDP exchange relayed over MQTT | Remote access with no port forwarding |
 | `off` | No video | Telemetry-only monitoring |
 
-Under `p2p-mqtt` the browser and the agent exchange SDP over two topics:
+Under `p2p-mqtt` the browser and the agent's `ados-cloud` service exchange SDP
+over MQTT:
 
-```
-ados/{deviceId}/webrtc/offer    browser publishes
-ados/{deviceId}/webrtc/answer   agent publishes
+```text
+ados/{deviceId}/webrtc/offer                  browser publishes {"sessionId", "sdp"}, or {"sessionId", "close": true}
+ados/{deviceId}/webrtc/answer/{sessionId}     agent publishes the SDP answer, or an error document
 ```
 
-The broker is reached over a secure WebSocket. Once the exchange completes the
-media flows peer-to-peer through STUN-negotiated NAT traversal; the broker
-carries signalling only, never video.
+On an offer, the agent posts the SDP to its local WHEP endpoint
+(`http://localhost:8889/main/whep`) and publishes MediaMTX's answer on that
+session's own answer topic, so concurrent viewers never see each other's SDP.
+A close message, or the browser's MQTT last will when it vanishes, ends the WHEP
+session. Once the exchange completes the media flows peer-to-peer through
+STUN-negotiated NAT traversal; the broker carries signalling only, never video.
+The full topic list is on
+[Cloud infrastructure](/architecture/cloud-infrastructure#mqtt-topics).
 
 <Note>
 `p2p-mqtt` needs internet access on both sides. Behind symmetric NAT, which some
@@ -321,10 +319,16 @@ disk is the pre-roll ring, and clips are cut out of it after the fact with
 `ados record clip`. See
 [Video pipeline](/drone-agent/video-pipeline#recording).
 
-## What is next
+## Next steps
 
-- [Video pipeline](/drone-agent/video-pipeline) for the operator-facing configuration
-- [Diagnostics](/drone-agent/diagnostics) for the per-hop verdict tooling
-- [Cloud Infrastructure](/architecture/cloud-infrastructure) for the MQTT and Convex relay layers
-- [Agent Services](/architecture/agent-services) for the systemd service architecture
-- [System Overview](/architecture/system-overview) for the full three-tier diagram
+<CardGroup cols={2}>
+  <Card title="Video pipeline" icon="film" href="/drone-agent/video-pipeline">
+    Configure the camera, encoder and recording on a node.
+  </Card>
+  <Card title="Diagnostics" icon="stethoscope" href="/drone-agent/diagnostics">
+    Run the per-hop video verdict with `ados diag video`.
+  </Card>
+  <Card title="Cloud infrastructure" icon="cloud" href="/architecture/cloud-infrastructure">
+    The MQTT topics and the Convex status path.
+  </Card>
+</CardGroup>

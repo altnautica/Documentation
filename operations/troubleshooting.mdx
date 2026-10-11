@@ -1,0 +1,78 @@
+---
+title: "Troubleshooting by area"
+sidebarTitle: "Troubleshooting"
+description: "Where to start when something misbehaves: the agent's own checks first, then the troubleshooting guide for each product."
+icon: "life-ring"
+keywords: ["ados", "troubleshooting", "diagnostics", "journalctl", "ados diag", "support"]
+---
+
+Every ADOS product has its own troubleshooting guide. Before opening one, run the agent's own checks on the node that has the problem. They read real counters and name the stage that failed, which is faster and more reliable than checking by hand.
+
+## Start with the agent's own checks
+
+On the node, run the diagnostics for the area that looks wrong:
+
+```bash
+ados status               # setup, link, video, and service status
+ados diag link            # radio link verdict: deaf, mis_keyed, jammed, or healthy
+ados diag video           # per-hop verdict on the video pipeline
+ados diag storage         # write rate, throttle history, store footprint
+```
+
+`ados diag video` and `ados diag link` sample cumulative counters twice and report which hop stopped moving. A single snapshot of a counter cannot tell a stalled flow from a healthy one, so trust these verdicts over a reading you took yourself.
+
+Then read the journal. It is the log of record, because the Black Box store is off by default (`logging.store.enabled: false`) and `ados logs` returns nothing until you turn it on:
+
+```bash
+systemctl list-units --state=failed
+journalctl -u ados-supervisor -n 200 --no-pager
+journalctl -u 'ados-*' --since "15 min ago" --no-pager
+```
+
+To follow one event, grep the journal for its name, for example `journalctl -u 'ados-*' --no-pager | grep factory_reset_performed`. Where you have enabled the store, `ados logs query` and `ados logs tail` search the same events with telemetry alongside; see [Black Box](/drone-agent/black-box).
+
+If the node does not answer at all, go to [Recovery](/operations/recovery) first.
+
+## By area
+
+<CardGroup cols={2}>
+  <Card title="Agent diagnostics" icon="stethoscope" href="/drone-agent/diagnostics">
+    Per-hop verdicts for video, the radio link, and storage wear.
+  </Card>
+  <Card title="Drone Agent troubleshooting" icon="microchip" href="/drone-agent/troubleshooting">
+    Flight controller not detected, video, radio link, cloud, and an agent that will not start.
+  </Card>
+  <Card title="Ground Agent troubleshooting" icon="tower-broadcast" href="/ground-agent/troubleshooting">
+    No video, access point, reaching the station, USB tether, and the display.
+  </Card>
+  <Card title="Mesh troubleshooting" icon="circle-nodes" href="/ground-agent/mesh-troubleshooting">
+    Role transitions, mesh pairing, gateway choice, and partitions.
+  </Card>
+  <Card title="Vision Navigation troubleshooting" icon="eye" href="/drone-agent/vision-nav-troubleshooting">
+    Optical-flow quality, EKF source switching, VIO drift, and scale.
+  </Card>
+  <Card title="Developer troubleshooting" icon="code" href="/developers/troubleshooting">
+    Plugin exit codes, signatures, manifests, capabilities, and IPC.
+  </Card>
+  <Card title="Self-hosting: troubleshooting and ports" icon="server" href="/developers/self-hosting/troubleshooting-and-ports">
+    A self-hosted cloud stack and the ports it needs.
+  </Card>
+  <Card title="Recovery" icon="toolbox" href="/operations/recovery">
+    Reach, repair, reset, or reinstall a node that stopped answering.
+  </Card>
+</CardGroup>
+
+## Still stuck
+
+Collect a support bundle on the affected node before rebooting it, then open an issue or ask in the community. [Support escalation](/operations/support) covers what the bundle holds, what to redact, and where to send it.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Recovery" icon="toolbox" href="/operations/recovery">
+    Reach and rebuild a node.
+  </Card>
+  <Card title="Support escalation" icon="bug" href="/operations/support">
+    Collect a bundle and report a fault.
+  </Card>
+</CardGroup>

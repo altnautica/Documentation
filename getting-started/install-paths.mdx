@@ -1,67 +1,70 @@
 ---
-title: "Install paths"
-description: "Pick the right install flow for your hardware. Mission Control's Flash Tool drives every supported path."
+title: "Choose what to install"
+sidebarTitle: "Choose what to install"
+description: "Which ADOS software to install for your hardware, and how to install the agent on a companion computer or ground station."
 icon: "route"
-lastUpdated: "2026-06-18"
+keywords: ["ados", "install", "companion computer", "ground station", "flash tool"]
 ---
 
-Mission Control's Flash Tool installs the ADOS agent on every supported companion computer. For each supported board it hands you a one-line install command to paste over SSH. Pick your starting state below to find the right path.
+import InstallAgent from "/snippets/install-agent.mdx";
+import InstallGroundAgent from "/snippets/install-ground-agent.mdx";
 
-## Pick your starting point
+What you install depends on what you are building.
 
-<CardGroup cols={2}>
-  <Card title="I have a board running a stock OS" icon="terminal" href="#stock-os-board">
-    Copy the install command. Paste it over SSH.
-  </Card>
-  <Card title="I have a fresh SD card with no OS" icon="sd-card" href="#fresh-sd-card">
-    Get the vendor OS running first, then install.
-  </Card>
-</CardGroup>
+| You have | Install |
+|---|---|
+| A flight controller and a laptop | Only [Mission Control](/mission-control/installation). Connect over USB. |
+| A drone with a companion computer | Mission Control, plus the Drone Agent on the companion computer. |
+| A long-range video link | All of the above, plus the Ground Agent on a ground station. |
+| A laptop, desktop or GPU box to run heavy jobs for the fleet | The agent with the `workstation` or `compute` profile. See [Node profiles](/getting-started/node-profiles#the-four-profiles). |
 
-## Stock OS board
+## Install the agent on a board
 
-If your board is a Raspberry Pi, Radxa, Jetson, or any other supported SBC running its standard vendor OS, the Flash Tool surfaces a `curl` install command. Paste it on the board over SSH and the install script does the rest. The supported boards today are the Raspberry Pi 4B and Pi Zero 2 W, the Radxa CM3, CM4, Rock 5C Lite, and Cubie A7Z, plus the other profiles listed in [Supported hardware](/drone-agent/supported-hardware).
+The Drone Agent and the Ground Agent are the same software installed with a different profile. The install script needs a board already running its vendor Linux image with SSH enabled. Release binaries are published for 64-bit ARM (aarch64). An x86_64 Linux box needs an installer built from source (see [Install the Drone Agent](/drone-agent/installation)), and 32-bit images are not supported.
 
 <Steps>
-  <Step title="Boot your board with stock OS">
-    Boot the board with its standard vendor OS. SSH must be enabled and you must be able to reach the board over the network.
+  <Step title="Boot the board on its vendor OS">
+    Flash the vendor's 64-bit image with the vendor's own imaging tool, boot it, and make sure you can reach it over SSH. On a Raspberry Pi, use Raspberry Pi OS Lite (64-bit).
   </Step>
-  <Step title="Open the Flash Tool">
-    In Mission Control, go to **Settings, then Flash Tool**. Pick **ADOS Drone Agent** (for the air-side) or **ADOS Ground Agent** (for the ground-side) as the stack, then pick your board.
+  <Step title="Run the install command over SSH">
+    For a drone:
+
+    <InstallAgent />
+
+    For a ground station:
+
+    <InstallGroundAgent />
+
+    Without `--profile`, a fresh install becomes a drone. The board is detected automatically.
   </Step>
-  <Step title="Copy the install command">
-    The Flash Tool shows a single `curl ... | sudo bash` line. Click **Copy**.
-  </Step>
-  <Step title="Paste it on the board over SSH">
-    SSH into the board. Paste the command. The install script detects the board, installs dependencies, configures the agent, and starts everything automatically.
-  </Step>
-  <Step title="Pair from Mission Control">
-    The board exposes a setup webapp at `http://<board-ip>:8080`. Finish onboarding there. The board then shows up in Mission Control's Fleet view.
+  <Step title="Finish setup and pair">
+    Open the agent's dashboard at `http://<board-ip>:8080/` to finish setup, then pair the node with Mission Control. It then appears in the Mission Control fleet.
   </Step>
 </Steps>
 
-The install command runs over SSH on the board itself, so any browser that displays Mission Control can show you the command. For the canonical walkthrough, see [Drone Agent installation](/drone-agent/installation) or [Ground Agent installation](/ground-agent/installation).
+<Tip>
+The Flash Tool in Mission Control is an optional shortcut. Open **Flash Tool**, pick **ADOS Drone Agent** or **ADOS Ground Agent** as the stack, pick your board, and click **Copy** to get the same install command with the right profile.
+</Tip>
 
-## Fresh SD card
+For the full walkthroughs, see [Install the Drone Agent](/drone-agent/installation) and [Install the Ground Agent](/ground-agent/installation). Supported boards are listed in [Supported hardware](/drone-agent/supported-hardware).
 
-Bringing up a brand-new Raspberry Pi or Radxa board from a blank SD card is out of scope for the Flash Tool today. The vendor flashing tools handle the initial OS write.
+## Flash flight controller firmware
 
-Get the board running its standard vendor OS first, then come back here. The board falls into the [Stock OS board](#stock-os-board) flow once it boots and you can SSH in.
+The Flash Tool also flashes flight controller firmware. That is a separate flow from installing the agent: it runs in the browser and needs a Chromium-based browser (Chrome, Edge, Brave or Opera) for WebUSB and WebSerial, or the desktop app. See [Flash Tool](/mission-control/flash-tool).
 
-## Flashing flight controller firmware
-
-The Flash Tool also flashes flight controller firmware (ArduPilot, PX4, Betaflight, iNav), which is a separate flow from installing the companion agent. That path runs in the browser and needs a Chromium-family browser (Chrome, Edge, Brave, Opera) because it uses WebUSB and WebSerial. See [Firmware Flashing](/mission-control/firmware-flashing) and the [Flash Tool walkthrough](/mission-control/flash-tool).
-
-## What's next
+## Next steps
 
 <CardGroup cols={2}>
-  <Card title="Flash Tool walkthrough" icon="wand-magic-sparkles" href="/mission-control/flash-tool">
-    Full tour of the Flash Tool inside Mission Control.
+  <Card title="Quickstart: Drone Agent" icon="microchip" href="/getting-started/quickstart-drone-agent">
+    Install the agent and connect it to Mission Control.
+  </Card>
+  <Card title="Quickstart: Ground Agent" icon="tower-broadcast" href="/getting-started/quickstart-ground-agent">
+    Set up a ground station for long-range video.
   </Card>
   <Card title="Supported hardware" icon="microchip" href="/drone-agent/supported-hardware">
     Boards and companion computers the agent runs on.
   </Card>
-  <Card title="Drone Agent installation" icon="download" href="/drone-agent/installation">
-    The canonical curl install path.
+  <Card title="Flash Tool" icon="wand-magic-sparkles" href="/mission-control/flash-tool">
+    Install firmware and copy agent install commands.
   </Card>
 </CardGroup>

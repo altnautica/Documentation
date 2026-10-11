@@ -1,204 +1,122 @@
 ---
-title: "Cloud Features"
-description: "Convex backend for fleet sync, authentication, community features, and self-hosting."
+title: "Mission Control cloud features"
+sidebarTitle: "Cloud features"
+description: "What signing in to a Convex backend adds to Mission Control: fleet sync, the cloud relay, flight log sync, MCP remote reach, roles and the community pages."
 icon: "cloud"
-lastUpdated: "2026-06-23"
+keywords: ["ados", "mission control", "cloud", "convex", "cloud relay", "sign in"]
 ---
 
-Mission Control includes an optional Convex backend that adds authentication, fleet synchronization, community features, and cloud relay capabilities. Cloud features are entirely optional. The GCS works fully offline for USB and local WebSocket connections.
+Mission Control runs fully without a backend. USB, Bluetooth and LAN connections, every configuration panel, mission planning and LAN video work offline. Signing in to a Convex backend adds the features below. The hosted version at [command.altnautica.com](https://command.altnautica.com) has a backend; a build from source needs `NEXT_PUBLIC_CONVEX_URL` (see [Install Mission Control](/mission-control/installation#environment-variables)).
 
-## What Cloud Adds
+## What signing in adds
 
-| Feature | Without Cloud | With Cloud |
-|---------|--------------|------------|
-| USB/WebSocket connections | Yes | Yes |
-| All configuration panels | Yes | Yes |
-| Mission planning | Yes | Yes |
-| Video feed (LAN) | Yes | Yes |
-| Authentication & profiles | No | Yes |
-| Fleet sync across devices | No | Yes |
-| Cloud relay to remote drones | No | Yes |
-| Community changelog | No | Yes |
-| Community roadmap | No | Yes |
-| Contact form | No | Yes |
+| Feature | Signed out (Local only) | Signed in |
+|---|---|---|
+| USB, Bluetooth and LAN connections | Yes | Yes |
+| Configuration panels and mission planning | Yes | Yes |
+| LAN video | Yes | Yes |
+| Missions and preferences | This browser only | Synced across devices |
+| Paired drones listed on every device | No | Yes |
+| Cloud relay to drones on other networks | No | Yes |
+| Pairing with a generated code | No | Yes |
+| Flight log sync | No | Yes |
+| MCP remote reach | No | Yes |
+| Extension install records and jobs | Read from the agent on the LAN | Also stored in the cloud |
 
-## Architecture
+Until you sign in, the top bar shows **Local only** and a banner notes that your data is saved in this browser only.
 
-The cloud backend is built on [Convex](https://convex.dev), a reactive backend platform. The GCS repo includes a complete `convex/` directory with around 30 custom tables alongside the auth tables.
+## Sign in and roles
 
-**Key tables:**
+Mission Control uses Convex Auth with email and password. Click **Local only** in the top bar to open the sign-in dialog. In a build with no backend the dialog reads **Cloud Not Available**; choose **Continue in local mode**.
 
-| Table | Purpose |
-|-------|---------|
-| `profiles` | User profiles with roles (admin, member, viewer) |
-| `cmd_droneStatus` | Cloud relay drone status (heartbeat from agent) |
-| `cmd_droneCommands` | Cloud relay command queue (GCS enqueues, agent polls) |
-| `cmd_missions` | Stored missions synced across devices |
-| `cmd_preferences` | User preferences synced to cloud |
-| `communityChangelog` | Public changelog entries |
-| `comments` | Comments on changelog, roadmap, and other content |
-| `contactSubmissions` | Contact form submissions |
+Each account has a profile with one of these roles:
 
-## Cloud Relay
+| Role | Meaning |
+|---|---|
+| `pending` | The default for every new profile. Waits for an admin. |
+| `pilot` | An approved operator account. |
+| `alpha_tester` | An approved tester account. |
+| `admin` | Manages users and roles. |
+| `rejected` | Denied access. |
 
-When the GCS runs on HTTPS, it auto-activates cloud mode. This enables connecting to remote drones through the Convex backend.
-
-In hosted cloud mode the backend is managed by Altnautica with zero configuration. If you prefer to run the stack yourself, point the GCS at your own Convex deployment using the self-hosting steps below.
-
-<Note>
-Cloud relay is the secondary, remote-access path, not a requirement. For a drone on the same network as Mission Control, serve the GCS over plain HTTP (`http://localhost:4000` or `http://<lan-ip>:4000`) and pair the agent by IP. That talks to the agent directly over the LAN with no Convex account and no HTTPS. The agent itself always serves plain HTTP on port `8080`. Reach for cloud relay only to connect a drone on a different network.
-</Note>
-
-The cloud relay has three layers:
-
-<Tabs>
-  <Tab title="Convex HTTP (Baseline)">
-    The simplest layer. The Drone Agent POSTs status to the Convex backend every 5 seconds. The GCS subscribes to reactive queries.
-
-    - **Latency:** 2-5 seconds
-    - **Infrastructure:** Just the Convex backend, nothing else
-    - **Use case:** Monitoring, fleet overview, non-critical telemetry
-  </Tab>
-  <Tab title="MQTT (Real-time)">
-    For faster telemetry. The agent publishes to MQTT topics, and the GCS subscribes via browser MQTT.js.
-
-    - **Latency:** 200-500ms
-    - **Infrastructure:** Mosquitto MQTT broker with WebSocket transport
-    - **Use case:** Real-time telemetry, live status updates
-    - **Topics:** `ados/{deviceId}/status`, `ados/{deviceId}/telemetry`
-  </Tab>
-  <Tab title="WebRTC (Video)">
-    For live video streaming. SDP signaling flows through MQTT, but the actual video stream is peer-to-peer.
-
-    - **Latency:** 100-200ms for video
-    - **Infrastructure:** MQTT for signaling, STUN for ICE
-    - **Use case:** Live camera feed from remote drones
-  </Tab>
-</Tabs>
-
-## Authentication
-
-Cloud mode uses Convex Auth with a password provider. Users sign up with email and password. The first user to register is automatically granted admin role.
-
-**Roles:**
-- **Admin:** Full access. Manage users, view all drones.
-- **Member:** Standard access. View paired drones, use community features.
-- **Viewer:** Read-only. Can view fleet status but cannot send commands.
-
-## Community Features
-
-The community section (`/community` route) provides:
-
-- **Changelog:** Browse project updates and release notes. Admins can create and edit entries.
-- **Roadmap:** View the project roadmap as a kanban board.
-- **Contact form:** Submit feedback or questions.
-
-These features are powered by Convex reactive queries, so updates appear in real time for all connected users.
-
-## Self-Hosting
-
-You can deploy your own Convex backend and run the full cloud stack independently.
-
-<Steps>
-  <Step title="Install Convex CLI">
-    ```bash
-    npm install -g convex
-    ```
-  </Step>
-  <Step title="Start the dev backend">
-    From the ADOSMissionControl directory:
-    ```bash
-    npx convex dev
-    ```
-    This starts a local Convex development backend and pushes your schema and functions.
-  </Step>
-  <Step title="Generate auth keys">
-    Convex Auth (the password provider) signs and verifies session tokens with RS256. Generate the keypair with the bundled script:
-
-    ```bash
-    node scripts/generate-auth-keys.mjs
-    ```
-
-    It prints `JWT_PRIVATE_KEY` (PKCS#8 PEM with newlines collapsed to spaces), `JWKS` (the public key as a JSON Web Key Set), and a `SITE_URL` reminder, in the exact format the auth runtime expects.
-
-    Set all three on your Convex backend:
-
-    ```bash
-    npx convex env set JWT_PRIVATE_KEY "$JWT_PRIVATE_KEY"
-    npx convex env set JWKS "$JWKS"
-    npx convex env set SITE_URL "http://localhost:4000"
-    ```
-
-    <Warning>
-    On a **self-hosted** Convex backend, the CLI must target your own deployment, or the keys land on the wrong backend and password sign-in fails with no visible error. Pass `--url` (your backend's client-API origin, port `3210`) and `--admin-key`:
-
-    ```bash
-    npx convex env set JWT_PRIVATE_KEY "$JWT_PRIVATE_KEY" \
-      --url http://localhost:3210 --admin-key <your-admin-key>
-    ```
-
-    Set `SITE_URL` to the public origin you serve the GCS from (for example `http://localhost:4000` on the LAN, or your HTTPS domain in production).
-    </Warning>
-  </Step>
-  <Step title="Set the URL">
-    Copy the Convex client URL and set it in your `.env`:
-    ```bash
-    NEXT_PUBLIC_CONVEX_URL=http://localhost:3210
-    ```
-    Use the **client-API** origin here (port `3210` on a self-hosted backend, or your `*.convex.cloud` URL on Convex Cloud).
-  </Step>
-  <Step title="Start the GCS">
-    ```bash
-    npm run dev
-    ```
-    Cloud features are now active, pointing at your own backend.
-  </Step>
-</Steps>
-
-### Production Deployment
-
-For production, deploy the Convex backend to Convex Cloud (free tier available) or self-host using Convex's open-source backend with Docker and SQLite.
+No one becomes admin automatically. On a backend you run, set one of these before the first sign-in:
 
 ```bash
-# Deploy to Convex Cloud
-npx convex deploy
-
-# Or self-host with Docker
-docker compose up -d
+npx convex env set ADOS_BOOTSTRAP_ADMIN_EMAILS you@example.com
 ```
 
-The self-hosted option stores all data in a local SQLite database, giving you full control over your data.
+When the first profile is created and its email is on that list, it becomes admin. If the list is empty, `ADOS_ALLOW_FIRST_USER_ADMIN=1` makes the first profile admin instead. After that, admins change roles for everyone else.
 
-## MQTT Bridge Tool
+## Cloud relay
 
-The `tools/mqtt-bridge/` directory contains a Node.js service that bridges MQTT telemetry to Convex:
+The cloud relay reaches a drone that is not on your network, for example one on a cellular uplink. It is the secondary path: on the same network, pair the agent by hostname or IP and Mission Control talks to it directly with no account (see [Connect to a drone](/mission-control/connecting#through-the-ados-agent)).
 
-1. Subscribes to MQTT topics (`ados/+/status`, `ados/+/telemetry`)
-2. Debounces updates (3 seconds per device)
-3. POSTs to the Convex HTTP API
+The relay has three layers:
 
-It runs as a Docker Compose stack alongside Mosquitto and an optional Cloudflare tunnel.
+- **Convex**: the agent posts status to the backend and polls a command queue. Mission Control subscribes to reactive queries. This needs nothing beyond the backend.
+- **MQTT**: live telemetry and status over an MQTT broker with WebSocket transport.
+- **WebRTC**: video peer to peer, with the offer and answer relayed through MQTT (the **P2P MQTT** transport on [Video feed](/mission-control/video-feed)).
 
-## Video Relay Tool
+Mission Control switches to cloud mode when it is served over HTTPS. Topic names and the message layout are on [Cloud infrastructure](/architecture/cloud-infrastructure). The agent side is on [Cloud relay](/drone-agent/cloud-relay).
 
-The `tools/video-relay/` directory contains a video relay that converts RTSP streams to WebSocket fMP4:
+The self-hosted stack also includes a video relay that converts RTSP to WebSocket fMP4. Mission Control's transport switcher does not use it.
 
-1. Accepts WebSocket connections from browser clients
-2. Spawns ffmpeg per device (copy codec, no transcoding)
-3. Streams fMP4 fragments over WebSocket
-4. Cleans up ffmpeg when the last viewer disconnects
+## Flight log sync
 
-This is an alternative to WebRTC for situations where peer-to-peer is not possible.
+When signed in, flight records from the Logs tab sync to your account, so they appear on every device. See [Flight logs](/mission-control/flight-logs).
 
-## Offline Behavior
+## MCP remote reach
 
-Cloud features degrade gracefully when the network is unavailable:
+Signed in, you can mint MCP credentials on the [MCP tab](/mission-control/mcp). A credential lets an AI client reach your fleet through the cloud relay when you are off the drone's network, with scopes and an audit trail.
 
-- Local connections (USB, WebSocket) continue to work
-- Settings stored in IndexedDB remain available
-- Previously loaded fleet data stays visible but marked as potentially stale
-- The GCS retries cloud connections in the background
+## Community
 
-<Tip>
-For field operations without internet, use direct USB or local WebSocket connections. Cloud features are a bonus for remote monitoring and fleet management, not a requirement for flying.
-</Tip>
+**Community** in the top bar opens `/community`: the **Changelog** of releases, with reactions, and a **Contact** form. The changelog also drives the "What's New" notification; turn it off under [Settings → Notifications](/mission-control/settings#notifications).
+
+## Backend data
+
+The `convex/` directory in the Mission Control repository is the complete backend: custom tables plus the auth tables. Key tables:
+
+| Table | Purpose |
+|---|---|
+| `profiles` | User profiles and roles |
+| `cmd_drones` | Drones paired to an account |
+| `cmd_pairingRequests` | Pairing-code requests |
+| `cmd_droneStatus` | Status posted by agents through the relay |
+| `cmd_droneCommands` | Command queue (Mission Control enqueues, the agent polls) |
+| `cmd_missions` | Missions synced across devices |
+| `cmd_preferences` | Preferences synced across devices |
+| `cmd_flightLogs` | Synced flight records |
+| `cmd_mcpTokens` | MCP credentials (only a hash is stored) |
+| `cmd_signingKeys` | MAVLink signing key records |
+| `cmd_pluginInstalls` | Extension installs per drone |
+| `registry_plugins`, `registry_versions` | The extension registry |
+| `community_changelog` | Changelog entries |
+| `contactSubmissions` | Contact form submissions |
+
+## Offline behaviour
+
+- Local connections keep working when the network drops.
+- Settings stay in the browser's storage.
+- Previously loaded fleet data stays visible and is marked stale.
+- Mission Control retries the backend in the background.
+
+For field work without internet, use USB or LAN connections. The cloud adds remote reach and sync; it is never required to fly.
+
+## Run your own backend
+
+Self-hosting Convex, the MQTT broker and the video relay is covered in [Self-hosting](/developers/self-hosting/overview), starting with the one-command [Deploy tool](/developers/self-hosting/deploy-tool).
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Self-hosting" icon="server" href="/developers/self-hosting/overview">
+    Run the backend, broker and relay yourself.
+  </Card>
+  <Card title="MCP tab" icon="robot" href="/mission-control/mcp">
+    Connect an AI client to your fleet.
+  </Card>
+  <Card title="Cloud infrastructure" icon="cloud" href="/architecture/cloud-infrastructure">
+    Topics, message flow and the relay design.
+  </Card>
+</CardGroup>

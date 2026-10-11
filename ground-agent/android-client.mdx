@@ -1,123 +1,79 @@
 ---
-title: "Android Client"
-description: "Use your Android phone or tablet as a ground station display."
+title: "Android phones on a ground station"
+sidebarTitle: "Android client"
+description: "Use an Android phone or tablet with a ground station: Chrome or the Android GCS app, the no-internet prompt, and gamepads."
 icon: "mobile"
-lastUpdated: "2026-06-18"
 ---
 
-# Android Client
+import { GsEndpoints } from "/snippets/gs-endpoints.mdx";
 
-Your Android phone or tablet is a client for the ground station. Join the WiFi hotspot or plug in a USB-C cable, and you have live video and telemetry on your phone. Chrome works with no install. The ADOS Android GCS app (current release v0.1.6, Android 10 and later) adds native video decoding and auto-discovery; see [Android GCS](/android/overview).
+An Android phone or tablet connects to a ground station like any other client: over the [Wi-Fi access point](/ground-agent/wifi-ap) or a [USB tether](/ground-agent/usb-tether). Chrome needs no install. The Android GCS app (Android 10 and later) adds native video and discovers agents on the network for you. See [Android GCS](/android/overview) and [Install the Android GCS](/android/install).
 
-## Three connection paths
-
-Browser latencies are measured figures; app latencies are targets.
-
-| Path | How it works | Latency | When to use |
-|------|-------------|---------|-------------|
-| WiFi AP | Phone joins `ADOS-GS-XXXX`, opens the browser or the Android GCS app | 80-120 ms (browser), 50-80 ms (app target) | Primary field use, no cables |
-| USB-C tether | Cable from phone to ground station, CDC-NCM Ethernet | 40-70 ms | Wired reliability, phone charges too |
-| Cloud relay | Both ends on separate internet, routed through Altnautica cloud | 150-300 ms | Remote observer, not pilot |
-
-## WiFi AP connection
+## Connect
 
 <Steps>
-  <Step title="Join the hotspot">
-    Open your phone WiFi settings. Look for `ADOS-GS-XXXX`. The passphrase is generated for that unit on first boot: read it from the installer summary, the `ados` status page, or the on-box panel, which also shows a join QR code. See [WiFi AP Mode](/ground-agent/wifi-ap#the-ap-passphrase).
+  <Step title="Join the access point or plug in USB">
+    Join `ADOS-GS-<id>` (read the passphrase as described in [The AP passphrase](/ground-agent/wifi-ap#the-ap-passphrase); the LCD shows a join QR code), or connect a USB-C data cable on Android 11 and later.
   </Step>
-  <Step title="Handle the no-internet warning">
-    Android will show a "No internet" notification because the ground station is a local network. Tap "Stay connected" or "Use without internet." The ground station is working, it just does not provide internet access.
+  <Step title="Handle the no-internet prompt">
+    See [No internet on the access point](#no-internet-on-the-access-point).
   </Step>
-  <Step title="Open the browser">
-    **Chrome browser:** Navigate to `http://192.168.4.1:8080` for the node dashboard and setup webapp, or `http://setup.ados.local:8080/` (the AP's DNS maps that name to the node). The cockpit is at `http://192.168.4.1:8080/cockpit/`.
-
-    **ADOS Android GCS app:** The app discovers agents on the network automatically over mDNS, so you do not type a URL.
-  </Step>
-  <Step title="Fly">
-    Pilot with touch controls (virtual sticks overlay) or pair a Bluetooth gamepad to your phone. The first device with stick input claims pilot-in-command.
+  <Step title="Open the node">
+    **Chrome:** open one of the addresses below. **Android GCS app:** the app finds agents on the local network, so you do not type an address.
   </Step>
 </Steps>
 
-## USB-C tether connection
+Over the access point:
 
-Android 11 and later supports CDC-NCM USB Ethernet natively.
+<GsEndpoints host="192.168.4.1" />
 
-<Steps>
-  <Step title="Plug in the cable">
-    Connect a USB-C data cable from your phone to the ground station. Your phone shows a notification: "USB device detected. Allow ADOS Ground Station network access?"
-  </Step>
-  <Step title="Approve the connection">
-    Tap "Allow." Android creates a USB Ethernet interface and assigns your phone the IP `192.168.7.2`.
-  </Step>
-  <Step title="Open the browser">
-    In Chrome, navigate to `http://192.168.7.1:8080`. The Android GCS app detects the agent's USB gadget network and uses it automatically.
-  </Step>
-</Steps>
+Over USB tether, the host is `192.168.7.1` instead.
 
-<Tip>
-USB-C tether may charge your phone while streaming when the hardware supports it. Power the Ground Agent from its own wall adapter or USB-C power bank for longer field sessions.
-</Tip>
+## Android GCS app or Chrome
 
-## Android GCS app vs Chrome
+| | Android GCS app | Chrome |
+|---|---|---|
+| Video | Native WebRTC (WHEP) with hardware decode; MediaCodec for direct radio streams | WebRTC in the browser |
+| Finding the node | Discovers agents on the local network | Type the address |
+| Gamepad | Android input devices, sent to the flight controller as `MANUAL_CONTROL` at 25 Hz | Browser Gamepad API in the on-box cockpit |
+| Install | APK, see [Install the Android GCS](/android/install) | Nothing to install |
 
-| Feature | ADOS Android GCS app | Chrome browser |
-|---------|-----------------|----------------|
-| Video decode | Native MediaCodec (hardware H.264) | WebRTC via browser |
-| Auto-discovery | mDNS, automatic | Manual URL entry |
-| Gamepad input | Android InputDevice API | Web Gamepad API |
-| Install | APK (see [Install](/android/install)) | Nothing to install |
+<Warning>
+Stick control from the app moves the aircraft. Read [Safety](/operations/safety) before flying with a gamepad.
+</Warning>
 
-Chrome needs nothing installed: open the browser and navigate to the ground station URL. The Android GCS app uses native MediaCodec hardware decoding, which draws less power than the browser's WebRTC decoder.
+## No internet on the access point
 
-## Video codec
+During first-time setup, the ground station answers Android's connectivity check with a redirect, so the sign-in sheet opens on the setup wizard. Once setup is complete it stops answering those checks, and Android marks the network "No internet".
 
-The ground station serves H.264 high profile level 4.1 (`avc1.640029`) over WebRTC WHEP. This profile is universally supported on Android devices going back to Android 5.0.
+1. Choose "Stay connected" on the notification.
+2. If Android keeps switching to mobile data, open the network's settings and turn off automatic switching to mobile data (some phones call it "Smart network switch" or "Wi-Fi assistant").
 
-## Android captive portal behavior
+Over USB tether, Android does not run this check.
 
-Android 11+ aggressively checks for internet on newly joined WiFi networks. If the ground station does not respond to probe URLs quickly, Android:
+## Internet through the ground station
 
-- Marks the network as "no internet"
-- Disables automatic data routing through it
-- Shows a persistent "use mobile data" notification
+The access point is a local network by default; your phone cannot reach the internet through it. To change that, turn on uplink sharing (Mission Control node panel, **Network**, or `PUT /api/v1/ground-station/network/share_uplink`). Background app data then counts against a cellular data cap, if the node has a modem. See [Uplink matrix](/ground-agent/uplink-matrix#uplink-sharing).
 
-The ground station handles this by serving `204 No Content` responses to Google's connectivity check URLs (`connectivitycheck.gstatic.com/generate_204`) within 100 ms. This satisfies Android's probe and prevents the network from being flagged.
+## Bluetooth gamepads in Chrome
 
-<Note>
-On USB tether, Android does not fire the captive portal probe. No special handling is needed.
-</Note>
+Chrome's Gamepad API works in the on-box cockpit with a few conditions:
 
-## Internet sharing
+- Use the full Chrome browser, not an in-app WebView.
+- Load the page from the ground station's private address (`http://192.168.x.x`).
+- Press any button to register the controller.
 
-By default, the ground station WiFi AP is a local-only network. Your phone cannot use the ground station's internet connection (4G modem or WiFi client uplink) for background app data.
+## Phone as a receiver
 
-If you want your phone to have internet through the ground station, enable "Share uplink with AP clients" in the setup webapp Network page or the ground-station panel in Mission Control. Be aware that background app data will consume the ground station's data cap if it has a 4G modem.
+The Android GCS app can also receive a drone's radio link directly on the phone. The ground station issues and approves those phone-receiver invites through `/api/v1/ground-station/wfb/invite`. See [Android GCS](/android/overview).
 
-## Bluetooth gamepad on Android
+## Next steps
 
-You can pair a Bluetooth gamepad to your phone. The Android GCS app reads stick inputs through the standard Android gamepad API and sends them as `MANUAL_CONTROL` MAVLink messages. In Chrome, use the Web Gamepad API as described below.
-
-In Chrome, the Web Gamepad API works but has some restrictions:
-
-- Use Chrome full browser, not an in-app WebView
-- The site must load from `http://192.168.*` (private IP, insecure-origin permitted)
-- Press any button to register the controller
-
-## Touch fallback
-
-When no gamepad is connected, Mission Control in Chrome shows a virtual sticks overlay on screen. Two touch zones on the left and right sides of the display act as throttle/yaw and pitch/roll sticks. Not ideal for precision flying, but good enough for basic control.
-
-## Supported Android versions
-
-| Android version | WiFi AP | USB-C tether | Notes |
-|----------------|---------|--------------|-------|
-| Android 14+ | Yes | Yes (CDC-NCM native) | Full support |
-| Android 11-13 | Yes | Yes (CDC-NCM native) | Full support |
-| Android 10 | Yes | Partial (may need RNDIS) | Browser only, no USB auto-detect |
-| Android 9 and older | Yes | No | WiFi only |
-
-## What is next
-
-- [WiFi AP](/ground-agent/wifi-ap) for laptop connection details
-- [USB Tether](/ground-agent/usb-tether) for the full USB-C reference
-- [Set Up a Ground Station](/ground-agent/setup) for first-time setup
+<CardGroup cols={2}>
+  <Card title="Android GCS" icon="android" href="/android/overview">
+    What the app does.
+  </Card>
+  <Card title="Wi-Fi access point" icon="wifi" href="/ground-agent/wifi-ap">
+    Network details and the passphrase.
+  </Card>
+</CardGroup>

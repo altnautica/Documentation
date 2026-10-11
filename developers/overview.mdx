@@ -1,52 +1,53 @@
 ---
-title: "Developers"
-description: "Build plugins and extensions for ADOS Mission Control and the ADOS Drone Agent."
-lastUpdated: "2026-06-23"
+title: "Developers overview"
+sidebarTitle: "Overview"
+description: "Build plugins for ADOS Mission Control and the ADOS Drone Agent: one signed archive, two sandboxed halves."
+keywords: ["ados", "plugin", "sdk", "developers", "extension"]
 ---
 
-A plugin lets you add code, hardware drivers, UI panels, and behaviors
-to ADOS without forking the core projects. One manifest, signed, gets
-installed on a drone and a ground station; from there it runs in
-isolation with explicit capability grants.
+A plugin adds code, hardware support, UI panels and flight behaviors to
+ADOS without forking the core projects. One signed `.adosplug` archive
+installs on a drone or ground station node; from there each half runs
+in isolation with the capabilities the operator granted. Operators see
+installed plugins as **Extensions**.
 
 ## Two halves, one plugin
 
 A single `manifest.yaml` declares up to two halves. Either half is
 optional, so a plugin can ship agent-only, GCS-only, or both.
 
-- **Agent half** runs as a supervised subprocess on the drone or ground
-  station, with cgroup-enforced CPU, RAM, and PID limits. It talks to
-  the host over a Unix domain socket using length-prefixed msgpack
-  frames, gated by an HMAC capability token. You write the agent half
-  in **Python** (`runtime: python`) or **Rust** (`runtime: rust`). Both
-  speak the same wire to the same host.
-- **GCS half** runs in a sandboxed iframe inside Mission Control:
-  `sandbox="allow-scripts"`, no same-origin, no top-navigation. It
-  talks to the host over postMessage with HMAC-signed capability
-  tokens. You write the GCS half in **TypeScript**.
+- **Agent half** runs as its own systemd unit on the node, under a
+  dedicated system user, inside the `ados-plugins.slice` cgroup with
+  CPU, memory and process limits. It talks to the plugin host over a
+  Unix domain socket using length-prefixed msgpack frames, gated by an
+  HMAC capability token. Write it in **Python** (`runtime: python`) or
+  **Rust** (`runtime: rust`); both speak the same wire to the same host.
+- **GCS half** runs in a sandboxed iframe inside Mission Control
+  (`sandbox="allow-scripts"`, no same-origin, no network egress). It
+  talks to the host over `postMessage`, and the host checks every call
+  against the granted capabilities. Write it in **TypeScript**.
 
-The host gates every privileged call against the manifest. A plugin
-that did not declare `vehicle.command` cannot send vehicle commands,
-and the operator must approve each declared permission at install time.
+The host gates every privileged call against the grants. A plugin that
+did not declare `mavlink.write` cannot write to the flight controller,
+and the operator approves each declared permission at install time.
 
 ## Pick your SDK
 
-Three SDKs cover the two halves and three languages. Each speaks the
-same capability-token wire to the same host, so the choice is about the
-language you want to write in, not a different runtime contract.
+All three SDKs speak the same capability-token contract to the same
+host, so the choice is the language you want to write in.
 
 <CardGroup cols={3}>
   <Card title="Python (agent)" icon="python" href="/developers/sdk-python">
-    `ados.sdk`. Driver traits, vision client, and the test harness for
-    an agent half written in Python.
+    `ados.sdk`: the plugin context, driver base classes, vision client
+    and test harness for a Python agent half.
   </Card>
   <Card title="Rust (agent)" icon="rust" href="/developers/sdk-rust">
-    The `ados-sdk` crate. The same agent surface in Rust, compiled to a
-    native binary that runs directly under systemd.
+    The `ados-sdk` crate: the same agent surface, compiled to a native
+    binary that runs directly under systemd.
   </Card>
   <Card title="TypeScript (GCS)" icon="js" href="/developers/sdk-typescript">
-    `@altnautica/plugin-sdk`. The browser-side SDK for a GCS half that
-    mounts UI panels in Mission Control.
+    `@altnautica/plugin-sdk`: the browser-side SDK for a GCS half that
+    mounts panels in Mission Control.
   </Card>
 </CardGroup>
 
@@ -56,45 +57,46 @@ Every plugin is described by four things: a **manifest** (what it is and
 what it asks for), a **signature** (who built it, verified before
 install), a **sandbox** (the isolation it runs inside), and a set of
 **capability tokens** (the only privileges it gets at runtime). Read
-[concepts](/developers/concepts) for how the four fit together.
+[Concepts](/developers/concepts) for how they fit together.
 
-## Where to start
+## How plugins reach a node
 
-<CardGroup cols={2}>
-  <Card title="Quickstart" icon="rocket" href="/developers/quickstart">
-    Scaffold a plugin and see it running in five minutes.
-  </Card>
-  <Card title="Your first plugin" icon="code" href="/developers/your-first-plugin">
-    Build a GCS-only node-detail tab that reads battery telemetry, from manifest to signed archive.
-  </Card>
-  <Card title="Manifest" icon="file-code" href="/developers/manifest">
-    Every field. Every permission. The schema the host enforces.
-  </Card>
-  <Card title="Permissions" icon="lock" href="/developers/permissions">
-    The capability taxonomy and the four-level risk badge.
-  </Card>
-</CardGroup>
+Plugin authors ship signed `.adosplug` archives. A node installs one
+from:
 
-## Distribution today
+- **A local file.** Choose **Install from file** on the node's
+  **Extensions** tab in Mission Control, or run
+  `ados plugin install <file>.adosplug` on the node.
+- **A URL.** Install from a hosted archive, for example a GitHub
+  Releases asset. See [Install from a URL](/developers/distribution-url-install).
+- **The first-party catalog.** First-party extensions and the built-in
+  plugins install by id (`ados plugin install <id>`, or from the list on
+  the **Extensions** tab).
 
-Plugin authors ship signed `.adosplug` archives. Two install channels
-work today:
-
-- **Local file.** Drag-drop the archive into the node's **Extensions**
-  tab in Mission Control, or run `ados plugin install <file>.adosplug`
-  on the agent.
-- **URL.** Install from a hosted archive (for example a GitHub
-  Releases asset) through the Mission Control install dialog.
-
-The hosted plugin registry is not live yet. Until it ships, GitHub
-Releases is the recommended publishing channel.
-
-See [distribution and local install](/developers/distribution-local-install).
+Signing and key enrolment are covered in
+[Signing keys](/developers/signing-keys#bench-install-and-signing).
 
 ## License
 
-Plugins are independent of the ADOS core projects. We recommend
-**GPL-3.0-or-later** to match the host, but any
-[OSI-approved license](https://opensource.org/licenses) works.
-Closed-source plugins are allowed; they just cannot link against
-ADOS GPL code at the source level.
+Plugins are independent works. GPL-3.0-or-later matches the host, but
+any [OSI-approved license](https://opensource.org/licenses) works.
+Closed-source plugins are allowed; they cannot link against ADOS GPL
+code at the source level.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Your first plugin" href="/developers/your-first-plugin">
+    Scaffold, test, sign and install a GCS-only tab that reads battery
+    telemetry.
+  </Card>
+  <Card title="Concepts" href="/developers/concepts">
+    Manifest, signature, sandbox and capability tokens.
+  </Card>
+  <Card title="Manifest" href="/developers/manifest">
+    Every field the host reads.
+  </Card>
+  <Card title="Permissions" href="/developers/permissions">
+    The capability catalog and its risk levels.
+  </Card>
+</CardGroup>

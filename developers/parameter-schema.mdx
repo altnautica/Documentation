@@ -1,7 +1,6 @@
 ---
 title: "Parameter schema"
-description: "The JSON-Schema subset (type, minimum, maximum, step, enum, pattern, default), the ui widgets (number, range, boolean, enum, string, model, model_upload, group, visible_if), and the binding field (plugin.config, engine.detector, agent.config) with worked examples."
-lastUpdated: "2026-06-25"
+description: "The schema subset, the ui widgets (including bitmask and camera) and the bindings for a plugin's native parameters, with worked examples."
 ---
 
 A plugin declares parameters under `gcs.contributes.parameters[]` (or
@@ -90,6 +89,8 @@ and grouped.
 | `visible_if` | object | Conditional reveal: `{ key, equals }`. Shows the control only when another parameter's committed value equals `equals`. |
 | `task` | string | For `model` / `model_upload`: the vision task the picker lists (`detection`, `reid`, `depth`). |
 | `order` | number | Sort hint within a group. |
+| `bits` | list | For `bitmask`: the bit table, `[{ bit, label }]`. Labels are presentation only. |
+| `purpose` | string | For `camera`: the camera roster purpose (for example `detect`) whose cameras the picker lists first. |
 
 ### Widgets
 
@@ -99,9 +100,11 @@ and grouped.
 | `range` | A slider between `minimum` and `maximum` stepping by `step`, with a live value readout. | (always explicit) |
 | `boolean` | A toggle. | `type: boolean` |
 | `enum` | A dropdown of the `enum` members, mapping the chosen string back to the typed value. | a schema with `enum` |
+| `bitmask` | An integer value edited as labelled bits. Set `ui.bits`. | (always explicit) |
 | `string` | A text input validated against `pattern`. | `type: string` |
 | `model` | The board-filtered model picker bound to the engine's active detector. | (always explicit) |
 | `model_upload` | The model picker with upload enabled. | (always explicit) |
+| `camera` | A camera picker. The value is a camera id or `auto`; `ui.purpose` orders matching cameras first. | (always explicit) |
 | `group` | A grouping marker (rare; prefer `ui.group` on each field). | (always explicit) |
 
 When `ui.widget` is omitted, the host infers: an `enum` schema becomes
@@ -118,24 +121,24 @@ value matches.
 ```yaml
 contributes:
   parameters:
-    - key: vio_enabled
+    - key: track_enabled
       schema: { type: boolean, default: false }
       ui:
         widget: boolean
-        label: "Enable VIO"
-        group: "Navigation"
+        label: "Enable tracking"
+        group: "Tracking"
 
-    # Only shown when vio_enabled is true
-    - key: vio_backend
+    # Only shown when track_enabled is true
+    - key: track_mode
       schema:
         type: string
-        enum: ["openvins", "vins_fusion"]
-        default: "openvins"
+        enum: ["center", "lead"]
+        default: "center"
       ui:
         widget: enum
-        label: "VIO backend"
-        group: "Navigation"
-        visible_if: { key: vio_enabled, equals: true }
+        label: "Tracking mode"
+        group: "Tracking"
+        visible_if: { key: track_enabled, equals: true }
 ```
 
 ## `binding`: where the value is written
@@ -145,7 +148,7 @@ The `binding` field routes the committed value. It defaults to
 
 | Binding | Writes to | Read-back |
 |---------|-----------|-----------|
-| `plugin.config` | The per-drone plugin config, over the LAN agent (local-first). | The agent exposes a config write but no config read, so the GCS seeds from the schema default and badges it as a default that was not read from the drone, until a value is committed this session. |
+| `plugin.config` | The per-drone plugin config, over the LAN agent (local-first). | Mission Control reads the plugin's effective config from the agent (`GET /api/plugins/<id>/config`) when the panel opens, and falls back to the schema default only when the node is unreachable. |
 | `engine.detector` | The shared, engine-wide vision detector. Every vision consumer on that drone shares one detector. | The model picker owns the write and reports the new active model back, so the form tracks the live detector. |
 | `agent.config` | A whitelisted system config key on the agent. | Read-only on this surface; its write router is a separate surface. |
 
@@ -166,9 +169,7 @@ The `binding` field routes the committed value. It defaults to
 <Warning>
 On a `plugin.config` commit the host writes optimistically and rolls the
 control back if the agent does not accept the write, so the surface never
-shows a value the agent rejected. Because there is no config read-back, a
-freshly-loaded `plugin.config` control shows the schema default until the
-operator commits a value.
+shows a value the agent rejected.
 </Warning>
 
 ## The `model` parameter: switch the vision detector
@@ -182,7 +183,6 @@ drone then runs against the new model.
 gcs:
   permissions:
     - id: ui.slot.node-detail-tab
-    - id: telemetry.subscribe
   contributes:
     # Register the models the picker can offer (per-board variants).
     models:
@@ -194,12 +194,12 @@ gcs:
             input: "640x640"
             min_tops: 3
             source: "https://example.com/models/coco-yolov8n-rk3588.rknn"
-            sha256: "0000000000000000000000000000000000000000000000000000000000000000"
-          - board_match: "generic-arm64"
+            sha256: "<sha256 of the .rknn file>"
+          - board_match: "cpu"
             runtime: "onnx"
             input: "640x640"
             source: "https://example.com/models/coco-yolov8n.onnx"
-            sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+            sha256: "<sha256 of the .onnx file>"
     # A model parameter that lets the operator switch the active detector.
     parameters:
       - key: detector
@@ -259,11 +259,11 @@ gcs:
       - id: coco-yolov8n
         task: detection
         board_variants:
-          - board_match: "generic-arm64"
+          - board_match: "cpu"
             runtime: "onnx"
             input: "640x640"
             source: "https://example.com/models/coco-yolov8n.onnx"
-            sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+            sha256: "<sha256 of the .onnx file>"
     parameters:
       - key: detector
         schema: { type: string, default: "coco-yolov8n" }
@@ -271,12 +271,19 @@ gcs:
         binding: engine.detector
 ```
 
-## See also
+## Next steps
 
-- [Contribution points](/developers/contribution-points): the
-  `settings` and `parameters` contributions in context.
-- [Scaffolder walkthrough](/developers/scaffolder-walkthrough): a
-  plugin that contributes parameters and a model end to end.
-- [Vision plugins](/developers/vision-plugins): how the engine detector
-  is consumed on the agent side.
-- [Manifest reference](/developers/manifest): every manifest field.
+<CardGroup cols={2}>
+  <Card title="Contribution points" href="/developers/contribution-points">
+    The `settings` and `parameters` contributions in context.
+  </Card>
+  <Card title="Scaffolder walkthrough" href="/developers/scaffolder-walkthrough">
+    A plugin that contributes parameters end to end.
+  </Card>
+  <Card title="Vision plugins" href="/developers/vision-plugins">
+    How the engine detector is consumed on the agent.
+  </Card>
+  <Card title="Lifecycle" href="/developers/lifecycle">
+    How the agent half reads live config.
+  </Card>
+</CardGroup>

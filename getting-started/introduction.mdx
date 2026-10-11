@@ -1,15 +1,28 @@
 ---
 title: "What is ADOS?"
-description: "The open-source software platform that gives any drone onboard intelligence, long-range video, and a browser ground station."
+sidebarTitle: "Introduction"
+description: "ADOS is an open-source software stack for drones: a browser ground control station, a companion-computer agent and a ground station."
 icon: "circle-info"
-lastUpdated: "2026-10-09"
+keywords: ["ados", "introduction", "mission control", "drone agent", "ground agent", "open source"]
 ---
 
-## A software-defined drone platform
+ADOS is an open-source software stack for drones. It covers the aircraft, the ground and the fleet: an agent on the drone's companion computer, the same agent on a ground station for long-range video, a ground control station that runs in your browser, and the extensions, SDKs and AI tooling built on them.
 
-Altnautica ADOS is an open-source software stack for drones. It covers the aircraft, the ground and the fleet: software on the drone's companion computer, a ground station node for long-range video, a ground control station that runs in your browser, and the extensions, SDKs and AI tooling that build on them.
+## Pick your path
 
-You do not need a specific drone. ADOS works with flight controllers running ArduPilot, PX4, Betaflight or iNav. Add a companion computer (a Raspberry Pi, a Radxa board, or another Linux SBC), install the agent, and the drone gains video streaming, a REST API, an extension host, cloud relay and one-command updates.
+<CardGroup cols={3}>
+  <Card title="Try it now" icon="play" href="/getting-started/quickstart-mission-control">
+    Open Mission Control in a browser or the desktop app and fly the demo fleet. No hardware needed.
+  </Card>
+  <Card title="Fly a flight controller over USB" icon="usb" href="/mission-control/connecting">
+    Plug your flight controller into a laptop and use Mission Control on its own to configure, plan and fly.
+  </Card>
+  <Card title="Add a companion computer or long-range link" icon="tower-broadcast" href="/getting-started/quickstart-drone-agent">
+    Install the Drone Agent on the drone first, then add a Ground Agent for long-range WFB-ng video.
+  </Card>
+</CardGroup>
+
+Not sure which software goes where? See [Choose what to install](/getting-started/install-paths).
 
 ## The products
 
@@ -18,16 +31,16 @@ You do not need a specific drone. ADOS works with flight controllers running Ard
     The ground control station. Configure, plan, simulate and fly from a browser tab or the desktop app. ArduPilot, PX4, Betaflight and iNav.
   </Card>
   <Card title="Drone Agent" icon="microchip" href="/drone-agent/overview">
-    Runs on the companion computer aboard the drone. Native Rust services handle the REST front, MAVLink routing, video, cloud relay and radio; Python handles vision, hardware bootstrap and the plugin runtime.
+    Runs on the companion computer aboard the drone. Native Rust services handle the HTTP front, MAVLink routing, video, cloud relay and radio. Python handles vision, hardware detection and the plugin runtime.
   </Card>
-  <Card title="Ground Agent" icon="tower-broadcast" href="/getting-started/quickstart-ground-agent">
-    The same agent in ground-station mode. Receives long-range video and relays it to laptops, phones and an HDMI monitor, with an OLED, buttons and an optional 480x320 touch LCD.
+  <Card title="Ground Agent" icon="tower-broadcast" href="/ground-agent/overview">
+    The same agent installed with the `ground_station` profile. Receives long-range video and serves it to laptops, phones and an HDMI monitor, with an OLED, buttons and an optional touch LCD.
   </Card>
-  <Card title="Workstation" icon="server" href="/getting-started/node-profiles">
+  <Card title="Workstation" icon="server" href="/getting-started/node-profiles#the-four-profiles">
     The agent on a laptop, desktop or GPU box, or headless as a compute node. Runs heavy jobs such as World Engine reconstruction for drones on the same network.
   </Card>
   <Card title="Android GCS" icon="mobile" href="/android/overview">
-    A native ground control station for Android phones and tablets: live video with a HUD, flight controls and maps. Current release: v0.1.6.
+    A native ground control station for Android 10 and later phones and tablets: live video, flight controls, maps and mission planning.
   </Card>
   <Card title="Extensions" icon="puzzle-piece" href="/drone-agent/extensions-catalog">
     Signed packages that add drivers, cockpit controls and autonomy features without touching the core. Build your own with the Python, Rust or TypeScript SDK.
@@ -39,107 +52,99 @@ You do not need a specific drone. ADOS works with flight controllers running Ard
 
 ## How they fit together
 
-The flight controller runs the autopilot firmware. The companion computer runs the Drone Agent. On the ground, a small SBC runs the Ground Agent. Mission Control runs in your browser, the desktop app or on Android.
+The flight controller runs the autopilot firmware. The companion computer runs the Drone Agent. On the ground, a small single-board computer runs the Ground Agent. Mission Control runs in your browser, the desktop app or the Android GCS.
 
 ```mermaid
 flowchart LR
     subgraph Drone
-        FC[Flight Controller<br/>ArduPilot / PX4 / Betaflight / iNav]
+        FC[Flight controller<br/>ArduPilot / PX4 / Betaflight / iNav]
         CAM[Camera]
-        SBC[Companion SBC<br/>Drone Agent]
-        RADIO_TX[WFB-ng TX<br/>RTL8812EU]
+        SBC[Companion computer<br/>Drone Agent]
+        RADIO_TX[WFB-ng radio]
     end
 
     subgraph Ground
-        RADIO_RX[WFB-ng RX<br/>RTL8812EU]
-        GS[Ground Station SBC<br/>Ground Agent]
+        RADIO_RX[WFB-ng radio]
+        GS[Ground station<br/>Ground Agent]
     end
 
     subgraph You
         BROWSER[Browser<br/>Mission Control]
-        PHONE[Phone / Tablet]
-        MONITOR[HDMI Monitor]
+        PHONE[Phone or tablet]
+        MONITOR[HDMI monitor]
     end
 
     FC <-->|MAVLink / MSP| SBC
     CAM -->|USB / MIPI CSI| SBC
     SBC -->|H.264 / H.265 video| RADIO_TX
-    RADIO_TX -.->|5.8 GHz WFB-ng| RADIO_RX
+    RADIO_TX -.->|WFB-ng| RADIO_RX
     RADIO_RX --> GS
-    GS -->|WiFi AP / USB tether| BROWSER
-    GS -->|WiFi AP| PHONE
+    GS -->|Wi-Fi AP / USB tether| BROWSER
+    GS -->|Wi-Fi AP| PHONE
     GS -->|HDMI| MONITOR
-    SBC -->|4G LTE / WiFi| BROWSER
+    SBC -->|LAN or cloud relay| BROWSER
 ```
 
-Link range depends on the antennas: expect 1-3 km line of sight with stock antennas, and more with a high-gain ground dish. See [WFB-ng](/drone-agent/wfb-ng).
-
 <Note>
-You do not need every product at once. Mission Control works on its own with a USB cable to your flight controller. The Drone Agent works on its own over WiFi or a 4G modem. The Ground Agent is only needed for long-range WFB-ng video.
+You do not need every product at once. Mission Control works on its own with a USB cable to your flight controller. The Drone Agent works on its own over Wi-Fi, Ethernet or a cellular modem. The Ground Agent is only needed for long-range WFB-ng video.
 </Note>
 
-## Who is this for?
+## Who it is for
 
-**FPV builders and pilots.** You already have a drone and want strong configuration tools, mission planning and a GCS that runs in your browser.
+**FPV builders and pilots.** You already have a drone and want configuration tools, mission planning and a ground control station that runs in your browser.
 
 **Researchers and engineers.** You need a programmable platform with a REST API, SDKs in Python, Rust and TypeScript, and AI access over MCP.
 
-**Commercial operators.** You run mapping, inspection or agriculture missions and need reliable planning, fleet telemetry and room to customise.
+**Operators.** You run mapping, inspection or agriculture missions and need planning, fleet telemetry and room to customise.
 
-**Students and educators.** You want to learn how drones work at every layer. ADOS is open source and documented.
+**Students and educators.** You want to learn how drones work at every layer, in code you can read.
 
-**Hardware integrators.** You build drone hardware and want an open software stack on it. The agent ships 21 board profiles.
+**Hardware integrators.** You build drone hardware and want an open software stack on it. The agent describes each supported board with a board profile; see [Supported hardware](/drone-agent/supported-hardware).
 
-## What you can do today
+## What each product does
 
 ### Mission Control
-- Connect to ArduPilot, PX4, Betaflight or iNav over WebSerial (USB in the browser), WiFi or the cloud
-- 87 flight controller configuration panels: failsafe, PID tuning, power, OSD, ports, sensors, gimbal, LED, CAN, VTOL and more
-- Calibration wizards for accelerometer, gyro, compass, level, RC, ESC, airspeed, barometer and CompassMot
-- Mission planning with 9 pattern generators: survey grid, orbit, corridor scan, expanding-square search, sector search, parallel track, structure scan, fixed-wing landing and VTOL landing
-- 3D mission simulation, geofence and rally points
-- Gamepad and HOTAS flight control, live WebRTC video and a first-person cockpit
-- Firmware flashing over WebSerial
-- Demo mode with a fourteen-aircraft simulated fleet, so you can try it with no hardware
+- Connects to ArduPilot, PX4, Betaflight or iNav over USB (WebSerial), the LAN or the cloud relay
+- Flight controller configuration panels and calibration wizards
+- Mission planning with pattern generators, 3D mission simulation, geofences and rally points
+- A per-node cockpit with live video, gamepad and HOTAS control
+- Firmware flashing from the Flash Tool
+- Demo mode with a simulated fleet, so you can try it with no hardware
 
 ### Drone Agent
-- One-line install on any supported SBC
-- Auto-detects the board and the flight controller
-- Video pipeline from camera to H.264/H.265 over WFB-ng or WebRTC
-- REST API on port 8080, served by a native Rust front
-- Setup webapp for onboarding, MAVLink, video, network and remote access
-- A live [terminal dashboard](/drone-agent/tui-dashboard) (`ados`) and CLI groups for config, diagnostics, hardware, logs, MCP, network, plugins, profile, radio and recording
+- One-line install on 64-bit ARM (aarch64) Linux boards; x86_64 Linux uses a locally built installer, and macOS installs as a workstation
+- Detects the board and the flight controller
+- Camera to H.264 or H.265 video over WFB-ng or WebRTC
+- A REST API and browser dashboard on port 8080, served by a native Rust front
+- A [terminal dashboard](/drone-agent/tui-dashboard) and the `ados` CLI
 - Signed extensions with SDKs for Python, Rust and TypeScript
-- 21 board profiles, from Raspberry Pi to Rockchip, Allwinner, Jetson and generic x86_64
-- One-command updates with `ados update`
+- Updates with `ados update`
 
 ### Ground Agent
-- Same install script, auto-detects ground-station hardware
-- Receives WFB-ng video and relays it to browsers over WebRTC
-- WiFi access point and USB tether (CDC-NCM) for laptops and phones
-- Physical UI: OLED display and buttons, plus an optional 480x320 touch LCD
+- Same install script, with `--profile ground_station`
+- Receives WFB-ng video and serves it to browsers over WebRTC
+- Wi-Fi access point and USB tether for laptops and phones
+- Physical controls: OLED and buttons, plus an optional touch LCD
 - HDMI kiosk mode for field use with a monitor and gamepad
-- MeshNet relay and receiver roles for multi-node ground networks
+- Mesh relay and receiver roles (distributed receive) for multi-node ground networks
 
 ## Licensing
 
-ADOS software is licensed under **GPLv3**: Mission Control, the Drone and Ground Agent, the Android GCS and the first-party extensions. The MCP server is **MIT**. Hardware designs are dedicated to the public domain under **CC0 1.0 Universal**.
-
-Read more in the [Open Source](/getting-started/open-source) section.
+Mission Control, the Drone Agent (which is also the Ground Agent), the Android GCS and the first-party extensions are licensed under **GPLv3**. The MCP server is **MIT**. This documentation is dedicated to the public domain under **CC0 1.0 Universal**. See [Open source](/getting-started/open-source) for every repository and its licence.
 
 ## Next steps
 
 <CardGroup cols={2}>
-  <Card title="How it works" icon="gears" href="/getting-started/how-it-works">
-    Understand the data flow between the flight controller, agent and GCS.
+  <Card title="How ADOS works" icon="gears" href="/getting-started/how-it-works">
+    The data paths between the flight controller, the agent and Mission Control.
   </Card>
   <Card title="Quickstart: Mission Control" icon="display" href="/getting-started/quickstart-mission-control">
-    Run the GCS in your browser in under 5 minutes. No drone needed.
+    Run the ground control station in your browser. No drone needed.
   </Card>
   <Card title="Quickstart: Drone Agent" icon="microchip" href="/getting-started/quickstart-drone-agent">
     Install the agent on a companion computer.
   </Card>
-  <Card title="Your first flight" icon="plane" href="/getting-started/your-first-flight">
-    Connect, arm, fly and land. Step by step.
+  <Card title="Safety" icon="shield-halved" href="/operations/safety">
+    Read this before you arm a real aircraft.
   </Card>
 </CardGroup>

@@ -1,13 +1,14 @@
 ---
-title: "System Overview"
-description: "The three-tier ADOS architecture and how drone, ground station, and cloud fit together."
+title: "ADOS system overview"
+sidebarTitle: "System overview"
+description: "How the drone, the ground station and the optional cloud fit together, the protocol on every link, and the repositories that hold the code."
 icon: "sitemap"
-lastUpdated: "2026-06-18"
+keywords: ["ados", "architecture", "system overview", "protocols", "repositories"]
 ---
 
-# System Overview
+ADOS has three tiers: the Drone Agent on the aircraft, a Ground Agent on a nearby single-board computer, and optional cloud services for remote access. Each tier works on its own. You can fly with the first two and no internet at all.
 
-ADOS is a three-tier system: a drone agent on the aircraft, a ground agent on a nearby SBC, and optional cloud services for remote access. Each tier is independent. You can fly with just the first two and no internet at all.
+The Drone Agent and the Ground Agent are the same software. The installer's `--profile` choice (`drone` or `ground_station`) decides which services run. See [Node profiles](/getting-started/node-profiles).
 
 ## The three tiers
 
@@ -15,145 +16,136 @@ ADOS is a three-tier system: a drone agent on the aircraft, a ground agent on a 
 %%{init: {'theme': 'dark'}}%%
 flowchart TB
     subgraph Drone["Tier 1: Drone"]
-        FC["Flight Controller<br/>(ArduPilot / PX4 / Betaflight)"]
-        Agent["ADOS Drone Agent<br/>(Rust + Python, systemd)"]
+        FC["Flight controller<br/>(ArduPilot, PX4, Betaflight, iNav)"]
+        Agent["Drone Agent<br/>(Rust services + Python residual)"]
         Camera["Camera<br/>(CSI or USB)"]
-        WFB_TX["WFB-ng TX<br/>(RTL8812EU, 5 GHz)"]
-        ELRS["ELRS RX<br/>(2.4 GHz control)"]
-        Modem_Air["4G Modem<br/>(optional)"]
+        WFB_TX["WFB-ng TX<br/>(5 GHz monitor mode)"]
+        ELRS["ELRS receiver"]
 
-        FC <-->|UART MAVLink| Agent
+        FC <-->|UART MAVLink or MSP| Agent
         Camera -->|V4L2| Agent
-        Agent -->|ffmpeg H.264| WFB_TX
-        Agent -->|MQTT| Modem_Air
+        Agent -->|H.264 RTP, UDP 5600| WFB_TX
         ELRS -->|CRSF| FC
     end
 
-    subgraph Ground["Tier 2: Ground Station"]
-        WFB_RX["WFB-ng RX<br/>(RTL8812EU, 5 GHz)"]
-        GS_Agent["ADOS Ground Agent<br/>(same codebase, ground profile)"]
+    subgraph Ground["Tier 2: Ground station"]
+        WFB_RX["WFB-ng RX<br/>(ados-groundlink)"]
         MediaMTX["MediaMTX<br/>(RTSP + WHEP)"]
-        WiFi_AP["WiFi AP<br/>(2.4 GHz)"]
-        USB["USB Tether<br/>(CDC-NCM)"]
-        HDMI["HDMI Kiosk<br/>(Chromium + cage)"]
-        OLED["OLED + Buttons"]
+        Control["ados-control<br/>(REST + on-box cockpit, :8080)"]
+        Router["ados-mavlink<br/>(MAVLink WebSocket, :8765)"]
+        AP["Wi-Fi AP / USB tether / Ethernet"]
+        HDMI["HDMI kiosk<br/>(on-box cockpit)"]
+        Panel["OLED or LCD front panel"]
 
-        WFB_RX --> GS_Agent
-        GS_Agent --> MediaMTX
-        MediaMTX -->|WebRTC WHEP| WiFi_AP
-        MediaMTX -->|WebRTC WHEP| USB
-        MediaMTX -->|localhost| HDMI
-        GS_Agent --> OLED
+        WFB_RX -->|video| MediaMTX
+        WFB_RX -->|aux lane MAVLink| Router
+        MediaMTX -->|WebRTC WHEP| AP
+        Router --> AP
+        Control --> AP
+        Control --> HDMI
     end
 
     subgraph Cloud["Tier 3: Cloud (optional)"]
-        Convex["Convex Backend<br/>(HTTP API, reactive queries)"]
-        MQTT["Mosquitto<br/>(MQTT broker)"]
-        Video_Relay["Video Relay<br/>(RTSP-to-fMP4)"]
+        Convex["Convex backend<br/>(HTTP actions, reactive queries)"]
+        MQTT["MQTT broker"]
     end
 
     subgraph Clients["Clients"]
-        Laptop["Laptop Browser"]
-        Phone["Android App"]
-        Monitor["HDMI Monitor"]
-        Remote["Remote Observer"]
+        Browser["Mission Control"]
+        Phone["Android GCS"]
+        Remote["Remote Mission Control"]
     end
 
     WFB_TX -->|5 GHz radio link| WFB_RX
-    WiFi_AP --> Laptop
-    WiFi_AP --> Phone
-    HDMI --> Monitor
-    USB --> Laptop
+    AP --> Browser
+    AP --> Phone
 
-    GS_Agent -.->|WiFi/Ethernet/4G| MQTT
-    GS_Agent -.->|HTTP POST| Convex
-    Agent -.->|MQTT| MQTT
-    Agent -.->|HTTP POST| Convex
+    Agent -.->|HTTPS status + command poll| Convex
+    Agent -.->|raw MAVLink frames, SDP signaling| MQTT
     Convex --> Remote
     MQTT --> Remote
 ```
 
+On the ground station the HDMI kiosk opens the on-box cockpit at `/cockpit/` on port 8080. The front panel shows link and node status on the attached OLED or LCD.
+
 ## Deployment models
 
-ADOS supports three deployment models depending on what you need.
+### Field mode (tiers 1 and 2)
 
-### Field mode (Tier 1 + Tier 2)
+The drone and ground station talk directly over the WFB-ng radio. No internet and no cloud. This is the default for field operations and the shortest path ADOS has. The measured latency figures, and what they cover, are on [Video stack](/architecture/video-stack#what-is-measured-and-what-is-not).
 
-The drone and ground station communicate directly over WFB-ng radio. No internet. No cloud. This is the default for field operations and the lowest-latency path ADOS has. See [what is measured](/architecture/video-stack#what-is-measured-and-what-is-not) before quoting a number for it.
+### Cloud mode (tiers 1 and 3)
 
-### Cloud mode (Tier 1 + Tier 3)
+The drone has its own internet uplink (for example a 4G modem) and reaches the cloud directly. A remote operator opens Mission Control in a browser and gets raw MAVLink over MQTT and video over WebRTC. The carrier network and the broker add to the path, so this is the slowest of the three. There is no WFB-ng link in this model.
 
-The drone has its own 4G modem and pushes telemetry and video to the cloud. A remote operator uses Mission Control at `command.altnautica.com` to monitor or control. It adds a carrier network and a relay to the path, so it is the slowest of the three. No ground station needed, but you lose the direct WFB-ng path.
+### Hybrid mode (tiers 1, 2 and 3)
 
-### Hybrid mode (Tier 1 + Tier 2 + Tier 3)
+The ground station receives WFB-ng for local flight and, when it has an uplink, relays the drone's MAVLink and video signaling on to the cloud for remote viewers. The ground station's `ados-cloud` service carries that relay; there is no separate relay unit.
 
-The ground station receives WFB-ng for local low-latency flight, and simultaneously bridges telemetry to the cloud for remote observers. This is the best-of-both-worlds setup for commercial operations.
+### Distributed receive (several tier 2 nodes)
 
-### Distributed Receive (multiple Tier 2 nodes)
-
-When one ground station cannot see the whole flight area (terrain, obstructions, long corridor), two or three Ground Agents can be deployed together. They form a small private mesh over batman-adv on a second USB WiFi dongle. One node takes the `receiver` role and serves as the hub; every other node is a `relay` that forwards WFB-ng fragments it heard. The receiver runs WFB-ng's native FEC combine across the merged stream and republishes the clean video on the same downstream pipeline a single-node setup uses.
-
-[Read the Mesh & Distributed Receive overview](/ground-agent/mesh-overview) for when to deploy mesh and how it works.
+When one ground station cannot see the whole flight area, two or three Ground Agents can work together. They form a small private mesh over batman-adv on a second USB Wi-Fi adapter. One node takes the `receiver` role; every other node is a `relay` that forwards the WFB-ng fragments it heard. The receiver combines the merged stream with WFB-ng's FEC and serves the video through the same downstream path a single node uses. See [Mesh overview](/ground-agent/mesh-overview).
 
 ## Protocol stack
 
-Each connection between components uses a specific protocol:
+| Connection | Transport | Format |
+|------------|-----------|--------|
+| Flight controller to agent | UART | MAVLink v2, or MSP for Betaflight and iNav |
+| Agent IPC (MAVLink) | Unix socket `/run/ados/mavlink.sock` | 4-byte big-endian length, then one MAVLink frame |
+| Agent IPC (vehicle state) | Unix socket `/run/ados/state.sock` | 4-byte big-endian length, then a msgpack body, about 10 Hz. See [Agent services](/architecture/agent-services#vehicle-state-socket) |
+| Encoder to radio | RTP (RFC 6184) on UDP 5600 | H.264 |
+| Air to ground, video | WFB-ng radio port 0 | FEC-encoded H.264 RTP |
+| Air to ground, telemetry | WFB-ng auxiliary lane (radio ports 2 and 3, UDP 5602/5603) | Multiplexed MAVLink, node status and identity |
+| Air to ground, hop control | WFB-ng radio port 1 (UDP 5803/5810) | Frequency-hop announce, presence beacon, hop acknowledge |
+| Ground to browser, video | WebRTC WHEP at `:8080/whep` (`ados-control`, relayed to MediaMTX on loopback) | H.264 RTP |
+| Ground to browser, telemetry | WebSocket on `:8765` (short-lived HMAC ticket) | Binary MAVLink |
+| Client to agent, control | HTTP REST on `:8080` (`ados-control`) | JSON |
+| Agent log and telemetry query | HTTP on `:8090` and a Unix socket (`ados-logd`, off by default) | JSON |
+| Agent to cloud, status | HTTPS POST `/agent/status` every 5 s | JSON |
+| Agent to cloud, commands | HTTPS GET `/agent/commands` every 5 s | JSON |
+| Agent to cloud, telemetry | MQTT `ados/{deviceId}/mavlink/tx` and `/rx` | Raw MAVLink frames, batched |
+| Agent to cloud, video | WebRTC, SDP relayed over MQTT | H.264 RTP |
 
-| Connection | Protocol | Format | Typical rate |
-|-----------|----------|--------|-------------|
-| FC to Agent | UART MAVLink v2 | Binary, CRC-16 | 10-50 Hz per message |
-| Agent IPC (MAVLink) | Unix socket `/run/ados/mavlink.sock` | 4-byte length prefix + binary | All FC messages |
-| Agent IPC (state) | Unix socket `/run/ados/state.sock` | JSON | 10 Hz |
-| Agent to WFB-ng | RTP (RFC 6184) on UDP 5600, read by `wfb_tx -u 5600` | H.264 in RTP | 4-8 Mbps |
-| WFB-ng air to ground | 5 GHz monitor mode (IEEE 802.11) | FEC-encoded packets | 4-8 Mbps |
-| Ground to browser (video) | WebRTC WHEP | H.264 RTP | 4-8 Mbps |
-| Ground to browser (telemetry) | WebSocket | JSON MAVLink | 10-30 Kbps |
-| GCS to agent (control) | HTTP REST on `:8080` (Rust front `ados-control`) | JSON | On demand |
-| GCS to agent (MAVLink) | WebSocket on `:8765` (HMAC ticket) | Binary MAVLink | Streaming |
-| Agent log/telemetry query | HTTP on `:8090` + unix socket (`ados-logd`) | JSON | On demand |
-| Agent to cloud (status) | HTTPS POST to Convex | JSON | Every 5 s |
-| Agent to cloud (telemetry) | MQTT (TLS) | JSON | 2 Hz |
-| Agent to cloud (video) | WebRTC P2P via MQTT signaling | H.264 RTP | 4-8 Mbps |
+The MQTT topics are listed on [Cloud infrastructure](/architecture/cloud-infrastructure#mqtt-topics).
 
-## Two repos, one system
+## Repositories
 
-The entire ADOS stack lives in two public repositories:
+| Repository | What it holds | Licence |
+|------------|---------------|---------|
+| [ADOSMissionControl](https://github.com/altnautica/ADOSMissionControl) | Mission Control: the web and desktop ground control station, its Convex backend and the self-host tools | GPLv3 |
+| [ADOSDroneAgent](https://github.com/altnautica/ADOSDroneAgent) | The Drone Agent and Ground Agent (one codebase, selected by profile), the installer and the plugin SDKs | GPLv3 |
+| [ADOSExtensions](https://github.com/altnautica/ADOSExtensions) | First-party Extensions and the plugin authoring packages | GPLv3 |
+| [ADOS-MCP](https://github.com/altnautica/ADOS-MCP) | The MCP server that lets AI assistants read and command ADOS nodes | MIT |
+| [ADOSAndroidGCS](https://github.com/altnautica/ADOSAndroidGCS) | The Android GCS app | GPLv3 |
+| [Documentation](https://github.com/altnautica/Documentation) | This documentation site | CC0 1.0 |
 
-| Repository | Language | Purpose |
-|-----------|----------|---------|
-| [altnautica/ADOSMissionControl](https://github.com/altnautica/ADOSMissionControl) | TypeScript (Next.js 16, React 19, Zustand 5) | Ground control station, web app |
-| [altnautica/ADOSDroneAgent](https://github.com/altnautica/ADOSDroneAgent) | Rust + Python hybrid | Drone agent and ground agent |
+Directory layouts for each repository are on [Project structure](/architecture/project-structure).
 
-Both are GPLv3. The agent runs on the drone and the ground station (same code, different profile). Mission Control runs in a browser and talks to both.
+## Key design decisions
 
-The agent is Rust-first. The long-running and safety-critical services (MAVLink router, cloud relay, video pipeline, radio, supervisor, logging, the HTTP front) are native Rust binaries; Python stays for AI and vision, the plugin runtime, setup, HAL detection, and some ground-station hardware glue. See [Agent Services](/architecture/agent-services) for the full breakdown.
+**Multi-process over single-process.** Each agent function runs as its own systemd unit with its own cgroup limits. A crashed video encoder does not take down the MAVLink router. See [Agent services](/architecture/agent-services).
 
-## Key architectural decisions
+**Rust for the long-running services.** The supervisor, MAVLink router, HTTP front, cloud relay, video pipeline, radio and ground receiver are native Rust binaries. Python remains for the residual API, setup, HAL board detection and AI sidecars.
 
-**Multi-process over single-process.** The drone agent runs each service (MAVLink, video, cloud, health) as a separate systemd unit with its own cgroup resource limits. A crashed video encoder does not take down the MAVLink proxy. See [Agent Services](/architecture/agent-services).
+**Web first for the operator.** Mission Control runs in a browser: WebSerial and WebSocket for the flight controller, WebRTC for video, the Gamepad API for sticks. An Electron build adds native UDP and TCP links on the desktop. See [State management](/architecture/state-management).
 
-**Web over native.** Mission Control is a browser app, not a desktop application. WebSerial for FC communication, WebRTC for video, Web Gamepad API for flight controls. Electron wraps it for desktop distribution with full Chromium capabilities. See [State Management](/architecture/state-management).
+**WFB-ng for the air link.** The radio runs in monitor mode and broadcasts FEC-encoded packets. There is no association, no handshake and no retransmission, so nothing waits on a lost packet. See [Video stack](/architecture/video-stack).
 
-**WFB-ng over WiFi.** The radio link uses WFB-ng (WiFi Broadcast next generation), which puts the radio in monitor mode and broadcasts FEC-encoded packets. This is not standard WiFi. There is no association, no handshake, no retransmission. Nothing waits on a retransmission, so the link has no latency tail to absorb, and the range reaches tens of kilometres with directional antennas. See [Video Stack](/architecture/video-stack).
+**Profile over fork.** The ground station is the same agent with a different profile. One installer, one upgrade path and one test matrix.
 
-**Profile over fork.** The ground station is not a separate codebase. It is the same ADOS Drone Agent with a different profile selected at boot. This means one install script, one upgrade path, and one test matrix. See [Agent Services](/architecture/agent-services).
+## Next steps
 
-## Latency
-
-ADOS has one measured latency figure and it is publish-side only: 74 ms mean,
-61 to 152 ms across samples, stamped after the encoder and read back from the
-drone's own RTSP endpoint. It covers the publish mux, the RTSP publish, MediaMTX
-on the drone and the readback demux. It excludes capture, encode, the radio, the
-ground half and the browser.
-
-**No glass-to-glass figure exists for ADOS.** Do not treat the publish-side
-number as end to end, and do not build a total by adding estimates to it. The
-full accounting, including what measuring the rest would take, is on
-[Video Stack](/architecture/video-stack#what-is-measured-and-what-is-not).
-
-## What is next
-
-- [MAVLink Protocol](/architecture/mavlink-protocol) for the protocol layer
-- [Agent Services](/architecture/agent-services) for the systemd architecture
-- [Video Stack](/architecture/video-stack) for the full video pipeline
-- [Cloud Infrastructure](/architecture/cloud-infrastructure) for the three relay layers
+<CardGroup cols={2}>
+  <Card title="Agent services" icon="server" href="/architecture/agent-services">
+    The supervisor, the IPC sockets and the HTTP front.
+  </Card>
+  <Card title="MAVLink protocol" icon="code" href="/architecture/mavlink-protocol">
+    How Mission Control parses and sends MAVLink and MSP.
+  </Card>
+  <Card title="Video stack" icon="video" href="/architecture/video-stack">
+    Camera to browser, hop by hop, with the measured latency.
+  </Card>
+  <Card title="Cloud infrastructure" icon="cloud" href="/architecture/cloud-infrastructure">
+    Convex status, MQTT relay and WebRTC signaling.
+  </Card>
+</CardGroup>

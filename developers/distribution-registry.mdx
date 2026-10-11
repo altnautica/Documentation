@@ -1,208 +1,133 @@
 ---
-title: "The hosted registry (planned)"
-description: "Planned discovery layer for plugins on top of local file install and URL install."
-lastUpdated: "2026-06-23"
+title: "Extension catalog and registry"
+sidebarTitle: "Catalog and registry"
+description: "Where operators browse extensions, how agents install and auto-update from the catalog, the registry API, and how submission works."
+keywords: ["ados", "plugin", "registry", "catalog", "auto-update", "submit"]
 ---
 
 <Warning>
-The hosted registry is not built yet. There is no live registry host,
-no `ados plugin search`, no Browse tab, and no registry REST API today.
-The two shipping distribution channels are
-[local file install](/developers/distribution-local-install) (a signed
-`.adosplug` from disk) and [URL install](/developers/distribution-url-install)
-(a signed `.adosplug` fetched over HTTPS). Everything below describes the
-planned design so plugin authors can build against a stable contract; the
-commands and endpoints on this page do not work yet.
+The catalog is live in Mission Control's **Extensions** tab and on altnautica.com/extensions, and agents check it daily for updates. Third-party submission is not open, and there is no `ados plugin search`.
 </Warning>
 
-The planned hosted registry would add discovery on top of local file
-install and URL install. It is a catalog plus a CDN plus a revocation
-feed. The trust chain (signed `.adosplug`, Ed25519, trusted key list)
-does not change.
+## Where the catalog appears
 
-## What the registry provides
+- **Mission Control.** A node's **Extensions** tab shows a searchable grid of catalog extensions with category filters (drivers, ui, ai, telemetry, tools) and an installed marker. **Install** on a card hands the archive URL and its sha256 pin to the agent (see [URL install](/developers/distribution-url-install)).
+- **The agent.** Each agent ships a bundled first-party catalog, served at `GET /api/v1/plugins/catalog` and shown in the agent dashboard.
+- **The website.** altnautica.com/extensions lists published extensions.
 
-| Surface | What it serves |
-|---------|----------------|
-| Catalog | Plugin id, versions, author, license, description, screenshots. |
-| Compatibility | Agent version range, GCS version range, board allowlist, profile (drone, ground-station). |
-| Search | Free text plus filters: category, board, license, signed-only, verified-only. |
-| Versions | Every published version with a download URL, signer key id, and changelog. |
-| Revocation | A daily-polled JSON feed of revoked keys and revoked plugin/version pairs. |
-| Author profile | Verification badge for publishers who proved domain ownership. |
+<Frame caption="The catalog grid in a node's Extensions tab.">
+  ![Extensions tab catalog grid with search box, category filters and an installed marker](/images/developers/registry-browse.png)
+</Frame>
 
-The default registry endpoint would be a host like
-`registry.example.com`. Closed deployments can point at their own
-host; see the self-host section below.
+## Install by id
 
-## Planned CLI
-
-These commands are part of the registry design and are not implemented
-today. Installing by id, searching, and update-against-registry land
-with the registry itself.
-
-### Search
-
-```sh
-ados plugin search thermal
-ados plugin search --category drivers
-ados plugin search --board rock-5c-lite
-ados plugin search --license GPL-3.0-or-later
+```bash
+ados plugin install com.altnautica.mavlink-gimbal-v2
+ados plugin info com.altnautica.mavlink-gimbal-v2
 ```
 
-Results show plugin id, latest version, author, risk band.
+`ados plugin install <id>` installs a built-in plugin or a first-party catalog entry by id, at the catalog's version. There is no `@version` syntax. `ados plugin info <id>` prints the manifest summary and runtime state.
 
-### Install by id
+## Automatic updates
 
-```sh
-ados plugin install com.example.thermal-camera
-ados plugin install com.example.thermal-camera@1.2.0
+Once a day the agent compares every enabled install with the newest version the registry publishes:
+
+| Outcome | When |
+|---------|------|
+| Silent install | Patch or minor bump, unchanged permissions and code surface, still-supported board, same signer, not pinned, auto-update on. The new archive must be pinned by sha256 and passes every install check; a refused archive rolls back to the installed version. |
+| Notify | Major bump, permission change, change to what the plugin can run (risk, services, spawn allowlist, binaries, payloads), a dropped board, or a different signer. The operator gets an `update_available` notice; a signer change needs a remove and a fresh install. |
+| Skipped | Pinned, auto-update off, nothing newer, or no registry row. |
+| Failed | Registry, download, archive, install or enable error, recorded on the install and retried at the next daily check. |
+
+The whole cycle is deferred while the vehicle counts as armed (unknown or stale state counts as armed). Control it per plugin:
+
+```bash
+ados plugin pin com.example.my-plugin 1.2.0
+ados plugin unpin com.example.my-plugin
+ados plugin auto-update com.example.my-plugin off
 ```
 
-Installing without a version pin picks the highest semver matching
-the agent's compatibility range.
+The same daily cycle fetches the registry's revocation list and merges it into the agent's local list; see [Revocation and incidents](/developers/revocation-and-incidents).
 
-### Show details
+## Registry API
 
-```sh
-ados plugin info com.example.thermal-camera
-ados plugin info com.example.thermal-camera --version 1.2.0
-```
+The registry is served from the Convex backend's HTTP routes:
 
-### Update
+| Route | Purpose |
+|-------|---------|
+| `GET /v1/plugins` | List catalog entries. Query: `category`, `license`, `signed_only`, `verified_only`, `q`, `limit`. |
+| `GET /v1/plugins/:id` | One plugin and its versions. |
+| `GET /v1/plugins/:id/:version` | One version. |
+| `GET /v1/plugins/:id/:version/download` | 302 redirect to the archive. |
+| `GET /v1/revoked.json` | Revoked signer keys and plugin versions. |
+| `POST /v1/plugins/submit` | Submit a signed archive (see below). |
 
-```sh
-ados plugin update com.example.thermal-camera
-ados plugin update --all
-```
-
-`update` re-runs the permission prompt only if the new version
-declares additional permissions. Otherwise it applies in place and
-restarts the plugin.
-
-### List installed against the registry
-
-```sh
-ados plugin outdated
-```
-
-Prints every installed plugin that has a newer version available.
-
-## Planned Mission Control Browse tab
-
-In the registry design, the browse surface lives on the node's
-**Extensions** tab alongside the installed list. Cards
-show icon, name, author with verification badge, install count,
-short description. Filters mirror the CLI: category, board
-compatibility (auto-suggested from the connected drone), license,
-signed-only (on by default), verified-only.
-
-The detail page shows the README, screenshots, version history, the
-permission set, the static-analyzer report, and the Install button.
-Clicking Install runs the same permission dialog as local file
-install.
-
-## Planned REST surface
-
-```
-GET  /v1/plugins
-GET  /v1/plugins/:id
-GET  /v1/plugins/:id/:version
-GET  /v1/plugins/:id/:version/download
-GET  /v1/revoked.json
-POST /v1/plugins/submit
-GET  /v1/me/submissions
-```
-
-Filters on the list endpoint:
-
-```
-?category=drivers
-?board=rock-5c-lite
-?license=GPL-3.0-or-later
-?signed_only=true
-?verified_only=true
-?search=thermal
-```
-
-The download endpoint redirects to the CDN URL. Clients that prefer
-to fetch directly can use the redirected URL with their own HTTP
-client; the archive is always the same signed bytes.
-
-`revoked.json` shape:
+`/v1/revoked.json` returns:
 
 ```json
 {
-  "schema_version": 1,
-  "fetched_at": "2026-04-30T12:00:00Z",
-  "revoked_keys": [
-    { "signer_key_id": "example-2025-X", "reason": "key_compromised" }
-  ],
-  "revoked_plugins": [
-    { "plugin_id": "com.example.foo", "version": "1.0.3", "reason": "malware_confirmed" }
-  ]
+  "signer_keys": ["example-2025-X"],
+  "plugin_versions": ["com.example.my-plugin@1.0.3"],
+  "generated_at": 1767225600000
 }
 ```
 
-The agent polls this endpoint every 24 hours when networking is
-available and caches the result under `/var/cache/ados/revocations/`.
+A self-hosted Convex backend serves its own catalog; see [Self-hosting](/developers/self-hosting/overview).
 
-## Pointing at a self-hosted registry
+## Submit a plugin
 
-Edit `/etc/ados/config.yaml`:
+Third-party submission is not open. This section describes the endpoint as it ships.
 
-```yaml
-registry:
-  url: "https://registry.internal.example.com"
-  poll_interval_hours: 24
-  ca_bundle: "/etc/ados/internal-ca.pem"   # optional
+`POST /v1/plugins/submit` takes a `multipart/form-data` body and a bearer token that resolves to a registry user. Required fields: `archive`, `plugin_id`, `version`, `category`, `manifest_yaml`, `signature`, `signer_key_id`, `payload_hash` and `agent_min_version`. Optional: `archive_sha256`, `name`, `description`, `license`, `homepage_url`, `repo_url`, `agent_max_version`, `gcs_min_version`. `category` must be one of `drivers`, `ui`, `ai`, `telemetry` or `tools`; anything else returns 400.
+
+`scripts/submit.sh` in ADOSExtensions derives every required field from a signed archive and sends it:
+
+```bash
+ADOS_REGISTRY_URL=https://cloud.example.com \
+ADOS_REGISTRY_TOKEN=<token> \
+  ./scripts/submit.sh extensions/my-plugin/dist/com.example.my-plugin-1.0.0.signed.adosplug \
+  --category drivers --repo-url https://github.com/acme/acme-extensions
 ```
 
-Then restart the supervisor:
+The equivalent `curl`:
 
-```sh
-sudo systemctl restart ados-supervisor
+```bash
+curl -X POST https://cloud.example.com/v1/plugins/submit \
+  -H "Authorization: Bearer <token>" \
+  -F archive=@com.example.my-plugin-1.0.0.signed.adosplug \
+  -F plugin_id=com.example.my-plugin \
+  -F version=1.0.0 \
+  -F category=drivers \
+  -F manifest_yaml=@manifest.yaml \
+  -F signature=<base64 signature> \
+  -F signer_key_id=acme-2026-A \
+  -F payload_hash=<sha256 hex> \
+  -F agent_min_version=0.100.0 \
+  -F license=GPL-3.0-or-later
 ```
 
-You can configure two registries (the default plus your own) for
-federation. The Browse tab shows results from both, badged with the
-source.
+The manifest fields the registry reads are top-level: `id`, `license`, `homepage`.
 
-```yaml
-registry:
-  endpoints:
-    - url: "https://registry.internal.example.com"
-      label: "Internal"
-    - url: "https://registry.example.com"
-      label: "Default"
-```
+### Review
 
-## Offline operation
+The registry scans the first 256 KiB of the archive for a short list of dangerous patterns (`eval(`, `exec(`, `__import__(`, `subprocess` calls, `os.system(`) and scores it at 100 minus 20 per finding. Run [`ados plugin lint`](/developers/linting) locally for the fuller check.
 
-The agent never blocks on the registry. If the network is down:
+| Status | Meaning |
+|--------|---------|
+| `pending` | Clean scan (score 80 or more, no findings) and an OSS licence. Ready for review. |
+| `queued_for_review` | Anything else. Queued for closer review. |
+| `approved` | Published by the registry operator. |
+| `rejected` | Declined by the registry operator. |
 
-- Local file install keeps working.
-- Already-installed plugins keep running.
-- The cached revocation list is consulted (older entries still
-  enforce until they age out at 30 days).
-- The Browse tab shows the last-cached catalog with a stale banner.
+Every submission waits for the registry operator; nothing auto-publishes. The registry stores your signature as submitted; it is verified on each agent at install against that agent's trusted keys. The verified-publisher badge is set by the registry operator. To pull a version, contact the registry operator.
 
-Operators on disconnected networks can run an internal mirror that
-periodically syncs the catalog and archives over an isolated
-transfer channel. The mirror serves the same REST surface and signed
-archives, so clients point at it the same way they would the default
-registry.
+## Next steps
 
-## What the registry does not do
-
-- Run the plugin code.
-- Grant permissions on the operator's behalf.
-- Override the trust list. A signer the agent does not trust still
-  fails install even if the registry served the archive.
-- Push installs. Every install is operator-initiated.
-
-## See also
-
-- [Submitting to the registry](/developers/submitting-to-the-registry)
-- [Signing keys](/developers/signing-keys)
-- [Revocation and incidents](/developers/revocation-and-incidents)
+<CardGroup cols={2}>
+  <Card title="Revocation and incidents" href="/developers/revocation-and-incidents">
+    Revoke a signer, an archive or a release.
+  </Card>
+  <Card title="Legal and licensing" href="/developers/legal-and-licensing">
+    Licences and distribution channels.
+  </Card>
+</CardGroup>

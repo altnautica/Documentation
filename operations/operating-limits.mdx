@@ -1,11 +1,8 @@
 ---
-title: "Operating Limits"
-description: "What has been measured on ADOS hardware, and what has not yet been characterised."
+title: "Operating limits"
+description: "What has been measured on ADOS hardware, what has not been characterised, and the limits the software enforces."
 icon: "gauge"
-lastUpdated: "2026-07-31"
 ---
-
-# Operating Limits
 
 This page separates two things that often get printed side by side: what the radio and the software are capable of in principle, and what has been measured on ADOS hardware. Only the second kind is on this page.
 
@@ -32,19 +29,21 @@ Two things they do establish. Zero decrypt errors alongside a recovered-FEC coun
 
 The agent reports a link as degraded once loss passes 50 percent or signal falls below -85 dBm.
 
-## Measured: latency
+## Measured: publish-side video latency
 
-Glass-to-glass video latency over the ground station's WiFi access point sits under 100 ms in normal operation. This is the figure the video pipeline is built around and is quoted elsewhere in these docs.
+One video latency figure has been measured, and it is not glass-to-glass. A timestamp probe injected after the encoder and read back from the drone's own RTSP stream measured a mean of **74 ms** (range 61 to 152 ms, 6 samples) on a sim bench at 1280x720, 30 fps, 4000 kbps.
 
-## Not yet characterised
+That figure covers only the publish mux, the RTSP publish, the media server on the drone, and the readback. It excludes capture, encode, the radio hop, the ground receive, the ground media server, and the browser, which are most of what an operator experiences. **There is no glass-to-glass latency figure for ADOS.** Do not add per-stage guesses to the 74 ms to manufacture one. The method and its caveats are on [Video stack](/architecture/video-stack).
 
-Each of the following would need controlled flight testing that has not been done. Do not plan against a number that is not here.
+## Not characterised
+
+Each of the following needs controlled flight testing that has not been done. Do not plan against a number that is not here.
 
 ### Range
 
-**Not characterised by our own flight testing.** The protocol and hardware are capable of long-range operation, and the [WFB-ng page](/drone-agent/wfb-ng) describes what the link is capable of with directional antennas. What has not happened is a measured range test on an ADOS aircraft producing a distance at which the link degrades, with the antennas, transmit power, and terrain recorded alongside it.
+**Not characterised by our own flight testing.** The [WFB-ng page](/drone-agent/wfb-ng) describes what the link can do with directional antennas. No measured range test on an ADOS aircraft exists that records the distance at which the link degrades with the antennas, transmit power, and terrain alongside it.
 
-Range depends on antenna gain and pattern on both ends, transmit power, terrain and line of sight, interference, and the regulatory limit where you fly. Any single number without those conditions attached would not transfer to your setup.
+Range depends on antenna gain and pattern on both ends, transmit power, terrain and line of sight, interference, and the regulatory limit where you fly. A single number without those conditions attached would not transfer to your setup.
 
 If you need a range figure you can rely on, fly it yourself, incrementally, with the aircraft in sight and a working RC failsafe.
 
@@ -62,60 +61,65 @@ If you need a range figure you can rely on, fly it yourself, incrementally, with
 
 ### Client capacity
 
-Roughly 3 to 4 devices can stream video simultaneously over the ground station's 2.4 GHz access point before throughput degrades. This is a working figure from bench use rather than a characterised limit. Telemetry over WebSocket is far lighter and supports more clients.
+Roughly 3 to 4 devices can stream video at once over the ground station's 2.4 GHz access point before throughput degrades. This is a working figure from bench use, not a characterised limit. Telemetry over WebSocket is far lighter and supports more clients.
 
-## Limits ADOS does enforce
+## Limits ADOS enforces
 
-These are real and in the code, unlike the figures above.
+These are in the code, unlike the figures above.
 
 | Limit | Value | Why |
 |---|---|---|
-| Transmit power floor | 5 dBm | Bring-up default |
-| Transmit power ceiling | 15 dBm | Configured maximum. The margin above it is a brownout guard, not a measured threshold |
+| Transmit power default | 5 dBm (`video.wfb.tx_power_dbm`) | Bring-up default |
+| Transmit power ceiling | 15 dBm (`video.wfb.tx_power_max_dbm`) | Configured maximum. The margin above it is a brownout guard, not a measured threshold |
 | Degraded link threshold | 50 percent loss, or -85 dBm | Reporting threshold |
 | Flight controller heartbeat timeout | 4 seconds | Past this the link is reported as not alive, and vehicle telemetry is withheld rather than shown frozen |
+| Armed state freshness | 3 seconds | Older vehicle state counts as armed for the [armed interlock](/operations/safety#what-the-agent-refuses-while-armed) |
 | Default takeoff altitude | 10 m | Used when a takeoff command carries no altitude |
-| Takeoff altitude from an extension | 1 m to 120 m | Clamped. Extensions cannot command arm, disarm, motor test, calibration, or reboot at all |
+| Takeoff altitude from an Extension | 1 m to 120 m | Clamped. Extensions cannot command arm, disarm, motor test, calibration, or reboot at all |
 | Video recording segment | 30 minutes | Maximum duration before a new segment starts |
-| Log store size | 1 GB | Includes the write-ahead log. Oldest data is evicted first |
-| Log retention | 30 days raw, 365 days for rollups | Rollups survive the raw data they were derived from |
-| Cellular data cap | 5 GB per period by default | Warns at 80 percent, throttles to 256 kbps at 95 percent, blocks at 100 percent |
+| Black Box store size | 1 GB, including the write-ahead log | Oldest raw data is evicted first. Applies only when `logging.store.enabled` is on; the store is off by default |
+| Black Box retention | 30 days raw, 365 days for rollups | Rollups survive the raw data they were derived from |
+| Cellular data cap | 5 GB per month by default | Warns at 80 percent; at 95 percent the cloud relay stops forwarding video and keeps telemetry; at 100 percent it sends heartbeats only |
 
 ### Video defaults
 
-The primary camera defaults to **1280x720 at 30 fps, 4000 kbps**. On a fleet, non-primary
-aircraft stream a thumbnail at **320x180 at 1 fps, 50 kbps** instead, so that adding aircraft
-costs a small fraction of the channel rather than another full video stream.
+The full-rate (hero) profile defaults to **1280x720 at 30 fps, 4000 kbps** (`video.camera`). The thumbnail profile defaults to **320x180 at 1 fps, 50 kbps** (`video.camera.thumbnail`), so that adding aircraft costs a small fraction of the channel rather than another full video stream. A drone on the WFB radio boots on its thumbnail profile, so a fleet powering up together does not flood the channel. It runs hero while anyone holds a lease on it: Mission Control takes and renews a lease (5 to 120 seconds, 30 by default) while a detail view such as the cockpit plays the drone's feed, and the drone drops back to thumbnail once the last lease is released or expires. Fleet tiles never take a lease. While a vision engine is attached, the agent holds its own vision lease, so the vision tap never reads a thumbnail-rate stream.
 
 ### Fleet size
 
 The radio addressing scheme supports up to **24 aircraft** on one ground station.
 
 <Warning>
-Do not read 24 as a supported configuration at default settings. At the default modulation
-rate, one full-rate video stream alone occupies roughly half the channel, and a fleet of 24
-would need more airtime than the channel has.
+Do not read 24 as a supported configuration at default settings. At the default modulation rate, one full-rate video stream alone occupies roughly half the channel, and a fleet of 24 would need more airtime than the channel has.
 
-**The committed fleet size at default settings is 8**: one aircraft streaming full-rate video
-and seven on thumbnails. Reaching 24 requires the adaptive modulation ladder to be holding a
-higher rate, which depends on signal quality and is not guaranteed at range.
+**The committed fleet size at default settings is 8**: one aircraft streaming full-rate video and seven on thumbnails. Reaching 24 requires the adaptive modulation ladder to be holding a higher rate, which depends on signal quality and is not guaranteed at range.
 </Warning>
 
 ### Guided setpoints decay
 
-Anything commanding the aircraft through guided setpoints, including follow behaviours and
-swarm control, has to keep sending. Most autopilots brake roughly **3 seconds** after the last
-setpoint and then run their own failsafe. A single setpoint does not hold; it decays.
+Anything commanding the aircraft through guided setpoints, including follow behaviours and swarm control, has to keep sending. Most autopilots brake roughly **3 seconds** after the last setpoint and then run their own failsafe. A single setpoint does not hold; it decays.
 
-This is a property of the flight controller, not of ADOS, and it is the reason a companion-side
-behaviour that stops emitting causes the aircraft to hold position rather than continue.
+This is a property of the flight controller, not of ADOS, and it is the reason a companion-side behaviour that stops emitting causes the aircraft to hold position rather than continue.
 
-The transmit power clamp is a hardware protection, not a regulatory one, and it stays in force in every operating region posture. Raising transmit power past what the adapter's power supply can carry does not increase range, it drops the link. If you are running an adapter on a powered hub or external 5 V rather than host power, set `video.wfb.topology` accordingly so the brownout warning reflects your setup.
+### Transmit power and brownout
 
-The exact power at which a given adapter browns out has not been characterised. It depends on the adapter, the cable and the supply, so treat the ceiling as the tested configuration rather than a measured cliff.
+The transmit power clamp is a hardware protection, not a regulatory one, and it stays in force in every operating region posture. Raising transmit power past what the adapter's power supply can carry does not increase range, it drops the link. If you run an adapter on a powered hub or external 5 V rather than host power, set `video.wfb.topology` accordingly so the brownout warning reflects your setup.
 
-## Where to next
+The exact power at which a given adapter browns out has not been characterised. It depends on the adapter, the cable, and the supply, so treat the ceiling as the tested configuration rather than a measured cliff.
 
-- [Safety](/operations/safety) - what to configure before the first flight.
-- [Regulatory](/operations/regulatory) - the limits that are legal rather than physical.
-- [WFB-ng](/drone-agent/wfb-ng) - the radio link, its configuration, and its counters.
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Regulatory" icon="scale-balanced" href="/operations/regulatory">
+    The limits that are legal rather than physical.
+  </Card>
+  <Card title="Hardening" icon="lock" href="/operations/hardening">
+    The credentials a node holds and how to lock it down.
+  </Card>
+  <Card title="Video stack" icon="video" href="/architecture/video-stack">
+    How the latency figure was measured and what it covers.
+  </Card>
+  <Card title="WFB-ng" icon="tower-broadcast" href="/drone-agent/wfb-ng">
+    The radio link, its configuration, and its counters.
+  </Card>
+</CardGroup>

@@ -1,24 +1,26 @@
 ---
 title: "State and storage"
-description: "Where a plugin keeps state: in-memory and per-plugin disk. Paths, atomicity, cleanup on uninstall."
-lastUpdated: "2026-06-23"
+description: "Where a plugin keeps state: process memory, its data directory and cloud records. Paths, atomicity and cleanup on remove."
 ---
 
-An agent plugin has two durable places to keep state today: process
-memory and its per-plugin data directory. Pick the right one for the
-data; do not pile everything into one.
+An agent plugin keeps state in process memory and in its per-plugin data
+directory, and a plugin granted `cloud.records` can also keep small records
+in the operator's cloud account. Pick the right one for the data; do not
+pile everything into one.
 
-## The two layers
+## The layers
 
 | Layer | Where | Survives | Use for |
 |-------|-------|----------|---------|
 | Ephemeral | RAM, in your plugin process | Until next restart | Counters, caches, in-flight subscriptions. |
-| Per-plugin disk | `/var/ados/plugin-data/<id>/` | Restarts and upgrades. Persists across remove. | Local config, calibration, log files, cached models. |
+| Per-plugin disk | `/var/ados/plugin-data/<id>/` | Restarts and upgrades. Deleted on remove unless `--keep-data`. | Local config, calibration, sample files, cached models. |
+| Cloud records | The operator's cloud account | Until the plugin deletes them | Small JSON shared between the agent half, the GCS half and other devices. |
 
-## Layer 1: ephemeral
+## Ephemeral state
 
-Just normal Python module state. The supervisor runs one process per
-plugin, so a `dict` or a `list` is your ephemeral store.
+Normal Python module state. The host runs one process per plugin (per
+drone, for per-drone plugins), so a `dict` or a `list` is your ephemeral
+store.
 
 ```python
 class MyPlugin:
@@ -29,10 +31,10 @@ class MyPlugin:
 This is the fastest layer and the least durable. Use it for anything you
 can recompute on restart.
 
-## Layer 2: per-plugin disk
+## Per-plugin disk
 
-Every plugin gets a writable data directory. The runner hands the path
-to your plugin on the context:
+Every plugin gets a writable data directory. The runner hands the path to
+your plugin on the context:
 
 ```python
 async def on_start(self, ctx) -> None:
@@ -41,22 +43,25 @@ async def on_start(self, ctx) -> None:
 ```
 
 The context also carries `ctx.config_dir`
-(`/var/ados/plugin-data/<id>/config/`) and `ctx.temp_dir`
-(`/run/ados/plugins/<id>`). When the plugin is bound to a specific drone,
-`ctx.data_dir` is scoped per drone
-(`/var/ados/plugin-data/<id>/drones/<agent-id>/`), while `ctx.config_dir`
-stays shared and `ctx.agent_id` carries the drone's id.
+(`/var/ados/plugin-data/<id>/config/`) and `ctx.temp_dir`, which is
+`/tmp/<id>` inside the unit's private `/tmp` and is gone when the process
+exits. When the plugin is bound to a specific drone, `ctx.data_dir` is
+scoped per drone (`/var/ados/plugin-data/<id>/drones/<agent-id>/`), while
+`ctx.config_dir` stays shared and `ctx.agent_id` carries the drone's id.
 
-The systemd unit grants write access only to `/var/ados/plugin-data`,
-`/var/log/ados/plugins`, and `/run/ados/plugins`. Writes elsewhere fail
-with `EROFS`.
+The unit can write only its own `/var/ados/plugin-data/<id>/`, the shared
+plugin log directory and its private `/tmp`. Another plugin's data
+directory and `/run/ados` are not writable, and writes elsewhere fail.
+`filesystem.host` adds `/srv`, `/mnt`, `/media` and `/boot`. The full
+sandbox is on
+[Agent runtime and sandbox](/developers/agent-plugin-deep-dive#sandbox-and-identity).
 
 ### Atomicity
 
-There is no transaction primitive. For a safe single-file write, write to
-a `<name>.tmp`, fsync, and rename over the target. For anything needing
-ACID, use a single JSON file you rewrite atomically or SQLite (`sqlite3`
-is in the Python standard library).
+There is no transaction primitive. For a safe single-file write, write to a
+`<name>.tmp`, fsync, and rename over the target. For anything needing ACID,
+use a single JSON file you rewrite atomically or SQLite (`sqlite3` is in
+the Python standard library).
 
 There is only one plugin process, so the only concurrency is your own
 asyncio tasks. Add a lock if you fan out writes.
@@ -72,11 +77,9 @@ asyncio tasks. Add a lock if you fan out writes.
 ## Configuration
 
 The agent context exposes config two ways. `ctx.config` is the static
-config dict the host delivered at start (read from
-`/var/ados/plugin-data/<id>/config.yaml`, or
-`config/<agent-id>.yaml` when the plugin is bound to a drone).
-`ctx.config_kv` is the live key-value facade. Its read order is drone
-scope when bound, then global, then your default:
+config dict the host delivered at start. `ctx.config_kv` is the live
+key-value facade. Its read order is drone scope when bound, then global,
+then your default:
 
 ```python
 # Live read and write (async).
@@ -88,16 +91,16 @@ limit = ctx.config_kv.static("threshold_v", 3.5)
 ```
 
 `set` defaults to `scope="drone"`; pass `scope="global"` to write the
-fleet-wide value. On the GCS half, the host pushes a `config.changed`
-event the plugin subscribes to with `ctx.config.onChange`.
+fleet-wide value. On the GCS half, subscribe to changes with
+`ctx.config.onChange`.
 
 ### Per-drone plugins
 
-Set `per_drone_config: true` in the `agent:` block of `manifest.yaml`
-(schema v2) and the supervisor runs one process instance per connected
-drone, each with its own `ctx.agent_id` and its own scoped `ctx.data_dir`.
-Read each drone's live settings through `ctx.config_kv` and fall back to
-the static dict for unset keys:
+Set `per_drone_config: true` in the `agent:` block of `manifest.yaml` and
+the host runs one process instance per connected drone, each with its own
+`ctx.agent_id` and its own scoped `ctx.data_dir`. Read each drone's live
+settings through `ctx.config_kv` and fall back to the static dict for unset
+keys:
 
 ```yaml
 # manifest.yaml (excerpt)
@@ -120,41 +123,56 @@ async def on_start(self, ctx) -> None:
     self._config = {**static, **live}
 ```
 
-The shipped Follow-Me extension uses this pattern: live per-drone keys
-override the static defaults each control loop. A write with the default
-`scope="drone"` updates only the bound drone; `scope="global"` updates
-the fleet-wide default the other instances fall back to.
+The Follow-Me extension uses this pattern: live per-drone keys override the
+static defaults each control loop. A write with the default `scope="drone"`
+updates only the bound drone; `scope="global"` updates the fleet-wide
+default the other instances fall back to.
 
-## Cloud-visible state
+## Cloud records
 
-The GCS capability catalog includes `cloud.read`, which reads a small set
-of public cloud queries. There is no plugin cloud write, so keep durable
-plugin state in the per-plugin data directory and surface readings to the
-operator through telemetry and notifications.
+Request the `cloud.records` capability to keep small JSON records in the
+signed-in operator's cloud account. Records are namespaced to your plugin
+by the host, so no other plugin can read them. A record body is at most
+64 KiB of JSON, and a plugin holds at most 5000 records.
+
+The GCS half uses `ctx.records`:
+
+```typescript
+await ctx.records.put("surveys", "field-12", { area_m2: 5400 }, { deviceId });
+const one = await ctx.records.get("surveys", "field-12");
+const page = await ctx.records.list({ collection: "surveys", limit: 50 });
+await ctx.records.remove("surveys", "field-12");
+```
+
+Collection names are 1-64 characters of `[a-z0-9_.-]`. Pass `deviceId` to
+tie a record to one node, and filter `list` by it. A refused call rejects
+with a `HostError` whose message is `unavailable` (signed out or offline),
+`invalid_args`, `too_large`, `limit_reached`, `not_permitted` or `failed`.
+
+The agent half writes with the `cloud.records.put` host method under the
+same grant. Each record carries `writtenBy` (`gcs` or `agent`) and
+`updatedAt`, so either half can tell who wrote last.
 
 ## Cleanup on remove
 
-`ados plugin remove <id>` does the following:
+`ados plugin remove <id>`:
 
-1. Disable the plugin if it is running or enabled. This stops the unit.
-2. Delete the unit file (and any declared extra-service units). Reload
-   the daemon.
-3. Remove the install directory `/var/ados/plugins/<id>/`.
-4. Delete the plugin's log file under `/var/log/ados/plugins/`, unless
-   `--keep-data` is passed.
-5. Drop the install entry from the state file.
+1. Disables the plugin if it is running or enabled, which stops its units.
+2. Deletes the main unit and any declared service units.
+3. Removes the install directory `/var/ados/plugins/<id>/` and the install
+   entry from the state file.
+4. Unless `--keep-data` is passed, deletes `/var/ados/plugin-data/<id>/`
+   (including per-drone subdirectories and `config/` files), the plugin's
+   logs, and its system user.
 
-`--keep-data` preserves the plugin's log file. The data directory under
-`/var/ados/plugin-data/<id>/` (including any per-drone subdirectories and
-`config/<agent-id>.yaml` files) is never deleted by remove, with or
-without the flag, so reinstalling the same plugin id can pick up its
-prior data. If you want a clean slate, clear the data directory yourself.
+Pass `--keep-data` to keep both the data directory and the logs, so a later
+install of the same plugin id picks up its prior data.
 
 ## Migration between versions
 
-Plugins own their own data migrations. There is no SDK migration helper,
-so carry a small version marker in your data directory and migrate
-forward on start:
+Plugins own their own data migrations. There is no SDK migration helper, so
+carry a small version marker in your data directory and migrate forward on
+start:
 
 ```python
 async def on_start(self, ctx) -> None:
@@ -165,21 +183,23 @@ async def on_start(self, ctx) -> None:
         marker.write_text("2")
 ```
 
-Handle skipped versions; an upgrade can jump more than one version at
-once. Forward migration is the contract; reading new data with an older
-plugin is best-effort.
+Handle skipped versions; an upgrade can jump more than one version at once.
+Forward migration is the contract; reading new data with an older plugin is
+best-effort.
 
 ## What not to put on disk
 
 - Secrets you did not generate yourself. The host manages pairing keys,
-  MAVLink session keys, and signer keys.
+  MAVLink session keys and signer keys.
 - Large media. Anything over a gigabyte belongs in a recording, not the
-  data dir.
-- Operator PII without consent. The data dir is not encrypted at rest by
-  default.
+  data directory.
+- Operator personal data without consent. The data directory is not
+  encrypted at rest.
 
-## See also
+## Next steps
 
-- [Manifest reference](/developers/manifest)
-- [Permissions](/developers/permissions)
-- [Performance and budgets](/developers/performance-and-budgets)
+<CardGroup cols={2}>
+  <Card title="Versioning and updates" icon="code-branch" href="/developers/versioning-and-updates">
+    Semver, compatibility ranges, automatic updates and rollback.
+  </Card>
+</CardGroup>

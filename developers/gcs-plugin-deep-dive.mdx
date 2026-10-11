@@ -1,77 +1,61 @@
 ---
 title: "GCS plugin deep dive"
-description: "iframe sandbox, postMessage RPC, capability tokens, the named UI slots, slot orchestrator, CSP rules."
-lastUpdated: "2026-06-23"
+sidebarTitle: "GCS runtime"
+description: "How Mission Control runs a plugin's GCS half: the sandboxed iframe, frame CSP, postMessage RPC, capability checks and the 13 UI slots."
 ---
 
-The GCS half of a plugin runs inside a sandboxed iframe served by
-Mission Control. Same envelope shape as the agent half, different
-transport (postMessage instead of msgpack-over-Unix-socket), same
-capability re-resolution.
+The GCS half of a plugin runs inside Mission Control as a sandboxed iframe. It talks to the host page over postMessage RPC, and the host re-checks every call against the plugin's granted capabilities. The envelope shape matches the agent half; only the transport differs.
 
-One slot is the exception: `flight.skill` registers a cockpit Skill
-into the Skill Bar registry rather than mounting an iframe. Every
-other slot in this page is iframe-backed.
+One slot is the exception: `flight.skill` registers a cockpit Skill into the Skill Bar instead of mounting an iframe.
 
 ## Iframe sandbox
 
-Every GCS plugin gets one iframe per host instance. The iframe is
-mounted with the strictest sandbox flags that still allow
-JavaScript and lazy-load:
+Every iframe-backed contribution gets its own frame. The host fetches the bundle, wraps it in a frame document and loads that document from a `blob:` URL it mints, so the frame has a null origin:
 
 ```html
 <iframe
-  src="/plugins/com.example.power/index.html"
+  src="blob:..."
   sandbox="allow-scripts"
+  allow=""
   title="Power"
 ></iframe>
 ```
 
-The Content Security Policy is delivered as a response header on the
-plugin document, not as an iframe attribute. The header is covered in
-the next section.
+The host loads the bundle from a `blob:` URL and injects the CSP as a `<meta http-equiv>` at the top of the frame document; a blob document would otherwise inherit the app's CSP. The empty `allow` attribute grants no device or browser features.
 
-The flags that are deliberately absent:
+The sandbox flags that are deliberately absent:
 
-- `allow-same-origin` is **not** set. The iframe runs in a null
-  origin. It cannot read host cookies, localStorage, or the host's
-  document.
-- `allow-top-navigation` is **not** set. The plugin cannot redirect
-  the parent window.
-- `allow-forms` is **not** set. The plugin renders forms using its
-  own React tree, not browser-native form submission.
-- `allow-popups` is **not** set. No new windows.
+- `allow-same-origin`: the frame cannot read host cookies, local storage or the host document.
+- `allow-top-navigation`: the plugin cannot redirect the parent window.
+- `allow-forms`: no browser-native form submission.
+- `allow-popups`: no new windows.
 
-The plugin can run JavaScript, fetch its own bundle, render its
-own UI, and call back to the host via postMessage. That is all.
+<Note>
+First-party plugins signed by a trusted first-party key may set `gcs.isolation: inline` (module in the host page). Third-party plugins are always iframe.
+</Note>
 
-## CSP
+## Frame CSP
 
-The host serves each plugin from `/plugins/<id>/` with a per-plugin
-Content Security Policy:
+Every plugin frame carries the same policy, whatever capabilities the plugin holds:
 
-```
-Content-Security-Policy:
-  default-src 'self';
-  script-src 'self' 'wasm-unsafe-eval';
-  style-src 'self' 'unsafe-inline';
-  img-src 'self' blob: data:;
-  connect-src 'self';
-  font-src 'self' data:;
-  frame-ancestors 'self';
-  base-uri 'none';
-  form-action 'none';
+```text
+default-src 'none';
+script-src 'unsafe-inline';
+style-src 'unsafe-inline';
+img-src data: blob:;
+connect-src 'none';
+webrtc 'block';
+form-action 'none';
+base-uri 'none'
 ```
 
-`connect-src 'self'` means a plugin cannot fetch from the public
-internet. If your plugin needs an outbound HTTP call, route it
-through the agent half with the `network.outbound` capability.
-The GCS half must not be your network egress point.
+`connect-src 'none'`: the frame cannot open any network connection, not even to the GCS origin. All I/O goes through bridge methods; images arrive as data/blob URLs. WebRTC is removed from the frame. A guard script runs before the bundle, deletes every `RTC*` interface from the frame's global and refuses nested frames, which would otherwise hand the plugin a fresh global with those interfaces restored.
+
+`script-src` has no `'unsafe-eval'`. Ship the bundle as a single-file ES module with no `eval`, `new Function` or dynamic `import()`. If the plugin needs outbound network access, put that work in the agent half under the `network.outbound` capability.
 
 ## postMessage RPC envelope
 
-Same shape as the agent IPC envelope, just delivered via
-`window.parent.postMessage`:
+The frame and the host exchange envelopes through `window.parent.postMessage`:
 
 ```ts
 interface RpcEnvelope {
@@ -82,88 +66,53 @@ interface RpcEnvelope {
   args: unknown;
   version: 1;
   error?: { code: string; message: string };
-  token?: string;              // per-RPC capability token, see below
+  token?: string;              // per-RPC capability token
 }
 ```
 
-The `token` field carries a per-RPC capability token (base64-encoded
-JSON claims) when the host bridge runs with a token validator. The
-validator checks expiry, plugin id, agent id, capability membership,
-and signature before the call dispatches. When the bridge runs without
-a validator (legacy hosts and unit tests), the field is optional.
+When the host bridge runs with a token validator, every envelope carries a `token` (base64-encoded JSON claims). The validator checks expiry, plugin id, agent id, capability membership and signature before the call dispatches.
 
-The plugin posts to `window.parent` with `targetOrigin` set to the
-host origin. The host posts back to the iframe's `contentWindow`
-with `targetOrigin` set to the null origin (`"*"`, justified
-because the iframe is sandboxed and there is no privileged origin
-to leak to).
-
-The SDK hides this. You write:
+The SDK hides the envelope. You write:
 
 ```ts
-const mission = await ctx.mission.read("active");
+const state = await ctx.mission.read("active");
 ```
 
-and the SDK builds the envelope, attaches `version: 1`, generates
-the id, awaits the correlated response, and throws `HostError` on
-error envelopes. For methods without a high-level facade, drop down to
-`ctx.client.request(method, capability, args)`.
+and the SDK builds the envelope, generates the id, awaits the correlated response and throws `HostError` on an error envelope. For methods without a facade, call `ctx.client.request(method, capability, args)`.
 
-## Capability tokens on the GCS side
+## Capability checks
 
-Every privileged RPC carries `capability` in the envelope. The
-host bridge (running on the parent page) re-resolves the required
-capability from `method` and `args` via `resolveRequiredCapability`,
-then checks the granted set for that plugin. The plugin cannot lie
-its way past a missing grant; the host ignores the envelope's
-`capability` field for authorization.
+The host bridge re-resolves the required capability from `method` and `args` and checks it against the plugin's granted set. It ignores the envelope's `capability` field for authorization, so a plugin cannot claim its way past a missing grant.
 
-When a token is present, its `grantedCapabilities` claim is the
-authoritative set, and the in-memory granted set must include the
-capability too, so a revocation applied in the GCS store takes effect
-before a fresh token is minted. A required capability outside the
-token claim returns `capability_denied`; one outside the in-memory
-set returns `permission_denied`.
+When a token is present, its `grantedCapabilities` claim is authoritative, and the in-memory granted set must also include the capability, so a revocation in Mission Control applies before a fresh token is minted. A capability outside the token claim returns `capability_denied`; one outside the in-memory set returns `permission_denied`.
 
-The bridge mirrors the agent-side logic exactly so plugin authors
-debug one model, not two.
+Operator-confirmed methods (`command.send`, `mission.write`) add their own gates after the capability check. See [Mission plugins](/developers/mission-plugins) for the mission write gates.
 
-## The named UI slots
+## UI slots
 
-There are 12 slots. Nine are fleet-scoped. The other three
-(`node.detail.tab`, `cockpit.panel`, and `flight.skill`) are per-node
-scoped: their contribution is bound to the currently-selected node and is
-torn down and re-mounted when the operator switches nodes. A per-node
-contribution receives a capability token whose `agentId` claim matches
-the selected node, so cross-node RPCs are rejected at the bridge.
+There are 13 slots: 7 fleet-scoped and 6 per-node. A per-node contribution is bound to the selected node and is torn down and re-mounted when the operator switches nodes. Its capability token carries an `agentId` claim for that node, so the bridge rejects cross-node calls.
 
 | Slot id | Scope | Where it renders |
 |---------|-------|------------------|
 | `fc.tab` | Fleet | Tab inside the flight controller view. |
 | `hardware.tab` | Fleet | Tab on the Hardware page. |
-| `mission.template` | Fleet | Entry in the mission template picker. |
-| `map.overlay` | Fleet | Geometry drawn on the map view. |
+| `mission.template` | Fleet | Entry in the planner's pattern editor. |
+| `map.overlay` | Fleet | Layer drawn on the map view. |
 | `video.overlay` | Fleet | Layer on top of the live video pane. |
-| `notification.channel` | Fleet | Channel in the GCS notification center. |
+| `notification.channel` | Fleet | Channel in the notification center. |
 | `settings.section` | Fleet | Section on the Settings page. |
-| `connection.protocol` | Fleet | Custom protocol in the Connect dialog. |
-| `recording.processor` | Fleet | Post-flight processing step over recordings. |
-| `node.detail.tab` | Per-node | Per-node tab inside the node detail panel (any profile). |
-| `cockpit.panel` | Per-node | Panel in the in-flight cockpit quick-settings surface. |
-| `flight.skill` | Per-node | A Skill registered into the cockpit Skill Bar, bindable to a hotkey or gamepad button. |
+| `node.detail.tab` | Per-node | Tab in the node detail panel. |
+| `cockpit.panel` | Per-node | Panel in the cockpit quick-settings surface. |
+| `cockpit.widget` | Per-node | Iframe in a cockpit widget zone. |
+| `flight.skill` | Per-node | Skill in the cockpit Skill Bar, bindable to a hotkey or gamepad button. No iframe. |
+| `node.agent.page` | Per-node | Page in a node's Agent sidebar. |
+| `node.surface` | Per-node | Top-level node-detail surface. |
 
-`flight.skill` is the one slot that does not mount an iframe. The
-plugin registers a Skill keyed to the active drone; the cockpit's arm
-and confirmation gates still apply on activation. Every other slot
-renders an iframe.
+`node.detail.tab`, `node.agent.page` and `node.surface` are narrowed by node profile: a contribution with a `profile` list mounts only on nodes of those profiles. An absent or empty list means every profile.
 
-Each iframe-backed slot has a contract: required props the host
-injects, the size and layout it lives in, the events it can hand back
-to its parent. Slot contracts live in
-[`@altnautica/plugin-sdk`'s slot types](/developers/sdk-typescript).
+`flight.skill` registers a Skill keyed to the active drone; the cockpit's arm and confirmation gates still apply when it runs.
 
-A plugin contributes to a slot by declaring a `panels[]` entry in
-the manifest:
+Declare contributions under `gcs.contributes` in the manifest. The full set of keys and their fields is in [Contribution points](/developers/contribution-points).
 
 ```yaml
 gcs:
@@ -176,26 +125,15 @@ gcs:
         order: 30
 ```
 
-Multiple plugins can target the same slot. The `order` field is a hint
-the host carries for sorting where a slot chooses to apply it.
+Several plugins can target the same slot. `order` is a sorting hint the slot applies where it sorts.
 
 ## Slot orchestrator
 
-The host runs a slot orchestrator. It reads the enabled plugins from the
-install set, looks at each plugin's `contributes.panels` list, and mounts
-the plugin's bundle into the matching slot. Which panel renders in which
-slot is declared in the manifest, not chosen at runtime by the plugin.
+The host reads the enabled plugins, collects each plugin's contributions and mounts the bundle into the matching slot. The manifest decides which panel renders in which slot; the plugin cannot choose at runtime.
 
-Before a contribution mounts, the slot applies a capability gate: a
-contribution only renders when its granted capabilities include the
-slot's matching `ui.slot.<id>` capability. A contribution missing that
-grant is dropped, the operator gets a one-shot warning toast, and the
-denial is logged. The grant is fixed at install time, so the install
-record is the source of truth.
+Before a contribution mounts, the slot checks that the plugin holds the matching `ui.slot.<id>` capability (for example `ui.slot.fc-tab`). A contribution without that grant is dropped, the operator sees a one-time warning toast, and the denial is logged.
 
-The bundle's single entry point is `definePlugin`. The SDK arranges the
-`mount` call once the iframe document is ready, handing your code a
-`PluginContext` and the plugin's id and version:
+The bundle's entry point is `definePlugin`. The SDK calls `mount` once the frame document is ready, with a `PluginContext` and the plugin's id and version:
 
 ```tsx
 import { definePlugin } from "@altnautica/plugin-sdk";
@@ -205,9 +143,9 @@ definePlugin({
   id: "com.example.battery",
   version: "0.1.0",
   mount(ctx, info) {
-    // ctx exposes telemetry, command, notifications, recording,
-    // mission, config, events, theme, and i18n. info carries id
-    // and version.
+    // ctx exposes client, telemetry, perception, command, notifications,
+    // recording, mission, config, events, records, theme and i18n.
+    // info carries id and version.
     mountUI(ctx);
   },
   unmount(ctx) {
@@ -216,11 +154,9 @@ definePlugin({
 });
 ```
 
-## Themeing
+## Theming
 
-The host pushes a `theme.changed` event with a flat record of CSS
-variables on mount and on every theme toggle. Apply them in the
-plugin's root:
+The host pushes a flat record of CSS variables on mount and on every theme change. Apply them where your UI needs them:
 
 ```ts
 ctx.theme.onChange((vars) => {
@@ -230,28 +166,40 @@ ctx.theme.onChange((vars) => {
 });
 ```
 
-The SDK does not auto-apply because plugins choose the granularity
-(full root, scoped panel, or none).
+The SDK does not apply them for you, so you choose the scope (whole document, one panel, or none).
 
-## Error envelopes
+## Error codes
 
-The SDK throws `HostError` whose `code` is a machine-readable id. The
-host returns `permission_denied` when a call lacks its capability; the
-client itself raises `timeout` when the host does not respond in time and
-`disposed` when the client is torn down with calls in flight. Other codes
-are host-defined and arrive in the response envelope's `error.code`.
-Branch on `code`, not on `message`.
+The SDK throws `HostError` with a machine-readable `code`. Branch on `code`, not on `message`.
+
+| Code | Meaning |
+|------|---------|
+| `method_unknown` | The host has no handler for the method. |
+| `permission_denied` | The plugin's granted set does not include the required capability. |
+| `capability_denied` | The capability token's claim does not include the required capability. |
+| `handler_error` | The handler threw while running the call. |
+| `handler_unset` | The method exists but no handler is attached on this host. |
+| `refused` | The host refused the action: the operator denied a `command.send` or `mission.write`, a notification was rate-limited, or `recording.mark` ran with nothing recording. |
+| `timeout` | Raised by the client when the host does not answer in time. Operator-confirmed calls wait for the operator instead. |
+| `disposed` | Raised by the client when it is torn down with calls in flight. |
 
 ## Local iteration
 
-During development, build the GCS half against the test harness in
-`@altnautica/plugin-sdk/harness` so you can drive RPC calls, inject
-telemetry, and assert on the envelopes your bundle sends without
-mounting it in the live GCS. See the
-[TypeScript SDK](/developers/sdk-typescript) page for the harness API.
+Build the GCS half against the harness in `@altnautica/plugin-sdk/harness`. It drives your `mount`, injects telemetry, applies the granted-capability check and records every RPC your bundle sends, without a running Mission Control. See the [TypeScript SDK](/developers/sdk-typescript) for the harness API.
 
-## See also
+## Next steps
 
-- [Permissions](/developers/permissions)
-- [Event hooks and bus](/developers/event-hooks-and-bus)
-- [TypeScript SDK](/developers/sdk-typescript)
+<CardGroup cols={2}>
+  <Card title="Multi-component plugins" href="/developers/multi-component-plugins">
+    Ship an agent half and a GCS half in one plugin.
+  </Card>
+  <Card title="Contribution points" href="/developers/contribution-points">
+    Every `contributes` key and its fields.
+  </Card>
+  <Card title="GCS bridge methods" href="/developers/event-hooks">
+    The methods a GCS half can call on the host.
+  </Card>
+  <Card title="Permissions" href="/developers/permissions">
+    Capabilities, risk levels and the install grid.
+  </Card>
+</CardGroup>

@@ -1,166 +1,145 @@
 ---
-title: "Mesh Troubleshooting"
-description: "Symptoms and fixes for the most common mesh and pairing failures. Log queries, setup webapp checks, and recovery paths."
+title: "Mesh troubleshooting"
+description: "Symptoms, causes and fixes for ground-station mesh and mesh-pairing failures."
 icon: "wrench"
-lastUpdated: "2026-06-18"
 ---
 
-# Mesh Troubleshooting
+Each entry gives the symptom, the cause and the recovery. For single-node problems, see [Ground Agent troubleshooting](/ground-agent/troubleshooting).
 
-This page collects the failure modes we have observed during mesh and pairing development. Each entry has a symptom, the root cause, and the recovery path.
+Ground-station routes return errors in this shape:
 
-## Mesh services do not start after role transition
+```json
+{"detail": {"error": {"code": "E_NOT_PAIRED", "message": "relay role requires a completed pair with a receiver"}}}
+```
 
-**Symptom:** the setup webapp or the ground-station panel in Mission Control reports the configured role correctly, but mesh health is down. `systemctl status ados-batman` shows `inactive (dead)`.
+## PUT /role returns 409 E_MESH_NOT_CAPABLE
 
-**Likely cause:** the second USB WiFi dongle is not detected, or `mesh_capable` is `false` in `/etc/ados/profile.conf`.
+**Symptom:** a change to `relay` or `receiver` returns `409` with `E_MESH_NOT_CAPABLE`.
+
+**Cause:** the node does not carry two WFB-class radios (RTL8812EU or RTL8812AU). The agent checks the attached radios live on each request.
 
 **Recovery:**
 
 ```bash
-# Confirm the second dongle is present
-ls /sys/class/net | grep wlan
-# Expected: at least two wlan* interfaces
+# List wireless interfaces and their drivers
+for i in /sys/class/net/wl*; do echo "$(basename $i) $(basename $(readlink $i/device/driver))"; done
 
-# Confirm mesh_capable is set
-cat /etc/ados/profile.conf
-# Expected: mesh_capable: true
-
-# If the flag is still false after plugging the second dongle in,
-# re-run the installer to trigger a profile_detect rescan.
-curl -sSL https://raw.githubusercontent.com/altnautica/ADOSDroneAgent/main/scripts/install.sh | sudo bash -s -- --upgrade
+# What the agent sees
+curl http://localhost:8080/api/v1/ground-station/role
 ```
 
-If the second dongle is plugged in but not enumerating, check `dmesg` for driver bind messages and confirm the dongle's chipset has Linux mesh-mode (`802.11s` or `IBSS`) driver support.
+Plug in a second RTL8812EU or RTL8812AU adapter. If it does not appear, check `dmesg` for driver bind messages. Once two WFB-class radios are present, `mesh_capable` reads `true` and the role change succeeds; no reinstall or reboot is needed.
 
 ## PUT /role returns 409 E_NOT_PAIRED
 
-**Symptom:** Trying to transition a node to `relay` returns:
+**Symptom:** a change to `relay` returns `409` with `E_NOT_PAIRED`.
 
-```json
-{"error": {"code": "E_NOT_PAIRED", "message": "relay role requires a completed pair with a receiver"}}
-```
-
-**Cause:** the node has no `mesh_id` or `psk.key` on disk. The agent guards relay mode behind a successful pair so `mesh_manager` does not enter a restart loop.
+**Cause:** the node has no mesh id or shared key on disk. The agent refuses the relay role until mesh pairing has stored them, so the mesh service does not restart in a loop.
 
 **Recovery:**
 
 1. Bring the receiver up first if it is not already.
-2. On the receiver: open the Accept window from OLED or the setup webapp.
-3. On this node (still in direct mode): use the OLED `Mesh -> Join mesh` flow or the setup webapp join action.
-4. After the pair completes, retry the role transition.
+2. On the receiver, open the accept window (Mission Control **Mesh & RX**, or `POST /api/v1/ground-station/pair/accept`).
+3. On this node, still in `direct`, join with the code (`POST /api/v1/ground-station/pair/join`).
+4. Approve it on the receiver, then retry the role change.
 
-## PUT /role returns 409 E_MESH_NOT_CAPABLE
+See [Build a mesh](/ground-agent/mesh-setup#mesh-pairing).
 
-**Symptom:** any non-direct role target returns `409 E_MESH_NOT_CAPABLE`.
+## Accept window shows no pending relay
 
-**Cause:** `mesh_capable` is `false` in `/etc/ados/profile.conf`. The second USB WiFi adapter was not present when `profile_detect` ran last.
+**Symptom:** the receiver's accept window is open, the relay sent its join, but `GET /api/v1/ground-station/pair/pending` (or Mission Control **Mesh & RX**) shows nothing pending.
 
-**Recovery:** plug in the second USB WiFi adapter and rerun `profile_detect` by re-running the installer (`curl -sSL https://raw.githubusercontent.com/altnautica/ADOSDroneAgent/main/scripts/install.sh | sudo bash -s -- --upgrade`), or manually flip the flag if the dongle is already up:
-
-```bash
-sudo sed -i 's/^mesh_capable:.*/mesh_capable: true/' /etc/ados/profile.conf
-```
-
-Then retry the role transition.
-
-## OLED Accept window shows no pending relay
-
-**Symptom:** receiver's OLED Accept window is open and counting down, the relay's OLED says it sent the request, but the receiver shows no pending entries.
-
-**Likely cause one:** the join request never reached the receiver because the mesh interface is not actually connected.
+**Cause one:** the join did not reach the receiver because the nodes cannot reach each other.
 
 ```bash
-# On both nodes:
-sudo batctl n           # do they see each other?
-ip addr show bat0       # both nodes must have bat0 up with an IP
+# On both nodes
+sudo batctl n         # do they see each other?
+ip addr show bat0     # is bat0 up with an address?
 ```
 
-If the neighbor list is empty, check `/etc/ados/mesh/id` matches on both nodes (relays only have it after a pair, so on a first-time pair the relay is using the receiver's mesh_id from the invite - which is exactly what you are trying to receive). The node sending the request has not yet received the bundle, so it does not know the mesh_id and is broadcasting on the local subnet instead.
+**Cause two:** the relay joined before the window opened. Open the window first, then join.
 
-**Likely cause two:** the relay sent the request before the Accept window was open. Open the window first, then send the request.
-
-**Likely cause three:** the receiver bound the UDP listener but it failed silently. Check:
+**Cause three:** the receiver's pairing listener could not bind UDP port 5801.
 
 ```bash
-sudo journalctl -u ados-supervisor -n 100 | grep -i pairing
+sudo journalctl -u ados-mesh-pairing -n 100 | grep -i pairing
 ```
 
-A `pairing_bind_failed` log entry means port 5801 is in use. Investigate with `lsof -i :5801`.
+A `pairing_bind_failed` entry means the port is taken. Find the owner with `sudo lsof -i :5801`.
 
-## Relay says "received invite" but stays in direct mode
+## Join fails with E_INVITE_REJECTED
 
-**Symptom:** the relay's OLED briefly shows the Joined Status screen but then reverts to direct mode, or setup status still says `direct`.
+**Symptom:** `POST /pair/join` returns `503` with `E_INVITE_REJECTED`.
 
-**Cause:** decrypting the invite and writing files to disk does not automatically transition the role. The relay operator must explicitly switch the role to `relay` via the OLED Mesh menu, setup webapp, GCS, or REST API.
+**Cause:** the receiver's replies did not open under the code the relay sent. Usually the code was mistyped, or it belonged to an earlier window.
 
-**Recovery:** transition the role. The pair files are already on disk so the next role transition succeeds.
+**Recovery:** read the code the receiver shows for the current window and join again.
+
+## Relay stored the invite but stays in direct mode
+
+**Symptom:** the join succeeded, but the relay's role still reads `direct`.
+
+**Cause:** pairing stores the mesh identity; it does not change the role.
+
+**Recovery:** change the role to `relay` (Mission Control **Mesh & RX**, the LCD **Mesh** page, or `PUT /api/v1/ground-station/role`). See [Add a relay](/ground-agent/mesh-setup#add-a-relay).
 
 ## Receiver picks the wrong cloud gateway
 
-**Symptom:** the receiver routes cloud traffic over a slow gateway when a faster one is available.
+**Symptom:** the receiver sends cloud traffic through a slow gateway when a faster one is available.
 
-**Cause:** batman-adv ranks gateways by Transmit Quality (TQ) over the mesh, not by uplink speed. A nearby node with a 3G modem and high TQ can outrank a distant node with a 4G LTE modem if the LTE node's mesh signal is poor.
+**Cause:** batman-adv ranks gateways by mesh link quality (TQ), not uplink speed.
 
-**Recovery:** pin the gateway you want.
+**Recovery:** pin the gateway you want. See [Cloud gateway election](/ground-agent/batman-adv#cloud-gateway-election).
 
-```bash
-curl -X PUT http://localhost:8080/api/v1/ground-station/mesh/gateway_preference \
-  -H "Content-Type: application/json" \
-  -d '{"mode": "pinned", "pinned_mac": "AA:BB:CC:DD:EE:01"}'
-```
+## Receiver shows a partition
 
-Or from the GCS: ground-station panel -> Mesh tab -> Gateways -> Pin.
+**Symptom:** Mission Control shows the partition indicator; some neighbours disappear while the local mesh interface stays up.
 
-To release the pin: `mode: auto`.
+**Cause:** the mesh has split: a node lost power, interference dropped a link, or something is blocking the path between nodes.
 
-## Receiver shows partition warning
+**Recovery:** batman-adv re-merges on its own once a path returns. If the split persists, check power and antenna placement on the missing nodes.
 
-**Symptom:** GCS Mesh tab shows the partition indicator. Some neighbors disappear but the local mesh interface is up.
+## Stale mesh state after a role change
 
-**Cause:** the mesh has split. Some nodes can no longer reach the others. Common reasons: a node running on battery died, RF interference dropped a link past the recovery threshold, or someone walked between nodes while carrying the mesh dongle.
+**Symptom:** Mission Control shows a relay or stream that is no longer on the mesh.
 
-**Recovery:** wait. batman-adv re-merges partitions automatically as soon as a path is restored. The `partition_healed` event fires on the GCS when this happens. If the partition lasts longer than the operator expected, walk between nodes and check antenna orientation.
+**Cause:** an interrupted role change left an old snapshot in `/run/ados/`. A normal role change clears it.
 
-## Stale state files after a role transition
-
-**Symptom:** the GCS Distributed RX page shows a relay or stream that is no longer on the mesh. The OLED status header is correct but the GCS lags.
-
-**Cause:** `/run/ados/mesh-state.json`, `/run/ados/wfb-relay.json`, or `/run/ados/wfb-receiver.json` have stale snapshots. role_manager wipes these on every transition, but if the transition was interrupted they might persist.
-
-**Recovery:** force a clean transition:
+**Recovery:** change the role to `direct`, then back:
 
 ```bash
-Use the setup webapp to switch to direct.
+curl -X PUT http://localhost:8080/api/v1/ground-station/role \
+  -H "Content-Type: application/json" -d '{"role": "direct"}'
 sleep 2
-Switch back to the previous role.
+curl -X PUT http://localhost:8080/api/v1/ground-station/role \
+  -H "Content-Type: application/json" -d '{"role": "relay"}'
 ```
 
-The transition out of mesh role wipes the state files; the transition back in starts fresh.
+Use the node's previous role in the second call.
 
-## Pairing UDP listener bind fails
+## Accept returns 503 E_PAIR_DAEMON_UNAVAILABLE
 
-**Symptom:** `POST /api/v1/ground-station/pair/accept` returns 503 with:
+**Symptom:** `POST /api/v1/ground-station/pair/accept` returns `503` with `E_PAIR_DAEMON_UNAVAILABLE`.
 
-```json
-{"error": {"code": "E_BIND_FAILED", "message": "pairing UDP bind failed on port 5801"}}
-```
-
-**Cause:** another process on the receiver is already bound to port 5801, or `bat0` is not up.
+**Cause:** the pairing service is not running, or it refused to open the window (the `message` says why).
 
 **Recovery:**
 
 ```bash
-sudo lsof -i :5801    # who has the port?
-ip link show bat0     # is the mesh interface up?
-sudo systemctl restart ados-batman
-sudo systemctl restart ados-supervisor
+sudo systemctl status ados-mesh-pairing
+ip link show bat0
+sudo systemctl restart ados-mesh-pairing
 ```
 
-Then retry the Accept window.
+Then open the window again.
 
-## Where to next
+## Next steps
 
-- [Field Tap-to-Pair](/ground-agent/setup#field-pairing-on-the-oled) - the protocol.
-- [Local Mesh (batman-adv)](/ground-agent/batman-adv) - the carrier.
-- [Troubleshooting](/ground-agent/troubleshooting) - for non-mesh issues.
+<CardGroup cols={2}>
+  <Card title="Build a mesh" icon="circle-nodes" href="/ground-agent/mesh-setup">
+    The full pairing and role flow.
+  </Card>
+  <Card title="Local mesh (batman-adv)" icon="network-wired" href="/ground-agent/batman-adv">
+    The carrier and diagnostics.
+  </Card>
+</CardGroup>

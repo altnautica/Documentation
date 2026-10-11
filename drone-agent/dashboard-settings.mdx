@@ -1,96 +1,196 @@
 ---
-title: "Settings"
-description: "Five sub-tabs for profile, network, cloud, display, and advanced configuration."
+title: "Agent dashboard: Settings"
+sidebarTitle: "Settings"
+description: "Sixteen settings sections, grouped and filtered by profile, on the agent's browser dashboard."
 icon: "settings"
-lastUpdated: "2026-06-18"
+keywords: ["ados", "drone agent", "dashboard", "settings", "profile", "network", "security"]
 ---
 
-# Settings
+Settings lives under `/settings/<section>`; `/settings` opens Profile. The nav groups sixteen sections under five headers (Identity, Link & network, Video & vision, Cloud & remote, System & safety), and each section shows its one-line blurb under its name.
 
-The Settings route has five sub-tabs, each editing one slice of the
-agent's runtime config. Changes apply through `/api/v1/setup/apply`
-which writes to disk and bounces the relevant services.
+## Profile visibility
 
-<Frame caption="Settings &rarr; Profile.">
-  ![Settings profile](/images/dashboard/drone/settings-profile-full.png)
+Sections are filtered by profile like the pages are. A drone sees 15 sections and a ground station 11. While the profile is auto or one the dashboard has no pages for, every section shows.
+
+| Section | Group | Drone | Ground station |
+| --- | --- | --- | --- |
+| Profile | Identity | yes | yes |
+| Network | Link & network | yes | yes |
+| Cellular | Link & network | yes | yes |
+| MAC pinning | Link & network | yes | yes |
+| Discovery | Link & network | yes | yes |
+| MAVLink | Link & network | yes | no |
+| Vision | Video & vision | yes | no |
+| Camera | Video & vision | yes | no |
+| Swarm | Video & vision | yes | no |
+| Cloud | Cloud & remote | yes | yes |
+| Region | System & safety | yes | yes |
+| Battery | System & safety | yes | no |
+| Self-heal | System & safety | yes | yes |
+| Security | System & safety | yes | yes |
+| Display | System & safety | no | yes |
+| Advanced | System & safety | yes | yes |
+
+## How changes save
+
+Most sections hold edits as drafts until you press the section's save button and confirm; an edited section shows "unsaved changes" and asks before you leave it. Some controls save at once: the log level (Advanced), the setup hotspot toggle (Network) and the Security toggles.
+
+Writes go through `POST /api/v1/setup/apply` and `PUT /api/config`, plus section routes for Wi-Fi, MAC pinning, cellular and the ground-station network. Profile, network, region and Wi-Fi changes are refused while the vehicle is armed; see [Safety interlocks](/drone-agent/dashboard-overview#safety-interlocks).
+
+<Frame caption="Settings → Profile with the grouped settings nav.">
+  ![Agent dashboard Settings Profile section with the Current card, the Drone and Ground station choices and the grouped settings nav starting at Identity](/images/drone-agent/dashboard/settings-profile.png)
 </Frame>
 
-## Profile
+## Identity
 
-The device's profile (drone or ground station), the ground role
-(direct, relay, receiver), and the source the agent used to decide
-(`detected`, `manual`, `wizard`). Editing the profile here calls the
-same endpoint the wizard's profile step uses.
+### Profile
 
-## Network
+Drone or ground station, role, restart on apply.
 
-Hotspot, WiFi client, Ethernet, modem, and the uplink priority order.
-The page mirrors the wizard's network step.
+- **Current:** `<profile> / role <role> · source <profile_source>`. The source is one of detected, tiebreaker, override, default or user.
+- **Profile cards:** Drone ("Air-side companion. Routes MAVLink, streams video, talks to the cloud relay.") or Ground station ("Ground-side receiver. Hosts WFB-rx, displays the video feed, optionally bridges over mesh.").
+- **Role cards:** shown after you pick Ground station: **Direct** ("Single ground node receiving the drone link directly."), **Relay** ("Forwards a drone link to another ground node, optional batman-adv bridge.") or **Receiver** ("Aggregates streams from multiple relay nodes.").
+- **Restart services after apply:** on by default.
 
-<Frame caption="Settings &rarr; Network.">
-  ![Settings network](/images/dashboard/drone/settings-network-full.png)
+Press **Save profile** and confirm **Switch agent profile?**. A profile change restarts `ados-supervisor` when **Restart services after apply** is on; the dashboard reconnects in a few seconds. If the vehicle is armed, the dashboard asks **Vehicle is armed** and applies only after **Apply anyway**.
+
+## Link and network
+
+### Network
+
+Uplink matrix, failover, Wi-Fi client, hotspot.
+
+<Frame caption="Settings → Network.">
+  ![Agent dashboard Settings Network section on a drone: the note that the uplink matrix runs on the ground station, the Setup hotspot toggle and the Wi-Fi client panel](/images/drone-agent/dashboard/settings-network.png)
 </Frame>
 
-## Cloud
+- **Uplink matrix:** the available uplinks and their failover order. See [Uplink matrix](/ground-agent/uplink-matrix).
+- **Setup hotspot:** switches `wlan0` to the setup access point after the confirm **Switch wlan0 to setup AP?**. Enabling it disconnects any active Wi-Fi client link.
+- **Wi-Fi:** scan, join, saved networks, forget and autoconnect.
 
-Mission Control backend URL, MQTT broker, MQTT port, and the manually
-configured API key (used when same-origin trust cannot be relied on,
-e.g. across a tunnel).
+The cellular modem is under Cellular.
 
-<Frame caption="Settings &rarr; Cloud.">
-  ![Settings cloud](/images/dashboard/drone/settings-cloud-full.png)
+### Cellular
+
+Modem status, APN, and data cap. The **Cellular uplink** switch turns the modem on or off. Status rows show presence, state, operator, technology, signal, IP and data used. Set the **APN** for your SIM and an optional **Data cap (GB)** (0 clears the cap).
+
+### MAC pinning
+
+Adapter stability and stable-MAC pins. Each adapter shows its chipset, current MAC, pinned MAC and source, with **Auto-pin a stable MAC** and **Allow live re-tag** switches.
+
+### Discovery
+
+Advertised reach names and mDNS. Shows how to reach this node (hostname, LAN host, LAN IPs, service type) and the **Advertise over mDNS** switch.
+
+### MAVLink
+
+FC transport, endpoints, and IDs. Pick the flight-controller transport (auto-discover and baud-probe, or a fixed serial port and **Baud rate**), and set the **System ID** and **Component ID**. See [MAVLink proxy](/drone-agent/mavlink-proxy).
+
+## Video and vision
+
+### Vision
+
+Detection engine, backend, and thresholds: **On-board detection engine** (off by default), **Inference backend**, **Confidence threshold**, **Models directory** and **Model cache cap (MB)**. The active detector model is chosen in Mission Control's vision hub, not here.
+
+**Inference backend** choices:
+
+| Backend | Runs on |
+| --- | --- |
+| **Auto** | The Rockchip NPU on Rockchip boards, else ONNX on the CPU. Auto never picks Hailo. |
+| **RKNN** | The Rockchip NPU. |
+| **Hailo** | A Hailo-8 accelerator (Pi 5 AI HAT). Choose it explicitly. |
+| **ONNX** | The CPU, through ONNX Runtime. |
+| **Mock** | Synthetic detections for bench tests. |
+
+### Camera
+
+Image orientation: rotation, hflip, vflip. Rotate by quarter turns or upside down, and set **Horizontal flip** and **Vertical flip**.
+
+### Swarm
+
+Swarm participation and formation defaults: **Swarm participation**, **Role**, the default formation and **Default spacing (metres)**. This section stores configuration only; no running service acts on it. See [Swarm bus](/drone-agent/swarm-bus).
+
+## Cloud and remote
+
+### Cloud
+
+Altnautica relay, self-hosted, or local-only.
+
+<Frame caption="Settings → Cloud with Self-hosted selected.">
+  ![Agent dashboard Settings Cloud section with Self-hosted selected and its Convex URL, MQTT broker, Port and API key fields](/images/drone-agent/dashboard/settings-cloud.png)
 </Frame>
 
-## Display
+- **Local only** (default): no cloud uplink. Mission Control reaches the node over the LAN.
+- **Altnautica relay:** use the public Altnautica cloud relay for telemetry and video.
+- **Self-hosted:** point at your own Convex backend and MQTT broker. Fields: **Convex URL**, **MQTT broker**, **Port** (default 8883) and **API key**, the self-hosted backend's write-only key, stored as a root-owned secret.
 
-Local panel resolution, rotation, touch-calibration state, and
-brightness. Ground stations also see the kiosk slot configuration
-here.
+Press **Save cloud** and confirm **Switch cloud posture?**. See [Cloud relay](/drone-agent/cloud-relay).
 
-<Frame caption="Settings &rarr; Display.">
-  ![Settings display](/images/dashboard/drone/settings-display-full.png)
+The **Remote access** card below the postures takes a Cloudflare tunnel token, or the whole `cloudflared service install` command from the Cloudflare dashboard, in the **Tunnel token** field. Press **Set token**: the agent stores it, enables the tunnel and restarts it. A stored token is never shown.
+
+## System and safety
+
+### Region
+
+Operating-region RF posture: unrestricted or pinned. **Unrestricted** leaves local RF compliance to the operator. **Pin a region** enforces a single jurisdiction's channel and power limits; pick a country or enter an **ISO 3166-1 alpha-2 code**. Press **Save region** and confirm **Change operating region?**. The radio re-reads this at the next restart. See [Regulatory](/operations/regulatory).
+
+### Battery
+
+Cell health, sag and time-to-reserve. **Battery health monitoring** evaluates cell, sag, temperature and time-to-reserve rules on every pack and logs each alert. Thresholds: critical cell (mV), cell divergence (mV), voltage sag (mV/s), temperature spike (0.1 °C/s), the reserve level and the prediction window (s). See [Battery health](/drone-agent/battery-health).
+
+### Self-heal
+
+Onboard Wi-Fi and camera auto-recovery. **Re-associate a dead onboard Wi-Fi link** (on by default) with its **Fail threshold (checks)** and **Cooldown (seconds)**, and **Recover a wedged camera** with optional **Per-port power re-enable** on a hub that exposes per-port power switching.
+
+### Security
+
+API key, MAVLink WS auth, dashboard PIN.
+
+<Frame caption="Settings → Security.">
+  ![Agent dashboard Settings Security section with Agent API key, Dashboard access PIN and the auth toggles](/images/drone-agent/dashboard/settings-security.png)
 </Frame>
 
-## Advanced
+- **Agent API key:** whether the node holds a pairing key (read-only).
+- **Dashboard access PIN:** whether a PIN is set. See [Dashboard PIN](/drone-agent/dashboard-overview#dashboard-pin).
+- **Enforce MAVLink WS auth:** requires authentication on the MAVLink WebSocket, after the confirm **Enforce MAVLink WS authentication?**.
+- **HMAC replay protection** and **Require a setup token:** switches that save at once.
 
-HMAC signing knobs, setup-token escalation, and factory-reset.
-Power-user toggles live here.
+### Display
 
-<Frame caption="Settings &rarr; Advanced.">
-  ![Settings advanced](/images/dashboard/drone/settings-advanced-full.png)
+Ground station only. Local kiosk display selection: a read-only **Local kiosk display** card with the active display and the panels this board supports. Installing a panel needs a reboot and is not done from this page. See [HDMI kiosk](/ground-agent/hdmi-kiosk) and [Front panel](/ground-agent/display).
+
+### Advanced
+
+Log level and board override.
+
+<Frame caption="Settings → Advanced.">
+  ![Agent dashboard Settings Advanced section with the Log level choice and the Board override field](/images/drone-agent/dashboard/settings-advanced.png)
 </Frame>
 
-## Profile gating
+- **Log level:** debug, info, warning, error or critical; default info. Saved on selection.
+- **Board override:** a board slug (empty means auto-detect). Press **Save override** and confirm **Override the detected board?**. See [HAL and tiers](/drone-agent/hal-and-tiers).
 
-Shared route, visible on both profiles. Some sub-tabs hide
-fields that don't apply to the active profile (e.g., ground role on a
-drone).
+The dashboard has no factory reset; see [Hardening](/operations/hardening).
 
-## Backend endpoints
+## Data sources
 
-| Method | Path | Used by |
-|---|---|---|
-| GET | `/api/config` | Initial load for all tabs |
-| POST | `/api/v1/setup/apply` | Batch apply edits |
-| POST | `/api/v1/setup/profile` | Profile + ground-role mutation |
-| POST | `/api/v1/setup/cloud-choice` | Cloud sub-tab |
-| POST | `/api/v1/setup/remote-access/cloudflare` | Cloud sub-tab tunnel token |
+| Endpoint | Used for |
+| --- | --- |
+| `GET /api/v1/setup/status` | current profile, role, network and posture |
+| `GET /api/config`, `PUT /api/config` | per-key config reads and writes |
+| `POST /api/v1/setup/apply` | profile, network, cloud and advanced writes |
+| `/api/v1/network/client/*` | Wi-Fi scan, join and forget |
+| `/api/v1/network/mac/*` | MAC pinning |
+| `/api/v1/ground-station/network*` | ground-station uplinks |
+| `GET /api/v1/setup/display/options` | Display |
 
-## Troubleshooting
+## Next steps
 
-<Accordion title="Edits don't seem to persist">
-Click **Save** in the affected sub-tab. The page does not auto-save;
-the apply round-trip is explicit so you can review the diff first.
-</Accordion>
-
-<Accordion title="Profile change refuses">
-Some changes require the wizard rather than the settings page (e.g.,
-flipping from drone to ground station triggers a hardware-check
-re-run). The page shows a banner pointing you at the wizard when this
-applies.
-</Accordion>
-
-## Related
-
-- [Setup webapp](/drone-agent/setup-webapp)
-- [Configuration](/drone-agent/configuration)
+<CardGroup cols={2}>
+  <Card title="Configuration" icon="sliders" href="/drone-agent/configuration">
+    Every config key and its default.
+  </Card>
+  <Card title="Ground dashboard" icon="layout-dashboard" href="/ground-agent/dashboard-overview">
+    The ground-station pages.
+  </Card>
+</CardGroup>

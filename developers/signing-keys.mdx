@@ -1,168 +1,76 @@
 ---
 title: "Signing keys"
-description: "Generate, sign, trust, and revoke Ed25519 publisher keys."
-lastUpdated: "2026-06-23"
+description: "Generate an Ed25519 publisher key, sign plugin archives, enrol the key on an agent, and run a bench in unsigned mode."
+keywords: ["ados", "plugin", "signing", "ed25519", "keys"]
 ---
 
-Every plugin the agent installs by default must be signed by an Ed25519
-key the agent trusts. This page covers the publisher-side lifecycle:
-generation, signing, the on-device trust list, and revocation.
+Every plugin a production agent installs must be signed by an Ed25519 key the agent trusts. This page owns the publisher-side lifecycle: generating a key, signing, enrolling the public key on the agent, and the bench mode for unsigned archives. Revocation is on [Revocation and incidents](/developers/revocation-and-incidents).
 
 ## Why Ed25519
 
-Small keys (32 bytes), small signatures (64 bytes), constant-time
-verification, no parameter choices to misconfigure. The same algorithm
-and verifier sign OTA payloads, so the agent's verification code already
-exists and is well-tested.
+Small keys (32 bytes), small signatures (64 bytes), fast constant-time verification, and no parameter choices to get wrong. OTA artifacts are also Ed25519-signed (minisign), so the algorithm is already in use on the agent.
 
 ## Generate a key pair
 
-The agent CLI mints a keypair in one step:
+<Warning>
+Add `keys/` and `*.priv.pem` to your `.gitignore` before generating keys. In your own repository nothing ignores them for you.
+</Warning>
 
-```sh
+```bash
 ados plugin keygen acme-2026-A --output-dir keys
 ```
 
 This writes two files under `keys/`:
 
-- `acme-2026-A.pem` is the public key (mode 0644). This is what operators
-  install at `/etc/ados/plugin-keys/<signer-id>.pem`.
-- `acme-2026-A.priv.pem` is the private key (mode 0600). The signing rig
-  keeps this. Never check it in, never copy it across hosts without an
-  encrypted transport.
+- `acme-2026-A.pem`, the public key (mode 0644). Operators install this at `/etc/ados/plugin-keys/acme-2026-A.pem`.
+- `acme-2026-A.priv.pem`, the private key (mode 0600). Your signing rig keeps it. Never commit it or copy it across hosts without encrypted transport.
 
-The first positional argument is the signer id. Pass `--force` to
-overwrite existing files at the target paths. `keygen` prints a SHA-256
-fingerprint of the public key so an operator can cross-check the
-installed key against what you generated.
+The positional argument is the signer id. `--force` overwrites existing files. `keygen` prints a SHA-256 fingerprint of the public key so an operator can cross-check the key they install.
 
-<Warning>
-`keygen` is a developer aid. Production publisher keys deserve a
-hardware-token or air-gapped workflow, not a one-liner. See
-[Key storage](#key-storage).
-</Warning>
+<Note>
+`keygen` is a developer aid. Production publisher keys deserve a hardware-token or air-gapped workflow. See [Key storage](#key-storage).
+</Note>
 
-The reference repo template at `altnautica/ADOSExtensions` carries a
-`.gitignore` that covers `keys/*.pem`.
+`openssl` produces an equivalent pair:
 
-### Alternative: openssl
-
-`openssl` produces an equivalent PEM keypair:
-
-```sh
+```bash
 mkdir -p keys
 openssl genpkey -algorithm ed25519 -out keys/acme-2026-A.priv.pem
 openssl pkey -in keys/acme-2026-A.priv.pem -pubout -out keys/acme-2026-A.pem
 ```
 
-The public PEM (`acme-2026-A.pem`) is what operators add to their trust
-list; its basename is the signer id. Keep the private key out of git.
+## Pick a signer id
 
-## Pick a signer key id
+The signer id is a short, stable label: the first line of the archive's `SIGNATURE` file and the basename of the public key on the agent. Operators see it in the install review. Use a namespace prefix and a generation suffix, for example `acme-2026-A`. It is not a secret.
 
-The signer key id is a short, stable label. It is the first line of the
-archive's `SIGNATURE` file and the basename of the public key in the
-trust list. Operators see it on the install dialog. Use a namespace
-prefix and a generation suffix, for example `acme-2026-A`.
-
-The id is not a secret. It is a stable identifier for trust management.
-
-## Pack and sign
+## Sign an archive
 
 `ados plugin sign` packs a plugin directory and signs it in one command:
 
-```sh
-ados plugin sign ./my-extension \
+```bash
+ados plugin sign ./my-plugin \
   --key keys/acme-2026-A.priv.pem \
   --signer-id acme-2026-A \
-  --output dist/com.example.foo-1.0.0.adosplug
+  --output extensions/my-plugin/dist/com.example.my-plugin-1.0.0.signed.adosplug
 ```
 
-All four are required: the plugin directory (it must contain a
-`manifest.yaml`), `--key` (the Ed25519 private key in PEM), `--signer-id`
-(written to the `SIGNATURE` file, and it must match the public-key
-filename on the agent), and `--output` (the path for the signed archive).
+All four are required: the plugin directory (with a `manifest.yaml`), `--key`, `--signer-id` and `--output`.
 
-The command computes the canonical payload hash (SHA-256 over the sorted
-`<path>\n<sha256-hex>\n` lines of every entry except `SIGNATURE`), signs
-that 32-byte digest with the Ed25519 private key, and writes a
-`SIGNATURE` file (the signer id on the first line, then the base64
-signature) into the archive. Because the hash covers every entry, the
-signature protects the manifest and every asset at once.
+In the ADOSExtensions monorepo, sign the archive `pack.sh` produced with `sign.sh`:
 
-### Alternative: pack.sh and sign.sh (monorepo CI)
-
-The `altnautica/ADOSExtensions` repo ships two scripts for its tagged
-release pipeline. `pack.sh` builds the GCS bundle and zips the archive;
-`sign.sh` adds the signature.
-
-```sh
-# 1. build the unsigned archive -> dist/<id>-<version>.adosplug
-scripts/pack.sh my-extension
-
-# 2. sign it -> dist/<id>-<version>.signed.adosplug
+```bash
 ADOS_SIGNING_KEY=keys/acme-2026-A.priv.pem \
 ADOS_SIGNING_KEY_ID=acme-2026-A \
-  scripts/sign.sh dist/com.example.foo-1.0.0.adosplug
+  ./scripts/sign.sh extensions/my-plugin/dist/com.example.my-plugin-1.0.0.adosplug
 ```
 
-`sign.sh` writes a `*.signed.adosplug` archive next to the input.
-`ADOS_SIGNING_KEY` is a path to the private key (PEM or raw 32-byte). The
-signer id defaults to `altnautica-2026-A` when `ADOS_SIGNING_KEY_ID` is
-unset. The payload hash and `SIGNATURE` format are identical to the CLI,
-so an archive from either path verifies the same way on the agent.
+`sign.sh` writes `com.example.my-plugin-1.0.0.signed.adosplug` next to the input. `ADOS_SIGNING_KEY` is the `.priv.pem` from `keygen` (or a raw 32-byte seed); a public key or an encrypted key is refused. `ADOS_SIGNING_KEY_ID` is required and has no default. Set `ADOS_SIGNING_PUBKEY` to your `.pem` to verify the signature right after writing it.
 
-## Trust list on the agent
+Both paths compute the same canonical payload hash (SHA-256 over the sorted `<path>\n<sha256-hex>\n` lines of every entry except `SIGNATURE`), sign that digest, and write a two-line `SIGNATURE` file: the signer id, then the base64 signature. The hash covers every entry, so the signature protects the manifest and every asset.
 
-The agent trusts a directory of PEM public keys:
+### Signing in CI
 
-```
-/etc/ados/plugin-keys/
-  altnautica-2026-A.pem      # first-party Altnautica signer
-  acme-2026-A.pem            # your key, for self-signed deployments
-```
-
-Each file is a PEM public key whose basename is the signer id. The agent
-verifies an archive's signature against the key whose id matches the
-`SIGNATURE` file's first line. A signature from a signer id with no
-matching file is rejected. After adding or removing a key, restart the
-supervisor:
-
-```sh
-sudo systemctl restart ados-supervisor
-```
-
-A short hardcoded allowlist of first-party signer ids
-(`altnautica-2026-A`, `altnautica-2026-B`) is maintained in agent code,
-not by filename, so a planted key file cannot impersonate first-party
-status. First-party status is what unlocks the in-process agent
-isolation and inline GCS isolation modes; third-party plugins always run
-subprocess and iframe.
-
-## Revocation
-
-Revoked signer ids live in a JSON file on the agent:
-
-```
-/etc/ados/plugin-revocations.json
-```
-
-The file is a flat JSON array of signer ids:
-
-```json
-["example-2025-X", "acme-2026-A"]
-```
-
-A plugin signed by a revoked id refuses to load. Revocation is the
-response when a key is compromised: add the id to the list, re-sign your
-current releases with a fresh key, and notify operators. For the full
-incident flow, see
-[Revocation and incidents](/developers/revocation-and-incidents).
-
-## CI signing
-
-A tagged release can sign in CI with the key held in a repository
-secret. Pass the base64-encoded private key inline:
+Hold the base64-encoded private key in a repository secret and pass it inline:
 
 ```yaml
 env:
@@ -171,44 +79,74 @@ env:
   ADOS_SIGNING_KEY_ID: ${{ secrets.ADOS_SIGNING_KEY_ID }}
 ```
 
-`ADOS_SIGNING_KEY_INLINE=1` tells `sign.sh` to treat `ADOS_SIGNING_KEY`
-as a base64 key body rather than a file path; it writes it to a tempfile,
-signs, and wipes it. Hold the secret in a protected environment with
-required reviewers if the key is high-value.
+`ADOS_SIGNING_KEY_INLINE=1` makes `sign.sh` decode the key to a temp file, sign, and delete it. Put a high-value key behind a protected environment with required reviewers.
+
+## Enrol the key on the agent
+
+The agent trusts a directory of PEM public keys, one file per signer id:
+
+```text
+/etc/ados/plugin-keys/
+  acme-2026-A.pem
+```
+
+```bash
+sudo install -m 0644 acme-2026-A.pem /etc/ados/plugin-keys/acme-2026-A.pem
+```
+
+The agent verifies an archive against the key named by the `SIGNATURE` file's first line. A signer with no matching file is refused with exit code `3`. No restart is needed: keys are read at every install.
+
+First-party status is pinned in agent code by signer id and exact key bytes, so a key file planted under a first-party name verifies only as a third party. First-party status unlocks inline GCS isolation, `resources.class: heavy`, and installs on a node without a sandboxing service backend. No plugin runs in-process.
+
+## Bench install and signing
+
+On a bench, use one of two paths.
+
+**Signed (recommended).** Run the full chain once and every later build installs like production:
+
+1. `ados plugin keygen acme-2026-A --output-dir keys`
+2. Copy `keys/acme-2026-A.pem` to `/etc/ados/plugin-keys/acme-2026-A.pem` on the node.
+3. Sign with `ados plugin sign` or `sign.sh`, as above.
+4. `ados plugin install ./com.example.my-plugin-1.0.0.signed.adosplug`
+
+**Unsigned bench mode.** Unsigned archives install only while signature enforcement is relaxed:
+
+```bash
+echo 'ADOS_PLUGIN_REQUIRE_SIGNED=0' | sudo tee -a /etc/ados/env
+sudo systemctl restart ados-control ados-plugin-host
+ados plugin install ./my-plugin.adosplug
+```
+
+`0`, `false`, `no` and `off` all relax enforcement, and the agent logs a warning while it is off. A revoked signer is refused even in this mode. Remove the line and restart both services when you are done.
 
 ## Key storage
 
-For developer iteration, a file on disk is fine. Pin tight permissions
-and never commit it:
+For iteration, a file on disk is fine. Tighten its permissions:
 
-```sh
+```bash
 chmod 0400 keys/acme-2026-A.priv.pem
 ```
 
-For production keys, keep the private key off general-purpose disks. A
-hardware security module, a smartcard with an Ed25519 applet, or a
-TPM-sealed key all reduce the blast radius of a host compromise. The
-signing input is just the 32-byte payload digest, so any tool that can
-produce an Ed25519 signature over that digest can replace `sign.sh` in a
-hardened pipeline.
+For production keys, keep the private half off general-purpose disks: a hardware security module, a smartcard with an Ed25519 applet, or a TPM-sealed key. The signing input is a 32-byte digest, so any tool that can produce an Ed25519 signature over it can replace `sign.sh`.
 
-## Self-signed for closed deployments
+## Self-signed closed fleets
 
-A fleet that never pulls from a public registry signs and trusts end to
-end without Altnautica involvement:
+A fleet can sign and trust end to end with no Altnautica involvement:
 
-1. Generate a key pair locally.
-2. Place the public key at `/etc/ados/plugin-keys/<your-id>.pem` on every
-   agent and restart the supervisor.
-3. Sign your plugins with the matching private key.
-4. Distribute via internal HTTPS, USB, or your existing fleet channel,
-   then `ados plugin install <path>` against the local archive file.
+1. Generate a key pair.
+2. Install the public key at `/etc/ados/plugin-keys/<your-id>.pem` on every agent.
+3. Sign your plugins with the private key.
+4. Publish on a GitHub release, or copy the file to each node and run `ados plugin install <path>`. Self-hosted download hosts are not supported for URL install; see [URL install](/developers/distribution-url-install).
 
-No outbound calls, no external trust dependency. The trust chain is
-operator-end-to-end.
+If a key leaks, follow [Revocation and incidents](/developers/revocation-and-incidents).
 
-## See also
+## Next steps
 
-- [Manifest reference](/developers/manifest)
-- [Revocation and incidents](/developers/revocation-and-incidents)
-- [Local file install](/developers/distribution-local-install)
+<CardGroup cols={2}>
+  <Card title="URL install" href="/developers/distribution-url-install">
+    Install from a GitHub release link.
+  </Card>
+  <Card title="Revocation and incidents" href="/developers/revocation-and-incidents">
+    Retire a compromised key.
+  </Card>
+</CardGroup>

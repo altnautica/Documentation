@@ -1,7 +1,8 @@
 ---
-title: "CLI reference"
+title: "Plugin CLI reference"
+sidebarTitle: "CLI reference"
 description: "Every ados plugin subcommand, its flags, and the exit-code table."
-lastUpdated: "2026-09-24"
+keywords: ["ados", "plugin", "cli", "ados plugin", "exit codes"]
 ---
 
 The `ados plugin` subcommand tree is the operator and developer interface
@@ -9,8 +10,11 @@ to the agent's plugin host: install, enable, inspect, sign, and lint
 plugins. This page documents all 15 subcommands, their flags, and the
 exit codes every command shares.
 
-Run `ados plugin --help` on the agent for the same list, or
-`ados plugin <command> --help` for a single command.
+The `plugin` group is not listed in `ados help`, but it is always
+available. Run `ados plugin --help` on the agent for the command list,
+or `ados plugin <command> --help` for a single command. The lifecycle
+commands talk to the local agent's `/api/plugins` routes, so run them on
+the node.
 
 ## The `--json` flag
 
@@ -43,12 +47,12 @@ envelope's `kind` field carries the same meaning as a string.
 | 0 | `ok` | Success |
 | 1 | `generic_failure` | Unclassified failure |
 | 2 | `manifest_invalid` | The `manifest.yaml` is missing or fails validation |
-| 3 | `signature_invalid` | The archive signature did not verify against a trusted key |
-| 4 | `permission_denied` | A capability change was refused (for example, `--yes` on a high-risk plugin) |
-| 5 | `plugin_not_found` | No plugin with that id is installed |
+| 3 | `signature_invalid` | The archive signature did not verify against an enrolled key, or the archive is unsigned. The hint names `ADOS_PLUGIN_REQUIRE_SIGNED`; see [Bench install and signing](/developers/signing-keys#bench-install-and-signing) |
+| 4 | `permission_denied` | A capability change was refused: `--yes` on a high-risk plugin, or a first-party-only gate (`refused: ..._first_party_only`) such as `gcs.isolation: inline` or `resources.class: heavy` from another signer |
+| 5 | `plugin_not_found` | No plugin with that id is installed, or a file the command needs is missing |
 | 6 | `wrong_state` | The plugin is in a state the command cannot act on |
 | 7 | `resource_limit` | A declared resource budget was exceeded |
-| 8 | `compatibility_failed` | The plugin's compatibility block (ados version, board, tier) does not match this agent |
+| 8 | `compatibility_failed` | The plugin does not fit this agent: its `ados_version`, board, tier, target profile or architecture, or `isolation: inprocess`, which is refused for every plugin |
 
 ## Lifecycle commands
 
@@ -56,7 +60,7 @@ envelope's `kind` field carries the same meaning as a string.
 
 List installed plugins.
 
-```sh
+```bash
 ados plugin list
 ados plugin list --all
 ados plugin list --json
@@ -64,11 +68,13 @@ ados plugin list --json
 
 | Flag | Meaning |
 |------|---------|
-| `--all` | Include built-in plugins discovered via entry points, not just third-party installs |
+| `--all` | Also list the built-in plugins that ship with the agent but are not installed |
 | `--json` | Machine-readable output |
 
-The human table prints `ID`, `VERSION`, `STATUS`, and `SIGNER`. Built-in
-plugins (with `--all`) show status `builtin` and signer `altnautica`.
+The human table prints `ID`, `VERSION`, `STATUS`, and `SIGNER`. With
+`--all`, a built-in that is not installed shows status `available` and
+signer `-`; install one with `ados plugin install <id>`. Installed
+built-ins show their real status.
 
 ### `install`
 
@@ -77,7 +83,7 @@ id, or a first-party catalog id. The command drives the agent's native
 `/api/plugins` routes: it previews first, asks for approval, then installs
 and grants the permissions you approved.
 
-```sh
+```bash
 ados plugin install dist/com.example.thermal-1.0.0.adosplug
 ados plugin install https://github.com/example/thermal/releases/download/v1.0.0/com.example.thermal-1.0.0.adosplug
 ados plugin install com.altnautica.world-engine
@@ -102,10 +108,14 @@ any plugin whose `risk` is `high` or `critical` (exit 4); re-run those
 interactively. A signature failure exits 3, a bad manifest exits 2, a
 compatibility mismatch exits 8.
 
-After a successful install the plugin is installed but not yet running.
+With `--json` and no `--yes`, the plugin installs with no permissions
+granted; grant them with `ados plugin perms <id> --grant <cap>`, or add
+`--yes`.
+
+After a successful install the plugin is installed but stopped.
 Enable it next:
 
-```sh
+```bash
 ados plugin enable com.example.thermal
 ```
 
@@ -113,7 +123,7 @@ ados plugin enable com.example.thermal
 
 Enable an installed plugin so the host starts it.
 
-```sh
+```bash
 ados plugin enable com.example.thermal
 ```
 
@@ -129,7 +139,7 @@ Exits 5 if no plugin with that id is installed.
 Disable a plugin. It stays installed, with its grants intact, but the
 host stops running it.
 
-```sh
+```bash
 ados plugin disable com.example.thermal
 ```
 
@@ -142,7 +152,7 @@ ados plugin disable com.example.thermal
 
 Stop, uninstall, and forget a plugin.
 
-```sh
+```bash
 ados plugin remove com.example.thermal
 ados plugin remove com.example.thermal --keep-data
 ```
@@ -150,7 +160,7 @@ ados plugin remove com.example.thermal --keep-data
 | Argument / flag | Meaning |
 |-----------------|---------|
 | `PLUGIN_ID` | The installed plugin id |
-| `--keep-data` | Preserve the plugin's data directory instead of deleting it |
+| `--keep-data` | Keep the plugin's log, data directory and system user. Without it, remove deletes all three |
 | `--json` | Machine-readable output |
 
 ## Inspection commands
@@ -159,7 +169,7 @@ ados plugin remove com.example.thermal --keep-data
 
 Print a manifest summary and runtime state for one plugin.
 
-```sh
+```bash
 ados plugin info com.example.thermal
 ados plugin info com.example.thermal --json
 ```
@@ -175,11 +185,14 @@ installed nor a built-in.
 
 ### `perms`
 
-Show or revoke permissions on an installed plugin.
+Show, grant, or revoke permissions on an installed plugin.
 
-```sh
+```bash
 # show
 ados plugin perms com.example.thermal
+
+# grant a permission the plugin declares
+ados plugin perms com.example.thermal --grant mavlink.read
 
 # revoke one capability
 ados plugin perms com.example.thermal --revoke mavlink.write
@@ -189,24 +202,26 @@ ados plugin perms com.example.thermal --revoke mavlink.write --yes
 | Argument / flag | Meaning |
 |-----------------|---------|
 | `PLUGIN_ID` | The installed plugin id |
+| `--grant ID` | Grant a permission the plugin declares |
 | `--revoke ID` | Revoke a specific capability id |
 | `--yes`, `-y` | Skip the revoke confirmation prompt |
 | `--json` | Machine-readable output |
 
-With no `--revoke`, the command lists each recorded permission as
-`GRANTED` or `DENIED`. With `--revoke`, it confirms intent (unless `-y`
-or `--json`), then revokes the grant. The plugin loses access to the
-protected resource on the next token rotation, which can interrupt a
-running workload. Exits 5 if the plugin is not installed.
+With neither flag, the command lists each recorded permission as
+`GRANTED` or `DENIED`. Pass `--grant` or `--revoke`, not both. A revoke
+confirms intent (unless `-y` or `--json`), then takes effect at once:
+the host re-mints the plugin's token without the capability, which can
+interrupt a running workload. Exits 5 if the plugin is not installed.
 
 ### `logs`
 
-Tail a plugin's stdout and stderr log file.
+Print or follow a plugin's stdout and stderr log.
 
-```sh
+```bash
 ados plugin logs com.example.thermal
 ados plugin logs com.example.thermal --lines 500
 ados plugin logs com.example.thermal --follow
+ados plugin logs com.example.thermal --service worker
 ```
 
 | Argument / flag | Meaning |
@@ -214,11 +229,16 @@ ados plugin logs com.example.thermal --follow
 | `PLUGIN_ID` | The installed plugin id |
 | `--lines N` | Number of trailing lines to print (default 100) |
 | `--follow` | Follow the log like `tail -f`. Ctrl-C to stop |
+| `--service NAME` | Read a declared service's log instead of the main process's |
 | `--json` | Machine-readable output (non-follow only) |
 
-The log file lives in the plugin log directory, named after the plugin
-id with dots replaced by dashes. Exits 5 if no log file exists (the
-plugin may never have started, or its log rotated out).
+The command asks the agent for the log path (`GET /api/plugins/<id>`),
+so it always reads the file the host writes:
+`/var/log/ados/plugins/<id with dots as hyphens>-<hash8>.log`, or
+`...-<hash8>-<service>.log` for a declared service. An unknown
+`--service` exits 2 and lists the declared services. Exits 5 if the log
+file does not exist yet (the plugin may never have started, or its log
+was rotated out).
 
 ## Update commands
 
@@ -226,7 +246,7 @@ plugin may never have started, or its log rotated out).
 
 Pin a plugin to a version so auto-update skips it.
 
-```sh
+```bash
 ados plugin pin com.example.thermal 1.2.0
 ```
 
@@ -240,7 +260,7 @@ ados plugin pin com.example.thermal 1.2.0
 
 Clear the pinned version so auto-update can run again.
 
-```sh
+```bash
 ados plugin unpin com.example.thermal
 ```
 
@@ -253,7 +273,7 @@ ados plugin unpin com.example.thermal
 
 Toggle auto-update on or off for one plugin.
 
-```sh
+```bash
 ados plugin auto-update com.example.thermal on
 ados plugin auto-update com.example.thermal off
 ```
@@ -273,7 +293,7 @@ or a packed archive, not against installed plugins.
 
 Run static analysis on a packed `.adosplug` archive before submission.
 
-```sh
+```bash
 ados plugin lint dist/com.example.thermal-1.0.0.signed.adosplug
 ados plugin lint --json dist/com.example.thermal-1.0.0.signed.adosplug
 ```
@@ -291,7 +311,7 @@ is documented under [Linting](/developers/linting).
 
 Run a plugin's pytest suite under the SDK test harness.
 
-```sh
+```bash
 ados plugin test ./my-extension
 ados plugin test ./my-extension --tests-dir tests -k follow
 ```
@@ -314,7 +334,7 @@ directory is missing.
 
 Pack a plugin directory into a signed `.adosplug` archive.
 
-```sh
+```bash
 ados plugin sign ./my-extension \
   --key keys/acme-2026-A.priv.pem \
   --signer-id acme-2026-A \
@@ -340,7 +360,7 @@ monorepo-CI alternative (`pack.sh` and `sign.sh`) are covered under
 
 Generate a fresh Ed25519 keypair for plugin signing.
 
-```sh
+```bash
 ados plugin keygen acme-2026-A --output-dir keys
 ados plugin keygen acme-2026-A --output-dir keys --force
 ```
@@ -365,11 +385,19 @@ hardware-token or air-gapped workflow, not a one-liner. Never commit a
 `.priv.pem` file.
 </Warning>
 
-## See also
+## Next steps
 
-- [Manifest reference](/developers/manifest)
-- [Permissions](/developers/permissions)
-- [Lifecycle](/developers/lifecycle)
-- [Linting](/developers/linting)
-- [Signing keys](/developers/signing-keys)
-- [Local file install](/developers/distribution-local-install)
+<CardGroup cols={2}>
+  <Card title="Lifecycle" href="/developers/lifecycle">
+    The states these commands move a plugin through.
+  </Card>
+  <Card title="Signing keys" href="/developers/signing-keys">
+    Keys for `sign` and `keygen`, and how a node trusts them.
+  </Card>
+  <Card title="Linting" href="/developers/linting">
+    The rules `ados plugin lint` applies.
+  </Card>
+  <Card title="Troubleshooting" href="/developers/troubleshooting">
+    What to do when a command exits non-zero.
+  </Card>
+</CardGroup>

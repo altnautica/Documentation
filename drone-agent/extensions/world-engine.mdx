@@ -2,10 +2,10 @@
 title: "World Engine"
 description: "The first-party extension that builds 3D world models from drone flights on a LAN compute node, and runs perception offload for drones without an accelerator."
 icon: "cubes"
-lastUpdated: "2026-09-24"
+keywords: ["ados", "world engine", "extension", "3d reconstruction", "perception offload", "compute node"]
 ---
 
-# World Engine
+import ExtensionWorldEngine from '/snippets/generated/extension-world-engine.mdx';
 
 The World Engine is a first-party extension, `com.altnautica.world-engine`. It
 is not part of the agent core: a node without it installed carries no
@@ -39,8 +39,8 @@ curl -sSL https://raw.githubusercontent.com/altnautica/ADOSDroneAgent/main/scrip
   | sudo bash -s -- --profile workstation --world-engine
 ```
 
-`--no-world-engine` skips it. An upgrade (`--upgrade`) leaves an installed
-extension alone; plugin auto-update keeps it current.
+`--no-world-engine` skips it. An upgrade leaves an installed extension alone;
+plugin auto-update keeps it current.
 
 On a node that is already installed, use the CLI. `ados plugin install` accepts
 the catalog id, a release URL or a downloaded archive:
@@ -55,8 +55,12 @@ ados plugin install ./com.altnautica.world-engine-<version>.signed.adosplug
 ados plugin enable com.altnautica.world-engine
 ```
 
-The install prompt lists every permission the extension asks for. You can also
-install it from the node's **Extensions** tab in Mission Control.
+The catalog id installs the version pinned in the agent's bundled catalog; a
+release URL installs that exact release. The install prompt lists every
+permission the extension asks for. Because the extension is high risk, approve
+it interactively (`--yes` refuses it). You can also install it from the node's
+**Extensions** page in Mission Control; see
+[Install extensions from Mission Control](/mission-control/installing-plugins).
 
 <Note>
 The archive is small. The per-architecture binaries and the Rerun viewer's
@@ -85,15 +89,19 @@ with `incompatible: no binary for <arch-os>`, before anything is unpacked.
 
 ### Service names
 
+Each unit name carries the sanitized plugin id plus `<hash>`, eight hex
+characters derived from the plugin id. Declared services append their name.
+
 | Process | Linux unit | macOS LaunchAgent |
 |---|---|---|
-| Main process | `ados-plugin-com-altnautica-world-engine.service` | `co.ados.plugin.com-altnautica-world-engine` |
-| Capture (drone) | `ados-plugin-com-altnautica-world-engine-capture.service` | not shipped |
-| Node (workstation, compute) | `ados-plugin-com-altnautica-world-engine-node.service` | `co.ados.plugin.com-altnautica-world-engine-node` |
+| Main process | `ados-plugin-com-altnautica-world-engine-<hash>.service` | `co.ados.plugin.com-altnautica-world-engine-<hash>` |
+| Capture (drone) | `ados-plugin-com-altnautica-world-engine-<hash>-capture.service` | not shipped |
+| Node (workstation, compute) | `ados-plugin-com-altnautica-world-engine-<hash>-node.service` | `co.ados.plugin.com-altnautica-world-engine-<hash>-node` |
 
 ```bash
 ados plugin logs com.altnautica.world-engine
-systemctl status ados-plugin-com-altnautica-world-engine-node.service
+ados plugin logs com.altnautica.world-engine --service node
+systemctl status 'ados-plugin-com-altnautica-world-engine-*-node.service'
 ```
 
 ## Pair a drone with a compute node
@@ -251,19 +259,27 @@ The extension adds these pages to the node detail panel.
 
 ## Permissions
 
-| Half | Permissions |
-|---|---|
-| Agent | `telemetry.read`, `telemetry.extend`, `event.publish`, `node.info.read`, `vision.frame.read`, `vision.detection.publish`, `radio.aux_stream`, `network.outbound`, `network.listen`, `hardware.gpu`, `cloud.publish`, `cloud.records` |
-| GCS | `ui.slot.node-agent-page`, `ui.slot.node-surface`, `cloud.records`, `perception.read`, `telemetry.subscribe.status` |
+The agent and Mission Control halves together request:
+
+<ExtensionWorldEngine />
 
 The extension also declares `plugin.world-engine.world.read`, the capability
 another plugin needs to subscribe to its point cloud, occupancy, splat and mesh
 topics. See [Permissions](/developers/permissions).
 
-## Related
+## Next steps
 
-- [Extensions catalog](/drone-agent/extensions-catalog)
-- [Node profiles](/getting-started/node-profiles)
-- [Multi-camera](/drone-agent/multi-camera)
-- [Swarm bus](/drone-agent/swarm-bus)
-- [Manifest reference](/developers/manifest)
+<CardGroup cols={2}>
+  <Card title="Extensions catalog" icon="boxes-stacked" href="/drone-agent/extensions-catalog#world-engine">
+    All first-party extensions.
+  </Card>
+  <Card title="Node profiles" icon="layer-group" href="/getting-started/node-profiles">
+    The drone, ground station, workstation and compute profiles.
+  </Card>
+  <Card title="Multi-camera" icon="camera" href="/drone-agent/multi-camera">
+    Camera sets on the drone.
+  </Card>
+  <Card title="Manifest reference" icon="file-code" href="/developers/manifest">
+    The fields the extension's manifest uses.
+  </Card>
+</CardGroup>

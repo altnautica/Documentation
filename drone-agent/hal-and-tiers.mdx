@@ -1,219 +1,128 @@
 ---
-title: "HAL and Tiers"
-description: "Board auto-detection, YAML profiles, tier mapping, and adding new boards."
+title: "HAL and tiers"
+description: "How the Drone Agent detects the board, the YAML board profile schema, the default tier, and how to add a board."
 icon: "layer-group"
-lastUpdated: "2026-06-18"
 ---
 
-# HAL and Tiers
-
-The Hardware Abstraction Layer (HAL) is how the agent adapts to different companion computers. It reads the board identity at boot, loads the matching YAML profile, and configures the agent's features based on the board's capabilities.
+The Hardware Abstraction Layer (HAL) is how the agent adapts to different companion computers. It identifies the board, loads the matching YAML profile, and hands the profile's hardware facts (buses, encoders, cameras, radios, displays, GPIO) to the installer and the services. The board list is on [Supported hardware](/drone-agent/supported-hardware).
 
 ## Board detection
 
-The detection logic lives in `ados.hal.detect` and runs at agent startup:
+Detection lives in `ados.hal.detect`. It tries each source in order and stops at the first match:
 
-1. Read `/proc/device-tree/model` (the Linux device tree model string)
-2. Compare against `model_patterns` in each board YAML file
-3. Pick the first profile whose pattern matches as a substring
-4. If no match, fall back to `generic-arm64.yaml`
+1. **`/etc/ados/board_override`**, if present. It holds a board profile's YAML file name without the extension (for example `rock-5c-lite`). Use it as the manual correction when detection picks the wrong board. An unknown value is logged and ignored.
+2. **The first token of `/proc/device-tree/compatible`**, which uniquely identifies a board even when several boards share a model string.
+3. **`/proc/device-tree/model`**, matched against each profile's `model_patterns`.
+4. **The `Hardware` or `model` line of `/proc/cpuinfo`**, matched the same way.
+5. **The generic profile for the architecture**: `generic-arm64`, or `generic-x86_64` on x86.
 
-The detection also reads system information:
+Some boards ship one device tree for several hardware bins. A profile can list `variants`, which are resolved by CPU core count.
 
-- Total RAM from `/proc/meminfo`
-- CPU core count from `os.cpu_count()`
-- Architecture from `platform.machine()`
+RAM and core count come from psutil. The result is persisted as a hardware snapshot; print it with:
+
+```bash
+ados hardware show --json
+```
+
+## Default tier
+
+Each board profile declares a `default_tier` (1-4) describing compute class. It is reported in status and used to refuse plugins whose `compatibility.min_tier` the board cannot meet. Which services run is decided by the node profile (drone/ground_station/workstation/compute), not the tier.
+
+The generic profiles are tiered from detected RAM:
+
+| Detected RAM | Tier |
+|---|---|
+| Under 512 MB | 1 |
+| 512 MB to under 2 GB | 2 |
+| 2 GB to 4 GB | 3 |
+| Over 4 GB | 4 |
+
+See [Node profiles](/getting-started/node-profiles) for what each profile runs, and [Manifest](/developers/manifest) for `compatibility.min_tier`.
 
 ## Board profile schema
 
-Each profile is a YAML file at `src/ados/hal/boards/<name>.yaml`. Here is the full schema:
+Each profile is a YAML file at `src/ados/hal/boards/<name>.yaml`, validated by the `BoardProfile` Pydantic model in `src/ados/hal/detect.py`. Keys the model does not define are ignored. The file name (without `.yaml`) is the board id used by `board_override` and by extension `supported_boards` lists.
+
+| Key | Type | Purpose |
+|---|---|---|
+| `name` | string, required | Human-readable board name. |
+| `vendor`, `soc`, `arch` | string | Manufacturer, SoC model, and `aarch64`, `armv7l` or `x86_64`. |
+| `model_patterns` | list of strings | Substrings matched against the device-tree compatible string, model and `/proc/cpuinfo`. |
+| `default_tier` | 1-4 | Compute class. See [Default tier](#default-tier). |
+| `min_kernel_version` | string | Lowest supported kernel, when the board needs one. |
+| `uart_paths` | list | Serial ports to probe for the flight controller. |
+| `hw_video_codecs` | list | Hardware codecs such as `h264_enc`, `h265_enc`, `h264_dec`. |
+| `gpio_pins` | list of ints | Free GPIO pins. |
+| `gpio_outputs` | list of `{id, pin, function}` | GPIO output lines such as a buzzer or status LED. |
+| `gpio_buttons` | list of `{id, pin, header_pin, function}` | Front-panel button wiring. |
+| `buttons` | `{up, down, select, back}` | Panel button pins by role. Without it the panel uses its built-in pins. |
+| `video` | object | `csi_ports`, `csi_connector`, `max_encode_resolution`, `max_encode_fps`, `encoder_api`. |
+| `compute` | object | `npu_tops` and `local_inference` (`none` or `onnx`, for a CPU strong enough to run the detector without an NPU). |
+| `cameras.supported` | list | Camera bindings: type (`csi`, `usb`, `ip`), sensor, bus, overlay, ISP flags and capture modes. |
+| `radios.supported` | list | Radios the installer builds a driver for: chipset, driver, install method, modules, `mesh_capable`. |
+| `flight_controller.interfaces` | list | Priority-ordered flight controller links (`uart`, `usb-acm`, `usb`) with path and baud hints. |
+| `displays.supported` | list | Display bindings: type, controller, bus, resolution, overlay, GPIO claims and touch controller. |
+| `variants` | list | Same-device-tree variants selected by `cpu_cores`, overriding `name`, `soc` or `default_tier`. |
+
+A short real profile, `cm4.yaml`:
 
 ```yaml
-# Required fields
-name: "Human readable board name"
-vendor: "Board manufacturer"
-soc: "SoC model"
-arch: "aarch64"               # aarch64 | armv7l
-model_patterns:                # Strings to match in /proc/device-tree/model
-  - "Exact Match String"
-  - "alternative-match"
-default_tier: 3                # 1 | 2 | 3 | 4
-
-# Bus definitions
-gpio_pins:                     # Available GPIO pin numbers
-  - 2
-  - 3
-  - 14
-  - 15
-
-uart_paths:                    # Serial ports for FC auto-detection
+name: "Raspberry Pi CM4"
+vendor: "Raspberry Pi"
+soc: "BCM2711"
+arch: "aarch64"
+model_patterns:
+  - "Raspberry Pi Compute Module 4"
+  - "Raspberry Pi CM4"
+default_tier: 3
+gpio_pins: [2, 3, 14, 15, 18]
+uart_paths:
   - /dev/ttyAMA0
   - /dev/ttyS0
-
-hw_video_codecs:               # Hardware-accelerated codecs
+hw_video_codecs:
   - h264_enc
   - h264_dec
-  - h265_enc
   - h265_dec
-  - av1_dec
-
-# Optional: detailed bus definitions
-buses:
-  uart:
-    - id: uart0
-      path: /dev/ttyS0
-      baud: 921600
-      fc_capable: true
-  usb:
-    - id: usb0
-      path: "/dev/bus/usb/001/*"
-      type: usb2
-  i2c:
-    - id: i2c0
-      path: /dev/i2c-0
-      speed_hz: 400000
-  spi:
-    - id: spi0
-      path: /dev/spidev0.0
-  pcie:
-    - id: pcie0
-      type: pcie3.0
-      lanes: 1
-
-# Optional: detailed board info
-board:
-  id: board-slug
-  manufacturer: Company
-  status: supported           # supported | experimental | community
-
-# Optional: compute details
-compute:
-  cores: 4
-  core_type: "Cortex-A76 x2 + Cortex-A55 x2"
-  max_freq_mhz: 2400
-  gpu: null                    # null if fused off or absent
-  npu_tops: 6.0               # null if no NPU
-  hw_encoder: ["h264", "h265"]
-  hw_decoder: ["h264", "h265", "vp9", "av1"]
-  ram_mb: 4096
-  ram_type: LPDDR4X
-
-# Optional: storage
-storage:
-  emmc: true
-  sd_card: true
-  nand: false
-
-# Optional: network
-network:
-  wifi: true
-  ethernet: true
-  bluetooth: true
-
-# Optional: video
 video:
-  csi_ports: 1
-  csi_connector: "31-pin 0.3mm Radxa FPC"
-  max_encode_resolution: "3840x2160"
-  max_encode_fps: 60
-  encoder_api: rkmpp
-
-# Optional: power
-power:
-  typical_watts: 4.0
-  max_watts: 8.5
-  voltage: 5.0
-  input: "USB-C 5V/3A"
-
-# Optional: feature profiles
-profiles:
-  tier: pro
-  max_features:
-    - mavlink_proxy
-    - mqtt_gateway
-    - video_pipeline
-    - rest_api
-    - vision_engine
-    - wfb_ng
-    - cloud_relay
-  video_capable: true
-  recommended_resolution: "1920x1080"
-  memory_budget_mb: 4096
-
-# Optional: ground station buttons (for boards used in GS role)
-gpio_buttons:
-  - id: btn_b1
-    pin: 5
-    header_pin: 29
-    function: "ground-station menu up"
+  csi_ports: 0
+  max_encode_resolution: "1920x1080"
+  max_encode_fps: 30
+  encoder_api: v4l2
 ```
 
-## Tier mapping
-
-The tier system determines which features are active. The agent picks a tier based on three inputs (in priority order):
-
-1. **Explicit config** (`agent.tier` in config.yaml) overrides everything
-2. **Board profile** (`default_tier` in the YAML file) is the fallback
-3. **RAM-based fallback** if running on `generic-arm64` with no explicit tier
-
-### Tier feature matrix
-
-| Feature | Tier 1 | Tier 2 | Tier 3 | Tier 4 |
-|---------|--------|--------|--------|--------|
-| MAVLink proxy | Yes | Yes | Yes | Yes |
-| REST API | No | Yes | Yes | Yes |
-| Health monitoring | No | Yes | Yes | Yes |
-| mDNS discovery | No | Yes | Yes | Yes |
-| Video pipeline | No | No | Yes | Yes |
-| WFB-ng link | No | No | Yes | Yes |
-| Cloud relay | No | No | Yes | Yes |
-| Peripherals manager | No | No | Yes | Yes |
-| Vision host and model registry | No | No | No | Yes |
-
-### RAM guidelines
-
-| Tier | Minimum RAM | Typical boards |
-|------|------------|----------------|
-| 1 | minimal | (no current board profile defaults here) |
-| 2 | 256-512 MB | Raspberry Pi 3/CM3, Raspberry Pi Zero 2 W, Radxa Cubie A7Z, generic ARM64, generic x86_64 |
-| 3 | 1-2 GB | Raspberry Pi 4B/CM4, Jetson Nano, Radxa CM3, Radxa Cubie A7S, Rockchip RK3576, RV1126B, D-Robotics RDK X3, BeagleY-AI |
-| 4 | 4 GB+ | ROCK 5C Lite, RPi 5/CM5, Jetson Orin Nano, Orange Pi 5, Radxa CM4 |
+For a profile that uses every section, read `src/ados/hal/boards/rock-5c-lite.yaml` or `rk3576.yaml` in the [ADOSDroneAgent repository](https://github.com/altnautica/ADOSDroneAgent).
 
 ## HAL modules
 
-Beyond board detection, the HAL provides several hardware abstraction modules:
-
 | Module | Purpose |
-|--------|---------|
+|---|---|
 | `detect.py` | Board identification and profile loading |
 | `camera.py` | Camera detection (CSI, USB V4L2) |
-| `gpio.py` | GPIO pin access for buttons, LEDs |
-| `usb.py` | USB device enumeration and hot-plug |
-| `hotplug.py` | Device hot-plug event handling |
+| `camera_cli.py` | Camera helpers for the CLI |
+| `gpio.py` | GPIO pin access for buttons and LEDs |
+| `usb.py` | USB device enumeration |
 | `modem.py` | Cellular modem AT commands |
 
 ## Adding a new board
 
-To add support for a board that is not in the built-in list:
-
 <Steps>
-  <Step title="Identify the model string">
-    SSH into the board and read the device tree model:
+  <Step title="Read the board identity">
+    SSH into the board and read the strings detection matches against:
     ```bash
+    tr '\0' '\n' < /proc/device-tree/compatible
     cat /proc/device-tree/model
     ```
-    This is the string you will match against.
   </Step>
 
   <Step title="Create the YAML file">
-    Create `src/ados/hal/boards/your-board.yaml` with at minimum:
+    Create `src/ados/hal/boards/<your-board>.yaml`. The file name becomes the board id. At minimum:
     ```yaml
     name: "Your Board Name"
     vendor: "Manufacturer"
     soc: "SoC Model"
     arch: "aarch64"
     model_patterns:
-      - "Exact string from /proc/device-tree/model"
+      - "string from the compatible node or model"
     default_tier: 3
     uart_paths:
       - /dev/ttyS0
@@ -222,27 +131,38 @@ To add support for a board that is not in the built-in list:
     ```
   </Step>
 
-  <Step title="Add bus definitions">
-    List the UART ports the FC might connect to, USB ports, I2C buses, and any other relevant hardware.
+  <Step title="Describe the hardware">
+    Add the sections from the schema that apply: `video`, `compute`, `cameras`, `radios`, `flight_controller`, `displays`, GPIO and buttons.
   </Step>
 
-  <Step title="Set the right tier">
-    Based on the board's RAM and capabilities, pick an appropriate default tier. When in doubt, start lower and test.
+  <Step title="Pick the default tier">
+    Choose the tier from the board's RAM and accelerator, using the RAM bands above as a guide. The tier only gates extensions that set `compatibility.min_tier`.
   </Step>
 
   <Step title="Test">
-    Install the agent on the board and verify detection:
+    Install the agent on the board and check what it detected:
     ```bash
-    ados status --json
+    ados hardware show --json
     ```
-    The board name, tier, and features should match your YAML file.
+    The board name and tier should match your YAML file. If detection picked another profile, check `model_patterns`, or write the file name to `/etc/ados/board_override` to confirm the profile loads.
   </Step>
 
-  <Step title="Submit a PR">
-    Add the YAML file and submit a pull request to `altnautica/ADOSDroneAgent`. Include the board model, where to buy it, and any quirks you discovered during testing.
+  <Step title="Submit a pull request">
+    Add the YAML file and open a pull request against `altnautica/ADOSDroneAgent`. Include the board model, where to buy it, and any quirks you found while testing.
   </Step>
 </Steps>
 
 <Tip>
-The `generic-arm64` fallback profile works on any 64-bit ARM board. You can use the agent without a custom profile. Adding a board profile just improves auto-detection accuracy and enables board-specific features (like the right UART path or GPIO buttons).
+The generic profiles work on any 64-bit ARM or x86_64 machine, so you can run the agent without a custom profile. A board profile improves detection and enables board-specific hardware such as the right UART path, cameras, displays and button pins.
 </Tip>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Supported hardware" icon="circuit-board" href="/drone-agent/supported-hardware">
+    The shipped board profiles.
+  </Card>
+  <Card title="Systemd services" icon="server" href="/drone-agent/systemd-services">
+    Which units each profile runs.
+  </Card>
+</CardGroup>

@@ -1,286 +1,170 @@
 ---
-title: "Agent Services"
-description: "The multi-process systemd architecture, IPC sockets, circuit breaker, and profile detection."
+title: "Agent services architecture"
+sidebarTitle: "Agent services"
+description: "Why the agent runs as many systemd units, how the supervisor gates and retries them, and the IPC sockets and HTTP front they share."
 icon: "server"
-lastUpdated: "2026-06-18"
+keywords: ["ados", "agent services", "supervisor", "ipc", "state.sock", "systemd"]
 ---
 
-# Agent Services
+The agent runs each function as its own systemd unit. A supervisor decides which units this node should run, starts them through `systemctl`, and watches them. The units share no memory; they talk over Unix domain sockets in `/run/ados/` and over the HTTP front on port 8080.
 
-The ADOS Drone Agent uses a multi-process architecture where each service runs as an independent systemd unit. A supervisor service manages the lifecycle. Services communicate through Unix domain sockets and share no memory.
-
-The agent is a Rust-first hybrid. Most long-running services are native Rust binaries: the supervisor, the MAVLink router, the cloud relay, the video pipeline, the radio data plane, the ground-side receiver, the physical-UI display, the uplink router, the logging daemon, and the vision host. Port 8080 is owned by the native Rust front, `ados-control`, which answers migrated routes directly and reverse-proxies the rest to a residual FastAPI process on an internal Unix socket. Python stays where the ecosystem lives: AI and vision inference, the plugin runtime, the setup webapp, HAL board detection and first-boot bootstrap, the config layer, the health monitor, and some ground-station hardware glue (Ethernet, WiFi client, modem, buttons, peripherals). The supervisor never spawns these processes itself: it issues `systemctl` against a fixed catalog, so systemd remains the process manager and owns the cgroup, restart, and journald wiring. Many unit names are stable shims that exec a Rust binary, so the commands you type (`systemctl restart ados-oled`, `ados-wfb`) keep working while the implementation underneath is native.
+This page explains the design. The unit list per profile is on [Systemd services](/drone-agent/systemd-services), the four profiles and how a node picks one are on [Node profiles](/getting-started/node-profiles), and board profiles are on [HAL and tiers](/drone-agent/hal-and-tiers).
 
 ## Why multi-process
 
-A single in-process design is simpler, but it has real drawbacks for a drone:
+One process would be simpler, but on an aircraft it fails badly:
 
-- A crashed video encoder takes down the MAVLink proxy. The flight controller loses its companion link.
-- No per-service resource limits. A memory leak in one service starves the others.
-- No per-service restart. Fixing a video pipeline issue requires restarting everything.
+- A crash in the video encoder would take the MAVLink link to the flight controller down with it.
+- There would be no per-service memory or CPU limit, so one leak starves everything.
+- Fixing one service would mean restarting all of them.
 
-The multi-process design isolates failures. A crashed `ados-video` gets restarted by systemd in 3 seconds. The MAVLink proxy never notices.
+With one unit per function, a crashed `ados-video` restarts on its own and the MAVLink router never notices.
 
-## Service tree
+## Rust and Python
 
-```mermaid
-%%{init: {'theme': 'dark'}}%%
-flowchart TB
-    Supervisor["ados-supervisor (Rust)<br/>orchestrates systemd"]
+The long-running and safety-critical services are native Rust binaries in `/opt/ados/bin/`: the supervisor, the MAVLink router, the HTTP front, the cloud relay, the video pipeline, the radio, the ground receiver, the uplink router, the display, the logging daemon and the vision engine. Python, in the virtual environment at `/opt/ados/venv/`, carries the residual API behind the HTTP front, the setup webapp, HAL board detection and profile seeding, and AI sidecars such as the RKNN inference unit.
 
-    subgraph Core["Core Services (always running)"]
-        MAVLink["ados-mavlink<br/>runs ados-mavlink-router (Rust)<br/>FC serial router + :8765 WS"]
-        Control["ados-control (Rust)<br/>HTTP front on :8080"]
-        API["ados-api (Python)<br/>residual FastAPI, internal socket"]
-        Cloud["ados-cloud (Rust)<br/>MQTT + Convex relay"]
-        Health["ados-health (Python)<br/>CPU, RAM, temp"]
-        Logd["ados-logd (Rust)<br/>black-box logging :8090"]
-    end
+Many unit names are older than their Rust binaries and stay stable so the commands you type keep working:
 
-    subgraph HW["Hardware-Dependent"]
-        Video["ados-video (Rust, drone)<br/>camera + HW encode"]
-        WFB["ados-wfb<br/>runs ados-radio (Rust, drone)<br/>WFB-ng TX"]
-        Vision["ados-vision (Rust)<br/>vision host"]
-        Sensors["ados-peripherals (Python)<br/>USB + sensor mgr"]
-        GPIO["ados-gpio (Rust)<br/>GPIO output, off until enabled"]
-    end
+| Unit | Binary it runs |
+|------|----------------|
+| `ados-mavlink` | `ados-mavlink-router` |
+| `ados-wfb` | `ados-radio` |
+| `ados-wfb-rx` | `ados-groundlink --role direct` |
+| `ados-mediamtx-gs` | `ados-groundlink --ground-video` |
+| `ados-oled` | `ados-display` |
+| `ados-uplink-router` | `ados-net` |
 
-    subgraph OnDemand["On-Demand"]
-        Discovery["ados-discovery (Python)<br/>mDNS"]
-        Plugins["ados-plugin-host (Rust)<br/>subprocess plugin supervisor"]
-    end
+On a ground station, `ados-net` owns the wired link, the Wi-Fi station and the cellular modem in one process, and `ados-pic` reads the front-panel buttons. There are no separate units for those.
 
-    subgraph GroundOnly["Ground Station Profile"]
-        WFBRX["ados-wfb-rx<br/>runs ados-groundlink (Rust)"]
-        OLED["ados-oled<br/>runs ados-display (Rust)"]
-        DispProbe["ados-display-probe (Rust)<br/>panel detect"]
-        PIC["ados-pic (Rust)<br/>panel arbiter"]
-        Input["ados-input (Rust)<br/>joystick + touch"]
-        Uplink["ados-uplink-router<br/>runs ados-net (Rust)<br/>uplink matrix: wired, WiFi station,<br/>cellular, CDC-NCM tether"]
-        HostAP["ados-hostapd (C)<br/>WiFi AP"]
-        MediaMTXGS["ados-mediamtx-gs<br/>RTSP + WHEP"]
-        Kiosk["ados-kiosk<br/>Chromium HDMI"]
-        Captive["ados-setup-captive + ados-dnsmasq-gs<br/>first-boot portal"]
-    end
+## The supervisor
 
-    Supervisor --> Core
-    Supervisor --> HW
-    Supervisor --> OnDemand
-    Supervisor --> GroundOnly
+`ados-supervisor` never spawns service processes itself. It issues `systemctl` against a fixed catalog (`SERVICE_REGISTRY` in `crates/ados-supervisor/src/registry.rs`, derived from the unit table `UNITS` in `crates/ados-protocol/src/units.rs`), so systemd stays the process manager and owns the cgroups, restarts and journald wiring.
+
+Each catalog row has:
+
+- **A category.** Core units start first, then hardware units, then on-demand units. Shutdown runs in reverse.
+- **A profile gate.** A row scoped to `drone`, `ground_station` or both is skipped on any other profile. A row with no gate runs everywhere.
+- **A role gate.** On a ground station, some rows run only in one distributed-receive role (`direct`, `relay` or `receiver`).
+- **A headless flag.** In headless mode only the lean flight core runs: the MAVLink router, the swarm bus, camera encode, the radio, the logging daemon and the HTTP front.
+- **An idle rule.** Some units exit 0 on purpose when the node has nothing for them to do (no fleet slot, no LCD, a feature marker absent). The supervisor records these as `idle`, not as a failure, and does not restart them.
+
+The supervisor reports each unit as `stopped`, `starting`, `running`, `failed`, `crash_looping` or `idle`.
+
+### Crash-loop handling
+
+When a unit fails 5 times inside 60 seconds, the supervisor labels it `crash_looping`. The label is for the operator; it never blocks a start. A unit parked in `failed` or `crash_looping` is retried every 5 seconds, so it recovers by itself once the cause goes away (for example a camera plugged back in). The supervisor also clears systemd's `start-limit-hit` latch with `systemctl reset-failed`, so no unit is left permanently stopped.
+
+```text
+running -> failure -> retried every 5 s -> 5 failures in 60 s -> crash_looping (still retried every 5 s) -> running
 ```
-
-Distributed-receive roles add three more ground-station units when enabled: `ados-batman` (mesh carrier), `ados-wfb-relay` (relay role), and `ados-wfb-receiver` (receiver role).
-
-The supervisor starts child services based on the active profile (air or ground-station) and the hardware detected. Services that depend on hardware not present are masked, not started.
 
 ## Systemd unit structure
 
-Each service has a unit file in `/etc/systemd/system/`. Native Rust services run a binary from `/opt/ados/bin/`; the Python-backed units run through the virtual environment in `/opt/ados/venv/`. The unit name stays stable even when the implementation is native: `ados-mavlink` runs `ados-mavlink-router`, `ados-oled` runs `ados-display`, `ados-wfb` runs `ados-radio`, `ados-uplink-router` runs `ados-net`, and `ados-wfb-rx` runs `ados-groundlink`.
+Unit files ship in the agent's `data/systemd/` and are installed to `/etc/systemd/system/`. This is the MAVLink router's unit, trimmed to the lines that matter:
 
 ```ini
 [Unit]
-Description=ADOS MAVLink Router
-After=ados-supervisor.service
+Description=ADOS MAVLink Proxy
 PartOf=ados-supervisor.service
+StartLimitIntervalSec=0
 
 [Service]
+Slice=ados.slice
 Type=simple
-User=ados
-# The ados-mavlink unit execs the native Rust router binary. Python-backed
-# units (for example ados-api, ados-health) use
-# /opt/ados/venv/bin/python -m ados.services.<name> instead.
 ExecStart=/opt/ados/bin/ados-mavlink-router
-Restart=on-failure
+Restart=always
 RestartSec=3
-MemoryMax=128M
-CPUQuota=50%
+Environment=ADOS_CONFIG=/etc/ados/config.yaml
+SupplementaryGroups=dialout
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/var/ados /var/lib/ados /run/ados /dev /etc/ados
+MemoryMax=50M
+CPUQuota=25%
 
 [Install]
 WantedBy=ados-supervisor.service
 ```
 
-Key properties:
+- `PartOf` stops and restarts the unit with the supervisor.
+- `Slice=ados.slice` puts every agent unit in one accounting slice, so per-unit memory and CPU are observable.
+- `Restart=always` with `StartLimitIntervalSec=0` keeps the only flight-controller command path retrying instead of giving up.
+- `MemoryMax` and `CPUQuota` stop one service from starving the rest. Each unit sets its own limits.
 
-- **PartOf:** service stops when the supervisor stops
-- **Restart=on-failure:** automatic restart on crash
-- **MemoryMax / CPUQuota:** cgroup limits prevent any single service from starving the system
+## IPC sockets
 
-## IPC: Unix domain sockets
+All sockets live in `/run/ados/` (override with `ADOS_RUN_DIR`). Every length-prefixed socket uses the same framing primitive: a 4-byte big-endian length followed by that many bytes. The contracts and their version numbers are registered in `crates/ados-protocol/contracts.toml`.
 
-Services communicate through two Unix domain sockets in `/run/ados/`:
+| Socket | Owner | Carries |
+|--------|-------|---------|
+| `mavlink.sock` | `ados-mavlink-router` | MAVLink frames from the flight controller to every reader; frames written by a client go to the flight controller |
+| `msp.sock` | `ados-mavlink-router` | The raw MSP byte stream for a Betaflight or iNav flight controller |
+| `state.sock` | `ados-mavlink-router` | The vehicle-state snapshot, described below |
+| `mavlink-ingest.sock` | `ados-mavlink-router` (ground station) | MAVLink frames arriving off the radio, merged into the ground station's fan-out |
+| `api-internal.sock` | `ados-api` | The residual Python API, reached only through `ados-control` |
+| `logd.sock` | `ados-logd` | Black-box ingest from every producer |
+| `logd-query.sock` | `ados-logd` | On-box queries, used by `ados logs query` |
 
-### MAVLink socket (`/run/ados/mavlink.sock`)
+### MAVLink socket
 
-Binary protocol. Each frame is a 4-byte little-endian length prefix followed by raw MAVLink bytes.
-
-```
-| LENGTH (4 bytes, LE) | MAVLink v2 frame (LEN bytes) |
-```
-
-The MAVLink router writes FC messages to this socket. Other services (cloud, logging, the HTTP front) read from it. This is a publish-subscribe pattern implemented over a Unix socket. Multiple readers get all messages.
-
-Two more sockets round out the IPC surface: `/run/ados/api-internal.sock` (the internal socket the residual FastAPI binds, reached only through the `ados-control` front) and `/run/ados/logd-query.sock` (the on-box query socket for the logging daemon, used by `ados logs query`).
-
-### State socket (`/run/ados/state.sock`)
-
-JSON protocol at 10 Hz. Each frame is a newline-delimited JSON object:
-
-```json
-{"ts": 1713270934.5, "mode": "LOITER", "armed": false, "alt": 45.2, "bat": 82, "gps_sats": 12}
+```text
+| LENGTH (4 bytes, big-endian) | MAVLink v1 or v2 frame (LENGTH bytes) |
 ```
 
-The health service reads this to compute system metrics. The cloud service reads it for telemetry upload. The OLED service reads it for display rendering.
+The router fans every frame from the flight controller out to all connected readers, such as the cloud relay and the HTTP front. It is a publish-subscribe socket: every reader gets every frame. Versioning follows MAVLink itself.
 
-## Circuit breaker
+### Vehicle-state socket
 
-The supervisor implements a circuit breaker pattern for each service. If a service crashes 5 times within 60 seconds, the breaker opens and the service is not restarted until a manual reset or a supervisor restart.
+`state.sock` is the canonical vehicle-state feed. The format is contract `state.v2`, body version 4.
 
+```text
+| LENGTH (4 bytes, big-endian) | msgpack map {"v": 4, "s": { ...state... }} |
 ```
-Normal → 5 failures in 60s → Breaker open → Manual reset or supervisor restart → Normal
-```
 
-When a breaker opens, the supervisor:
+- The router publishes a snapshot about 10 times a second. A new reader receives the last snapshot as soon as it connects.
+- `s` is an open map of telemetry: attitude, position, GPS, battery, mode, armed state and link statistics. Once the flight controller's heartbeat is latched it also carries `fc_system_id` and `fc_component_id`.
+- A reading the flight controller has not reported (battery voltage, current, remaining and temperature, GPS `eph` and `epv`, RC RSSI) is `null`, not the MAVLink sentinel value.
+- `v` is an exact-match version. A reader skips any frame whose `v` differs from its own and gives up on the connection after 8 mismatched frames in a row. Every change to the body shape bumps the version, including an added field.
+- The largest accepted frame is 1 MiB.
 
-1. Logs a CRITICAL event
-2. Sends a notification to Mission Control
-3. Continues running all other services
-
-A single bad service does not bring down the whole agent.
-
-## Profile detection
-
-On first boot (or when `agent.profile: auto` is set), the `profile_detect` module runs a score-based hardware fingerprint:
-
-| Signal | Ground score | Air score |
-|--------|-------------|-----------|
-| I2C OLED at 0x3C or 0x3D | +3 | 0 |
-| 4 GPIO buttons with pull-ups | +2 | 0 |
-| RTL8812EU USB device | +1 | +1 |
-| MAVLink serial device (ttyACM or UART) | 0 | +3 |
-| GPS serial device | 0 | +2 |
-| FC heartbeat received within 10 seconds | 0 | +3 |
-| Known FC carrier board profile | 0 | +2 |
-
-**Decision rules:**
-- Ground score `>= 4` AND air score `<= 2`: **ground-station** profile
-- Air score `>= 4` AND ground score `<= 2`: **air** profile
-- Ambiguous: **unconfigured**, show pick-profile UI
-
-The result is written to `/etc/ados/profile.conf` with the full fingerprint snapshot. Explicit `agent.profile:` in config.yaml always overrides detection.
-
-## Service lifecycle per profile
-
-<Tabs>
-  <Tab title="Air profile">
-    Always started:
-    - `ados-supervisor`, `ados-mavlink`, `ados-control`, `ados-api`, `ados-cloud`, `ados-health`, `ados-logd`
-
-    Hardware-dependent:
-    - `ados-video` (if camera detected)
-    - `ados-wfb` in TX mode (if RTL8812EU detected)
-    - `ados-vision` (if the vision engine is provisioned)
-    - `ados-peripherals` (if USB sensors detected)
-    - `ados-gpio` (off until enabled, for a status buzzer or LED)
-
-    On-demand:
-    - `ados-discovery`, `ados-plugin-host`
-
-    Masked (never started):
-    - All ground-station services (hostapd, oled, kiosk, etc.)
-  </Tab>
-  <Tab title="Ground station profile">
-    Always started:
-    - `ados-supervisor`, `ados-control`, `ados-api`, `ados-cloud`, `ados-health`, `ados-logd`
-    - `ados-hostapd`, `ados-oled`
-    - `ados-wfb-rx` (in the `direct` role)
-    - `ados-mediamtx-gs`
-    - `ados-uplink-router` (uplink matrix: wired link, WiFi station, cellular, USB tether), `ados-pic` (front-panel arbiter)
-    - `ados-display-probe` (panel detect)
-    - `ados-setup-captive`, `ados-dnsmasq-gs` (first boot)
-
-    Hardware-dependent:
-    - `ados-kiosk` (if HDMI output detected)
-    - `ados-input` (if a joystick or touch device is present)
-    - `ados-batman`, `ados-wfb-relay`, `ados-wfb-receiver` (mesh roles only)
-
-    Masked (never started):
-    - `ados-mavlink` (no FC), `ados-video` (no camera), `ados-wfb` TX mode
-  </Tab>
-</Tabs>
-
-The `ados-cloud` unit is a single cross-profile service. On the ground-station profile it also runs the cloud-relay bridge that forwards a drone's telemetry and video signaling on to the cloud, so there is no separate relay unit.
+The older `state.v1` format (one JSON object per line, no version field) is legacy. The shared readers still decode a stray v1 line, choosing the format per frame from the leading byte, but nothing current produces it.
 
 ## HTTP control surface
 
-Port 8080 is served by the native Rust front, `ados-control`. It answers migrated routes directly and reverse-proxies everything else to the residual FastAPI process (the `ados-api` unit) over an internal Unix socket at `/run/ados/api-internal.sock`. From a client's point of view there is one HTTP surface on `:8080`. The split is internal, and the request paths, response bodies, and schemas stay the same across the boundary.
+Port 8080 belongs to the native Rust front, `ados-control`. It answers its own routes directly (including the WebRTC `/whep` endpoint), relays `/hls/*` to MediaMTX on loopback, serves the dashboard and on-box cockpit bundles from disk, and forwards a fixed set of path prefixes to the residual Python API over `api-internal.sock`. Any other `/api` path returns 404.
 
-The surface provides:
+The forwarded prefixes are `PERMANENT_PYTHON_PREFIXES` in `crates/ados-control/src/routing.rs`:
 
-- `/api/status` and `/api/status/full` for agent state
-- `/api/video/*` for video pipeline status and MediaMTX integration
-- `/api/v1/ground-station/*` for ground-station-specific endpoints (WiFi, pairing, OLED, buttons, uplinks)
-- `/api/command` for drone commands (arm, disarm, mode change)
-- `/api/config` for reading and writing agent configuration
+- `/api/vision`
+- `/api/v1/setup`
+- `/api/peripherals`
+- `/api/v1/peripherals`
+- `/api/v1/display`
 
-Authentication uses the `X-ADOS-Key` header with a key stored in `/etc/ados/config.yaml`, generated at install time. The MAVLink WebSocket on `:8765` (served by `ados-mavlink-router`) uses a short-lived HMAC ticket instead.
+A client sees one HTTP surface on `:8080`; the split is internal. Native routes go through the front's own rate limiter, pairing gate and MCP scope check. Forwarded routes are authenticated by the front before they are passed on.
 
-The residual FastAPI keeps the features that stay in Python: AI and vision endpoints, the plugin runtime surface, the setup webapp, the device-discovery and peripherals routes, and the WHEP video bridge. As more routes move to the Rust front, the FastAPI footprint shrinks toward those Python-bound features only.
+Requests authenticate with the `X-ADOS-Key` header. The key is the pairing key in `/etc/ados/pairing.json` (mode 0600), created when the node is paired. The MAVLink WebSocket on `:8765`, served by `ados-mavlink-router`, uses a short-lived single-use HMAC ticket instead. The full route list and auth rules are on [REST API](/drone-agent/rest-api).
 
-## HAL board profiles
+## How a node picks its profile
 
-Each supported SBC has a YAML profile in `src/ados/hal/boards/`. The profile defines the SoC, the UART and GPIO map, the video codec support, and the navigation hardware:
+The install-time choice decides. The installer's `--profile` flag, or the role picked in the setup wizard, is written to `/etc/ados/profile.conf`. An explicit `agent.profile` in `/etc/ados/config.yaml` overrides it.
 
-```yaml
-# Example: rpi4b.yaml
-name: "Raspberry Pi 4B"
-vendor: "Raspberry Pi"
-soc: "BCM2711"
-arch: "aarch64"
-model_patterns:
-  - "Raspberry Pi 4 Model B"
-default_tier: 3
-uart_paths:
-  - /dev/ttyAMA0
-  - /dev/ttyS0
-gpio_pins: [2, 3, 14, 15, 18]
-hw_video_codecs:
-  - h264_enc
-  - h264_dec
-  - h265_dec
-video:
-  csi_ports: 1
-  max_encode_resolution: "1920x1080"
-  max_encode_fps: 30
-  encoder_api: v4l2
-buses:
-  i2c:
-    - id: i2c1
-```
+Hardware detection is only a fallback seed. When `agent.profile` is `auto` (or unset) and `profile.conf` names no profile, the residual API runs `profile_detect` at boot and writes the result. Its decision is a strict argmax over hardware probes, with a tie broken by the last saved profile and a final default of `drone`. If the probes keep tying, the seed stops and you set the profile with `ados profile set` or the setup wizard. Details are on [Node profiles](/getting-started/node-profiles).
 
-The profile drives service startup, GPIO mapping, video encoder selection, and feature gating. Detection runs on `/proc/device-tree/model`, `/proc/cpuinfo`, and an optional `/etc/ados/board_override`. Unknown boards fall back to safe `generic-arm64` defaults.
+## Next steps
 
-## Resource budget
-
-Memory use is dominated by the Python residual (FastAPI), the video encoder buffers, and Chromium when the HDMI kiosk runs. The native Rust services are lean: each orchestrator sits in the tens of MB. Indicative figures for the ground-station profile on a Pi 4B (4 GB RAM):
-
-| Service | Typical RAM |
-|---------|-------------|
-| ados-supervisor (Rust) | ~15 MB |
-| ados-control (Rust front) | ~15 MB |
-| ados-api (FastAPI, internal socket) | ~40 MB |
-| ados-wfb-rx (Rust) | ~20 MB |
-| ados-mediamtx-gs | ~30 MB |
-| ados-hostapd | ~5 MB |
-| ados-oled (Rust) | ~10 MB |
-| ados-health (Python) | ~10 MB |
-| ados-kiosk (Chromium) | 280-520 MB |
-| **Total (no kiosk)** | **~150 MB** |
-| **Total (with kiosk 720p)** | **~430 MB** |
-
-On a 4 GB Pi 4B this leaves multiple GB free with or without the kiosk. A lean flight node can run a zero-Python core (the MAVLink router, camera encode, radio, and the `ados-control` front) for a much smaller footprint.
-
-## What is next
-
-- [Video Stack](/architecture/video-stack) for the camera-to-browser pipeline
-- [Cloud Infrastructure](/architecture/cloud-infrastructure) for the three relay layers
-- [Project Structure](/architecture/project-structure) for the codebase layout
+<CardGroup cols={2}>
+  <Card title="Systemd services" icon="list" href="/drone-agent/systemd-services">
+    Every unit, its profile gate and what it does.
+  </Card>
+  <Card title="Node profiles" icon="layer-group" href="/getting-started/node-profiles">
+    The four profiles and how each one is chosen.
+  </Card>
+  <Card title="Video stack" icon="video" href="/architecture/video-stack">
+    The camera-to-browser path the video units implement.
+  </Card>
+  <Card title="Project structure" icon="folder-tree" href="/architecture/project-structure">
+    Where each crate and module lives.
+  </Card>
+</CardGroup>

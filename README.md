@@ -4,9 +4,12 @@ Documentation for the ADOS open-source drone platform, powered by [Mintlify](htt
 
 ## Products covered
 
-- **[ADOS Mission Control](https://github.com/altnautica/ADOSMissionControl)** - Browser-based Ground Control Station
+- **[ADOS Mission Control](https://github.com/altnautica/ADOSMissionControl)** - Ground control station for the browser and the desktop
 - **[ADOS Drone Agent](https://github.com/altnautica/ADOSDroneAgent)** - Companion computer software for drones
-- **ADOS Ground Agent** - Ground station receiver (same codebase as Drone Agent, different profile)
+- **ADOS Ground Agent** - Ground station software (the Drone Agent codebase with the ground station profile)
+- **[ADOS Android GCS](https://github.com/altnautica/ADOSAndroidGCS)** - Ground control station for Android phones and tablets
+- **[ADOS Extensions](https://github.com/altnautica/ADOSExtensions)** - First-party extensions and the plugin SDK
+- **[ADOS MCP server](https://github.com/altnautica/ADOS-MCP)** - Model Context Protocol server for AI control of a fleet
 
 ## Local development
 
@@ -22,9 +25,16 @@ Run the docs locally:
 mint dev
 ```
 
-## Contributing
+## Contributing to these docs
 
-Found an error or want to improve the docs? Open a pull request. See the [contributing guide](https://docs.altnautica.com/getting-started/contributing) for details.
+Found an error or want to improve a page? Open a pull request.
+
+- Run `mint dev` and check the page renders before you open the pull request.
+- A new page needs its MDX file and a `docs.json` navigation entry in the same change. A removed or renamed page needs a `redirects` entry in `docs.json`.
+- Files under `snippets/generated/` are generated from the code repositories by `scripts/gen-reference.mjs`. Change the source, never the snippet.
+- Follow the writing rules in [AGENTS.md](AGENTS.md).
+
+Contributing to the ADOS code itself is covered in the [contributing guide](https://docs.altnautica.com/getting-started/contributing).
 
 ## License
 

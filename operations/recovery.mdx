@@ -1,13 +1,13 @@
 ---
 title: "Recovery"
-description: "Reaching a node that has stopped answering, and reinstalling one that is genuinely broken."
-icon: "life-ring"
-lastUpdated: "2026-07-31"
+description: "Reaching a node that has stopped answering, repairing it in place, and reinstalling one that is broken."
+icon: "toolbox"
 ---
 
-# Recovery
+import InstallAgent from "/snippets/install-agent.mdx";
+import InstallGroundAgent from "/snippets/install-ground-agent.mdx";
 
-A node that does not answer is usually reachable by a route you have not tried, not broken. Work through reaching it before you reach for a card reader.
+A node that does not answer is usually reachable by a route you have not tried, not broken. Work through reaching it before you reach for a card reader. For symptom-by-symptom diagnosis by product, start at [Troubleshooting by area](/operations/troubleshooting).
 
 ## Reaching a node that stopped answering
 
@@ -16,13 +16,13 @@ A node that does not answer is usually reachable by a route you have not tried, 
 The agent publishes an mDNS service (`_ados._tcp`, port 8080) and the resolvable name is the box's **system hostname**, the one you set at install time:
 
 ```bash
-curl -s http://<hostname>.local:8080/api/ping
+curl -s http://ados-9f2c1a.local:8080/api/ping
 ```
 
 The installer prints this URL on its completion summary. It is the address to keep, because unlike an IP address it survives the box getting a different lease.
 
 <Warning>
-`.local` resolution is not guaranteed. It has been observed failing on a box that was otherwise completely healthy and answering fine on its address. mDNS depends on the responder running on the node, on your own machine resolving mDNS at all, and on the network passing multicast. A name that does not resolve is not evidence of a dead node.
+`.local` resolution is not guaranteed. It has been observed failing on a box that was otherwise healthy and answering on its address. mDNS depends on the responder running on the node, on your own machine resolving mDNS at all, and on the network passing multicast. A name that does not resolve is not evidence of a dead node.
 
 Equally, a recorded IP address goes stale when the lease changes. Neither route is reliable on its own, which is why the agent advertises several and why you should try more than one before concluding anything.
 </Warning>
@@ -35,7 +35,7 @@ The agent advertises every way it can be reached, in priority order: the mDNS na
 |---|---|---|
 | Ground station access point | `http://192.168.4.1:8080` | The box's own WiFi is up but its uplink is not |
 | USB gadget | `http://192.168.7.1:8080` | Nothing on the network works; plug in a USB cable |
-| LAN address | `http://<address>:8080` | mDNS is not resolving but the lease is intact |
+| LAN address | `http://192.168.1.50:8080` (your node's address) | mDNS is not resolving but the lease is intact |
 
 Both the access point and the USB gadget subnets are treated as operator routes by the agent even when it is unpaired, so they stay usable on a box you cannot otherwise reach.
 
@@ -46,102 +46,88 @@ If you do not know the address, scan the network for the hostname rather than gu
 If you can get a shell on it:
 
 ```bash
-ados                      # full status page
-ados status --json        # the same thing for scripts
-ados diag link            # radio link, with real counters
+ados                      # status page (interactive dashboard on a terminal)
+ados status --json        # the same status for scripts
+ados diag link            # radio link verdict from real counters
 ados diag video           # video pipeline, hop by hop
-ados diag storage         # write rate, throttling, store footprint
-ados logs query --limit 200
+ados diag storage         # write rate, throttle history, store footprint
 ```
 
-Reach for `ados diag` and `ados logs` before `journalctl`. The black-box log store survives reboots and holds telemetry and hardware history alongside the log lines, which the journal does not.
+Then read the journal, which is the log of record:
 
-Check whether services are actually up:
+```bash
+journalctl -u ados-supervisor -n 200 --no-pager
+journalctl -u 'ados-*' --since "15 min ago" --no-pager
+```
+
+<Note>
+The Black Box store is off by default (`logging.store.enabled: false`). Unless you enabled it, `ados logs query` and `ados logs tail` have nothing to return; use `journalctl -u <unit>`. Where the store is on, it survives reboots and holds telemetry and hardware history alongside the log lines. See [Black Box](/drone-agent/black-box).
+</Note>
+
+Check whether services are up:
 
 ```bash
 systemctl list-units 'ados*' --all
 systemctl list-units --state=failed
 ```
 
-## Three symptoms worth triaging before anything else
+The units each profile runs are listed on [Systemd services](/drone-agent/systemd-services).
+
+## Three symptoms to triage first
 
 ### The node will not boot
 
-A node that gets no further than a blank screen or a boot loop is not reachable over the
-network, so the diagnostics above do not apply. Work in this order.
+A node that gets no further than a blank screen or a boot loop is not reachable over the network, so the checks above do not apply. Work in this order.
 
-1. **Power first.** An under-powered supply, or an adapter drawing more than the rail can carry,
-   presents as a board that boots partway and restarts. `ados diag storage` reports the board's
-   own undervoltage and thermal-throttle flags, which is worth checking on any node that has
-   been rebooting on its own, once the node is reachable again.
-2. **Read the card on another machine.** A full filesystem and a corrupted root are both
-   visible from a card reader, and both look identical from the outside.
-3. **Reflash.** If the card is intact and the box still will not come up, this is the supported
-   recovery. See below.
+1. **Power first.** An under-powered supply, or an adapter drawing more than the rail can carry, presents as a board that boots partway and restarts. Once the node is reachable again, `ados diag storage` reports the board's own undervoltage and thermal-throttle flags, which is worth checking on any node that has been rebooting on its own.
+2. **Read the card on another machine.** A full filesystem and a corrupted root are both visible from a card reader, and both look identical from the outside.
+3. **Reflash.** If the card is intact and the box still will not come up, this is the supported recovery. See [Reflash and reinstall](#reflash-and-reinstall).
 
 <Note>
-A node that reboots repeatedly, rather than failing to start once, is worth investigating
-before reflashing. Reflashing clears the evidence and a cause that is still present will
-reappear. If the box is reachable at all between reboots, collect a support bundle first.
+A node that reboots repeatedly, rather than failing to start once, is worth investigating before reflashing. Reflashing clears the evidence, and a cause that is still present will reappear. If the box is reachable at all between reboots, collect a support bundle first.
 </Note>
 
 ### The radio link is down
 
-Check the link and the pairing as two separate questions, because they fail separately and the
-answers point in different directions.
+Check the link and the pairing as two separate questions, because they fail separately and the answers point in different directions.
 
 ```bash
 ados diag link            # is anything decoding?
 ados radio status         # is this box paired, and is its radio up at all?
 ```
 
-Read the link state rather than the packet counters alone. `rf_unverified` is the one to know:
-it means this end is transmitting and nothing has confirmed receiving it. A transmitter with no
-listener looks identical to a healthy transmitter when you only look at the transmit side, so
-this state is reported honestly instead of as connected.
+Read the link state rather than the packet counters alone. `rf_unverified` is the one to know: this end is transmitting and nothing has confirmed receiving it. A transmitter with no listener looks identical to a healthy transmitter when you only look at the transmit side, so this state is reported as unverified instead of connected.
 
 <Warning>
-A well-formed radio key is not a working radio key. If one end has been reflashed or
-re-imaged, the other end may still hold a key for a peer that no longer exists. It will
-transmit into nothing while every local check passes, because the key file itself is perfectly
-valid.
+A well-formed radio key is not a working radio key. If one end has been reflashed or re-imaged, the other end may still hold a key for a peer that no longer exists. It will transmit into nothing while every local check passes, because the key file itself is valid.
 
-If `ados diag link` shows this end transmitting with nothing decoding, and both ends claim to
-be paired, re-pair them rather than continuing to diagnose the radio. Run `ados pair --role gs`
-on the ground station and `ados pair --role drone` on the aircraft.
+If `ados diag link` shows this end transmitting with nothing decoding, and both ends claim to be paired, re-pair them rather than continuing to diagnose the radio. Run `ados pair --role gs` on the ground station and `ados pair --role drone` on the aircraft. See [WFB-ng pairing](/drone-agent/wfb-pairing).
 </Warning>
 
-Also confirm both ends are on the same channel, and that a pinned operating region is not
-excluding the channel one of them is trying to use. See [Regulatory](/operations/regulatory).
+Also confirm both ends are on the same channel, and that a pinned operating region is not excluding the channel one of them is trying to use. See [Regulatory](/operations/regulatory).
 
 ### Video is black
 
-Video crosses several stages, and each one fails differently. Start at the source and work
-outward rather than guessing.
+Video crosses several stages, and each one fails differently. Start at the source and work outward rather than guessing.
 
 ```bash
 ados diag video
 ```
 
-It reports a verdict for every stage and names the one where video stops, so read that name
-before changing anything.
+It samples the counters at each hop twice and names the hop where video stops, so read that name before changing anything.
 
 | Where it stops | Usually means |
 |---|---|
 | At the camera | Camera not detected, or a source that does not match the configured one. Check the camera is enumerated at all. |
-| In the pipeline | Encoder or pipeline fault. The logs carry the encoder's own error. |
+| In the pipeline | Encoder or pipeline fault. The journal carries the encoder's own error. |
 | At the radio | Not a video fault. Diagnose the link first, using the section above. |
 | At the viewer, with every stage flowing | The stream is being produced and not displayed. Check the viewer URL and, on a browser that has been open across an update, do one hard reload. |
 
 <Note>
-If the radio link is unverified, video will be black on the ground with a pipeline that is
-working perfectly on the aircraft. Confirm the link before investigating the camera, because
-the two symptoms are indistinguishable from the receiving end.
+If the radio link is unverified, video will be black on the ground with a pipeline that is working on the aircraft. Confirm the link before investigating the camera, because the two symptoms are indistinguishable from the receiving end.
 </Note>
 
-On a ground station driving an HDMI panel, a black panel with a healthy link is a display-side
-fault rather than a video-pipeline one. Check that the browser process is actually running, not
-just the unit that supervises it.
+On a ground station driving an HDMI panel, a black panel with a healthy link is a display-side fault rather than a video-pipeline one. Check that the browser process is running, not just the unit that supervises it.
 
 ## Repairing without reinstalling
 
@@ -154,7 +140,7 @@ sudo ados install --status
 sudo ados install --resume
 ```
 
-**An out-of-date or partially broken install** is repaired by re-running the installer in upgrade mode, which is exactly what `ados update` does. It preserves identity and configuration:
+**An out-of-date or partially broken install** is repaired by `ados update`, which re-runs the installer in upgrade mode. It keeps identity and configuration:
 
 ```bash
 sudo ados update
@@ -164,30 +150,16 @@ sudo ados update
 
 ```bash
 ados radio status
-ados radio install-driver
+sudo ados radio install-driver
 ```
 
 ## Factory reset
 
-A factory reset clears credentials and pairing so the box comes back up as if it were new. It does not reinstall software.
-
-<Warning>
-There are two reset paths and they do not clear the same things.
-
-The **script** at `scripts/factory-reset.sh` also deletes `config.yaml`, the device ID, and the logs. The box comes back with a new identity and no configuration.
-
-The **API path**, used by the ground station's captive setup flow, keeps `config.yaml` and the device ID.
-
-Both clear the pairing key, the dashboard PIN, the extension-control token, the radio keys, the AP passphrase, the secrets directory, and TLS material. Both keep `profile.conf`, so the box does not lose its profile and get re-profiled by a later upgrade.
-</Warning>
-
-Neither path changes the hostname. Neither is available as a button in the browser dashboard.
-
-After a reset, reboot. The box comes up in setup mode with a freshly generated AP passphrase, so read the new one off the on-box panel or the `ados` status page.
+A factory reset deletes every credential, the device ID, the configuration, and the logs, so the box comes back up as if it were new. It does not reinstall software. The two reset paths, their gates, and the full list of what each deletes are on [Operator hardening](/operations/hardening#factory-reset).
 
 ## Reflash and reinstall
 
-This is the supported recovery for a box that is genuinely broken, and it is deliberately not a repair-in-place procedure.
+This is the supported recovery for a box that is broken, and it is deliberately not a repair-in-place procedure.
 
 <Note>
 Do not fix a broken node by editing files under `/opt/ados`, `/etc/ados`, or the systemd units. A patched runtime cannot be reproduced, does not survive the next update, and turns the next fault into an investigation of unknown state. Read-only inspection of those paths is fine. Changing them is not.
@@ -195,19 +167,18 @@ Do not fix a broken node by editing files under `/opt/ados`, `/etc/ados`, or the
 Recovery is a clean image plus a fresh install from a known release. That gets you a node whose state you can reason about.
 </Note>
 
-The procedure:
-
 1. **Collect evidence first, if the box still answers at all.** Run `ados support-bundle`. Once you reflash, whatever caused the fault is gone. See [Support escalation](/operations/support).
-2. **Write a clean OS image** to the card or eMMC, following [Installation](/drone-agent/installation).
-3. **Install the agent**, passing the profile explicitly so the box cannot come up as the wrong kind of node:
+2. **Write a clean OS image** to the card or eMMC, following [Install the Drone Agent](/drone-agent/installation).
+3. **Install the agent.** On a drone:
 
-   ```bash
-   curl -sSL https://raw.githubusercontent.com/altnautica/ADOSDroneAgent/main/scripts/install.sh \
-     | sudo bash -s -- --profile drone --name my-drone
-   ```
+   <InstallAgent />
 
-   Use `--profile ground_station` for a ground node. Setting `--name` here is what gives you a `<hostname>.local` to reach it by afterwards.
-4. **Re-pair.** Pairing keys, radio keys, and the AP passphrase were all on the old install and are gone. Pair the drone and ground station again, and re-pair Mission Control.
+   On a ground station, pass the profile explicitly so the box cannot come up as the wrong kind of node:
+
+   <InstallGroundAgent />
+
+   To set the hostname you will reach the node by as `<hostname>.local`, pass `--name <hostname>` to the installer (`sudo bash -s -- --name <hostname>`, alongside `--profile` on a ground station). Every installer flag is listed on [Install the Drone Agent](/drone-agent/installation).
+4. **Re-pair.** Pairing keys, radio keys, and the AP passphrase were on the old install and are gone. Pair the drone and ground station again, and re-pair Mission Control. See [Pairing](/drone-agent/pairing).
 5. **Verify before flying.** `ados` for overall status, `ados diag link` for the radio, `ados diag video` for the pipeline. Then work the pre-flight checklist in [Safety](/operations/safety).
 
 ## Removing the agent
@@ -217,9 +188,16 @@ sudo ados uninstall            # leaves configuration in place
 sudo ados uninstall --purge    # removes configuration too
 ```
 
-## Where to next
+## Next steps
 
-- [Support escalation](/operations/support) - collecting a bundle and reporting a fault.
-- [Operator hardening](/operations/hardening) - what the credentials you just recreated actually grant.
-- [Troubleshooting](/drone-agent/troubleshooting) - symptom-by-symptom diagnosis.
-- [Installation](/drone-agent/installation) - the full install procedure.
+<CardGroup cols={2}>
+  <Card title="Support escalation" icon="bug" href="/operations/support">
+    Collect a bundle and report a fault.
+  </Card>
+  <Card title="Troubleshooting by area" icon="life-ring" href="/operations/troubleshooting">
+    Symptom guides for each product.
+  </Card>
+  <Card title="Operator hardening" icon="lock" href="/operations/hardening">
+    What the credentials you just recreated grant.
+  </Card>
+</CardGroup>

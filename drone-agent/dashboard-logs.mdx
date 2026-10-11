@@ -1,69 +1,54 @@
 ---
-title: "Logs"
-description: "Live tail of structured agent logs with level and service filters."
+title: "Agent dashboard: Logs"
+sidebarTitle: "Logs"
+description: "Live tail of the agent's structured log store with level and logger filters."
 icon: "scroll-text"
-lastUpdated: "2026-06-18"
 ---
 
-# Logs
+Logs is a shared page at `/logs`: a live tail of the agent's structured logger. Filter by level or logger name.
 
-The Logs page is a live tail of the agent's structured log stream.
-Each entry shows timestamp, level, service, event, and a JSON payload.
-The stream is backed by the durable black-box logging store (`ados-logd`), which also keeps telemetry, events, and hardware samples across reboots. The same store is queryable from the CLI with `ados logs query` and `ados logs tail`, including off-box when the agent's HTTP port is down.
+<Note>
+This page reads the Black Box log store, which is off by default. Turn on `logging.store.enabled` to fill it; otherwise use `journalctl -u <unit>` over SSH. See [Black Box](/drone-agent/black-box).
+</Note>
 
-<Frame caption="Logs page during a quiet idle window.">
-  ![Logs page](/images/dashboard/drone/logs-full.png)
+<Frame caption="Logs on a node with the store off, the default.">
+  ![Agent dashboard Logs page with the Level and Logger contains filters above the notice that the logging store is off, with the journalctl command and the setting that turns the store on](/images/drone-agent/dashboard/logs.png)
 </Frame>
 
 ## Controls
 
-| Control | Effect |
-|---|---|
-| Level | Filters the stream to entries at or above the selected level. |
-| Service | Filters to a single systemd unit (`ados-supervisor`, `ados-cloud`, etc). |
-| Limit | Number of rows held in the view (default 200). |
-| Pause / Follow | Pause to inspect a row without auto-scroll; resume to follow. |
-| Clear | Drop everything currently in the view. |
+- **Level:** any, DEBUG, INFO, WARNING, ERROR or CRITICAL. These are the agent log levels; the agent's own verbosity is set in [Settings → Advanced](/drone-agent/dashboard-settings#advanced) (default info).
+- **Logger contains:** a text filter on the logger name.
+- **Pause** and **Resume:** stop and restart the live tail.
 
-## Levels
+The counter on the right shows the number of rows with `(live)` while streaming or `(poll)` on the fallback.
 
-The agent uses standard syslog levels:
+## Rows
 
-| Level | When emitted |
-|---|---|
-| `debug` | Detail useful during development. Off by default. |
-| `info` | Lifecycle events, normal operations. |
-| `warning` | A degraded condition the agent recovered from. |
-| `error` | Operation failed; user attention may be needed. |
-| `critical` | Service-level outage. |
+Each row shows time, level, logger name and message.
 
-## Profile gating
+## Data sources
 
-Shared route, visible on both profiles.
-
-## Backend endpoints
-
-| Method | Path | Purpose |
-|---|---|---|
-| GET | `/api/logs?limit=N&level=L&service=S` | Page through the recent log buffer |
-
-The page polls the endpoint every two seconds when **Follow** is on.
+| Endpoint | Used for |
+| --- | --- |
+| `GET /api/logs/stream?level=&service=` | live tail (Server-Sent Events) |
+| `GET /api/logs?limit=200&level=&service=` | fallback every 2 s when the stream fails, and every 30 s otherwise to learn whether the store is answering |
 
 ## Troubleshooting
 
-<Accordion title="View is empty">
-No entries match the filter. Drop the level (`debug` shows everything)
-or clear the service filter. A truly silent stream usually means the
-journald buffer rotated out the rows the agent surfaces.
-</Accordion>
+<AccordionGroup>
+  <Accordion title="No rows">
+    "The logging store is off or not answering, so this node has no log history to show." means the store is off (the default) or down; the page shows how to turn it on, and the system journal stays the log of record. "no log entries match the filter." means the filter matches nothing. "no log entries yet." means the store is on but has no rows yet.
+  </Accordion>
+</AccordionGroup>
 
-<Accordion title="I need raw journald output">
-SSH into the node and run `journalctl -u ados-supervisor -f`. The
-dashboard surfaces the structured stream the agent emits, which is a
-superset for our services but does not include kernel-level events.
-</Accordion>
+## Next steps
 
-## Related
-
-- [Systemd services](/drone-agent/systemd-services)
-- [Troubleshooting guide](/drone-agent/troubleshooting)
+<CardGroup cols={2}>
+  <Card title="Diagnostics" icon="wrench" href="/drone-agent/dashboard-diagnostics">
+    System metrics, services and reboot.
+  </Card>
+  <Card title="Black Box" icon="box-archive" href="/drone-agent/black-box">
+    The log store and its defaults.
+  </Card>
+</CardGroup>

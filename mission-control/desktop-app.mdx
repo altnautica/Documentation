@@ -1,0 +1,98 @@
+---
+title: "Mission Control desktop app"
+sidebarTitle: "Desktop app"
+description: "Download, install and update the Mission Control desktop app for macOS, Windows and Linux, and build it from source."
+icon: "desktop"
+keywords: ["ados", "mission control", "desktop", "electron", "installer", "udp", "tcp"]
+---
+
+The desktop app is the same Mission Control, packaged with Electron. It runs its own local server and adds what a browser cannot do: native UDP and TCP MAVLink sockets, and native pickers for serial and USB devices.
+
+## Download
+
+Installers are attached to each [Mission Control release on GitHub](https://github.com/altnautica/ADOSMissionControl/releases/latest).
+
+| System | File |
+|---|---|
+| macOS, Apple silicon | `AltnauticaCommand-<version>-arm64.dmg` |
+| macOS, Intel | `AltnauticaCommand-<version>-x64.dmg` |
+| Windows x64 | `AltnauticaCommand-<version>-Setup.exe` |
+| Linux x64 | `AltnauticaCommand-<version>-x86_64.AppImage` |
+
+The installed app is named **Altnautica Command**.
+
+## Install
+
+<Tabs>
+  <Tab title="macOS">
+    Open the `.dmg` and drag the app to Applications. The build is not code-signed or notarized, so Gatekeeper blocks the first launch. Open **System Settings → Privacy & Security** and choose **Open Anyway** for the app, or right-click the app in Finder and choose **Open**.
+  </Tab>
+  <Tab title="Windows">
+    Run `Setup.exe`. The installer lets you choose the install directory. The build is not code-signed, so SmartScreen may ask you to confirm before it runs.
+  </Tab>
+  <Tab title="Linux">
+    Make the AppImage executable and run it:
+    ```bash
+    chmod +x AltnauticaCommand-*-x86_64.AppImage
+    ./AltnauticaCommand-*-x86_64.AppImage
+    ```
+    For USB Serial, your user needs access to the serial device, usually through the `dialout` group: `sudo usermod -aG dialout $USER`, then log out and back in.
+  </Tab>
+</Tabs>
+
+## What the desktop app adds
+
+| Feature | Browser | Desktop app |
+|---|---|---|
+| USB Serial and Bluetooth | Chrome or Edge | Yes |
+| UDP and TCP MAVLink | Only through the local `mavlink-bridge` | Native sockets |
+| Device selection | Browser port picker | Native **Select serial device** and **Select USB device** dialogs |
+
+Native sockets connect only to local endpoints: loopback, private LAN ranges (RFC 1918), link-local and carrier-grade NAT addresses. The UDP method listens on `0.0.0.0:14550` by default and the TCP method targets `127.0.0.1:5760`. The method cards are described on [Connect to a drone](/mission-control/connecting#udp-and-tcp).
+
+Device permissions (serial, USB, geolocation, local network) are granted only to the app's own local origin.
+
+## Updates
+
+Every packaged build checks the GitHub releases for a newer version at startup. It never downloads or installs anything on its own. The macOS, Windows and Linux builds are not code-signed, so none of them can install an update into itself: when a newer version exists, a banner reads **Version {version} is available. This build cannot install updates itself.** with an **Open releases** link. Download the new installer (or AppImage) from the releases page and install it over the old one.
+
+To check again without restarting, open **Settings** (the General page) and use **Check for updates** in the **About** block at the bottom. It reports **You are on the latest version.** or the newer version it found. A check that cannot reach GitHub, which is normal on a field laptop without internet, shows **Could not check for updates** with the reason and changes nothing else.
+
+A build run from source (`npm run desktop:dev`) has no release channel: it skips the startup check, and **Check for updates** reports why it cannot check.
+
+## Local server port
+
+The app starts its embedded server on `127.0.0.1:4000`. If port 4000 is taken, the operating system assigns a free port instead, and the window opens on that port. The app always uses `127.0.0.1`, never `localhost`, because `localhost` can resolve to the IPv6 address `::1` while the server listens on IPv4.
+
+## Build from source
+
+Run these from a clone of the repository (see [Install Mission Control](/mission-control/installation#run-from-source)).
+
+```bash
+# Run against the dev server
+npm run desktop:dev
+
+# Run with the demo fleet
+npm run desktop:demo
+
+# Package for the current platform
+npm run desktop:build
+
+# Package for one platform
+npm run desktop:build:mac
+npm run desktop:build:win
+npm run desktop:build:linux
+```
+
+Packaged files land in `release/`. On macOS, building needs the Xcode command line tools (`xcode-select --install`).
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Connect to a drone" icon="plug" href="/mission-control/connecting">
+    USB, WebSocket, UDP, TCP, Bluetooth or through the Drone Agent.
+  </Card>
+  <Card title="Dashboard and fleet" icon="grid-2" href="/mission-control/dashboard">
+    Find your way around the main screen.
+  </Card>
+</CardGroup>

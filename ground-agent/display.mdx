@@ -1,214 +1,176 @@
 ---
-title: "Display"
-description: "A 480 by 320 touch panel on the ground station. Native dashboard, five-screen status carousel, mesh-pairing overlays. Auto-provisioning across Cubie A7Z, Rock 5C Lite, and Pi 4B."
+title: "Front panel: OLED, buttons and touch display"
+sidebarTitle: "Front panel"
+description: "The optional ground-station front panel: a small I2C status OLED, four buttons, and a 480x320 SPI touch LCD with nine-point calibration."
 icon: "tv"
-lastUpdated: "2026-06-18"
 ---
 
-# Display
+A ground station can carry three optional front-panel parts. Each one works on its own, and the node runs normally without any of them.
 
-The ground station ships with an optional SPI-attached touch LCD. The OLED is the always-on glance. The LCD is what you reach for when you need to do something. Color, fonts that read at arm's length, and gestures that mean what they mean on every other touchscreen.
+| Part | What it does | Service |
+|---|---|---|
+| I2C OLED (128x64 or 128x32) | A four-line status frame. View only. | `ados-oled-i2c` |
+| Four buttons | Navigate the touch LCD. | `ados-pic` (the PIC arbiter reads and decodes the presses and passes them to the LCD renderer) |
+| SPI touch LCD (480x320) | The full on-device interface: dashboard, detail pages, settings, mesh role, pairing. | `ados-oled` (runs the native `ados-display` renderer) |
 
-<Frame caption="Native 480 by 320 dashboard rendered on the SPI LCD. Four tiles: radio link, drone, mesh, uplink and cloud.">
-  <img src="/images/ground-agent/display/dashboard/dashboard.png" alt="ADOS ground station dashboard rendered on the SPI LCD" />
+The OLED and the LCD (or an HDMI monitor) can be fitted at the same time.
+
+<Frame caption="The LCD dashboard: Radio link, Drone, Mesh and Uplink / Cloud tiles, with the tab bar at the bottom.">
+  ![Ground station LCD dashboard at 480x320 with four tiles, a top bar with hostname and role, and a five-icon tab bar](/images/ground-agent/display/dashboard.png)
 </Frame>
 
-<Note>
-Looking for the OLED and four buttons? See [Physical UI](/ground-agent/physical-ui). The two surfaces coexist on the same node.
-</Note>
+## OLED status display
 
-## Auto-provisioning
+The I2C OLED shows one status frame, refreshed every 2 seconds from the agent's ground-station status:
 
-The installer takes care of the panel end to end. No `dtoverlay=` editing. No kernel rebuild.
+1. The hostname.
+2. The LAN IP address.
+3. The link: `link: idle` before a drone is heard, then `link <state> <rssi>dBm`.
+4. The status: `PAIRING <n>s` while a mesh accept window is open, otherwise `role: <role>`, then `uplink up` or `ready`.
+
+<Frame caption="The I2C OLED status frame on a direct-role ground station with a linked drone.">
+  ![I2C OLED showing four lines: hostname, LAN IP, link connected with RSSI in dBm, and role direct](/images/ground-agent/oled-status.png)
+</Frame>
+
+The OLED has no menu and does not read the buttons.
+
+### Wiring and detection
+
+Wire SDA, SCL, VCC (3.3 V) and GND to the board's I2C bus 1. On a Raspberry Pi the installer enables I2C; reboot once after the install so the bus appears. The service starts only when `/dev/i2c-1` exists, then probes address `0x3C` and then `0x3D`. With no panel answering, it exits cleanly.
+
+### Settings
+
+Set these in `/etc/ados/env` and run `sudo systemctl restart ados-oled-i2c`:
+
+| Variable | Effect |
+|---|---|
+| `ADOS_OLED_ADDR` | Use exactly this I2C address (for example `0x3D`) instead of probing. |
+| `ADOS_OLED_BUS` | I2C bus number. Default `1`. |
+| `ADOS_OLED_CONTROLLER` | `sh1106` for an SH1106 panel. Default SSD1306. |
+| `ADOS_OLED_HEIGHT` | `32` for a 128x32 panel. Default 64. |
+
+Brightness is `ground_station.ui.oled.brightness` (0 to 255, default 204), applied as the panel contrast whenever it changes. Set it with `PUT /api/v1/ground-station/ui/oled`.
+
+## Buttons
+
+Four momentary buttons drive the touch LCD. A press is short or long: a long press is held at least 2 seconds and fires on release; holding 6 seconds or more cancels the press.
+
+| Button | BCM GPIO | Header pin | Short press | Long press |
+|---|---|---|---|---|
+| B1 | GPIO 5 | Pin 29 | Next tab | Toggle backlight |
+| B2 | GPIO 6 | Pin 31 | Uplink detail | Pair drone page (with QR) |
+| B3 | GPIO 13 | Pin 33 | Confirm | Pair drone page |
+| B4 | GPIO 19 | Pin 35 | Back | More menu |
+
+These are the fallback pins. A board profile can declare its own pins in a `buttons` block (`up`, `down`, `select`, `back`), which the installer writes into the board record at `/run/ados/board.json`; the four pins map in that order to B1 to B4. The Raspberry Pi 3 and 4B profiles use the pins above.
+
+### Remap the buttons
+
+Remaps are stored in `ground_station.ui.buttons.mapping` and written from Mission Control (node panel, **Buttons**) or with `PUT /api/v1/ground-station/ui/buttons`. The keys are `B1_short`, `B1_long` through `B4_long`. The panel acts on these eight actions:
+
+| Action | What it does |
+|---|---|
+| `cycle_screen` | Next tab |
+| `back` | Close a detail page, or return to the dashboard |
+| `menu` | Open the More menu (or Settings) |
+| `confirm` | Confirm the focused control |
+| `toggle_backlight` | Toggle the LCD backlight |
+| `show_network` | Open the Uplink detail page |
+| `show_qr` | Open the Pair drone page |
+| `pair_drone` | Open the Pair drone page |
+
+Any other action name does nothing.
+
+## Touch display (SPI LCD)
+
+The LCD is drawn by the native `ados-display` renderer under the `ados-oled` unit.
+
+### Auto-provisioning
 
 <Steps>
   <Step title="Detect">
-    The board fingerprint resolves a HAL profile. The profile lists one or more supported displays. The installer picks the first match, or honors a flag if the operator wants a different one.
+    The board's hardware profile lists its supported displays. With `--display auto` (the ground-station default) the installer picks the panel the board declares; `--display <id>` selects one explicitly and `--display none` opts out.
   </Step>
   <Step title="Provision">
-    The overlay source compiles to a device-tree binary. Modules load on every boot through a drop-in. Resolution, rotation, and touch state land in `/etc/ados/display.conf` for the renderer to read at startup.
+    The installer enables the display overlay and the kernel modules, and records the framebuffer, rotation and panel in `/etc/ados/display.conf`.
   </Step>
   <Step title="Bind">
-    First boot brings up the panel. The renderer probes the framebuffer, the touch bridge attaches to the input device, and the ground-station panel in Mission Control populates with live state.
+    After the reboot the renderer finds the framebuffer and the touch input attaches. If the panel never binds, the installer's probe restores the previous boot configuration. If the touch controller is missing when the renderer starts, or drops out later, the renderer keeps looking for it every 500 ms, so a late-loading driver or a re-seated panel gets touch back without a restart.
   </Step>
 </Steps>
 
-See [Installation](/ground-agent/installation) for the install command and [Hardware Tab](/ground-agent/hardware-tab) for the Mission Control mirror.
+### Pages
 
-## Native dashboard
+A bottom tab bar holds five tabs: **Dashboard**, **Video**, **Settings**, **Link stats** and **Channel hops**. The top bar shows the hostname, the role, CPU, RAM and temperature, and the clock.
 
-The dashboard is purpose-built for the LCD. Bigger fonts, four stat tiles, each one a tap target. The render engine and every page are drawn by the native Rust display binary (`ados-display`, the `ados-oled` unit), so there is no Python imaging stack in the render path.
+The dashboard has four tiles. Tap one to open its detail page:
 
-<Frame caption="Tap a tile to drill into that subsystem. The four tiles always render together so the at-a-glance scan never misses anything to a carousel rotation.">
-  <img src="/images/ground-agent/display/dashboard/dashboard.png" alt="Dashboard with radio link, drone, mesh, uplink and cloud tiles" />
+- **Radio link**: signal, rate and FEC counters. Shows **Hardware** while no radio adapter is found.
+- **Drone**: the paired drone. Shows **Pair drone** while no drone has been heard.
+- **Mesh**: role, peers and gateway. Shows **Setup wizard** while setup is not finished or the role is unset, and **MESH N/A** on a direct node that cannot join a mesh.
+- **Uplink / Cloud**: the active uplink and cloud reachability.
+
+Other detail pages: **Pair drone** (paired drone, key fingerprint, two-tap **Unpair**), **Access point** (name, passphrase and join QR code), **Diagnostics**, **About** and **Calibration**. The **More** menu holds the overflow entries, and an installed extension can add its own page.
+
+<Frame caption="The Link stats tab: radio signal with its RSSI trend, bitrate, packet and FEC counters, and the decoder and system bands.">
+  ![Ground station LCD Link stats tab with signal, bitrate and FEC counters](/images/ground-agent/display/link-stats.png)
 </Frame>
 
-The carousel is upscaled from the 128x64 OLED canvas for backwards compatibility. The dashboard runs natively at 480x320.
+### Mesh detail page
 
-## Status carousel
+Tap the **Mesh** tile to open the mesh detail page. It shows the active role, then one of three bodies: a notice on a direct node, a "mesh down" notice while the mesh forms, or the list of peers. The footer shows the selected gateway and a partition badge.
 
-The same five screens that cycle on the OLED are upscaled onto the LCD. Glance behavior stays identical across hardware. Tap to freeze on the active screen.
+<Frame caption="The Mesh detail page on a receiver: role, peer list and gateway footer.">
+  ![Ground station LCD Mesh detail page showing the receiver role, a list of mesh peers and the selected gateway](/images/ground-agent/display/mesh-detail.png)
+</Frame>
 
-<CardGroup cols={2}>
-  <Card title="Link">
-    <Frame>
-      <img src="/images/ground-agent/display/carousel/link.png" alt="Link status screen" />
-    </Frame>
-    RSSI, bitrate, FEC repaired and lost, channel, TX power.
-  </Card>
-  <Card title="Drone">
-    <Frame>
-      <img src="/images/ground-agent/display/carousel/drone.png" alt="Drone status screen" />
-    </Frame>
-    Paired device id, flight mode, battery, GPS sat count.
-  </Card>
-  <Card title="GCS">
-    <Frame>
-      <img src="/images/ground-agent/display/carousel/gcs.png" alt="GCS clients screen" />
-    </Frame>
-    Connected client list with PIC badge.
-  </Card>
-  <Card title="Net">
-    <Frame>
-      <img src="/images/ground-agent/display/carousel/net.png" alt="Network status screen" />
-    </Frame>
-    AP SSID and IP, USB tether IP, current uplink and reachability.
-  </Card>
-  <Card title="System">
-    <Frame>
-      <img src="/images/ground-agent/display/carousel/system.png" alt="System health screen" />
-    </Frame>
-    CPU, RAM, temperature, uptime, agent version.
-  </Card>
-</CardGroup>
+To change the role, tap **Switch role**. A picker opens with **DIRECT**, **RELAY** and **RECEIVER**. A role change re-forms the link, so it takes two taps: the first arms the choice ("Tap again: RELAY"), the second writes it through `PUT /api/v1/ground-station/role`. Mesh pairing itself runs from Mission Control or REST; see [Build a mesh](/ground-agent/mesh-setup#mesh-pairing).
 
-## Field tap-to-pair flow
+<Frame caption="The role picker with RELAY armed, waiting for the confirming tap.">
+  ![Ground station LCD Mesh page with the role picker open and the relay row reading Tap again: RELAY](/images/ground-agent/display/mesh-role-picker.png)
+</Frame>
 
-Two devices, no laptop, under two minutes. Each step has its own screen. No silent transitions. No modal-blocking dead ends.
+### Touch gestures
 
-<Steps>
-  <Step title="First boot, role unset">
-    <Frame>
-      <img src="/images/ground-agent/display/mesh/unset-boot.png" alt="Role unset banner" />
-    </Frame>
-    A mesh-capable node with no role picked yet shows a banner pointing at the menu instead of cycling status screens.
-  </Step>
-  <Step title="Pick a role">
-    <Frame>
-      <img src="/images/ground-agent/display/mesh/role-picker.png" alt="Role picker" />
-    </Frame>
-    Cycle direct, relay, or receiver. Tap apply to commit.
-  </Step>
-  <Step title="Open the receiver window">
-    <Frame>
-      <img src="/images/ground-agent/display/mesh/accept-window.png" alt="Receiver accept window" />
-    </Frame>
-    On the receiver, open a 60-second accept window. The countdown is on the panel.
-  </Step>
-  <Step title="Scan from the relay">
-    <Frame>
-      <img src="/images/ground-agent/display/mesh/join-scan.png" alt="Relay scanning for receiver" />
-    </Frame>
-    On the relay, scan for the receiver. mDNS discovery on `bat0` brings up host and signal.
-  </Step>
-  <Step title="Confirm joined">
-    <Frame>
-      <img src="/images/ground-agent/display/mesh/joined-status.png" alt="Mesh joined status" />
-    </Frame>
-    Mesh up. Confirmed on both ends.
-  </Step>
-</Steps>
-
-The full ground-side reference for this flow lives at [Field pairing](/ground-agent/setup#field-pairing-on-the-oled).
-
-## Overlay screens
-
-Recovery, confirmation, list views. A node without a second WiFi adapter shows a hint screen so the operator knows the feature exists and how to unlock it.
-
-<CardGroup cols={2}>
-  <Card title="Neighbors">
-    <Frame>
-      <img src="/images/ground-agent/display/mesh/neighbors.png" alt="Mesh neighbors list" />
-    </Frame>
-    Mesh peers with link quality. Scrollable.
-  </Card>
-  <Card title="Hub unreachable">
-    <Frame>
-      <img src="/images/ground-agent/display/mesh/hub-unreachable.png" alt="Hub unreachable grace period" />
-    </Frame>
-    Receiver lost, grace period running. Wait or fall back to direct.
-  </Card>
-  <Card title="Leave confirm">
-    <Frame>
-      <img src="/images/ground-agent/display/mesh/leave-confirm.png" alt="Leave mesh confirm screen" />
-    </Frame>
-    Two-tap confirmation before leaving the mesh.
-  </Card>
-  <Card title="Error states">
-    <Frame>
-      <img src="/images/ground-agent/display/mesh/error-states.png" alt="Unified error overlay" />
-    </Frame>
-    Single overlay that switches on the agent error code.
-  </Card>
-</CardGroup>
-
-A `mesh-unavailable` hint screen replaces the silent empty submenu when the node has only one WiFi adapter, with a one-line nudge to plug a second adapter and reboot.
-
-## Touch gestures
-
-Gesture classification is shared across every screen. Same thresholds, same behavior. Hit zones are page-local so a tile tap maps to the right detail page regardless of theme.
-
-| Gesture | Threshold | What it does |
+| Gesture | Threshold | Use |
 |---|---|---|
-| Tap | < 400 ms, < 12 px | Drill into a tile or select an item. |
-| Long-press | >= 400 ms, < 12 px | Open a context menu, start calibration. |
-| Swipe | < 250 ms, >= 24 px | Navigate between pages. |
-| Drag | >= 250 ms, >= 12 px | Scroll a list or pan content. |
+| Tap | Under 400 ms, under 12 px of movement | Open a tile or press a control |
+| Long press | 400 ms or more, under 12 px | Press-and-hold controls |
+| Swipe | Under 250 ms, 24 px or more | Move between pages |
+| Drag | Any other motion | Scroll a list |
 
-## Supported boards
+### Calibration
 
-New boards add a `displays` block to their HAL profile YAML and the installer picks them up. No code change in the renderer.
+Touch calibration is a nine-point (3x3) capture. It runs from the setup wizard's **Local display** step, from Mission Control (node panel, **Display**), or from the **Calibration** page on the panel. Results persist across reboots.
 
-| Board | SoC | Panel | Driver | Touch | Resolution |
-|---|---|---|---|---|---|
-| Radxa Cubie A7Z | Allwinner A733 | Waveshare 3.5" RPi LCD (A) | ILI9486 | ADS7846 | 480 x 320 |
-| Radxa ROCK 5C Lite | RK3582 | Waveshare 3.5" RPi LCD (A) | ILI9486 | ADS7846 | 480 x 320 |
-| Raspberry Pi 4B | BCM2711 | Waveshare 3.5" RPi LCD (A) | ILI9486 | ADS7846 | 480 x 320 |
+### Supported boards
 
-Display profiles live in each board's HAL YAML. Adding a new pair is a YAML change plus an overlay file.
+| Board | Panel | Controller | Touch | Resolution |
+|---|---|---|---|---|
+| Raspberry Pi 4B | Waveshare 3.5" RPi LCD (A) | ILI9486 | ADS7846 | 480x320 |
+| Raspberry Pi 3 | Waveshare 3.5" RPi LCD (A) | ILI9486 | ADS7846 | 480x320 |
+| Radxa Cubie A7Z | Waveshare 3.5" RPi LCD (A) | ILI9486 | ADS7846 | 480x320 |
+| Radxa ROCK 5C Lite | Waveshare 3.5" RPi LCD (A) | ILI9486 | ADS7846 | 480x320 |
+
+The Raspberry Pi 4B and the ROCK 5C Lite also support an alternative wiring: an 800x480 HDMI panel with an XPT2046 resistive touch layer on SPI. A rig uses one wiring or the other. The touch layer is calibrated with the same nine-point capture.
+
+A new board adds a `displays` block to its hardware profile; see [HAL and tiers](/drone-agent/hal-and-tiers).
 
 ## Mission Control mirror
 
-The ground-station panel in Mission Control mirrors the on-device display state. Type, controller, resolution, rotation, last-touch age, current page, calibration state. Calibrate from the desk before the operator walks out the door.
-
-<CardGroup cols={2}>
-  <Card title="Live mirror">
-    The local-display card appears the moment the panel binds. If the panel goes dark, the card flips to degraded state without taking down the rest of the panel.
-  </Card>
-  <Card title="Calibrate from the desk">
-    The five-point calibration wizard runs from Mission Control as well as from a long-press on the panel itself. Calibration data persists across reboots.
-  </Card>
-</CardGroup>
-
-See [Hardware Tab](/ground-agent/hardware-tab) for the full Mission Control surface.
+The **Display** tab of the ground station's node panel in Mission Control mirrors the panel: type, controller, resolution, rotation, last-touch age, the current page and the calibration state, with a live page preview. You can switch pages and start calibration from there. The **Buttons** tab holds the button mapping and Bluetooth gamepad pairing. See [Ground station node panel](/mission-control/ground-station-panel).
 
 ## Graceful degradation
 
-If the LCD is absent, the agent does not complain. The OLED still cycles, the setup webapp still serves status, and the ground-station panel in Mission Control still surfaces every config knob. Nothing in the agent's runtime requires the panel to exist.
+Every part of the front panel is optional. With no OLED, its service exits cleanly. With no LCD, the renderer does not start. The dashboard, the cockpit and Mission Control still expose every setting.
 
-## What's next
+## Next steps
 
 <CardGroup cols={2}>
-  <Card title="Physical UI" icon="sliders" href="/ground-agent/physical-ui">
-    The OLED + four-button surface that ships on every node.
+  <Card title="HDMI kiosk" icon="display" href="/ground-agent/hdmi-kiosk">
+    The cockpit on an HDMI monitor.
   </Card>
-  <Card title="Installation" icon="download" href="/ground-agent/installation">
-    The one-line install handles the LCD overlay automatically.
-  </Card>
-  <Card title="Set up a ground station" icon="handshake" href="/ground-agent/setup">
-    First-time pairing and onboarding from the device webapp or the GCS.
-  </Card>
-  <Card title="Field pairing" icon="link" href="/ground-agent/setup#field-pairing-on-the-oled">
-    The full mesh tap-to-pair walkthrough, with the same screens shown on the panel.
+  <Card title="Build a mesh" icon="circle-nodes" href="/ground-agent/mesh-setup">
+    Roles, pairing and the mesh page in use.
   </Card>
 </CardGroup>

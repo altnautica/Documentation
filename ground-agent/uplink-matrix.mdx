@@ -1,181 +1,97 @@
 ---
-title: "Uplink Matrix"
-description: "Five connectivity options for reaching the cloud, with automatic failover and data caps."
+title: "Uplink matrix"
+description: "The ground station's internet uplinks, how it fails over between them, the cellular data cap, and uplink sharing."
 icon: "arrows-up-to-line"
-lastUpdated: "2026-06-23"
 ---
 
-# Uplink Matrix
+A ground station has four uplinks to the internet plus its local access point. The uplink router (`ados-uplink-router`) picks the best working uplink from a priority list, checks it continuously, and fails over when it stops working.
 
-The ground station supports five uplink modes. Any combination can run at the same time. The agent routes cloud relay traffic across them based on a priority list with health checks and automatic failover.
+## Four uplinks plus the access point
 
-## The five uplinks
+| Interface token | Uplink | Typical use |
+|---|---|---|
+| `eth0` | Ethernet | Lab, hangar, any switch |
+| `wlan0_client` | Wi-Fi client, joining an existing network | Venue Wi-Fi, a phone hotspot |
+| `wwan0` | Cellular modem | The field with no Wi-Fi |
+| `usb0` | USB tether to a laptop | The bench |
 
-| Mode | How it works | Typical use |
-|------|-------------|-------------|
-| WiFi AP | Creates a local hotspot for laptops and phones | Always on by default |
-| WiFi client | Joins an existing WiFi network | Home WiFi, venue hotspot, field near a known AP |
-| Ethernet | Wired connection via the Pi 4B onboard Gigabit Ethernet | Lab, hangar, any switch |
-| USB tether | SBC appears as USB Ethernet to a connected laptop | Bench, indoor lab |
-| 4G LTE modem | USB cellular modem (SIM7600G-H or similar) | Field with no WiFi |
+The [Wi-Fi access point](/ground-agent/wifi-ap) serves phones and laptops on the local network. It is not an uplink and never appears in the priority list.
 
-## Two traffic classes
+## Two kinds of traffic
 
-The ground station handles two types of traffic, and they are independent:
+**Local client traffic** between the ground station and its laptops, phones and the HDMI kiosk stays on the local network and never needs the internet. A client on the access point gets full video even when the modem is down.
 
-**Client access** is the traffic between connected laptops, phones, and the HDMI kiosk. This always stays on the local network (WiFi AP subnet, USB tether subnet, or Ethernet). It does not touch the internet.
-
-**Cloud relay** is the traffic between the ground station and the Altnautica cloud (Convex HTTP, MQTT telemetry, optional video). This goes out over whichever uplink currently has internet access.
-
-A client on the WiFi AP can stream video at full quality even if the 4G modem is down. Client access and cloud relay are decoupled.
+**Cloud traffic** (the cloud relay, telemetry and status) leaves over the active uplink, once you have chosen a cloud or self-hosted posture.
 
 ## Priority and failover
 
-Each uplink has a priority number. Lower number means higher preference. The agent uses the highest-priority uplink that has internet access.
+The default order is `eth0`, `wlan0_client`, `wwan0`, `usb0`. The router uses the first uplink in that order that works.
 
-Default priorities:
+Every 15 seconds the router opens a TCP connection to the cloud relay on port 443, bound to the active uplink. Three failures in a row switch to the next working uplink. Three successes in a row on a higher-priority uplink switch back. Switches are at least 30 seconds apart, so two flaky uplinks do not flap. When the active uplink disappears outright (unplugged, or its carrier lost), the router moves to the best remaining uplink on the next check, with no failure count and no 30-second wait.
 
-| Priority | Uplink | Why |
-|----------|--------|-----|
-| 1 | Ethernet | Fastest, most reliable, no data cap |
-| 2 | WiFi client | Good throughput, no cost |
-| 3 | 4G LTE modem | Everywhere, but costs money |
-| 4 | USB tether | Typically a bench setup |
-
-WiFi AP does not appear in the priority list because it provides client access, not internet.
-
-### Health checks
-
-Every 15 seconds, the agent sends an HTTPS HEAD request to the configured cloud endpoint (`your-convex.example.com`) on the current uplink. If three consecutive checks fail, the agent switches to the next available uplink.
-
-Recovery checks run every 60 seconds on lower-priority uplinks. If a higher-priority uplink recovers (three consecutive successes), the agent switches back.
-
-Failover events are logged and visible on the OLED Network screen, the Network tab in the ground-station panel, and the agent log.
-
-## Default configuration
-
-```yaml
-ground_station:
-  wifi_ap:
-    enabled: true
-    ssid: "ADOS-GS-{short_id}"
-    band: "2.4GHz"
-  wifi_client:
-    enabled: false
-    priority: 2
-  ethernet:
-    enabled: true
-    priority: 1
-  usb_tether:
-    enabled: true
-    priority: 4
-    share_uplink: false
-  modem_4g:
-    enabled: false
-    priority: 3
-    data_cap_gb: 5.0
-    throttle_on_cap: true
-```
-
-<Note>
-4G is never enabled by default. You must opt in from the setup webapp, the OLED menu, or the ground-station panel in Mission Control. This prevents unexpected cellular data charges.
-</Note>
-
-## Data cap and throttle cascade
-
-When a 4G modem is active, the agent tracks data usage via the kernel network statistics. Three thresholds trigger automatic responses:
-
-| Threshold | Action |
-|-----------|--------|
-| 80% of cap | INFO notification sent to Mission Control. Normal operation continues. |
-| 95% of cap | Video bitrate pushed to cloud drops to 1 Mbps. Telemetry continues normally. |
-| 100% of cap | Cloud relay switches to telemetry-only. No video pushed to cloud. Local clients are unaffected. |
-
-The data cap resets on the 1st of each month at midnight local time.
-
-You can set the cap from the setup webapp Network page or the Network tab in the ground-station panel. The default is 5 GB per month.
-
-## Bandwidth profile
-
-| Traffic type | Typical rate |
-|-------------|-------------|
-| MAVLink telemetry (local) | 10-30 Kbps |
-| MAVLink to cloud (MQTT, 2 Hz downsample) | 5-15 Kbps |
-| Video to local client (WebRTC LAN) | 4-8 Mbps |
-| Video to cloud relay (if enabled) | 1-4 Mbps |
-| Agent status beacon to Convex | Under 1 Kbps |
-| Worst case over 4G (video to cloud on) | ~5 Mbps |
-
-Over 4G with video-to-cloud disabled (the default), steady state is 50-100 KB/s. That is about 300-700 MB per month for telemetry only.
-
-## WiFi AP and WiFi client on one radio
-
-The Pi 4B has one onboard WiFi radio. By default, it hosts the AP on 2.4 GHz. If you enable WiFi client mode, the AP shuts down and the same radio joins the upstream network. You cannot run AP and client on the same radio at the same time.
-
-<Tip>
-If you need both AP and WiFi client simultaneously, plug in a second supported USB WiFi adapter. The agent HAL profile detects the second interface and assigns it to client duty while the onboard radio stays on AP. See the supported-hardware page for the current list of tested adapters.
-</Tip>
-
-The RTL8812EU stays on 5 GHz in monitor mode for WFB-ng. It is never used for WiFi AP or client.
-
-## Uplink sharing with AP clients
-
-By default, devices connected to the WiFi AP cannot use the ground station's internet connection. This prevents phones from burning 4G data on background app updates.
-
-If you want to share internet access with AP clients:
-
-1. Open the setup webapp Network page or the ground-station panel in Mission Control
-2. Enable "Share uplink with AP clients"
-3. The agent enables IP forwarding and NAT
-
-This is an advanced feature. The data cap throttle still applies.
-
-<Warning>
-When uplink sharing is enabled, every phone on the AP can use the ground station's 4G data. Background app updates, push notifications, and cloud sync will all count against the data cap. Disable this if you are on a tight data plan.
-</Warning>
-
-## Configuring uplinks
-
-You can change uplink settings from three places:
-
-| Setting | OLED menu | Setup webapp | Mission Control |
-|---------|-----------|-------------|-------------|
-| WiFi AP on/off | Yes | Yes | Yes |
-| WiFi client scan and join | Yes (limited) | Yes | Yes |
-| Ethernet | Auto-detected | Status only | Full config |
-| 4G modem enable | Yes | Yes | Yes |
-| APN config | No | Yes | Yes |
-| Data cap | No | Yes | Yes |
-| Priority reorder | No | No | Yes (drag and drop) |
-| Share uplink toggle | No | Yes | Yes |
-
-## Mesh gateway election (relay or receiver only)
-
-When a node joins a mesh as a `relay` or `receiver`, batman-adv adds a sixth path: the cloud uplink can be carried by **any node on the mesh**, not just the local box. If a relay has a 4G modem and the receiver does not, batman-adv elects the relay's uplink as the deployment-wide gateway.
-
-Each mesh node makes its own gateway-server decision based on `ground_station.cloud_uplink`:
-
-| Setting | Behavior |
-|---|---|
-| `auto` (default) | Advertises this node as a batman-adv gateway when `uplink_router` reports an active local uplink. Drops the advertisement when uplink dies. |
-| `force_on` | Always advertises (useful for nodes you trust to be the deployment gateway) |
-| `force_off` | Never advertises (this node will never be elected even if it has uplink) |
-
-The receiver runs `batctl gw_mode client` and picks the best gateway by Transmit Quality (TQ). If the active gateway dies, the next-best one takes over within a few seconds. You can pin a specific gateway via the Mesh tab in the ground-station panel, the CLI, or the REST API:
+Change the order from Mission Control (node panel, **Network**) or over REST. The list must name distinct uplinks from the table above:
 
 ```bash
-curl -X PUT http://localhost:8080/api/v1/ground-station/mesh/gateway_preference \
+curl -X PUT http://localhost:8080/api/v1/ground-station/network/priority \
   -H "Content-Type: application/json" \
-  -d '{"mode": "pinned", "pinned_mac": "AA:BB:CC:DD:EE:01"}'
+  -d '{"priority": ["wlan0_client", "eth0", "wwan0", "usb0"]}'
 ```
 
-`mode: auto` releases the pin.
+## Cellular modem and data cap
 
-[Read the Local Mesh details](/ground-agent/batman-adv) for how gateway election interacts with the rest of batman-adv.
+Cellular is off until you enable it. Set the modem from Mission Control (node panel, **Network**) or over REST:
 
-## What is next
+```bash
+curl -X PUT http://localhost:8080/api/v1/ground-station/network/modem \
+  -H "Content-Type: application/json" \
+  -d '{"enabled": true, "apn": "internet", "cap_gb": 5}'
+```
 
-- [Hardware Tab](/ground-agent/hardware-tab) for the full Mission Control management interface
-- [WiFi AP](/ground-agent/wifi-ap) for laptop and phone connections
-- [Troubleshooting](/ground-agent/troubleshooting) for connectivity issues
-- [Local Mesh (batman-adv)](/ground-agent/batman-adv) for cloud gateway election in mesh deployments
+The router counts cellular data against a monthly cap (5 GB by default):
+
+| Usage | Action |
+|---|---|
+| 80% of the cap | An event is raised. Nothing else changes. |
+| 95% of the cap | The cellular link is rate-limited to 256 kbit/s. |
+| 100% of the cap | The cellular link is limited to 32 kbit/s, enough for heartbeat and commands, and uplink sharing over cellular stops. |
+
+Local clients are never affected. The count resets at the start of each calendar month in the ground station's local time. `GET /api/v1/ground-station/network` reports the current usage in its `modem_4g` block (`data_used_mb`, `percent`).
+
+## Wi-Fi client and the access point on one radio
+
+On a box with a single Wi-Fi radio, the access point stands down while that radio carries a working Wi-Fi client uplink, and comes back when the client link drops. On a box with more than one Wi-Fi radio, the access point stays up. The WFB-ng adapter is never used as an uplink or for the access point.
+
+Join or leave a Wi-Fi network from Mission Control (node panel, **Network**) or with `PUT /api/v1/ground-station/network/client/join` and `DELETE /api/v1/ground-station/network/client`.
+
+## Uplink sharing
+
+By default, devices on the access point and the USB tether cannot use the ground station's internet connection, which keeps phones from spending cellular data on background updates.
+
+To share it, turn on uplink sharing from Mission Control (node panel, **Network**) or over REST:
+
+```bash
+curl -X PUT http://localhost:8080/api/v1/ground-station/network/share_uplink \
+  -H "Content-Type: application/json" \
+  -d '{"enabled": true}'
+```
+
+The router then gives access point and USB clients NAT internet through the active uplink. It does not bridge the two local subnets to each other. The data cap still applies.
+
+<Warning>
+With sharing on, every phone on the access point can use the ground station's cellular data. Background updates and sync count against the cap.
+</Warning>
+
+## Mesh gateway (relay and receiver)
+
+In a mesh, the cloud uplink can come from any node: a relay with a modem can carry the whole mesh's cloud traffic. See [Cloud gateway election](/ground-agent/batman-adv#cloud-gateway-election).
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Ground station node panel" icon="sliders" href="/mission-control/ground-station-panel">
+    The Network tab in Mission Control.
+  </Card>
+  <Card title="Transitive enrollment" icon="diagram-project" href="/ground-agent/transitive-enrollment">
+    How drones behind a ground station appear in Mission Control.
+  </Card>
+</CardGroup>

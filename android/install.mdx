@@ -1,0 +1,77 @@
+---
+title: "Install the Android GCS"
+sidebarTitle: "Install"
+description: "Build the ADOS Android GCS APK from source, install it on an Android 10 or later device and make the first connection."
+icon: "download"
+keywords: ["android", "android gcs", "apk", "install", "gradle"]
+---
+
+The Android GCS is installed from an APK you build from the [ADOSAndroidGCS repository](https://github.com/altnautica/ADOSAndroidGCS). The repository publishes no release APKs, so build it from source. The device needs Android 10 (API 29) or later.
+
+## Build from source
+
+You need JDK 17, the Android SDK with platform 37.0 (`platforms;android-37.0`) and build-tools 37, and NDK 26.3.11579264 for the radio modules.
+
+```bash
+git clone https://github.com/altnautica/ADOSAndroidGCS.git
+cd ADOSAndroidGCS
+cp local.properties.example local.properties   # optional build-time endpoints
+./gradlew assembleDebug
+```
+
+The debug APK is written to `app/build/outputs/apk/debug/`. Add `testDebugUnitTest lintDebug` to the Gradle command to run the unit tests and lint as well.
+
+## Install the APK
+
+With USB debugging enabled on the device:
+
+```bash
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+```
+
+Or copy the APK to the device and open it, allowing installs from that source when Android asks. The debug build installs as **ADOS Android GCS** with the package id `com.altnautica.gcs.debug`, alongside any other build.
+
+## First connection
+
+<Tabs>
+  <Tab title="Ground station Wi-Fi">
+    1. Open the app and tap **Connect**.
+    2. Under **Other ways to connect**, choose **Ground station Wi-Fi**.
+    3. Paste the join string the ground station's screen shows, or type its passphrase, and tap **Join**.
+    4. The ground station appears under **On this network**. Pair it with the code it shows (**Enter pairing code**).
+  </Tab>
+  <Tab title="Agent on your LAN">
+    1. Put the phone on the same network as the node.
+    2. Tap **Connect**. Nodes found on the network appear under **On this network**; tap one marked **Ready to pair**.
+    3. Or use **Enter pairing code** with the code on the node's screen or dashboard, or **Manual host** with its address (for example `192.168.1.50`). A node already paired with another GCS needs its API key.
+  </Tab>
+  <Tab title="USB flight controller">
+    1. Plug the flight controller into the phone with a USB OTG cable.
+    2. Tap **Connect** → **USB flight controller**.
+    3. Tap **Tap to allow USB access** and accept the Android prompt, pick the baud rate and add it.
+  </Tab>
+</Tabs>
+
+Use **Demo** to try the app with a simulated drone.
+
+## Permissions
+
+| Permission | Why the app asks |
+|---|---|
+| USB access | Per device, when you open a USB flight controller or a USB radio |
+| Nearby Wi-Fi devices (Android 13 and later) | Only to join a ground station's Wi-Fi |
+| Location | The map's my-location marker, reading the joined Wi-Fi network name, and joining a Wi-Fi network on Android versions that require it |
+| Notifications | The notification shown while a vehicle link stays open in the background |
+
+The app also uses network, multicast (for mDNS discovery of agents), foreground service, wake lock and vibration permissions, which Android grants at install.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Android GCS overview" icon="android" href="/android/overview">
+    Link families, features and the phone radio.
+  </Card>
+  <Card title="Android client on a ground station" icon="tower-broadcast" href="/ground-agent/android-client">
+    Connect a phone to a ground station.
+  </Card>
+</CardGroup>

@@ -1,77 +1,76 @@
 ---
-title: "Pairing"
-description: "Link this node to one or more Mission Control instances."
+title: "Agent dashboard: Pairing"
+sidebarTitle: "Pairing"
+description: "Link this node to its Mission Control owner, accept a code, approve phone receivers, or unpair."
 icon: "link"
-lastUpdated: "2026-06-18"
 ---
 
-# Pairing
+import PairingKinds from "/snippets/pairing-kinds.mdx";
 
-The Pairing page exposes the agent-to-Mission-Control pair flow on both
-profiles. The page copy adapts to say "this drone" or "this ground
-station" based on the active profile.
+Link this node to its Mission Control owner. An unpaired node publishes a code here; pairing binds it to one owner until it is unpaired. A node has one owner at a time.
 
-<Frame caption="Pairing page showing the current code and paired Mission Control instances.">
-  ![Pairing page](/images/dashboard/drone/pairing-full.png)
+<PairingKinds />
+
+<Frame caption="Pairing on an unpaired drone, opened from its LAN.">
+  ![Agent dashboard Pairing page with the awaiting pair badge, the pairing code and the Accept from Mission Control form](/images/drone-agent/dashboard/pairing.png)
 </Frame>
 
-## Sections
+## Pairing
 
-### Current code
+The **Pairing** card shows one of two states:
 
-The six-character code currently published by the pairing beacon.
-Rotates on agent restart and on every successful pair. A `paired` badge
-shows when at least one Mission Control instance is paired; otherwise
-it shows `awaiting pair`.
+- **paired:** the owner id and the time it was paired, plus an **Unpair** button.
+- **awaiting pair:** the pairing code. The code is reported only while the node is unpaired, and only to a browser on the node's own networks. Elsewhere the card reads "The code is shown only on this node's own networks. Open the dashboard from the node's LAN, hotspot or USB link to read it."
 
-### Accept from Mission Control
+How you pair depends on the cloud posture set in [Settings → Cloud](/drone-agent/dashboard-settings#cloud):
 
-Paste a code that Mission Control shows during its own pairing UI and
-click **Pair**. Used when Mission Control initiates the pair instead of
-the agent. The form clears after success.
+- **Local only (default):** in Mission Control open **Pair New Node** and enter the node's hostname or IP. Until then the PAIR tile on Home reads `n/a · local mode`.
+- **Altnautica relay or self-hosted:** enter the code from this page in Mission Control, or use **Accept from Mission Control** below.
 
-### Paired devices
+Once linked, the PAIR tile on Home and the Cloud Relay panel show the paired state.
 
-A list of every Mission Control client currently paired with this node.
-Click **Unpair all** to revoke every key in one action; the next code
-rotation completes after the revoke.
+## Accept from Mission Control
 
-## Common operations
+Shown only while the node is unpaired. Paste the code Mission Control shows into **Accept code from Mission Control** and press **Pair**.
 
-<Steps>
-  <Step title="Pair a fresh Mission Control">
-    Copy the code shown under **Current code**, open Mission Control,
-    click "Pair a drone", paste the code, confirm.
-  </Step>
-  <Step title="Unpair">
-    Click **Unpair all** to revoke every key. The Cloud Relay tile on
-    Home flips back to `awaiting code` within a poll cycle.
-  </Step>
-</Steps>
+This works in a cloud or self-hosted posture only. In local mode the agent refuses with `no_backend` and tells you to pair directly from Mission Control by hostname or IP instead.
 
-## Backend endpoints
+## Phone receivers (ground station)
 
-| Method | Path | Purpose |
-|---|---|---|
-| GET | `/api/pairing/info` | Current state + paired clients |
-| GET | `/api/pairing/code` | Fetch the active pairing code |
-| POST | `/api/pairing/accept` | Accept a code from Mission Control |
-| POST | `/api/pairing/unpair` | Revoke all paired clients |
+On a ground station the page adds a **Phone receivers** card. A phone with its own radio asks the ground station for the fleet receive keys, and nothing is shared until you approve it. Approve a phone only when the fingerprint shown matches the one on its screen. A phone receives video and telemetry; it never transmits. Each waiting phone has **Approve** and **Reject** buttons; with none waiting the card reads "No phone is waiting for approval."
+
+## Unpair
+
+Press **Unpair** and confirm **Unpair this drone?** (or **Unpair this ground station?**). Mission Control loses access until the node is paired again, and this dashboard asks for its PIN again.
+
+## Data sources
+
+| Endpoint | Used for |
+| --- | --- |
+| `GET /api/pairing/info` | pairing state, owner and code (every 5 s) |
+| `POST /api/pairing/accept` | Accept from Mission Control |
+| `POST /api/pairing/unpair` | Unpair |
+| `GET /api/v1/ground-station/wfb/invite` | waiting phones (ground station) |
+| `POST /api/v1/ground-station/wfb/invite/{id}/approve`, `.../reject` | phone decisions (ground station) |
 
 ## Troubleshooting
 
-<Accordion title="No code shown">
-The node is already paired and not publishing a beacon. Unpair if you
-want a fresh code, or open Mission Control's pair-existing flow and
-type the device ID instead.
-</Accordion>
+<AccordionGroup>
+  <Accordion title="No code is shown">
+    The node is already paired, or your browser is not on the node's own network. Open the dashboard from the node's LAN, hotspot or USB link. A local-only node pairs from Mission Control by hostname or IP and needs no code.
+  </Accordion>
+  <Accordion title="Accept says This device is already paired">
+    Unpair first, then accept the new code.
+  </Accordion>
+</AccordionGroup>
 
-<Accordion title="`accept` returns 409">
-You tried to accept a code on an already-paired node. Unpair first or
-add the new client through Mission Control's UI.
-</Accordion>
+## Next steps
 
-## Related
-
-- [Pairing concept](/drone-agent/pairing)
-- [Cloud relay](/drone-agent/cloud-relay)
+<CardGroup cols={2}>
+  <Card title="Telemetry" icon="radio" href="/drone-agent/dashboard-telemetry">
+    Edit FC parameters and read live sensors (drone).
+  </Card>
+  <Card title="WFB Receive" icon="antenna" href="/ground-agent/dashboard-receive">
+    Receive-side link status (ground station).
+  </Card>
+</CardGroup>

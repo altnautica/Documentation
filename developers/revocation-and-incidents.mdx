@@ -1,143 +1,100 @@
 ---
 title: "Revocation and incidents"
-description: "What happens when a signing key is revoked, and how to report a security issue."
-lastUpdated: "2026-06-23"
+description: "Revoke a plugin signer, archive or release on the agent, what happens to installed plugins, and how to report a security issue."
 ---
 
-Revocation is the response when a signing key turns out to be unsafe
-after the fact. The agent's check is loud and operator-controllable: a
-plugin signed by a revoked key refuses to load, but the agent never
-auto-removes it. Removal stays an operator decision.
+Revocation is the response when a signing key, a published archive or a plugin release turns out to be unsafe. The agent enforces a local revocation list: plugins signed by a revoked key, installed from a revoked archive, or at a revoked version are stopped and disabled, and cannot be installed or enabled again. Files are not deleted.
 
-## How revocation works on the agent
+## The revocation list
 
-The agent keeps a revocation list on disk:
-
-```
+```text
 /etc/ados/plugin-revocations.json
 ```
 
-It is a flat JSON array of revoked signer key ids:
+The installer writes an empty list when the file is absent and never overwrites an existing one:
 
 ```json
-["example-2025-X", "acme-2026-A"]
+{"signers": [], "archives": []}
 ```
 
-The list is consulted on every signature verification. A plugin signed
-by a listed id is rejected before it loads, even offline, so a recently
-revoked key loses trust the next time the plugin would start. The list
-ships with the agent and updates through OTA; operators on closed
-deployments edit it directly and restart the supervisor.
+- `signers` holds revoked signer ids. It covers every plugin signed by that key.
+- `archives` holds lowercase sha256 hex digests of `.adosplug` files. It covers one exact archive.
+- `versions` holds `<plugin_id>@<version>` entries, for example `com.example.my-plugin@1.0.3`. It covers one release of one plugin, whatever archive it came from. The key is optional.
 
-Revocation is keyed on the signer id, so it covers every plugin signed by
-that key at once. Finer-grained, per-version revocation is a hosted
-registry feature; the registry is not yet live (see below).
+A bare JSON array of signer ids (`["example-2025-X"]`) is also accepted, and so is the registry's own shape (`signer_keys`, `plugin_versions`, `generated_at`). An entry in `versions` that is not `<plugin_id>@<version>` makes the file unreadable. A file that exists but cannot be read or parsed is treated as fail-closed: signed plugins are refused install and enable with `revocation_list_unreadable` until it reads, and the plugin host keeps enforcing the last good list.
 
-## Issuing a revocation
+## Where entries come from
 
-When a key is compromised or a publisher is removed from trust:
+- **You.** Edit the file directly or distribute it through your own configuration management.
+- **The registry.** About a minute after start and then once a day, the agent fetches the registry's `/v1/revoked.json` (see [Catalog and registry](/developers/distribution-registry#registry-api)) and merges it into the local list: `signer_keys` into `signers`, `plugin_versions` into `versions`. The merge is add-only: it never removes an entry you or an earlier fetch added. A failed fetch is logged and retried at the next cycle.
 
-1. Add the signer id to `/etc/ados/plugin-revocations.json`.
-2. Distribute the updated list (OTA for the Altnautica trust set, your
-   config-management channel for self-hosted fleets).
-3. Re-sign your current plugin releases with a fresh key and add its
-   public key to the trust list.
-4. Notify operators. New installs of any plugin signed by the revoked key
-   fail signature verification; already-installed plugins stop loading on
-   the next start.
+## What happens when the list changes
 
-## What a revoked plugin does next
+The plugin host checks the file every 5 seconds and at start. No restart is needed. Within about 5 seconds of a change:
 
 | Surface | Behavior |
 |---------|----------|
-| Agent | The plugin fails its signature check and does not start. The supervisor records the failure. |
-| Logs | A structured line is written; inspect it with `ados logs query` or `journalctl -u ados-supervisor`. |
-| Mission Control | The plugin detail page reflects the failure so the operator can act. |
-| On-disk artifacts | The install directory under `/var/ados/plugins/<id>/` is left in place so a forensic copy can be taken before removal. |
+| Installed plugins | Every plugin signed by a revoked id, installed from a revoked archive, or at a revoked version is stopped and disabled, with `failure_reason` `signer_revoked`, `archive_revoked` or `version_revoked`. `GET /api/plugins` and `GET /api/plugins/{id}` return the `failure_reason`. |
+| Armed vehicle | If the vehicle counts as armed (unknown or stale state counts as armed), the disable is deferred and applied on disarm. |
+| Enable and install | `ados plugin enable` is refused with `refused: signer_revoked` (or `archive_revoked`, `version_revoked`). A new install of a revoked signer, archive or version is refused, even in unsigned bench mode. |
+| Logs | The plugin host logs `plugin_disabled_revoked` to the journal: `journalctl -u ados-plugin-host \| grep revoked` (or `ados logs query` when the log store is enabled). |
+| Files | The install directory under `/var/ados/plugins/<id>/` stays in place, so you can take a forensic copy before removal. |
 
-The operator's options:
+<Warning>
+A revocation disables plugins as soon as the vehicle is disarmed. Plan a replacement before you revoke a key that a fleet depends on in flight. See [Safety](/operations/safety).
+</Warning>
 
-```sh
+Your options for a disabled plugin:
+
+```bash
 ados plugin info <id>
 ados plugin logs <id>
 ados plugin remove <id>
 ```
 
-## Why the agent does not auto-remove
+## Issuing a revocation
 
-In a fleet a plugin can be load-bearing. Auto-removal could take a
-vehicle out of service mid-mission. The safe default is a loud, immediate
-refusal-to-load plus a deliberate operator removal step.
+When a key is compromised or a publisher leaves your trust set:
+
+1. Add the signer id, the archive digest or the `<plugin_id>@<version>` release to `/etc/ados/plugin-revocations.json` on every agent.
+2. Generate a fresh key, enrol its public key, and re-sign your current releases (see [Signing keys](/developers/signing-keys)).
+3. Tell operators which plugins are affected and which releases replace them.
+
+The registry also records signer-key and plugin-version revocations, hides a revoked version from the catalog, and publishes the list at `/v1/revoked.json`.
+
+## Operator checklist
+
+1. Read the reason. A safety reason means ground the affected vehicles first.
+2. Run `ados plugin list` on every node to find affected plugins.
+3. Install the replacement release.
+4. `ados plugin remove <id>` for the revoked install.
+5. Confirm the refusal and removal in `journalctl -u ados-plugin-host`.
 
 ## Reporting a security issue
 
-If you believe a plugin is malicious, broken in a way that affects flight
-safety, or is leaking data:
+This page is the one home for security reporting across the agent, Mission Control and extensions. If you believe a plugin or an ADOS component is malicious, broken in a way that affects flight safety, or leaking data, report it privately: use the contact channel on [altnautica.com](https://altnautica.com) and mark the message as a security report. Do not open a public issue.
 
-### Where to report
+Include:
 
-Open a private security advisory on the affected repository under
-[github.com/altnautica](https://github.com/altnautica). GitHub's private
-vulnerability reporting keeps the report off the public issue tracker
-until a fix ships. If GitHub is not an option, use the contact channel on
-[altnautica.com](https://altnautica.com) and mark the message as a
-security report.
-
-### What to include
-
-1. The plugin id and version.
-2. The signer key id (from `ados plugin info <id>` or the archive's
-   `SIGNATURE` file).
-3. A description of the behavior, with reproduction steps where possible.
-4. The operator-facing impact (data loss, vehicle behavior, information
-   disclosure).
+1. The plugin id and version, or the component and version.
+2. The signer id (from `ados plugin info <id>` or the archive's `SIGNATURE` file).
+3. What happens, with reproduction steps where possible.
+4. The operator-facing impact (data loss, vehicle behavior, information disclosure).
 5. Whether you have already disclosed publicly, with a link if so.
-6. Any logs, captures, or static-analysis output that supports the report.
+6. Logs, captures or analysis output that support the report.
 7. How you would like to be credited, if at all.
 
-Encrypt the message if it carries sensitive material. Plain text is
-acceptable for first contact.
+We acknowledge and triage, investigate, revoke the affected signer or archive and ship a fix, then coordinate disclosure with you and publish what changed. We default to coordinated disclosure and ask for a heads-up if you disclose on your own timeline.
 
-### What we do
+Plugin authors should give their own users the same: a private reporting channel stated in the plugin's README.
 
-1. Acknowledge and triage. Critical safety reports are prioritized.
-2. Investigate severity and scope.
-3. For confirmed issues, revoke the signer key and ship a fix.
-4. Coordinate disclosure with the reporter.
-5. Publish a post-mortem with what happened and what changed to prevent
-   recurrence.
+## Next steps
 
-We do not publish contractual response SLAs. If your deployment needs
-contractual security response terms, talk to us about a support
-arrangement.
-
-### Coordinated disclosure
-
-We default to coordinated disclosure: public report after the fix ships
-and the post-mortem is published. We do not block you from disclosing on
-your own timeline; we ask for a heads-up so a coordinated statement and
-the fix land together.
-
-## When the hosted registry ships
-
-A hosted Altnautica registry will add a polled revocation feed and
-finer-grained, per-version revocation. It is not yet live; until then,
-the on-device signer-id list above and direct re-signing are the
-mechanisms. The two current distribution channels are local-file install
-and URL install.
-
-## Operator checklist when a revocation lands
-
-1. Read the reason. Critical safety reasons mean ground the fleet first.
-2. Check `ados plugin list` on every SBC for the affected plugins.
-3. If a plugin was load-bearing, plan a replacement or rollback before
-   removing.
-4. Once a replacement is in place, `ados plugin remove <id>`.
-5. Verify with `ados plugin info <id>` and `ados logs query` that the
-   refusal and the removal were recorded.
-
-## See also
-
-- [Signing keys](/developers/signing-keys)
-- [Hosted registry](/developers/distribution-registry)
-- [Lifecycle](/developers/lifecycle)
+<CardGroup cols={2}>
+  <Card title="Signing keys" href="/developers/signing-keys">
+    Generate and enrol a replacement key.
+  </Card>
+  <Card title="Legal and licensing" href="/developers/legal-and-licensing">
+    Licences and distribution channels.
+  </Card>
+</CardGroup>

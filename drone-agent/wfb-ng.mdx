@@ -1,178 +1,286 @@
 ---
-title: "WFB-ng Video Link"
-description: "Long-range HD video using WFB-ng protocol and RTL8812EU WiFi adapters."
+title: "WFB-ng long-range link"
+sidebarTitle: "WFB-ng"
+description: "The WFB-ng radio link: hardware, link automation, operating region, TX power, keys and link health on the Drone Agent."
 icon: "wifi"
-lastUpdated: "2026-06-18"
 ---
 
-# WFB-ng Video Link
+import AgentConfigVideo from "/snippets/generated/agent-config-video.mdx";
 
-WFB-ng (WiFi Broadcast next generation) is the protocol the agent uses for long-range HD video. It is not standard WiFi. Instead, it broadcasts raw 802.11 frames in monitor mode with forward error correction (FEC). That is what buys the range: 10-50+ km with the right antennas and line of sight.
+WFB-ng (WiFi Broadcast next generation) is the radio link the agent uses for long-range video and MAVLink. It is not standard WiFi. It broadcasts raw 802.11 frames in monitor mode with forward error correction (FEC). Expect 1-3 km on stock antennas; much longer with a high-gain ground antenna and clear line of sight.
 
-The agent manages WFB-ng directly as the `ados-wfb` systemd service (the native Rust `ados-radio` binary). No OpenHD or other wrapper is required.
+The agent runs the link itself: `ados-wfb` transmits on a drone and `ados-wfb-rx` receives on a ground station, both driven by the native `ados-radio` binary. No OpenHD or other wrapper is required.
 
 ## How it works
 
-Traditional WiFi requires a two-way handshake (connect, authenticate, associate). That limits range to whatever distance both sides can reliably hear each other. WFB-ng skips all of that. The transmitter broadcasts packets one-way. The receiver picks up whatever it can hear.
-
-Key differences from standard WiFi:
+Standard WiFi needs a two-way handshake (connect, authenticate, associate), which limits range to the distance at which both sides hear each other reliably. WFB-ng skips the handshake. The transmitter broadcasts one way and the receiver decodes whatever it hears.
 
 | | Standard WiFi | WFB-ng |
 |---|---|---|
 | Mode | Managed (STA/AP) | Monitor mode (raw injection) |
 | Connection | Two-way handshake | One-way broadcast |
-| Range | ~100-300 m | 10-50+ km with directional antennas |
+| Range | About 100-300 m | 1-3 km on stock antennas; much longer with a high-gain ground antenna and clear line of sight |
 | Latency | Variable, retransmission adds tail latency | Fixed one-way, no retransmission to wait on |
-| Error handling | TCP retransmission | FEC (forward error correction) |
-| Encryption | WPA2/WPA3 | Custom key-based |
+| Error handling | Retransmission | FEC (forward error correction) |
+| Encryption | WPA2/WPA3 | libsodium key pair created by a bind |
 
 ## Hardware
 
 ### WiFi adapter
 
-The recommended chipset is the **RTL8812EU** (5.8 GHz, 802.11ac). It supports monitor mode and packet injection at high TX power.
+The supported chipset is the **RTL8812EU** (5 GHz, 802.11ac). It supports monitor mode and packet injection.
 
 | Spec | Value |
-|------|-------|
+|---|---|
 | Chipset | RTL8812EU |
-| TX power | Up to 29 dBm (800 mW) |
-| Frequency | 5.8 GHz |
+| TX power (hardware) | Up to 29 dBm (800 mW) |
+| Frequency | 5 GHz |
 | Interface | USB 2.0 |
-| Weight | ~25g (module form factor) |
+| Weight | About 25 g (module form factor) |
 
-The agent auto-detects the adapter by scanning for USB devices with the RTL8812EU vendor/product IDs.
+The agent starts at 5 dBm and clamps to `tx_power_max_dbm` (15 by default); see [TX power](#tx-power).
+
+List the adapters the agent sees and its injection verdict for each:
+
+```bash
+ados radio adapters
+```
 
 <Warning>
-The RTL8812EU requires a DKMS kernel driver that is not part of the mainline Linux kernel. The install script installs this driver automatically on supported boards. If you are running a custom kernel, you need to build and install the driver manually.
+The RTL8812EU needs an out-of-tree kernel driver (module `8812eu`). The installer builds it on supported boards. If the module is missing, for example after a kernel upgrade, rebuild it with `sudo ados radio install-driver --force`.
 </Warning>
 
 ### Antennas
 
-The adapter's built-in antenna works for short-range bench testing. For real flights, use external antennas:
+The adapter's built-in antenna is for bench testing. For flight, use external antennas:
 
-- **Air side (drone):** Omnidirectional dipole antenna, 3-5 dBi. The drone moves in all directions, so omnidirectional coverage is important.
-- **Ground side:** Directional patch or panel antenna. Point it at the drone for maximum range.
+- **Air side (drone):** omnidirectional dipole, 3-5 dBi. The drone moves in every direction, so omnidirectional coverage matters.
+- **Ground side:** directional patch or panel antenna, pointed at the drone.
 
-Range depends on the ground antenna. With the stock antennas, expect 1-3 km line of sight. Long-range links in the 40-60 km class need a high-gain ground dish (around 18 dBi), a clear line of sight, and suitable transmit power; treat that figure as the ceiling under good conditions, not a default.
+Range depends mostly on the ground antenna. Stock antennas give 1-3 km line of sight. A high-gain ground antenna, a clear line of sight and a higher TX power ceiling extend that; treat any long-range figure as a ceiling under good conditions, not a default.
 
 ## Configuration
+
+The radio reads the `video.wfb` block of `/etc/ados/config.yaml` when it starts. A typical drone block with the shipped defaults:
 
 ```yaml
 video:
   mode: "wfb"
   wfb:
-    interface: ""        # Auto-detected
-    channel: 149         # 5 GHz channel (149 = 5745 MHz)
-    tx_power: 25         # dBm (25 = ~300 mW)
-    fec_k: 8             # FEC data blocks
-    fec_n: 12            # FEC total blocks (data + parity)
+    interface: ""                 # empty = auto-detect the RTL8812EU
+    channel: 149                  # home / rendezvous channel (5745 MHz)
+    band: "u-nii-3"               # hop candidates: u-nii-1 | u-nii-3 | all
+    auto_hop_enabled: true
+    adaptive_bitrate_enabled: true
+    adaptive_mcs_max: 3
+    wfb_link_preset: "conservative"   # conservative | balanced | aggressive
+    tx_power_dbm: 5
+    tx_power_max_dbm: 15
+    topology: "host_vbus"         # host_vbus | powered_hub | external_5v
+    fleet_id: 1
+    fleet_slot: 0                 # issued at bind time; 0 = ground station
+    reg_domain: "US"
 ```
 
-### Channel selection
-
-WFB-ng operates on 5 GHz channels. Choose a channel that is not congested in your area. Common choices:
-
-| Channel | Frequency | Notes |
-|---------|-----------|-------|
-| 36 | 5180 MHz | DFS in some regions |
-| 149 | 5745 MHz | Default, usually clean |
-| 161 | 5805 MHz | Alternative |
-| 165 | 5825 MHz | Common FPV channel |
-
-<Note>
-Check your local regulations. Some 5 GHz channels require DFS (Dynamic Frequency Selection) or are restricted for outdoor use. The agent does not enforce regulatory limits. You are responsible for compliance.
-</Note>
-
-### TX power
-
-The `tx_power` setting is in dBm. Higher power means more range but also more interference and heat. Start at 25 dBm and increase only if needed.
-
-| dBm | mW | Typical use |
-|-----|-----|------------|
-| 15 | 32 | Bench testing |
-| 20 | 100 | Short range (< 1 km) |
-| 25 | 316 | Medium range (1-10 km) |
-| 29 | 800 | Long range, with a high-gain ground dish |
-
-### FEC tuning
-
-Forward Error Correction adds redundancy to the stream. The `fec_k` parameter is the number of data blocks, and `fec_n` is the total number of blocks (data + parity). The ratio `fec_k/fec_n` determines how much packet loss the stream can tolerate.
-
-| fec_k | fec_n | Parity ratio | Max loss tolerance |
-|-------|-------|-------------|-------------------|
-| 8 | 12 | 33% | 33% packet loss |
-| 4 | 8 | 50% | 50% packet loss |
-| 1 | 2 | 50% | 50% packet loss |
-| 8 | 9 | 11% | 11% packet loss |
-
-Higher parity means more resilience but also more bandwidth overhead. The default 8/12 is a good balance for most conditions.
-
-## Key management
-
-WFB-ng uses a shared key for stream encryption. The keys live under `/etc/ados/wfb/`: the air unit transmits with `tx.key`, and the ground station receives with `rx.key`. Both sides must share the matching key.
-
-When using the ADOS Ground Station (another instance of the agent in ground-station profile), the keys are generated and exchanged automatically over the local radio during pairing (see [WFB Pairing](/drone-agent/wfb-pairing)). You normally never touch the key files by hand.
-
-For manual key management:
+Change one key over the REST API, then restart the radio unit so it re-reads the block (`ados-wfb` on a drone, `ados-wfb-rx` on a ground station):
 
 ```bash
-# On the air unit (drone), the transmit key is at:
-cat /etc/ados/wfb/tx.key
-
-# The matching receive key on the ground station is at:
-cat /etc/ados/wfb/rx.key
+curl -s -X PUT http://192.168.1.50:8080/api/config \
+  -H "X-ADOS-Key: $ADOS_KEY" -H "Content-Type: application/json" \
+  -d '{"key": "video.wfb.auto_hop_enabled", "value": false}'
+sudo systemctl restart ados-wfb
 ```
 
-## Link quality monitoring
+<Note>
+While the vehicle is armed, the agent refuses radio writes that can drop the link: channel hop, TX power, radio unpair, opening a local bind, and `PUT /api/config` of a radio or regulatory key. Each answers `409` with `E_ARMED` unless the caller sets `"force": true` (or `?force=1`). Make radio changes on the ground.
+</Note>
 
-The `ados-wfb` service reports link statistics to the state IPC socket and REST API:
+<Accordion title="Every video and WFB-ng config key">
+  <AgentConfigVideo />
+</Accordion>
+
+## Link automation
+
+With the defaults the agent picks channels, bitrate and MCS itself. Manual tuning is only needed to pin a value.
+
+### Home channel and auto-hop
+
+`channel` is the home (rendezvous) channel. Drone and ground station both start there and return there when they lose each other, so they always meet before any hopping. The default, 149 (5745 MHz, U-NII-3), is non-DFS and allowed under most regulatory domains.
+
+With `auto_hop_enabled: true` (the default) the drone moves the link to the quietest channel inside `band`:
+
+- **Periodic:** a rescan every `hop_period_seconds` (60 s).
+- **Reactive:** an off-schedule hop when packet loss reaches `hop_loss_threshold_percent` (10 %) or RSSI falls to `hop_rssi_threshold_dbm` (-75 dBm), once the link has been stable on the current channel for at least 30 s.
+- **Coordinated:** the drone broadcasts an authenticated hop announcement and flips about 3 s later, after the ground station acknowledges. It does not hop at all until it has heard a ground station acknowledge once.
+- **Return home:** when the peer has been silent for more than 25 s, the drone goes back to the home channel.
+
+Hop by hand with `ados radio hop <channel>` or `POST /api/wfb/channel`. The route answers `202` once the coordinated hop is initiated; read the operating channel from `ados radio status`. Set `auto_hop_enabled: false` to pin the link to `channel`.
+
+### Band
+
+`band` limits the hop candidates.
+
+| Value | Channels | Notes |
+|---|---|---|
+| `u-nii-3` (default) | 149-165 | Non-DFS and enabled in most domains, so a drone and a ground station with different domains still share channels. |
+| `u-nii-1` | 36-48 | Often quieter, but many domains disable injection there, which can strand a ground station. |
+| `all` | Every standard channel | No band filter. |
+
+`auto_channel_enabled` (default `false`) makes the agent scan `band` on a fresh bind and write the quietest channel into the config before the radio starts. Leave it off unless both rigs share a domain; with it on, the two sides can pick different channels.
+
+### Adaptive bitrate and MCS
+
+With `adaptive_bitrate_enabled: true` (the default) a 1 Hz controller watches link quality and drives two ladders:
+
+- **Bitrate and FEC**, on packet loss and RSSI with hysteresis: 4 Mbps at 8/12, 3 Mbps at 8/14, 2 Mbps at 8/16, 1.2 Mbps at 4/12. Each rung caps the video encoder, so a degrading link puts fewer bytes on the air.
+- **MCS**, on measured SNR: MCS 5 at 30 dB or more, 4 at 24, 3 at 21, 2 at 15, otherwise MCS 1. `adaptive_mcs_max` (default 3, range 1-5) caps the top rung.
+
+Changes go to the running `wfb_tx` over its management socket, so a rung change costs no video blackout; a restart of about 1-2 s is the fallback when the socket does not answer. A drone with no ground station reporting statistics holds its rung, so the controller does nothing until a ground station is present. Set `adaptive_bitrate_enabled: false` to run fixed values.
+
+### Link presets
+
+`wfb_link_preset` sets MCS and FEC together:
+
+| Preset | MCS | FEC (k/n) | Use |
+|---|---|---|---|
+| `conservative` (default) | 1 | 8/12 | Low TX power, noisy bench, short range. Safe on `host_vbus`. |
+| `balanced` | 3 | 8/12 | Good outdoor link with headroom for RSSI swings. Use with `powered_hub`. |
+| `aggressive` | 5 | 8/10 | Excellent SNR at close range, maximum throughput. Drops the link on a noisy channel. |
+
+With `conservative` selected, explicit `mcs_index`, `fec_k` and `fec_n` values in the config take precedence, so a rig with custom values keeps them.
+
+### Fleet addressing
+
+`fleet_id` (1-65535) names the fleet and `fleet_slot` names the node in it: 0 for the ground station, 1-24 for drones. Together they form the WFB-ng link id, so two fleets can share a channel. The ground station issues a drone's slot at bind time and writes it into the drone's config; it is never negotiated at runtime. Two drones with the same slot thrash each other's FEC decoder, which looks like unexplained link loss. The [swarm bus](/drone-agent/swarm-bus#fleet-addressing) uses the same addressing.
+
+## Operating region
+
+By default the radio is unrestricted and you are responsible for compliance. Pin an operating region (`ados network regulatory region <CC>` or dashboard **Settings** → **Region**) to have the agent apply that country's channels and power limits.
+
+```bash
+ados network regulatory status
+sudo ados network regulatory region DE
+sudo ados network regulatory unrestricted
+```
+
+The posture lives in `network.regulatory` (`mode: unrestricted | region`, `region: <ISO 3166-1 alpha-2>`). With a region pinned, the radio refuses to transmit on a channel that region forbids. Restart the agent after a change.
+
+Separately, `video.wfb.reg_domain` (default `US`) is the kernel regulatory domain set on both rigs before the radio enters monitor mode, so that drone and ground station enable the same channels at usable power. Set it to your country code if 149 needs a different domain where you fly.
+
+The power ceiling and brownout clamps below apply in either posture.
+
+## TX power
+
+Default 5 dBm, clamped to `tx_power_max_dbm` (15). Raise with `ados radio set-tx-power <dbm>` or `PUT /api/wfb/tx-power` after validating the link. Above about 18 dBm a USB-VBUS-powered RTL8812EU can brown out; use `topology: powered_hub` or `external_5v` first.
+
+```bash
+ados radio set-tx-power 12
+```
+
+- A value above `tx_power_max_dbm` is refused (`400`, `above_ceiling`); a value below 1 dBm is refused (`below_floor`).
+- An accepted value is applied to the running radio and written to `video.wfb.tx_power_dbm`, so it survives a restart.
+- To go above 15 dBm, raise `tx_power_max_dbm` in the config first, on a powered supply.
+- Mission Control's node **Radio** panel has a TX power slider that uses the same route.
+
+The legacy `tx_power` key from older configs is ignored. It never set radio power, so it is dropped rather than migrated; use `tx_power_dbm`.
+
+## FEC tuning
+
+`fec_k` is the number of data blocks and `fec_n` the total (data plus parity). The ratio sets how much packet loss a block survives.
+
+| fec_k | fec_n | Parity | Loss a block survives |
+|---|---|---|---|
+| 8 | 12 | 33 % | 4 of 12 packets |
+| 8 | 16 | 50 % | 8 of 16 packets |
+| 4 | 12 | 67 % | 8 of 12 packets |
+| 8 | 10 | 20 % | 2 of 10 packets |
+
+More parity buys resilience at the cost of airtime. With adaptive bitrate on, the controller chooses FEC from its ladder; with a preset, the preset chooses.
+
+## Key model
+
+The drone holds `tx.key` and the ground station `rx.key`, complementary halves of one key pair created by a bind. They are not identical files. Compare the fingerprint in `ados radio pair status` on both nodes instead.
+
+| File | Node | Role |
+|---|---|---|
+| `/etc/ados/wfb/tx.key` | Drone | Transmit half, written from `/etc/drone.key` by the bind. Mode `0600`. |
+| `/etc/ados/wfb/rx.key` | Ground station | Receive half, written from `/etc/gs.key` by the bind. Mode `0600`. |
+| `/etc/drone.key` | Both | The one file the bind delivers byte-for-byte to both rigs. The hop announcement and swarm beacon keys derive from it. |
+
+A ground station holds one receive key for its fleet; drones are distinguished by `video.wfb.fleet_slot`. You never edit key files by hand: a bind writes them and `ados radio pair unpair` wipes them. See [WFB-ng pairing](/drone-agent/wfb-pairing) for the bind itself and [Swarm bus](/drone-agent/swarm-bus#fleet-addressing) for the fleet key.
+
+## Link health
+
+```bash
+ados radio status     # link state, channel, RSSI, bitrate, bind session
+ados diag link        # decode verdict, packet loss and who measured it
+```
+
+`ados diag link` reports whether the radio decodes its peer (`healthy`, `searching`, `deaf`, `mis_keyed`, `jammed`) and leads with `LOSSY` at 2 % measured loss. See [Drone Agent diagnostics](/drone-agent/diagnostics#ados-diag-link).
 
 | Metric | Description |
-|--------|-------------|
+|---|---|
 | RSSI | Received signal strength (dBm) |
-| SNR | Signal-to-noise ratio (dB) |
 | Channel | Current operating channel |
-| Packets received | Total packets decoded |
-| Packets lost | Total packets lost (before FEC) |
-| FEC recovered | Packets recovered by FEC |
-| FEC failed | Unrecoverable packet groups |
-| Bitrate | Current stream bitrate (kbps) |
+| Decoded pkt/s | Packets decoded per second |
+| Decrypt errors | Frames heard but not decryptable (wrong key) |
+| Packets lost | Packets lost before FEC |
+| FEC recovered | Packets rebuilt by FEC |
+| FEC failed | Blocks FEC could not rebuild |
+| Bitrate | Current stream bitrate |
 
-View link state from the setup webapp Video or Ground Station page, Mission
-Control Hardware tab, or the WFB-ng REST endpoints.
-
-## Ground station pairing
-
-The air unit (drone) runs `wfb_tx` to transmit. The ground station runs `wfb_rx` to receive. Both need to be on the same channel with the same key.
-
-When using two ADOS agents (one drone profile, one ground-station profile), channel and key synchronization happens automatically through the pairing flow.
-
-When using a standalone WFB-ng receiver (like wfb-cli or a custom setup), configure the channel and key manually on both sides.
+The same data is on the agent dashboard's [WFB Transmit](/drone-agent/dashboard-transmit) page (drone) and [WFB Receive](/ground-agent/dashboard-receive) page (ground station), in Mission Control's node **Radio** panel, and at `GET /api/wfb`.
 
 ## Distributed receive on the ground
 
-The drone always transmits with `wfb_tx`. On the ground side, ADOS supports three receive modes depending on the Ground Agent's role:
+The drone always transmits with `wfb_tx`. A ground station receives in one of three roles:
 
-- **direct** - single-node, runs plain `wfb_rx`. The default.
-- **relay** - runs `wfb_rx -f <receiver>` to forward heard fragments over the local mesh to the receiver.
-- **receiver** - runs `wfb_rx -a` to aggregate fragments from its own radio plus every paired relay, then runs the same Reed-Solomon FEC combine across the merged stream.
+- **direct:** single node running plain `wfb_rx`. The default.
+- **relay:** forwards the fragments it hears over the local mesh to a receiver.
+- **receiver:** aggregates fragments from its own radio and every paired relay, then runs one FEC combine across the merged stream.
 
-The same WFB-ng key works across all three modes; the receiver handles dedup and FEC across the combined inputs.
-
-[Read the Mesh & Distributed Receive overview](/ground-agent/mesh-overview) and the [role breakdown](/ground-agent/setup#pick-a-role) for the full picture on the ground side.
+The same receive key works in all three roles. See [Mesh overview](/ground-agent/mesh-overview) and [Pick a role](/ground-agent/setup#pick-a-role).
 
 ## Troubleshooting
 
 <AccordionGroup>
   <Accordion title="No video, adapter not detected">
-    Run `lsusb` and check for the RTL8812EU device. If it is present but not recognized, the DKMS driver may not have built for your kernel version. Check `dmesg | grep 88x2eu` for driver load errors.
+    Run `lsusb` and look for the Realtek device, then check the driver:
+
+    ```bash
+    lsmod | grep 8812eu
+    sudo dmesg | grep -i 8812eu
+    ```
+
+    If the module is absent, rebuild it with `sudo ados radio install-driver --force`. Use a direct USB port; a passive hub can starve the adapter.
   </Accordion>
 
   <Accordion title="Short range, weak signal">
-    Check antenna connections. Verify TX power is set appropriately. Make sure the adapter is not USB-hub-connected (use a direct USB port for stable power). Try a different 5 GHz channel to avoid interference.
+    Check the antenna connections and the ground antenna's pointing. Check `tx_power_dbm` against your power topology: on `host_vbus` stay at or below 15 dBm. Run `ados diag link` on the ground station; with auto-hop on, the link already moves off a congested channel.
+  </Accordion>
+
+  <Accordion title="Frames heard but not decoded">
+    `ados diag link` reporting `mis_keyed`, or a climbing decrypt error count, means the two nodes hold keys from different binds. Compare the fingerprint in `ados radio pair status` on both, then re-bind them. See [WFB-ng pairing](/drone-agent/wfb-pairing).
   </Accordion>
 
   <Accordion title="High FEC failure rate">
-    If `fec_failed` is climbing, you are at the edge of range or have interference. Options: increase FEC parity (lower `fec_k/fec_n` ratio), reduce video bitrate, use a directional antenna on the ground, or move to a cleaner channel.
+    A climbing `FEC failed` count means the link is at the edge of range or under interference. Leave adaptive bitrate on so the controller can step down, use a directional ground antenna, or choose a lower-throughput preset.
   </Accordion>
 </AccordionGroup>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="WFB-ng pairing" icon="link" href="/drone-agent/wfb-pairing">
+    How a drone and a ground station bind and exchange keys.
+  </Card>
+  <Card title="Swarm bus" icon="share-nodes" href="/drone-agent/swarm-bus">
+    The fleet beacon that rides the same radio and fleet key.
+  </Card>
+  <Card title="Drone Agent diagnostics" icon="stethoscope" href="/drone-agent/diagnostics">
+    Per-hop verdicts for the video pipeline and the radio link.
+  </Card>
+  <Card title="Operating region" icon="globe" href="/operations/regulatory">
+    Your responsibilities for legal RF operation.
+  </Card>
+</CardGroup>

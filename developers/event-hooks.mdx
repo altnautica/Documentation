@@ -1,65 +1,75 @@
 ---
-title: "Event hooks"
-description: "The events the host pushes to a GCS plugin and the requests the plugin can send."
-lastUpdated: "2026-06-23"
+title: "GCS bridge methods"
+description: "The postMessage methods a GCS plugin can call, the capability each needs, the events Mission Control pushes into the iframe, and the error codes."
 ---
 
-On the GCS half the host runs the bridge; the plugin consumes two flavors
-of message:
+On the GCS half, Mission Control runs the bridge and the plugin's iframe
+talks to it over `postMessage`. There are two kinds of message:
 
-- **Events**: pushed from the host, no response expected
-  (`config.changed`, `theme.changed`, `telemetry.<topic>`).
-- **Responses**: returned by the host in reply to a plugin **request**.
+- **Requests** the plugin sends, each answered by one **response**.
+- **Events** Mission Control pushes into the frame, with no response.
 
-Plugins subscribe to events and send requests; they never receive
-unsolicited requests.
+Plugins never receive unsolicited requests. For the agent-side event bus
+that an agent half publishes and subscribes on, see
+[Event hooks and bus](/developers/event-hooks-and-bus). For the typed SDK
+wrappers over these methods, see the
+[TypeScript SDK](/developers/sdk-typescript#plugincontext).
 
-## Events the host pushes
+## Methods the plugin can call
 
-| Method | Capability | Args | When |
-|--------|-----------|------|------|
-| `theme.changed` | none | `Record<string, string>` of CSS variables | Initial mount and on every host theme change. |
-| `config.changed` | none | the plugin's full config object | Operator saves a new config. |
-| `telemetry.<topic>` | `telemetry.subscribe.<topic>` | topic-specific payload | After the plugin subscribed to `<topic>`. |
+The bridge resolves the capability each call needs from the method (and,
+where noted, from its arguments) and checks it against the plugin's
+grants. A method not in this list is rejected with `method_unknown`.
 
-Subscribe via `ctx.client.on("config.changed", handler)` or the typed
-wrappers `ctx.config.onChange`, `ctx.theme.onChange`, and
-`ctx.telemetry.subscribe`. For any other host-pushed topic (for example
-the `video.overlay` host props the host forwards to a video overlay
-iframe, or an agent plugin's state read-back), use the generic
-`ctx.events.subscribe(topic, handler)`, which returns an unsubscribe
-function and does no request/response round-trip.
+| Method | Capability | Notes |
+|--------|-----------|-------|
+| `ping` | none | Liveness check. |
+| `i18n.t` | none | Resolve a locale key. |
+| `notify` | `ui.slot.notification-channel` | |
+| `notification.publish` | `ui.slot.notification-channel` | |
+| `telemetry.subscribe` | `telemetry.subscribe.<topic>` | Requires a `topic` argument; the topic-scoped id is checked exactly. |
+| `telemetry.unsubscribe` | none | |
+| `command.send` | `command.send` | With the command `vision.designate` it needs `vision.track.designate` instead. The operator confirms every command. |
+| `recording.start` | `recording.write` | |
+| `recording.stop` | `recording.write` | |
+| `recording.mark` | `recording.write` | |
+| `mission.read` | `mission.read` | |
+| `mission.write` | `mission.write` | The operator confirms the write. |
+| `events.subscribe` | `event.subscribe` | Requires a `topic` argument. Opens delivery of a GCS plugin-bus topic. |
+| `events.publish` | `event.publish` | Requires a `topic` argument. |
+| `events.unsubscribe` | none | Requires a `topic` argument. |
+| `cloud.read` | `cloud.read` | |
+| `records.list` | `cloud.records` | The plugin's own cloud records only. |
+| `records.get` | `cloud.records` | |
+| `records.put` | `cloud.records` | |
+| `records.remove` | `cloud.records` | |
+| `cockpit.marks` | `ui.slot.video-overlay` | Draw vector marks (boxes, reticles, points, polylines, labels) into the shared cockpit overlay. |
+| `cockpit.marks.clear` | none | |
+| `perception.read` | `perception.read` | Where detection runs for the bound drone. |
+| `perception.subscribe` | `perception.subscribe` | Open the detection stream. |
+| `perception.unsubscribe` | none | |
+| `perception.health` | `perception.read` | The perception session health. |
 
-## Requests the plugin can send
+The plugin never computes the capability id itself. The capability an
+envelope claims is ignored; the bridge re-resolves it.
 
-The SDK context exposes these high-level wrappers. Each delegates to a
-single `PluginClient`; drop to `ctx.client.request(method, capability,
-args)` for anything else.
+## Host-pushed events
 
-| Wrapper | Method | Capability | Returns |
-|---------|--------|-----------|---------|
-| `ctx.telemetry.subscribe(topic, handler)` | `telemetry.subscribe` | `telemetry.subscribe.<topic>` | unsubscribe function |
-| `ctx.command.send(command, args)` | `command.send` | `command.send` | host-defined |
-| `ctx.notifications.publish(payload)` | `notification.publish` | `ui.slot.notification-channel` | host-defined |
-| `ctx.recording.mark(payload)` | `recording.mark` | `recording.write` | host-defined |
-| `ctx.mission.read(missionId)` | `mission.read` | `mission.read` | mission body |
-| `ctx.mission.write(update)` | `mission.write` | `mission.write` | host-defined |
+| Event | Capability | Payload | When |
+|-------|-----------|---------|------|
+| `theme.changed` | none | `Record<string, string>` of CSS variables | On mount and on every theme change. |
+| `config.changed` | none | The plugin's full config object | On mount (seeded from the agent's config read-back), and after every accepted config write from the plugin, the parameter panel or the Skill Bar. |
+| `capability.token` | none | A fresh capability token | When Mission Control rotates the plugin's token. The SDK caches it; no plugin action is needed. |
+| `telemetry.<topic>` | `telemetry.subscribe.<topic>` | Topic-specific payload | After the plugin subscribed to `<topic>`. |
+| `perception.detections` | `perception.subscribe` | A detection batch | After the plugin opened the detection stream. |
 
-The host registry also recognizes `telemetry.unsubscribe`, `recording.start`
-and `recording.stop` (capability `recording.write`), `events.subscribe` and
-`events.publish` (`event.subscribe` / `event.publish`, both require a
-`topic` arg), `cloud.read`, `notify` (`ui.slot.notification-channel`),
-plus two always-allowed methods that need no capability: `ping` and
-`i18n.t`. A method
-that is not in the registry is rejected with `method_unknown`.
-
-The host re-resolves the required capability from the method (and, for
-telemetry, from the topic) and checks the granted set. The plugin never
-computes the capability id itself.
+Other host-pushed topics (for example the `video.overlay` host props, or
+an agent plugin's state read-back) arrive on the same channel and are
+read with `ctx.events.subscribe(topic, handler)`.
 
 ## Wire shape
 
-```ts
+```typescript
 interface RpcEnvelope<TArgs = unknown> {
   id: string;
   type: "request" | "response" | "event";
@@ -71,41 +81,40 @@ interface RpcEnvelope<TArgs = unknown> {
 }
 ```
 
-The plugin never builds these by hand. The SDK's `PluginClient` generates
-the `id`, attaches the protocol version, and waits for the correlated
-response.
+The SDK's `PluginClient` builds these: it generates the `id`, attaches
+the protocol version, and waits for the correlated response.
 
 ## Error envelopes
 
-When the host rejects a request it returns a response with
+When the bridge rejects a request it returns a response with
 `error: { code, message }`. The SDK throws a `HostError` whose `code`
-field carries the machine-readable code:
+carries the machine-readable code:
 
 | Code | Meaning |
 |------|---------|
 | `permission_denied` | The required capability is not in the granted set. |
-| `capability_denied` | The per-request capability token failed validation, or its claimed capability set does not cover the request. The message carries the reason after a colon (e.g. `capability_denied:token_expired`). |
-| `method_unknown` | The method is not in the host's registry. |
-| `schema_invalid` | Args failed schema validation. |
-| `handler_unset` | The host knows the method but no handler is wired. |
-| `handler_error` | The host's handler threw; the message carries the cause. |
+| `capability_denied` | The plugin's capability token does not cover the request. The message carries the capability after a colon (for example `capability_denied:mission.write`). |
+| `method_unknown` | The method is not in the bridge's registry. |
+| `schema_invalid` | The arguments failed validation (for example a missing `topic`). |
+| `handler_unset` | The bridge knows the method but no handler is wired. |
+| `handler_error` | The handler threw; the message carries the cause. |
+| `refused` | Raised by the SDK when the host answered `{ ok: false }`: the operator denied a prompt, the command is not allowed, or a rate limit applied. |
 
-Branch on `code`, not on `message`. Messages are for log lines.
+Branch on `code`, not on `message`.
 
 <Note>
-There is also an `origin_mismatch` error, but the host never sends it to
-the plugin. When a message arrives from a window that is not the trusted
-iframe, the bridge drops it and records a security event host-side rather
-than replying. A plugin will never see it on the wire.
+There is also an `origin_mismatch` error, but the bridge never sends it
+to the plugin. A message from a window that is not the plugin's iframe
+is dropped and recorded as a security event on the host side.
 </Note>
 
 ## Theming
 
-`theme.changed` arrives once on mount and again on every theme toggle.
-The payload is a `Record<string, string>` of CSS variables. Apply them by
-walking the entries:
+`theme.changed` arrives once on mount and again on every theme change.
+The payload is a `Record<string, string>` of CSS variables. Apply them
+by walking the entries:
 
-```ts
+```typescript
 ctx.theme.onChange((vars) => {
   for (const [key, value] of Object.entries(vars)) {
     document.documentElement.style.setProperty(key, value);
@@ -113,25 +122,32 @@ ctx.theme.onChange((vars) => {
 });
 ```
 
-The SDK does not auto-apply because plugins choose how granular they want
-to be (full root, scoped to a panel, or ignored).
+The SDK does not apply them for you, so a plugin can scope them to its
+own root or ignore them.
 
 ## i18n
 
-Plugin authors ship a locale bundle in their archive; the host streams
-the active bundle to the plugin on mount. The SDK formats keys with
+A plugin ships a locale bundle in its archive; Mission Control streams
+the active bundle to the frame on mount. Format keys with
 `ctx.i18n.t(key, params)`:
 
-```ts
+```typescript
 ctx.i18n.t("anomaly.cellLow", { voltage: 3.4 });
 // "Cell low: 3.4 V"
 ```
 
-Missing keys fall back to the key itself; missing parameters render the
-`{name}` placeholder so it is visible in QA.
+A missing key falls back to the key itself.
 
-## See also
+## Next steps
 
-- [Event hooks and bus](/developers/event-hooks-and-bus)
-- [Permissions](/developers/permissions)
-- [SDK TypeScript](/developers/sdk-typescript)
+<CardGroup cols={2}>
+  <Card title="TypeScript SDK" href="/developers/sdk-typescript">
+    The typed wrappers over these methods.
+  </Card>
+  <Card title="Event hooks and bus" href="/developers/event-hooks-and-bus">
+    The agent-side event bus.
+  </Card>
+  <Card title="Permissions" href="/developers/permissions">
+    The capabilities these methods check.
+  </Card>
+</CardGroup>

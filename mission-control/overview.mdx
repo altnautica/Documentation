@@ -1,116 +1,93 @@
 ---
-title: "What is ADOS Mission Control?"
-description: "A browser-based ground control station for ArduPilot, PX4, Betaflight, and iNav drones."
+title: "Mission Control overview"
+sidebarTitle: "Overview"
+description: "ADOS Mission Control is an open-source ground control station for ArduPilot, PX4, Betaflight and iNav that runs in the browser or as a desktop app."
 icon: "display"
-lastUpdated: "2026-06-18"
+keywords: ["ados", "mission control", "gcs", "ground control station", "overview"]
 ---
 
-ADOS Mission Control is an open-source ground control station (GCS) that runs in your browser. It connects to your flight controller over USB, Wi-Fi, or the cloud, and gives you everything you need to fly, plan missions, configure your FC, and manage a fleet.
+ADOS Mission Control is an open-source ground control station (GCS). It runs in a Chromium browser or as a desktop app, talks to flight controllers directly over USB, Bluetooth or the network, and manages Drone Agent and Ground Agent nodes as a fleet. You use it to fly, plan missions, configure the flight controller, flash firmware and review flight logs.
 
-<Frame caption="ADOS Mission Control dashboard with live drone telemetry">
-  <img src="/images/dashboard/dashboard-overview.png" alt="Mission Control dashboard showing drone cards, map, and telemetry" />
+<Frame caption="The Dashboard in Grid view, with the Fleet sidebar on the left.">
+  ![Mission Control Dashboard in Grid view showing the Fleet sidebar and Agent Overview tiles](/images/mission-control/dashboard-grid.png)
 </Frame>
 
-## Why Mission Control?
+## Ways to run it
 
-Traditional GCS tools are desktop-only, platform-locked, and built for a single firmware. Mission Control takes a different approach.
+| Option | What you get |
+|---|---|
+| Hosted | Open [command.altnautica.com](https://command.altnautica.com). Nothing to install. |
+| Desktop app | Native UDP and TCP MAVLink sockets plus device pickers for USB and serial. See [Desktop app](/mission-control/desktop-app). |
+| From source | `npm run dev` or `npm run demo` on port 4000. See [Install Mission Control](/mission-control/installation). |
 
-- **Runs in any Chromium browser.** Chrome, Edge, Brave, or the Electron desktop app. No install required for the web version.
-- **Four firmware families.** Full support for ArduPilot and PX4 via MAVLink v2. Full MSP v1/v2 support for Betaflight and iNav.
-- **Real flight controls.** Gamepad and HOTAS input at 50 Hz with `MANUAL_CONTROL` messages. Keyboard shortcuts for guided mode.
-- **Mission planning.** Waypoints, 9 pattern generators, terrain following, geofence editor, rally points, and KML/CSV import/export.
-- **Video.** WebRTC with a 4-mode transport switcher (LAN, P2P via MQTT signaling, Auto cascade, or Off).
-- **Open source.** GPLv3 license. Self-host the backend, fork the code, contribute upstream.
+USB Serial and Bluetooth need Chrome or Edge, because they use the Web Serial and Web Bluetooth APIs. A demo fleet runs with no hardware at all; the full list of simulated nodes is on [Dashboard and fleet](/mission-control/dashboard#demo-fleet).
 
-## Feature Highlights
+## What you can do
 
 <CardGroup cols={2}>
-  <Card title="87 Configuration Panels" icon="sliders">
-    Flight modes, failsafes, PID tuning, power monitoring, OSD editor, serial ports, sensors, gimbal, camera, LED, VTX, CAN bus, and more.
+  <Card title="Fleet views" icon="grid-2" href="/mission-control/dashboard">
+    Grid, Overview, Nodes and Swarm views of every node, with a per-node detail panel.
   </Card>
-  <Card title="83 MAVLink Decoders" icon="message-code">
-    Binary MAVLink v2 parsing with CRC validation. 34 MSP decoders for Betaflight, 65+ MSP2_INAV decoders for iNav. 33 MAV_CMD command handlers.
+  <Card title="Cockpit and Skills" icon="gamepad" href="/mission-control/cockpit">
+    Full-screen video with a HUD and a Skill Bar. Arm, takeoff, land, RTL, pause, abort and mode presets are Skills you can bind to keys or gamepad buttons.
   </Card>
-  <Card title="9 Calibration Wizards" icon="compass">
-    Step-by-step wizards for accelerometer, gyro, compass, level, RC, ESC, airspeed, barometer, and CompassMot.
+  <Card title="Mission planning" icon="route" href="/mission-control/mission-planning">
+    Waypoints, pattern generators, geofence, rally points, a terrain profile and the planner Copilot.
   </Card>
-  <Card title="3D Mission Simulation" icon="globe">
-    CesiumJS globe with flight path replay, playback controls, camera trigger markers, geofence volumes, and rally point visualization.
+  <Card title="Flight logs" icon="clock-rotate-left" href="/mission-control/flight-logs">
+    The Logs tab: flight list, per-flight charts and events, reports and replay.
   </Card>
-  <Card title="Firmware Flashing" icon="microchip">
-    Flash ArduPilot, PX4, Betaflight, or iNav firmware over WebSerial. Board auto-detection and DFU mode support.
+  <Card title="Flight controller setup" icon="sliders" href="/mission-control/fc-configuration">
+    The Setup tab for flight modes, failsafes, tuning, sensors and more, plus calibration and a full parameter editor.
   </Card>
-  <Card title="16 Languages" icon="language">
-    English, German, Spanish, French, Hindi, Gujarati, Kannada, Marathi, Punjabi, Tamil, Telugu, Indonesian, Japanese, Korean, Portuguese, and Chinese.
+  <Card title="Flash Tool" icon="bolt" href="/mission-control/flash-tool">
+    Flash ArduPilot, PX4 or Betaflight firmware (WebUSB DFU or serial bootloader), AP_Periph CAN nodes over DroneCAN, and ADOS companion boards, from the browser.
+  </Card>
+  <Card title="MCP" icon="robot" href="/mission-control/mcp">
+    Connect an AI client to your fleet through a scoped, audited connector you run yourself.
+  </Card>
+  <Card title="16 languages" icon="language" href="/mission-control/settings#general">
+    Change the interface language on the General settings page.
   </Card>
 </CardGroup>
 
-## Supported Firmware
+## Supported firmware
 
-| Firmware | Protocol | Status | Notes |
-|----------|----------|--------|-------|
-| ArduPilot | MAVLink v2 | Full support | Tested on real hardware. 200+ parameters, 18 flight modes, 9 calibrations. |
-| PX4 | MAVLink v2 | Full support | 63+ parameter mappings, 18 modes. Airframe and actuator panels. |
-| Betaflight | MSP v1/v2 | Full support | 34 decoders, 21 encoders, ~105 virtual params. Aux modes, rate profiles, BF OSD. |
-| iNav | MSP v1/v2 | Full support | ~65 iNav decoders, ~15 encoders, name-based settings client. Missions (8 waypoint actions, multi-mission), 16 safehomes, 15 geozones, navigation modes, battery + control + mixer profiles, Programming Framework, EZ Tune, FW Approach, extended and custom OSD. iNav 7.0+. |
+| Firmware | Protocol | Configure and fly | Flash from Mission Control |
+|---|---|---|---|
+| ArduPilot | MAVLink v2 | Yes | Yes |
+| PX4 | MAVLink v2 | Yes | Yes |
+| Betaflight | MSP | Yes | Yes |
+| iNav | MSP | Yes, see the [iNav guide](/mission-control/inav-guide) for scope | No. Use iNav Configurator. |
 
-## Browser vs Desktop
+Panel coverage per firmware is on [Firmware comparison](/mission-control/firmware-comparison).
 
-Mission Control works in two modes.
-
-**Browser (recommended for most users)**
-
-Open `http://localhost:4000` after running the dev server. WebSerial for USB connections requires Chrome 89+ or Edge 89+. No install needed beyond Node.js.
-
-**Electron Desktop App**
-
-A standalone application built on Electron 44. Same features as the browser version, packaged as a native app for macOS, Windows, and Linux. Useful when you want a dedicated window and system tray integration.
-
-```bash
-# Build for your platform
-npm run desktop:build:mac
-npm run desktop:build:win
-npm run desktop:build:linux
-```
-
-## Demo Mode
-
-Try Mission Control without any hardware. Demo mode simulates fourteen aircraft across ArduPilot (copter, plane, VTOL, rover, boat, sub and heli), PX4, Betaflight and iNav, with realistic telemetry, flight modes, and GPS tracks.
-
-```bash
-npm run demo
-```
-
-Open `http://localhost:4000` and the dashboard fills with fourteen simulated aircraft plus a workstation node and a ground-station node. All panels, calibration wizards, and mission planning tools work in demo mode.
-
-<Tip>
-You can also activate demo mode in the browser by adding `?demo=true` to the URL.
-</Tip>
-
-## Tech Stack
+## Tech stack
 
 | Layer | Technology |
-|-------|------------|
-| Framework | Next.js 16 (App Router) + React 19 |
-| Language | TypeScript (strict mode) |
-| State | 100+ Zustand stores with ring-buffered telemetry |
-| Styling | Tailwind CSS v4 |
-| Maps | Leaflet (2D), CesiumJS (3D simulation) |
-| Video | WebRTC (WHEP + MQTT signaling) |
-| Backend | Convex (optional, for cloud features) |
-| Desktop | Electron 44 |
+|---|---|
+| Framework | Next.js (App Router) and React |
+| Language | TypeScript |
+| State | Zustand stores with ring-buffered telemetry |
+| Maps | Leaflet (2D) and CesiumJS (3D mission preview) |
+| Video | WebRTC (WHEP on the LAN, MQTT signalling across networks) |
+| Backend | Convex, optional, for sign-in and cloud features |
+| Desktop | Electron |
 | License | GPL-3.0-only |
 
-## Next Steps
+## Next steps
 
-<CardGroup cols={3}>
-  <Card title="Install" icon="download" href="/mission-control/installation">
-    Set up your development environment.
+<CardGroup cols={2}>
+  <Card title="Install Mission Control" icon="download" href="/mission-control/installation">
+    Run it from source, in demo mode or for development.
   </Card>
-  <Card title="Connect" icon="plug" href="/mission-control/connecting">
-    Connect to your flight controller.
+  <Card title="Desktop app" icon="desktop" href="/mission-control/desktop-app">
+    Download the installer for macOS, Windows or Linux.
   </Card>
-  <Card title="Fly" icon="paper-plane" href="/mission-control/flight-control">
-    Take manual control with a gamepad.
+  <Card title="Connect to a drone" icon="plug" href="/mission-control/connecting">
+    Reach a flight controller directly or through the Drone Agent.
+  </Card>
+  <Card title="Dashboard and fleet" icon="grid-2" href="/mission-control/dashboard">
+    Find your way around the main screen.
   </Card>
 </CardGroup>

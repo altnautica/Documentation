@@ -1,257 +1,89 @@
 ---
-title: "Troubleshooting"
-description: "Decision trees for the common failure modes: low optical-flow quality, EKF source-switch rejections, VIO drift, and scale errors."
-icon: "wrench"
-lastUpdated: "2026-05-16"
+title: "Vision Navigation: troubleshooting"
+sidebarTitle: "Troubleshooting"
+description: "Fix low optical-flow quality, scale problems, lost frames and rejected configs in Vision Navigation, and where to report a bug."
+icon: "life-ring"
 ---
 
-# Troubleshooting
+Start with the Vision Nav tab: the estimator state, flow quality, flow rate, the scale source and the pre-arm rows usually point at the problem. Then read the plugin log on the drone:
 
-Most vision-nav surprises fall into one of four families: optical-flow
-quality drops, EKF source switch rejection, VIO drift, and scale
-source confusion. This page walks each family as a decision tree.
-Start at the top of the section that matches your symptom.
+```bash
+ados plugin logs com.altnautica.vision-nav --lines 200
+systemctl status 'ados-plugin-com-altnautica-vision-nav-*'
+```
 
----
+The plugin's output goes to its own log file under `/var/log/ados/plugins/`, not to the journal. `ados plugin logs` finds the file for you.
 
 ## Low optical-flow quality
 
-Symptom: the `flowQuality` field on the GCS sensors card is below 50,
-or the estimator state has dropped to `degraded`.
+Symptom: **Flow quality** on the Flow health card is below the gate (default 50), or the estimator reports `degraded`.
 
-### Step 1: light
+1. **Light.** The tracker needs both frames bright enough to find corners. Add light, or lower the camera frame rate so each frame gets more exposure. Mono global-shutter sensors cope better in low light.
+2. **Texture.** Snow, water, fresh asphalt and sand have few features. Fly over textured ground. For testing over a safe area you can lower `flow_quality_min` in the plugin config; the flight controller still rejects bad samples itself.
+3. **Yaw rate.** Fast yaw moves features out of view between frames. Slow the yaw, raise the frame rate or use a wider lens.
+4. **Motion blur.** Fast horizontal flight with long exposure blurs corners. Shorten exposure or slow down.
 
-Is the scene below roughly 20 lux? Lucas-Kanade tracks corner features
-between frames; both frames need to be bright enough to extract
-corners.
+## No frames
 
-- Add light if you can.
-- Drop the camera frame rate (lower frame rate means longer exposure
-  per frame).
-- Switch to a mono global-shutter camera if you are using a colour
-  rolling-shutter one. Mono sensors have higher quantum efficiency
-  per pixel.
+Symptom: **Flow rate** on the Flow health card drops to 0 and the estimator reports `failed`.
 
-### Step 2: texture
+After 2 s without a frame the plugin marks the estimator `failed` and the companion `CRITICAL`, and it sends no flow. The flight controller's estimator then times the flow source out. Land, or switch back to GPS with your RC source-set switch.
 
-Is the ground featureless (snow, water, fresh asphalt, sand)? The
-tracker needs visual texture to lock onto.
-
-- Move the drone over a more textured surface.
-- Lower the quality threshold via the plugin config (this trades
-  noise for emission rate; the EKF will reject very bad samples on
-  its own innovation gate).
-- Switch to a VIO mode if you have the hardware. VIO uses the IMU to
-  prop up the state when the camera goes blind.
-
-### Step 3: yaw rate
-
-Is the drone rotating fast around its yaw axis? The Lucas-Kanade
-tracker handles small yaw via the gyro-derotation step, but anything
-above roughly 90 °/s starts losing features per frame.
-
-- Slow the yaw command.
-- Increase the camera frame rate so each frame's rotational
-  displacement is smaller.
-- Widen the camera FOV. A wider lens keeps more pixels on the same
-  ground patch per yaw step.
-
-### Step 4: motion blur
-
-Is the drone moving fast horizontally? Long exposure plus high speed
-equals motion blur, and blurred corners do not track.
-
-- Shorten the camera exposure (reduce the AE target gain).
-- Slow the flight.
-- Use a global-shutter camera. Rolling shutters smear differently
-  depending on the direction of motion.
-
----
-
-## EKF source-switch rejected
-
-Symptom: you press the source switch button in the GCS and the FC
-either does not accept the command or the EKF starts reporting
-unhealthy.
-
-### Step 1: which firmware?
-
-PX4 does not support runtime source-set switching. The GCS button is
-disabled in PX4 mode and the on-page note explains why. The fix is
-to set the parameters via PX4's parameter system and restart the
-EKF. ArduPilot does support runtime switching; the rest of this
-section assumes ArduPilot.
-
-### Step 2: is vision healthy at the moment of the switch?
-
-The switch is gated in the GCS on three conditions:
-
-- `companionState === "active"`
-- For OF source sets: `flowQuality ≥ 50`
-- For VIO source sets: `vioSupported && estimatorState === "converged"`
-
-If any condition is unmet the button is greyed out and the tooltip
-explains which one. Wait for the condition to clear, then retry.
-
-### Step 3: is `EK3_SRC1_VELXY` configured?
-
-The MAVLink command tells the FC to switch SOURCE SET, not to enable
-the source itself. The relevant `EK3_SRC1_*` parameters must already
-be set for the source the operator is selecting:
-
-| Source | `EK3_SRC1_VELXY` | `EK3_SRC1_POSXY` | `EK3_SRC1_YAW` |
-|---|---|---|---|
-| GPS | 3 (GPS) | 3 (GPS) | 1 (Compass) |
-| OF | 5 (OpticalFlow) | 0 (None) | 1 (Compass) |
-| VIO | 6 (ExternalNav) | 6 (ExternalNav) | 6 (ExternalNav) |
-
-If a parameter is wrong the FC silently keeps the previous source.
-Check the ArduPilot tlog for the `EK3_SRC*` values around the time of
-the switch.
-
-### Step 4: innovation spike at the moment of the switch
-
-The EKF tolerates a one-time innovation spike on source switch, but
-if the new source's state is far from the old one the spike can
-trigger an EKF reset. Symptoms:
-
-- `EK3_*` covariance climbing rapidly
-- The vehicle drifting in `LOITER` for a few seconds after the switch
-
-Mitigation: switch on the ground first to confirm the new source's
-state is sensible, then again in flight at a low altitude where a
-short drift is recoverable.
-
----
-
-## VIO drift
-
-Symptom: position drift greater than 0.5 m over a 5-minute hover, or
-the estimator state alternating between `converged` and `degraded`.
-
-### Step 1: features
-
-How many features is the estimator tracking? The GCS estimator card
-shows the live count. VIO needs at least 20 features for the pre-arm
-gate; sustained operation needs at least 40 to 60 for reasonable
-accuracy.
-
-- Move to a more textured scene.
-- Brighten the scene.
-- Use a wider-FOV lens so more world is in the frame.
-
-### Step 2: sync offset
-
-Is the camera-IMU sync residual in the yellow or red band? The GCS
-sensors card shows the live value.
-
-- Yellow (10 to 30 ms): the estimator will arm but accuracy is
-  reduced. Tolerable for short flights.
-- Red (above 30 ms): pre-arm refuses. Re-run the camera-IMU
-  calibration and update the `timeshift_cam_imu` value in the
-  calibration file.
-
-A static offset that drifted means something about the camera mode
-changed: resolution, frame rate, exposure. Recapture under the same
-mode you fly in.
-
-### Step 3: motion profile
-
-Are you doing pure yaw or pure translation in front of a featureless
-wall? Both starve the bundle-adjustment optimiser.
-
-- Add some altitude motion to introduce parallax.
-- Fly past structure rather than rotating in place.
-- If the flight profile genuinely needs pure yaw, switch to OF or
-  hybrid for the yaw segments.
-
-### Step 4: extrinsics
-
-Is `T_cam_imu` correct? A wrong rotation makes the IMU and camera
-"disagree" about which way is forward; the estimator can converge to
-a wrong answer that drifts.
-
-- Check the translation magnitude. Drone cam-IMU lever arms are
-  centimetre-scale.
-- Verify the rotation block is orthonormal (it should be, the loader
-  validates this) and that you did not transpose the matrix when
-  exporting from Kalibr.
-
----
+On the ground, check that the agent's vision host still captures the downward camera (see [Multi-camera](/drone-agent/multi-camera)) and look for camera errors in the agent's video logs.
 
 ## Scale source confusion
 
-Symptom: the `optical_flow_degraded` mode is active and the velocity
-the EKF computes is consistently off by a factor of 2 to 4 in one
-direction.
+Symptom: in `optical_flow_degraded` the speed the flight controller computes is off by a large factor.
 
-### Step 1: which rung is active?
+1. **Which rung is active?** The Sensors card shows the scale source:
+   - `rangefinder`: a rangefinder reading is in use.
+   - `baro`: `GLOBAL_POSITION_INT.relative_alt` or `VFR_HUD.alt` minus take-off.
+   - `gps`: GPS height above the first 3D fix (only with `outdoor: true`).
+   - `static`: no live height source; the plugin is on the 1.5 m fallback. The estimator is `degraded` and the **Altitude scale source** pre-arm row blocks.
+2. **Barometer drift.** Indoor barometers drift, prop wash makes it worse, and air handling can move the reading by 1 to 2 m. Shield the barometer with foam and wait about 30 s after entering the space before you arm.
+3. **GPS indoors.** If `outdoor` is on indoors, GPS height has no physical meaning. Turn `outdoor` off when you fly indoors.
+4. **Static fallback.** Fix the height source before you fly. `optical_flow_degraded` on the static rung is not fit for flight.
 
-The GCS sensors card shows `flowScaleSource`. Possible values:
+## Rangefinder row blocks
 
-- `rangefinder`: the plugin is reading a real rangefinder. If you
-  see this in `optical_flow_degraded` mode, the rangefinder is
-  actually wired and you can flip to `optical_flow` mode.
-- `baro`: the plugin is using `GLOBAL_POSITION_INT.relative_alt` or
-  `VFR_HUD.alt` as the scale.
-- `gps`: the GPS rung is active.
-- `none` or missing: no scale source is healthy; the plugin is on
-  the static fallback rung at quality multiplier 0.2.
+Symptom: the **Rangefinder healthy** pre-arm row is red in `optical_flow`.
 
-### Step 2: baro hysteresis
+- "No fresh rangefinder reading.": no reading in the last 200 ms. For `fc_relay`, check that the flight controller publishes `DISTANCE_SENSOR`. For `tfluna_uart`, check the device path, the baud rate and the wiring; an open failure also shows as `rangefinderError`.
+- "Rangefinder reading … outside …": the drone is below the sensor's minimum or above its maximum range.
+- "Rangefinder required in this mode.": the topology is `none`. Set a topology, or switch the mode to `optical_flow_degraded`.
 
-Indoor baros drift. Prop wash on an uncapped baro drifts further.
-HVAC pressure changes can yank the reading by 1 to 2 m in a single
-sample.
+## Config rejected: camera orientation
 
-- Foam-shield the baro on the FC.
-- Capture take-off altitude indoors and trust the relative value
-  rather than the raw altitude.
-- Wait 30 seconds after entering the indoor space before arming so
-  the baro stabilises.
+Symptom: the plugin runs but stays disengaged in an optical-flow mode.
 
-### Step 3: GPS gate
+Both optical-flow modes need `camera.orientation` set to `downward` or `auto`. A `forward` or `side` orientation is rejected and leaves vision navigation disengaged. An unknown mode name does the same. Fix the key in the plugin config; the plugin restarts on the change.
 
-The GPS rung is gated on `outdoor flag` + 3D fix + HDOP ≤ 2. If you
-flipped the outdoor flag indoors the rung will read GPS altitude
-that has no physical meaning.
+## Do I need a rangefinder?
 
-- Flip the outdoor flag off when flying indoors.
-- Auto-detection by satellite count + HDOP is a polish item; for now
-  the operator owns the gate.
+For `optical_flow`, yes: it is the scale source, and the pre-arm check expects a fresh reading. For `optical_flow_degraded`, no: scale comes from the flight controller's height, with more drift, especially above about 5 m.
 
-### Step 4: static fallback
+## Night flight
 
-If `flowScaleSource` is missing or the quality multiplier is 0.2,
-none of the rungs is healthy. The plugin is on the 1.5 m static
-fallback to avoid emitting nothing at all.
+Optical flow needs visible texture on the ground. In the dark it works only as well as the camera sees: add a downward light, or use an IR-sensitive camera with an IR illuminator, and test before you rely on it.
 
-- Fix the baro first. Without baro the OF-degraded mode is unsafe
-  for flight.
-- If you cannot fix baro, switch to a mode that does not need a
-  scale: VIO produces metric pose directly.
+## Where do I file a bug?
 
----
+Open an issue on the [ADOSExtensions repository](https://github.com/altnautica/ADOSExtensions/issues) with:
 
-## When in doubt
+- the plugin log, from `ados plugin logs com.altnautica.vision-nav --lines 500` (the file is `/var/log/ados/plugins/com-altnautica-vision-nav-<hash>.log`);
+- the output of `systemctl status 'ados-plugin-com-altnautica-vision-nav-*'`;
+- the flight controller log covering the problem;
+- the plugin config (`GET /api/plugins/com.altnautica.vision-nav/config`).
 
-The EKF source switcher button labelled "GPS" is the universal
-escape. On ArduPilot it always works (subject to GPS health). Switch
-back to GPS, land, and diagnose on the ground.
-
-If the diagnosis points at a code issue rather than an operator one,
-file an issue on the
-[ADOSExtensions repo](https://github.com/altnautica/ADOSExtensions/issues)
-with the journalctl excerpt, the MAVLink tlog, and the heartbeat
-sample at the moment of the failure.
-
----
+For problems outside the extension, see [Troubleshooting by area](/operations/troubleshooting).
 
 ## Next steps
 
-- [Modes](/drone-agent/vision-nav-modes) for the mode picker and
-  fallback ladder
-- [Calibration](/drone-agent/vision-nav-calibration) for re-running the
-  camera-IMU calibration
-- [Architecture](/drone-agent/vision-nav-architecture) for developers
-  digging into the estimator framework
+<CardGroup cols={2}>
+  <Card title="Architecture" icon="sitemap" href="/drone-agent/vision-nav-architecture">
+    How the agent half is built.
+  </Card>
+  <Card title="Modes and fallback" icon="layer-group" href="/drone-agent/vision-nav-modes">
+    Pre-arm checks and the scale ladder.
+  </Card>
+</CardGroup>

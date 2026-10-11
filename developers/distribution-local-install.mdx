@@ -1,207 +1,90 @@
 ---
-title: "Distribution and local install"
-description: "Pack, sign, and ship a plugin operators can install."
-lastUpdated: "2026-06-23"
+title: "Pack and install locally"
+sidebarTitle: "Local install"
+description: "Pack a plugin into a .adosplug archive, publish it on GitHub, and install it from a file."
+keywords: ["ados", "plugin", "adosplug", "pack", "install"]
 ---
 
-A plugin is a signed zip with the `.adosplug` extension. This page
-covers the build pipeline, the publishing options, and how operators
-install what you ship.
+A plugin ships as a signed zip with the `.adosplug` extension. This page covers building and packing the archive, publishing it on a GitHub release, and installing it from a file.
 
 ## Build the GCS bundle
 
-If your plugin has a GCS half, build it first. From your plugin folder
-(under `extensions/<your-plugin>/` in the ADOSExtensions monorepo):
+If your plugin has a GCS half, build it first. In the ADOSExtensions monorepo:
 
-```sh
+```bash
 pnpm install   # once, at the monorepo root
-pnpm test
-pnpm build
+pnpm -C extensions/my-plugin/gcs test
+pnpm -C extensions/my-plugin/gcs build
 ```
 
-`pnpm build` emits `gcs/plugin.bundle.js`. Verify it exists before
-packing. An agent-only plugin has no GCS bundle and skips this step.
+The build emits `gcs/plugin.bundle.js`. An agent-only plugin skips this step.
 
-## Generate a signing key
+## Pack
 
-Mint an Ed25519 keypair with the agent CLI. The signer id you choose
-here is written into every archive you sign and must match a public-key
-filename on the agent (covered under [Trust the publisher](#trust-the-publisher)):
+`pack.sh` lives at the monorepo root and takes a folder name or a path:
 
-```sh
-ados plugin keygen my-publisher-2026-A --output-dir ./keys
+```bash
+./scripts/pack.sh my-plugin                  # resolves to extensions/my-plugin
+./scripts/pack.sh ./path/to/my-plugin        # any directory with a manifest.yaml
 ```
 
-This writes two files into `./keys`:
+It builds the GCS half if present, reads the plugin id and version from `manifest.yaml`, and writes an unsigned archive to `extensions/my-plugin/dist/com.example.my-plugin-1.0.0.adosplug` (the `dist/` folder inside the extension).
 
-- `my-publisher-2026-A.pem` (public key, mode 0644)
-- `my-publisher-2026-A.priv.pem` (private key, mode 0600)
+For a Rust agent half use `./scripts/pack-rust.sh`; `pack.sh` refuses Rust runtimes.
 
-It also prints a short fingerprint so an operator can cross-check the
-key that ends up on their agent. Keep the private half offline. Never
-commit a `*.priv.pem` file to git.
+## Sign
 
-<Warning>
-  `keygen` is a developer aid. A production publisher key deserves a
-  hardware token or air-gapped workflow for the private half, not a
-  one-liner on your laptop.
-</Warning>
-
-## Pack and sign
-
-The first-class path packs a plugin directory and signs it in one step
-with `ados plugin sign`:
-
-```sh
-ados plugin sign ./my-plugin \
-  --key ./keys/my-publisher-2026-A.priv.pem \
-  --signer-id my-publisher-2026-A \
-  --output dist/com.example.my-plugin-1.0.0.adosplug
-```
-
-The command stages the plugin contents, computes the canonical payload
-hash (a SHA-256 over the sorted list of each archive entry's path and
-SHA-256, so every file is bound, not just the manifest), signs that
-32-byte digest with your Ed25519 key, and writes a `SIGNATURE` file into
-the archive with two lines: the signer key id, then the base64
-signature. It also writes a `.sha256` checksum next to the archive and
-prints the signer id, signature, and SHA-256.
-
-The `--signer-id` value must equal the stem of the public-key filename
-installed on the agent. If they do not match, the install is rejected
-with the signature-invalid exit code (`3`).
-
-<Note>
-  Run `ados plugin lint dist/com.example.my-plugin-1.0.0.adosplug`
-  before you publish. The linter runs static checks on the packed
-  archive and reports manifest or packaging problems early.
-</Note>
-
-## Pack and sign in the monorepo (CI)
-
-The ADOSExtensions monorepo ships shell scripts that the release
-workflow uses. They split the pack and sign into two steps and read the
-signing key from the environment, which suits GitHub Actions secrets.
-
-Pack first. `pack.sh` lives at the monorepo root; pass either the folder
-name or a path:
-
-```sh
-./scripts/pack.sh my-plugin                  # under extensions/
-./scripts/pack.sh extensions/my-plugin       # path also works
-./scripts/pack.sh /abs/path/to/my-plugin     # absolute path also works
-```
-
-`pack.sh` builds the GCS bundle if a `gcs/` folder is present, reads the
-plugin id and version from `manifest.yaml`, and zips into
-`dist/<plugin-id>-<version>.adosplug`. Packing produces an unsigned
-archive.
-
-Then sign the packed archive with your Ed25519 private key:
-
-```sh
-ADOS_SIGNING_KEY=./keys/my-publisher-2026-A.priv.pem \
-ADOS_SIGNING_KEY_ID=my-publisher-2026-A \
-./scripts/sign.sh dist/com.example.my-plugin-1.0.0.adosplug
-```
-
-The signed archive lands at
-`dist/com.example.my-plugin-1.0.0.signed.adosplug`. `sign.sh` computes
-the same canonical payload hash as `ados plugin sign` and writes the
-same two-line `SIGNATURE` file, so an archive from either path verifies
-identically on the agent.
-
-`ADOS_SIGNING_KEY_INLINE=1` accepts a base64 key in the env var itself
-(used by GitHub Actions secrets):
-
-```yaml
-env:
-  ADOS_SIGNING_KEY: ${{ secrets.ADOS_SIGNING_KEY }}
-  ADOS_SIGNING_KEY_INLINE: "1"
-  ADOS_SIGNING_KEY_ID: ${{ secrets.ADOS_SIGNING_KEY_ID }}
-```
+Every archive a production agent installs must be signed by a key the agent trusts. Key generation, `sign.sh`, `ados plugin sign`, enrolment and the bench mode for unsigned archives are on [Signing keys](/developers/signing-keys#bench-install-and-signing).
 
 ## Publish on GitHub
 
-Tag your release with `<plugin-folder>-v<version>`:
+Tag your release and let a workflow pack, sign and upload the `.signed.adosplug` with its `.sha256`:
 
-```sh
+```bash
 git tag my-plugin-v1.0.0
 git push --tags
 ```
 
-The reference workflow at
-[`altnautica/ADOSExtensions/.github/workflows/release.yml`](https://github.com/altnautica/ADOSExtensions/blob/main/.github/workflows/release.yml)
-runs tests, packs, signs, and uploads the `.signed.adosplug` to a
-GitHub release. Copy it into your own repo and adjust the tag
-prefix.
+The reference workflow is [`ADOSExtensions/.github/workflows/release.yml`](https://github.com/altnautica/ADOSExtensions/blob/main/.github/workflows/release.yml). On a `<ext>-v<semver>` tag it checks that the tag equals the manifest version, installs dependencies with `pnpm install --frozen-lockfile`, packs, signs, verifies the signature against the committed public key `keys/<signer>.pub.pem`, and uploads the archive with its `.sha256`. Copy it, then change the `on.push.tags` patterns, point `ADOS_SIGNING_KEY` at your own secret, set `ADOS_SIGNING_KEY_ID` to your signer id, and commit your public key as `keys/<your-signer-id>.pub.pem`.
 
-Operators install by downloading the `.adosplug` from your release
-page.
+Operators download the archive from your release page, or install it by URL (see [URL install](/developers/distribution-url-install)).
 
-## Install on the GCS
+## Install from Mission Control
 
-Open the node from the fleet, switch to its **Extensions** tab, and click **Install from file** (see [Installing extensions](/mission-control/installing-plugins)):
+Open the node from the fleet, switch to its **Extensions** tab, and click **Install from file** (see [Install from Mission Control](/mission-control/installing-plugins)):
 
-1. Drag the `.adosplug` into the dialog or click **Choose file**.
-2. The host parses the archive and shows a manifest preview: name,
-   version, signer, risk band, requested permissions.
-3. Approve required permissions (pinned on) and any optional
-   permissions you want to grant.
+1. Drag the `.adosplug` onto the dialog or click **Choose file**.
+2. Review the manifest: name, version, signer, risk badge and requested permissions.
+3. Leave required permissions on and turn on the optional ones you want to grant.
 4. Click **Install**.
 
-The plugin appears in the plugin list; its panels mount in their
-declared slots.
+<Frame caption="The install review after dropping a signed archive.">
+  ![Install review for a signed extension showing name, version, signer, Sensitive badges and its required permissions](/images/developers/install-from-file-review.png)
+</Frame>
 
 ## Install on the agent
 
-```sh
+```bash
 ados plugin install ./com.example.my-plugin-1.0.0.signed.adosplug
 ados plugin enable com.example.my-plugin
 ados plugin logs com.example.my-plugin --follow
 ```
 
-`ados plugin install` parses the archive, verifies the signature, then
-prints the requested permissions and prompts for approval before the
-install completes. Pass `--yes` to skip the prompt for low and
-medium-risk plugins (it refuses high and critical-risk plugins, which
-must be approved interactively). After install, `enable` starts the
-plugin and `remove` uninstalls it. Logs are written to
-`/var/log/ados/plugins/<id>.log`; `ados plugin logs <id>` tails that
-file.
+`ados plugin install SOURCE` accepts an archive path, a built-in plugin id, an `https` archive URL from an allowlisted host, or a first-party catalog id. It verifies the signature, prints the requested permissions and asks for approval. `--yes` skips the prompt but refuses plugins that request high or critical permissions, which must be approved interactively. `enable` starts the plugin, `disable` stops it, and `remove` uninstalls it.
 
-## Trust the publisher
+Logs are appended to `/var/log/ados/plugins/<id-with-dashes>-<hash>.log`. `ados plugin logs <id>` asks the agent for that path and tails it; `--service <name>` reads a declared service's log instead. Every subcommand is on the [Plugin CLI reference](/developers/cli-reference).
 
-A plugin signed by a key the agent does not know is rejected with the
-signature-invalid exit code (`3`) and the message `signer <id> not in
-/etc/ados/plugin-keys/`. Copy the publisher's public key (the `.pem`
-half from `keygen`, not the `.priv.pem`) into the agent's trust
-directory, naming the file after the signer id:
+## Catalog
 
-```sh
-sudo cp my-publisher-2026-A.pem /etc/ados/plugin-keys/my-publisher-2026-A.pem
-```
+First-party extensions are listed in a node's **Extensions** tab and in the agent's bundled catalog; see [Catalog and registry](/developers/distribution-registry). Third-party submission is not open; ship through GitHub Releases.
 
-The signer id in the archive's `SIGNATURE` file must match a public-key
-filename in `/etc/ados/plugin-keys/`. To retire a key, add its signer id
-to `/etc/ados/plugin-revocations.json`; plugins signed with a revoked id
-refuse to load.
+## Next steps
 
-To install an unsigned archive during local iteration, pass
-`--allow-unsigned`:
-
-```sh
-ados plugin install --allow-unsigned ./my-plugin.adosplug
-```
-
-Unsigned installs are a developer convenience; a production agent should
-only install signed archives from trusted publishers.
-
-## Registry
-
-A hosted registry is on the roadmap. Once it lands, publishing
-becomes a one-click flow from the GCS, and operators install by
-search instead of by file. Until then GitHub Releases is the
-recommended channel; when the registry opens, your existing release
-process keeps working unchanged. The registry just adds a metadata
-overlay.
+<CardGroup cols={2}>
+  <Card title="Signing keys" href="/developers/signing-keys">
+    Generate, enrol and sign.
+  </Card>
+  <Card title="Linting" href="/developers/linting">
+    Check the archive before you publish.
+  </Card>
+</CardGroup>

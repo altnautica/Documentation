@@ -1,7 +1,6 @@
 ---
 title: "Vision plugins"
 description: "Subscribe to engine frames over the shared frame bus, register or run inference models, and publish detections."
-lastUpdated: "2026-06-18"
 ---
 
 The agent ships a **vision engine**: a host service that owns the camera(s),
@@ -14,8 +13,7 @@ This is a host-owned bus, not a per-plugin capture loop. The engine arbitrates
 the camera and the accelerator across every vision consumer, so two plugins can
 watch the same camera without fighting over the device or the NPU.
 
-The operator manages vision models and watches detections in the per-drone
-**Vision** tab under the Command area of Mission Control.
+The operator manages vision models and watches detections on the drone's **Perception** page in the node's Agent sidebar.
 
 ## The frame contract
 
@@ -76,7 +74,7 @@ wire byte for byte. A Rust plugin's entry point is
 
 ## Running inference
 
-There are two honest paths, and a plugin can use either. Both share the same
+There are two paths, and a plugin can use either. Both share the same
 accelerator, which the engine arbitrates.
 
 **Engine-run.** Register a model file plus its metadata with the engine. The
@@ -123,9 +121,8 @@ async def on_frame(frame):
 
 The accelerator is shared. A heavy or runaway model starves other vision
 consumers, so register honest input sizes and keep your inference cadence below
-your CPU and NPU budget. For NPU-based inference on supported boards, load the
-board's accelerator runtime (TFLite delegates, RKNN, and so on); on most vision
-plugins that is the difference between 50% CPU and 5% CPU.
+your CPU and NPU budget. On boards with an NPU, load the board's accelerator
+runtime (TFLite delegates, RKNN and so on) instead of running on the CPU.
 
 ## Detections
 
@@ -156,27 +153,72 @@ await ctx.vision.publish_detection(DetectionBatch(
 logic, pick the batches up. The Rust SDK exposes the same `publish_detection` /
 `publish_one` on `VisionClient`.
 
+### Consuming detections
+
+A plugin that acts on detections, rather than producing them, subscribes to the
+batches the engine publishes. The callback receives a `DetectionBatch`; pass
+`camera_id` to filter to one camera:
+
+```python
+async def on_start(self, ctx) -> None:
+    async def on_batch(batch) -> None:
+        for d in batch.detections:
+            self.track(d.class_label, d.bbox, d.track_id)
+
+    await ctx.vision.subscribe_detections(on_batch, camera_id="uvc-0")
+```
+
+`subscribe_detections` is gated on `vision.detection.subscribe`.
+
+### Designating a follow target
+
+The engine runs one single-object tracker per camera. `designate_track` sets
+the box it locks onto, overriding the auto-lock, the same way an operator's
+click-to-follow does:
+
+```python
+from ados.sdk.vision import BoundingBox
+
+result = await ctx.vision.designate_track(
+    "uvc-0",
+    BoundingBox(x=310, y=200, width=60, height=90),
+    class_label="person",
+)
+# result: {"designated": bool, "track_id": int | None, "camera_id": "uvc-0"}
+```
+
+`designate_track` is gated on `vision.track.designate`. Designation alone does
+not command the vehicle; a follow behavior that flies toward the target uses
+[guided setpoints](/developers/mavlink-extensions#guided-setpoints).
+
 ## Capabilities
 
-Declare the ones you use under `agent.permissions` in the manifest:
+Declare the ones you use under `agent.permissions` in the manifest. Risk levels
+are on [Permissions](/developers/permissions).
 
-| Capability | Risk | What it grants |
-|------------|------|----------------|
-| `vision.frame.read` | Medium | Subscribe to normalized engine frames. The plugin never opens the camera itself. |
-| `vision.model.register` | Medium | Register an inference model (and run `infer` against shared frames). |
-| `vision.detection.publish` | Low | Publish detections that overlays and mission logic consume. |
+| Capability | What it grants |
+|------------|----------------|
+| `vision.frame.read` | Subscribe to normalized engine frames. The plugin never opens the camera itself. |
+| `vision.model.register` | Register an inference model and run `infer` against shared frames. |
+| `vision.model.read` | Read the delivery status and cached path of the plugin's own declared models. |
+| `vision.detection.publish` | Publish detections that overlays and mission logic consume. |
+| `vision.detection.subscribe` | Receive detection batches through `ctx.vision.subscribe_detections`. |
+| `vision.track.designate` | Set the engine's follow target through `ctx.vision.designate_track`. |
+| `vision.offload.advertise` | Report the perception offload link the plugin holds to a paired compute node. The agent counts the node as paired only when the advertised address answers. |
 
-## A worked extension: vision-nav
+## A worked extension: Vision Navigation
 
-The first-party `vision-nav` extension is the reference for vision work on the
-agent. It provides GPS-denied navigation: optical flow plus monocular visual
-inertial odometry, feeding position estimates back to the flight controller
-through the visual-odometry pose helper on `ctx.vision`. It runs against
-ArduPilot 4.5+, PX4 1.14+, and iNav 7.0+.
+The first-party Vision Navigation extension (`vision-nav`) is a reference for
+frame-bus work. It provides GPS-denied position hold from optical flow: a Rust
+agent half reads engine frames (`vision.frame.read`) and emits the flow message
+the configured firmware fuses over MAVLink (`OPTICAL_FLOW` for ArduPilot and
+iNav, `OPTICAL_FLOW_RAD` for PX4, plus `DISTANCE_SENSOR` when a rangefinder is
+wired to the companion). It supports ArduPilot 4.5+, PX4 1.14+ and iNav 7.0+.
+It does not inject pose through the visual-odometry helpers.
 
-Look at that extension in `ADOSExtensions/extensions/vision-nav/` for a real
-`manifest.yaml`, config schema, and agent/GCS split before you build your own
-vision plugin.
+Look at `extensions/vision-nav/` in the ADOSExtensions repository for a real
+`manifest.yaml`, config schema and agent/GCS split. Operator setup is in
+[Vision Navigation](/drone-agent/extensions-catalog#vision-navigation).
 
 ## Multiple cameras
 
@@ -232,19 +274,48 @@ The Rust harness mirrors this: `ados_sdk::testing::FakeVisionEngine` emits
 synthetic frames into the same `FrameCallback` your plugin registers and
 captures the detection batches it publishes.
 
-## Bundling weights
+## Shipping models
 
-You can ship small weights inside the archive by placing the file under the
-plugin tree (for example `agent/models/weeds.onnx`). The manifest has no
-top-level `assets` block and no per-file hash; the archive's single
-`SIGNATURE` file covers every entry's hash, so a bundled weights file is
-protected by the same signature as the rest of the archive.
+A plugin gets its model weights onto the node in one of three ways.
 
-The plugin loads the file from its data dir at start and, for engine-run
-models, passes the path as the `model_path` on the model metadata. Do not
-fetch weights from a remote URL at runtime; the plugin's `network.outbound`
-policy blocks runtime fetches by default. Bundle the weights or load a file
-already on the agent.
+**Bundled in the archive.** Place the file under the plugin tree (for example
+`agent/models/weeds.onnx`). The archive's `SIGNATURE` covers every entry, so the
+weights are protected by the same signature as the rest of the plugin. For an
+engine-run model, pass the file's path as `model_path` on the model metadata.
+
+**By reference.** Declare the model under `agent.contributes.vision.models`.
+The agent fetches it, verifies it against the pinned `sha256` and caches it.
+The digest sits in the signed manifest, so a fetched model is as trusted as a
+bundled one:
+
+```yaml
+agent:
+  permissions:
+    - id: vision.model.read
+  contributes:
+    vision:
+      models:
+        - id: weeds-detector
+          runtime: rknn          # onnx | rknn | hailo | tflite | pytorch
+          board_match: rk3588    # board family this variant targets; default generic
+          sha256: "<64 hex chars>"
+          source: "https://models.example.com/weeds-rk3588.rknn"
+```
+
+The plugin reads where each model landed through the `vision.read_model` host
+method, gated on `vision.model.read`. It returns one entry per declared model
+with `state` (`resolved`, `needs-model` or `verify-failed`), `model_id`,
+`runtime`, `path` when resolved, and `reason` otherwise. In Rust it is
+`vision_read_model()` on the SDK client.
+
+**As an install payload.** `agent.payloads` lists files the agent downloads at
+install instead of shipping them in the archive. Each entry pins `path`
+(archive-relative destination), `source` (an `https://` URL on the download
+allowlist), `sha256` and `size_bytes`, and can narrow to node `profiles` or an
+`arch_os`. See [Manifest](/developers/manifest).
+
+Do not fetch weights yourself at runtime; the plugin's `network.outbound`
+policy blocks that by default.
 
 ## Vendor binary models
 
@@ -254,8 +325,19 @@ as a `.so`) ship under `vendor/` per the
 `ctypes` or `cffi` and calls them from its own inference path, then publishes
 the results as a `DetectionBatch` like any other plugin-side model.
 
-## See also
+## Next steps
 
-- [Camera driver](/developers/camera-driver)
-- [State and storage](/developers/state-and-storage)
-- [Performance and budgets](/developers/performance-and-budgets)
+<CardGroup cols={2}>
+  <Card title="MAVLink extensions" href="/developers/mavlink-extensions">
+    Send results to the flight controller and inject visual odometry.
+  </Card>
+  <Card title="Performance and budgets" href="/developers/performance-and-budgets">
+    CPU, memory and accelerator limits for vision workloads.
+  </Card>
+  <Card title="State and storage" href="/developers/state-and-storage">
+    Where a plugin keeps data on the node.
+  </Card>
+  <Card title="Permissions" href="/developers/permissions">
+    Every capability and its risk level.
+  </Card>
+</CardGroup>

@@ -1,13 +1,14 @@
 ---
 title: "GPS driver"
-description: "Implement a GpsDriver to add a new GNSS receiver."
-lastUpdated: "2026-06-23"
+description: "Implement a GpsDriver that decodes fixes from a GNSS receiver and accepts RTCM corrections."
 ---
 
-A `GpsDriver` decodes a position-fix stream from a u-blox, NMEA,
-RTK, or vendor-custom receiver and exposes it as a series of
-`GpsFix` samples. Drivers that support RTK can also accept RTCM
-correction payloads.
+import DriverLayerStatus from "/snippets/driver-layer-status.mdx";
+import { DriverRustNote } from "/snippets/driver-rust-note.mdx";
+
+<DriverLayerStatus />
+
+A `GpsDriver` decodes a position-fix stream from a u-blox, NMEA, RTK or vendor-specific receiver into `GpsFix` samples. Drivers for RTK receivers also accept RTCM correction payloads.
 
 ## The interface
 
@@ -41,23 +42,21 @@ class MyGpsDriver(GpsDriver):
         ...
 ```
 
-`inject_rtcm` is a no-op for non-RTK drivers.
+Receivers without RTK must raise `NotImplementedError` (Python) or return `DriverError::NotSupported` (Rust) from `inject_rtcm`. Never drop corrections silently.
 
-## Rust
+<DriverRustNote trait="GpsDriver" methods="discover, open, close, capabilities, fix_iterator, inject_rtcm" />
 
-The same driver exists in the Rust SDK as the `ados-sdk::drivers::GpsDriver`
-trait. It mirrors the Python base class method for method, with an associated
-`Session` type in place of the opaque `GpsSession` and a `SampleStream<GpsFix>`
-(a boxed async stream) in place of the Python async generator.
+The Rust trait uses an associated `Session` type and returns a `SampleStream<GpsFix>` (a boxed async stream) from `fix_iterator`:
 
 ```rust
 use std::collections::BTreeMap;
 use async_trait::async_trait;
 use rmpv::Value;
 use ados_sdk::drivers::{
-    Bus, DriverResult, GpsCandidate, GpsCapabilities, GpsDriver, GpsFix, SampleStream,
+    DriverResult, GpsCandidate, GpsCapabilities, GpsDriver, GpsFix, SampleStream,
 };
 
+struct MySession;
 struct MyGpsDriver;
 
 #[async_trait]
@@ -89,10 +88,7 @@ impl GpsDriver for MyGpsDriver {
 }
 ```
 
-A Rust GPS driver returns `Err(DriverError::NotSupported(...))` from
-`inject_rtcm` when the receiver has no RTK support, where the Python driver
-raises `NotImplementedError`. The `GpsFix` and `GpsCapabilities` fields are
-identical to the Python ones below.
+`GpsFix` and `GpsCapabilities` carry the same fields in both languages.
 
 ## Capabilities
 
@@ -112,9 +108,9 @@ GpsCapabilities(
 ```python
 GpsFix(
     timestamp_ns=ns,
-    latitude_deg=12.97,
-    longitude_deg=77.59,
-    altitude_msl_m=920.0,
+    latitude_deg=-33.8568,
+    longitude_deg=151.2153,
+    altitude_msl_m=12.0,
     fix_type=3,
     satellites_used=14,
     hdop=0.9,
@@ -124,22 +120,22 @@ GpsFix(
 )
 ```
 
-`fix_type` follows the common convention: 0 no fix, 2 2D, 3 3D, 4
-DGPS, 5 RTK float, 6 RTK fixed.
+`fix_type` follows the common convention: 0 no fix, 2 2D, 3 3D, 4 DGPS, 5 RTK float, 6 RTK fixed. `horizontal_accuracy_m`, `vertical_accuracy_m`, `course_deg` and `metadata` are optional.
 
-## Manifest permissions
+## Opening the driver from your plugin
 
-```yaml
-agent:
-  permissions:
-    - id: sensor.payload.register   # GPS drivers register under the payload cap (no dedicated GPS cap in the current catalog)
-    - id: hardware.uart             # serial or USB-CDC receiver
-    - id: hardware.usb              # for a raw USB device behind a vendor SDK
-```
+Your plugin calls `discover()`, `open()` and consumes `fix_iterator` itself, and calls `inject_rtcm` with corrections it receives. The pattern is on [Driver layer](/developers/driver-layer#running-a-driver-from-your-plugin). A serial or USB-CDC receiver needs `hardware.uart`. `inject_rtcm` writes over the link the driver already opened, so it needs no extra capability.
 
-`inject_rtcm` writes corrections back over the same device link the
-driver already opened, so it needs no extra capability.
+## Next steps
 
-## See also
-
-- [Driver layer](/developers/driver-layer) for the contract.
+<CardGroup cols={2}>
+  <Card title="Driver layer" href="/developers/driver-layer">
+    The shared contract and the manifest table.
+  </Card>
+  <Card title="Hardware testing" href="/developers/hardware-testing">
+    Test with a mock serial backend.
+  </Card>
+  <Card title="ESC driver" href="/developers/esc-driver">
+    The next driver kind.
+  </Card>
+</CardGroup>

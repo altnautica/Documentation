@@ -1,86 +1,92 @@
 ---
-title: "Telemetry"
-description: "Live sensor stream and the full flight-controller parameter editor."
+title: "Agent dashboard: Telemetry"
+sidebarTitle: "Telemetry"
+description: "Edit flight controller parameters and read live sensors from the drone's browser dashboard."
 icon: "radio"
-lastUpdated: "2026-06-18"
 ---
 
-# Telemetry
+Telemetry is a drone-profile page at `/telemetry`. It has two tabs. **Parameters** (the default) edits the FC parameters. **Sensors** shows live attitude, battery, GPS, mode and armed state.
 
-The Telemetry page exposes two surfaces: the live sensor stream pushed
-by the flight controller, and the full FC parameter table.
-
-<Frame caption="Drone Telemetry page: live sensors above, virtualized params table below.">
-  ![Telemetry page](/images/dashboard/drone/telemetry-full.png)
-</Frame>
-
-## Live sensors
-
-Streamed via the dashboard snapshot endpoint. Each entry has a stable
-id, a current value, and a state badge. Sensors with no recent value
-fall back to a dash placeholder.
+For Betaflight and iNav the browser reads the FC directly over the transparent MSP proxy on port `8765`; the agent forwards MSP bytes and decodes none. ArduPilot and PX4 use the agent's parameter cache and `GET /api/telemetry`.
 
 ## Parameters
 
-The agent caches the FC parameter table on first connect and keeps a
-local copy in sync as values are written. The dashboard renders the
-table virtualized for the ~800-parameter ArduPilot surface.
+<Frame caption="Parameters tab with the cache loaded and the vehicle disarmed.">
+  ![Agent dashboard Telemetry Parameters tab with the category list and the parameter table](/images/drone-agent/dashboard/telemetry-parameters.png)
+</Frame>
 
-### Common operations
+The table is virtualized for full ArduPilot tables (well over a thousand parameters). Filter by the category list or search by name. Enum labels, ranges and units come from bundled metadata.
+
+<Warning>
+Parameter writes are refused while the vehicle is armed or before the FC has reported its armed state. The **Save** button stays disabled, and the agent also answers `409 E_ARMED`. See [Safety interlocks](/drone-agent/dashboard-overview#safety-interlocks) and [Safety](/operations/safety).
+</Warning>
 
 <Steps>
-  <Step title="Search">
-    Type into the search box. Matches name + description. The list
-    re-virtualizes on every keystroke.
+  <Step title="Find the parameter">
+    Type in **Search by name** (a case-insensitive match on the name only), or pick a category.
   </Step>
-  <Step title="Edit a value">
-    Click the value, type the new number, press Enter. The edit goes to
-    a pending bucket so you can stage multiple edits before pushing.
+  <Step title="Edit">
+    Use the number field, the enum dropdown, or **Set bits…** for bitmasks. Edited rows highlight; **Modified only** filters the table to your drafts.
   </Step>
-  <Step title="Push to FC">
-    Click **Save to RAM**. The agent batches the writes, retries on
-    `PARAM_ACK` timeouts, and surfaces per-param failures. ArduPilot
-    auto-saves to EEPROM on every `PARAM_SET`, so no separate flash step
-    is needed.
+  <Step title="Save">
+    Press **Save N**, then **Save all** in the **Save N parameters?** confirm. The agent writes each parameter and waits for its PARAM_VALUE echo, up to 2 s per parameter. ArduPilot and PX4 store a parameter on write; there is no separate flash step.
   </Step>
-  <Step title="Commit to flash">
-    Click **Commit to flash** if you want the belt-and-suspenders
-    `MAV_CMD_PREFLIGHT_STORAGE` to fire. The agent treats this command
-    as fire-and-forget because ArduPilot does not reliably ACK it.
+  <Step title="Discard">
+    **Discard** drops every draft.
   </Step>
 </Steps>
 
-## Profile gating
+## Sensors
 
-Telemetry is a drone-only page. On a ground-station profile this URL
-renders the "Not available on this profile" panel.
+<Frame caption="Sensors tab on an ArduPilot drone.">
+  ![Agent dashboard Telemetry Sensors tab showing attitude, battery, GPS, mode and armed state](/images/drone-agent/dashboard/telemetry-sensors.png)
+</Frame>
 
-## Backend endpoints
+The MAVLink view polls `GET /api/telemetry` once a second:
 
-| Method | Path | Purpose |
-|---|---|---|
-| GET | `/api/params` | Full parameter dump (cached) |
-| GET | `/api/v1/dashboard/snapshot` | `sensors` array on every poll tick |
-| POST | `/api/params/{name}` | Single-parameter write (used by the editor) |
+| Group | Fields |
+| --- | --- |
+| Attitude | roll, pitch, yaw |
+| Battery | voltage, current, remaining |
+| GPS | fix type, sats, hdop, position, alt (rel) |
+| State | mode, armed |
+
+## Data sources
+
+| Endpoint | Used for |
+| --- | --- |
+| `GET /api/params` | the parameter cache |
+| `POST /api/params/{name}` | one write per edited parameter |
+| `GET /api/telemetry` | Sensors (ArduPilot, PX4), 1 s |
+| `GET /api/status` | FC firmware family, to pick MAVLink or MSP |
+| `ws://<host>:8765` | MSP proxy (Betaflight, iNav) |
 
 ## Troubleshooting
 
-<Accordion title="Params table is empty">
-The agent has not finished its initial dump from the FC. Wait for the
-header to flip from "Loading" to "Loaded N params". A stuck load usually
-means the MAVLink serial baud is wrong or the FC has not heartbeated
-yet. Check the Flight Controller card on Home.
-</Accordion>
+<AccordionGroup>
+  <Accordion title="The table stays empty">
+    The page shows its loading state while it waits:
 
-<Accordion title="Save to RAM reports per-param failures">
-ArduPilot rejects writes that are out-of-range or read-only. The error
-column shows the FC's response. Read the parameter's docs in
-[REST API reference](/drone-agent/rest-api) or the FC firmware
-documentation before retrying.
-</Accordion>
+    - **loading parameters…**: the first fetch is in flight.
+    - **Priming parameter cache from FC… X of Y parameters received.**: the FC is streaming its table; wait.
+    - **Couldn't reach the flight controller.**: the agent could not send PARAM_REQUEST_LIST, or the FC did not answer within 30 seconds. Check the FC serial cable, baud rate and power.
+    - **No parameters cached yet.**: the cache is empty. Check the MAV tile on Home.
+  </Accordion>
+  <Accordion title="Save reports failed or pending parameters">
+    Each failure shows a toast `<NAME>: failed`, then a summary "Saved X, Y failed, Z pending FC ack." A pending parameter was sent but the FC had not echoed PARAM_VALUE within 2 s; it may still apply under heavy load. Reload the table to confirm.
+  </Accordion>
+  <Accordion title="Save stays disabled">
+    The vehicle is armed, or the FC has not reported its armed state yet. Disarm, and check the Flight Controller panel on Home.
+  </Accordion>
+</AccordionGroup>
 
-## Related
+## Next steps
 
-- [Home (Flight Controller panel)](/drone-agent/dashboard-home)
-- [MAVLink proxy](/drone-agent/mavlink-proxy)
-- [REST API reference](/drone-agent/rest-api)
+<CardGroup cols={2}>
+  <Card title="Video" icon="video" href="/drone-agent/dashboard-video">
+    Live stream, encoder and link tuning.
+  </Card>
+  <Card title="Safety interlocks" icon="shield" href="/drone-agent/dashboard-overview#safety-interlocks">
+    What the agent refuses while armed.
+  </Card>
+</CardGroup>

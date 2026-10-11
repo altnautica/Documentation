@@ -1,96 +1,119 @@
 ---
-title: "Concepts"
-description: "Manifest, signing, sandboxing, and capability tokens. The four primitives every plugin author works with."
-lastUpdated: "2026-06-23"
+title: "Plugin concepts"
+sidebarTitle: "Concepts"
+description: "Manifest, signing, sandboxing and capability tokens: the four primitives every plugin author works with."
 ---
 
 A plugin has up to two halves: an **agent half** that runs on the drone
-or ground node, and a **GCS half** that runs in the Mission Control
-browser. The agent half is written in **Python** (the `ados.sdk`
+or ground station node, and a **GCS half** that runs in the Mission
+Control browser. The agent half is written in **Python** (the `ados.sdk`
 package) or **Rust** (the `ados-sdk` crate); the GCS half is written in
 **TypeScript** (the `@altnautica/plugin-sdk` package). One signed
 archive carries both halves and one `manifest.yaml` describes them.
 
-Four primitives describe every plugin in ADOS: a **manifest**, a
-**signature**, a **sandbox**, and a set of **capability tokens**. If
-you understand those four, the rest of the system follows.
+Four primitives describe every plugin: a **manifest**, a **signature**,
+a **sandbox** and a set of **capability tokens**.
 
 ## Manifest
 
 A `manifest.yaml` at the root of the archive declares everything the
 host needs to install the plugin: the id, the version, which halves
-(`agent`, `gcs`, or both), the permissions each half requests, and
-the slots the GCS panels mount into. The manifest carries no per-asset
+(`agent`, `gcs`, or both), the permissions each half requests, and the
+contributions the GCS half mounts. The manifest carries no per-asset
 hash list. Asset integrity is bound by the canonical payload hash that
-the signing step writes into the separate `SIGNATURE` file (see below).
+the signing step writes into the separate `SIGNATURE` file.
 
-The host validates the manifest against
-`schemas/plugin-manifest.schema.json` before unpacking anything. A
-malformed manifest is rejected before any file is written to disk.
+The agent parses and validates the manifest in memory before unpacking;
+a malformed manifest is rejected before any file is written. The strict
+schema at `schemas/plugin-manifest.schema.json` is what
+`ados plugin lint`, `ados plugin sign` and `ados plugin test` enforce,
+so validate with them before you ship.
 
-See [manifest reference](/developers/manifest) for the full field list.
+See the [manifest reference](/developers/manifest) for the full field
+list.
 
 ## Signature
 
 The archive is an Ed25519-signed zip. Two steps produce it:
 
 1. **Pack.** Zip the plugin tree (manifest plus the agent and GCS
-   halves) into a `.adosplug`. No hashes are written into the manifest
-   at this step.
+   halves) into a `.adosplug`. No hashes are written into the manifest.
 2. **Sign.** Compute the canonical payload hash (a SHA-256 over the
-   path-sorted `<path>\n<sha256-hex>` of every archive entry except
-   the signature file itself), sign that 32-byte digest with an
-   Ed25519 private key, and write a separate `SIGNATURE` file into the
-   archive. The `SIGNATURE` file has two lines: the signer key id, then
-   the base64 signature.
+   path-sorted `<path>\n<sha256-hex>` of every archive entry except the
+   signature file), sign that 32-byte digest with an Ed25519 private
+   key, and write a `SIGNATURE` file into the archive. It has two
+   lines: the signer id, then the base64 signature.
+
+`ados plugin sign` does both steps from a plugin directory.
 
 On install the agent recomputes the payload hash and verifies the
-signature against its trust list. First-party publishers (e.g.
-`altnautica-2026-A`) are pre-trusted. Third-party keys must be added
-explicitly. Unsigned archives install only when the agent is in
-**developer mode** (red banner, manual toggle).
+signature against the public key enrolled for that signer at
+`/etc/ados/plugin-keys/<signer-id>.pem`. The first-party signers
+(`altnautica-2026-A` and `altnautica-2026-B`) are pinned in the agent
+itself. A third-party signer is trusted once its public key is enrolled
+on the node.
+
+Unsigned archives install only on an agent whose services run with
+`ADOS_PLUGIN_REQUIRE_SIGNED=0`; the agent logs a warning and records the
+plugin with no signer, shown as **UNSIGNED**. Use that only on a bench
+node; see
+[Bench install and signing](/developers/signing-keys#bench-install-and-signing).
 
 ## Sandbox
 
-Each half runs in a separate sandbox.
+Each half runs in its own sandbox.
 
-- **Agent half**: a subprocess under `ados-supervisor`. A Python plugin
-  runs through the plugin runner; a Rust plugin (`runtime: rust` in the
-  manifest) runs its own compiled binary directly. Either way the
-  subprocess sits in the shared `ados-plugins.slice` cgroup, which caps
-  CPU percent, memory, and PIDs. The generated systemd unit adds
-  privilege hardening: `NoNewPrivileges=yes`,
-  `ProtectSystem=strict`, `ProtectHome=yes`, `PrivateTmp=yes`,
-  `LockPersonality=yes`, `RestrictRealtime=yes`, and
-  `RestrictSUIDSGID=yes`. The plugin reaches the host only through a
-  Unix domain socket; it cannot open arbitrary network sockets unless it
-  declared `network.outbound`.
+- **Agent half**: a systemd unit that the plugin host
+  (`ados-plugin-host`) serves. A Python plugin runs through the plugin
+  runner; a Rust plugin (`runtime: rust`) runs its own compiled binary.
+  Either way the process runs as the plugin's own system user in the
+  `ados-plugins` group, inside the `ados-plugins.slice` cgroup with its
+  CPU, memory and process caps, and under systemd hardening such as
+  `NoNewPrivileges=yes`, `ProtectSystem=strict` and an exec allowlist.
+  It reaches the host only through its Unix domain socket, and it
+  cannot open network sockets unless it was granted
+  `network.outbound`. The [security model](/developers/security-model)
+  lists the full unit.
 - **GCS half**: an `<iframe sandbox="allow-scripts">` with no
-  `allow-same-origin`. Null origin means no shared cookies, no shared
-  storage, no DOM access to the host. The host serves the plugin bundle
-  with a Content-Security-Policy that constrains what the frame can
-  load. The plugin reaches the host only through `postMessage`, and the
-  host validates every envelope.
+  `allow-same-origin`. The null origin means no shared cookies, no
+  shared storage and no DOM access to the host. The frame document
+  carries a Content-Security-Policy with `connect-src 'none'`, so the
+  frame has no network egress. The plugin reaches the host only through
+  `postMessage`, and the host validates every envelope.
 
-The sandbox is the boundary that turns a manifest's permissions into
-real authority. The plugin cannot lie about what it can do.
+The sandbox is what turns a manifest's permissions into real authority:
+a plugin can do only what it was granted.
 
 ## Capability tokens
 
 Permissions in the manifest become **capabilities** at runtime. When
-the operator approves a permission, the host mints a capability
-token: a short string bound to the plugin id, the granted capability
-set, the plugin's session, and an expiry, signed with HMAC-SHA256
-under a per-session secret. The token carries a TTL (10 minutes by
-default). The plugin presents the token (or an automatically attached
-one) on every privileged call, and the host re-checks the HMAC and the
-expiry on the critical path before the call runs.
+the operator grants a permission, the host mints a capability token
+bound to the plugin id, the granted capability set and the plugin's
+session, with an expiry. It is signed with HMAC-SHA256 under the host's
+persisted issuer key, and each token carries a session id, so it does
+not carry over to a new session. A token lives 10 minutes; the host
+re-mints it at half that, so a running plugin never needs to refresh it
+itself. The plugin presents the token on every privileged call, and the
+host re-checks the HMAC, the expiry and the capability before the call
+runs.
 
-Why tokens and not just a permission flag? Because they expire.
-Because they bind to a session, so a stolen token does not work in a
-later session. Because they let the host audit which call exercised
-which permission.
+Tokens expire, bind to one session, and let the host audit which call
+exercised which permission. A revoke takes effect at once: the host
+re-mints the plugin's token without the revoked capability.
 
-For the wire shape and the validation pipeline, see
-[event hooks](/developers/event-hooks) and the
-[permissions reference](/developers/permissions).
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Security model" href="/developers/security-model">
+    The threats each boundary defends against.
+  </Card>
+  <Card title="Permissions" href="/developers/permissions">
+    The capability catalog and risk levels.
+  </Card>
+  <Card title="GCS bridge methods" href="/developers/event-hooks">
+    The methods a GCS half calls and the capability each needs.
+  </Card>
+  <Card title="Your first plugin" href="/developers/your-first-plugin">
+    Put the four primitives to work.
+  </Card>
+</CardGroup>

@@ -1,13 +1,11 @@
 ---
-title: "Support Escalation"
-description: "How to report a problem, and what to attach so it can be diagnosed."
+title: "Support escalation"
+sidebarTitle: "Support"
+description: "How to report a problem, what to attach so it can be diagnosed, and where to send security reports."
 icon: "bug"
-lastUpdated: "2026-07-31"
 ---
 
-# Support Escalation
-
-A field report is usually a sentence and a photograph of a screen. What settles it is the agent's own state at the time: which version, which profile, which services were up, what the radio counters said, what the black box recorded.
+A field report is usually a sentence and a photograph of a screen. What settles it is the agent's own state at the time: which version, which profile, which services were up, what the radio counters said, and what the logs recorded.
 
 `ados support-bundle` collects that into one archive.
 
@@ -17,7 +15,7 @@ A field report is usually a sentence and a photograph of a screen. What settles 
 ados support-bundle
 ```
 
-It writes `ados-support-<device>-<timestamp>.tar.gz` to the current directory, or wherever `-o` points:
+It writes `ados-support-<device>-<timestamp>.tar.gz` to the current directory, or wherever `--output` (`-o`) points:
 
 ```bash
 ados support-bundle -o /tmp/report.tar.gz
@@ -37,12 +35,16 @@ The command makes no outbound connection except to the agent on the box itself. 
 |---|---|
 | Host | Platform, architecture, kernel, agent version |
 | Agent state | Full status, radio status, pairing info, services, configuration |
-| Diagnostics | `ados diag video` and `ados diag link` output |
-| Logs | The last 5000 black-box records |
-| Journal | The last 2000 lines for each of ten agent services |
+| Diagnostics | `ados diag video` and `ados diag link` output, and the hardware list |
+| Black Box | The last 5000 store records, when the Black Box store is enabled |
+| Journal | The last 2000 journal lines for each of the agent's core services |
 | System | Systemd unit states, failed units, addresses, routes, disk, memory |
 | Fleet | The fleet slot table, on a ground station that has one |
 | Manifest | What was collected, what was absent, what failed |
+
+<Note>
+The Black Box store is off by default (`logging.store.enabled: false`), so on most nodes the Black Box section is empty and the journal section is the log of record. See [Black Box](/drone-agent/black-box) to turn the store on.
+</Note>
 
 A collector that fails does not abort the bundle. The failure is written into the archive and recorded in the manifest, because a service that will not answer is usually the one being reported.
 
@@ -53,24 +55,24 @@ Read `MANIFEST.json` first. It separates three things that look alike from the o
 Every file is redacted on the way in. Values under keys named like secrets are replaced while the key is kept, so the archive still shows that a key was configured without carrying it, and long base64 or hex runs are replaced wholesale to catch key material that is not behind a named key.
 
 <Note>
-Redaction removes what can be named. It is not a promise that nothing sensitive remains. Before attaching a bundle to a public issue, look through it. GPS traces in the black box are your flight locations, and network output shows your addressing.
+Redaction removes what can be named. It is not a promise that nothing sensitive remains. Before attaching a bundle to a public issue, look through it. GPS traces are your flight locations, and network output shows your addressing.
 </Note>
 
 ## Report it
 
 1. **Collect the bundle** on the affected node, before rebooting.
 2. **Open an issue** on the relevant repository:
-   - [ADOSDroneAgent](https://github.com/altnautica/ADOSDroneAgent/issues) for the drone or ground agent, the installer, the CLI, the radio link, or video
+   - [ADOSDroneAgent](https://github.com/altnautica/ADOSDroneAgent/issues) for the Drone Agent or Ground Agent, the installer, the CLI, the radio link, or video
    - [ADOSMissionControl](https://github.com/altnautica/ADOSMissionControl/issues) for the browser or desktop GCS, mission planning, or FC panels
-   - [ADOSExtensions](https://github.com/altnautica/ADOSExtensions/issues) for a first-party extension
+   - [ADOSExtensions](https://github.com/altnautica/ADOSExtensions/issues) for a first-party Extension
    - [ADOSAndroidGCS](https://github.com/altnautica/ADOSAndroidGCS/issues) for the Android app
 3. **Attach the bundle**, or the relevant parts of it if you would rather not attach the whole thing.
 4. **Say what you expected and what happened.** For anything involving the radio or video, include the reading you were looking at when you decided something was wrong. A signal figure or a packet count is worth more than a description.
-5. For real-time help, the [Discord community](https://discord.gg/uxbvuD4d5q) is faster than an issue, though an issue is what makes a fix trackable.
+5. For real-time help, the [Discord community](https://discord.gg/uxbvuD4d5q) is faster than an issue, though an issue is what gets a fix into a release.
 
 ## What makes a report diagnosable
 
-**Say which version.** It is in the bundle, but stating it up front saves a round trip.
+**Say which version.** It is in the bundle, but stating it up front saves a round trip. `ados version` prints it even when the service is down.
 
 **Say whether it is reproducible**, and what reproduces it. A fault that happens once per flight and a fault that happens on every boot are different problems.
 
@@ -78,16 +80,27 @@ Redaction removes what can be named. It is not a promise that nothing sensitive 
 
 **Include the counters, not a snapshot.** Sample a growing counter two or three times a few seconds apart and say whether it moved. A single reading of a cumulative counter says nothing, and a queue-depth reading of zero on a healthy flow looks identical to a dead one.
 
-**For a radio problem, run `ados diag link` first** and paste it. Signal strength, decoded packets, decrypt errors, and FEC counts only come from real radio traffic, so they distinguish a genuinely dead link from a measurement error.
+**For a radio problem, run `ados diag link` first** and paste it. Signal strength, decoded packets, decrypt errors, and FEC counts only come from real radio traffic, so they distinguish a dead link from a measurement error.
 
 **For a flight incident, include the flight controller's log too.** The `.bin` or `.ulg` from the FC records what the aircraft did. The support bundle records what the companion computer saw, which is a different question.
 
 ## Security reports
 
-Do not open a public issue for a vulnerability. Report it privately through the security policy on the relevant repository so it can be fixed before it is described in public.
+Do not open a public issue for a vulnerability. Email it privately to [team@altnautica.com](mailto:team@altnautica.com) so it can be fixed before it is described in public. Include the affected repository, the version, and the steps to reproduce.
 
-## Where to next
+## Next steps
 
-- [Recovery](/operations/recovery) - reaching and rebuilding a node.
-- [Troubleshooting](/drone-agent/troubleshooting) - symptom-by-symptom diagnosis.
-- [CLI reference](/drone-agent/cli-reference) - the full command surface.
+<CardGroup cols={2}>
+  <Card title="Troubleshooting by area" icon="life-ring" href="/operations/troubleshooting">
+    Symptom guides for each product.
+  </Card>
+  <Card title="Recovery" icon="toolbox" href="/operations/recovery">
+    Reach and rebuild a node.
+  </Card>
+  <Card title="Agent CLI reference" icon="terminal" href="/drone-agent/cli-reference">
+    The full command surface.
+  </Card>
+  <Card title="Community" icon="users" href="/getting-started/community">
+    Discord and other places to ask.
+  </Card>
+</CardGroup>

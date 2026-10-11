@@ -1,0 +1,48 @@
+---
+title: "Agent dashboard: WFB Transmit"
+sidebarTitle: "WFB Transmit"
+description: "The drone's WFB-ng transmit adapter, channel, bandwidth, MCS index and TX power on the browser dashboard."
+icon: "satellite-dish"
+keywords: ["ados", "drone agent", "dashboard", "wfb-ng", "transmit", "radio"]
+---
+
+WFB Transmit is a drone-profile page at `/transmit`: WFB-tx adapter, channel, bandwidth, MCS index, and TX power. Home shows the same card.
+
+## Fields
+
+The **WFB Transmit** card carries a state badge (`active`, `ready`, `connecting`, `error` or `disabled`) and these rows:
+
+| Field | Shows |
+| --- | --- |
+| interface | the transmit adapter |
+| channel | the channel number and its frequency in MHz |
+| bandwidth | channel width in MHz, when reported |
+| tx power | current TX power in dBm, and the adapter's maximum |
+| MCS | the MCS index, when reported |
+| domain | the regulatory domain, when reported |
+| bitrate | transmit bitrate |
+| packets | packet counter, once non-zero |
+| restarts | pipeline restarts, once non-zero |
+
+## Empty state
+
+When the state is `disabled`, or `error` with no interface, the card reads "WFB-tx is not running. Plug in an RTL8812EU dongle and set the channel + tx power in Settings". The agent starts the transmit pipeline automatically when an adapter and a channel are both present.
+
+## Data source
+
+`GET /api/wfb`, every 2 s.
+
+## Change channel and TX power
+
+The dashboard's Settings has no radio section. Change the channel and TX power from Mission Control, or through `POST /api/wfb/channel` and `PUT /api/wfb/tx-power`. Both are refused while the vehicle is armed (see [Safety interlocks](/drone-agent/dashboard-overview#safety-interlocks)). See [WFB-ng](/drone-agent/wfb-ng) for channels, power limits and pairing.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Extensions" icon="puzzle" href="/drone-agent/dashboard-extensions">
+    Installed extensions and the catalog.
+  </Card>
+  <Card title="WFB-ng" icon="radio-tower" href="/drone-agent/wfb-ng">
+    The air link in depth.
+  </Card>
+</CardGroup>

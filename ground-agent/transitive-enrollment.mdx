@@ -1,54 +1,51 @@
 ---
-title: "Transitive Enrollment"
-description: "A drone reached over the radio through a Ground Agent shows up in Mission Control as its own node, with its own video and telemetry feed and clear reach provenance."
+title: "Transitive enrollment"
+description: "A drone reached over the radio through a ground station appears in Mission Control as its own node, with its own feed and a label that says how it is reached."
 icon: "diagram-project"
-lastUpdated: "2026-07-24"
 ---
 
-# Transitive Enrollment
+In the field you usually pair Mission Control with the ground station, not with the drone. The ground station has the antenna and a WFB-ng link to a drone that has no direct network path to your laptop. Transitive enrollment makes that drone a node in Mission Control anyway, because the chain to it exists: Mission Control reaches the ground station, and the ground station reaches the drone over the radio.
 
-In the field you often pair Mission Control with a Ground Agent, not with the drone. The Ground Agent is the box on the ground with the antenna, and it is radio-linked (WFB-ng) to a drone that has no direct network path to your laptop. Transitive enrollment makes that drone a first-class node in Mission Control anyway, because the connection chain to it exists: your GCS reaches the Ground Agent, and the Ground Agent reaches the drone over the radio.
-
-The drone appears in the fleet on its own, with its own video and telemetry feed and a label that tells you exactly how it is reached. You do not add it by hand. As long as the chain is up, the drone enrolls itself.
+You do not add the drone by hand. While the chain is up, it enrolls itself.
 
 ## The connection chain
 
-```
-Mission Control  ->  Ground Agent  ->  (WFB-ng radio)  ->  Drone
-      (LAN or cloud)         (paired)                       (linked over the air)
+```text
+Mission Control  ->  Ground station  ->  (WFB-ng radio)  ->  Drone
+   (LAN or cloud)        (paired)                         (linked over the air)
 ```
 
-You pair with the Ground Agent once (by hostname or IP on the LAN, or over the cloud relay). The Ground Agent is already bound to the drone over the radio from first-boot auto-pairing. Mission Control reads the drone's identity off the Ground Agent's status feed and registers the drone as a separate node.
+You pair with the ground station once, by hostname or IP on the LAN or through the cloud relay. The ground station is already linked to the drone over the radio. Mission Control reads the drone's identity from the ground station's status and registers the drone as its own node.
 
 ## What you see
 
-When a Ground Agent is relaying a drone, that drone shows up as its own card in the fleet sidebar, alongside any directly-paired nodes. Three surfaces tell you how it is reached:
-
 | Surface | What it shows |
 |---|---|
-| Node header | A reach label such as "linked over the radio through GS-A", "direct", or "via cloud relay" |
-| Sidebar badge | A small "relayed" badge on the drone's card |
-| Hover card | Per-hop reach and health: the ground station to GCS hop, the radio uplink signal, and each relay hop for a relay chain |
+| Node header | The reach, for example "Linked via WFB through `<ground station>`", with the radio signal ("WFB `<rssi>` dBm") or "WFB link unverified" |
+| Fleet card | A **Relayed** badge on the drone's card |
+| Ground station node panel | A **Carried drones** tab listing the drones this ground station relays |
 
-The drone's video and telemetry, which already travel over the radio to the Ground Agent, are re-registered under the drone node. The stream shows up under the drone, not under the ground station, so a fleet with one Ground Agent and one drone reads as two nodes with the feed on the right one.
+The drone's video and telemetry, which already reach the ground station over the radio, are registered under the drone's node, not the ground station's. One ground station and one drone read as two nodes, with the feed on the right one.
 
 ## Reach provenance
 
-Every node states how it is reached, so you always know whether you are looking at a direct link, a cloud link, or a relayed link through another node. A relayed node also surfaces the health of each hop in the chain, so a weak radio uplink or a stale ground-to-GCS link is visible per hop rather than hidden behind a single status dot.
+Every node states how it is reached, so you can tell a direct link, a cloud link and a relayed link apart. A relayed node also shows the health of the radio hop: a stale hop renders as stale, and a link whose radio reception is not confirmed renders as "WFB link unverified" rather than healthy.
 
-This follows the honesty rule for status surfaces: a stale hop renders as stale, and a link whose radio reception has not been confirmed renders as unverified rather than green.
+## Several drones
 
-## One drone or many
-
-A single Ground Agent can relay more than one drone. Each linked drone enrolls as its own node with its own feed and its own reach label. The fleet sidebar lists them all, grouped under the Ground Agent that carries them.
+One ground station can carry more than one drone. Each enrolls as its own node with its own feed and reach label, and each appears on the ground station's **Carried drones** tab.
 
 ## A relayed node upgrades in place
 
-If you later pair directly with a drone that was enrolled transitively (for example, it comes onto your LAN or you add it by IP), Mission Control recognizes it as the same device and upgrades the existing card in place. The relayed node becomes a direct node without a duplicate appearing in the fleet. One device, one node, however it is reached.
+If you later pair directly with a drone that enrolled transitively (it joins your LAN, or you add it by IP), Mission Control recognises the same device and adds the direct path to the existing node. The direct path takes precedence for display, and no duplicate appears.
 
-## Where to next
+## Next steps
 
-- [Mesh & Distributed Receive](/ground-agent/mesh-overview) - run several Ground Agents that share the receive job.
-- [Uplink Matrix](/ground-agent/uplink-matrix) - how a Ground Agent carries traffic out over Wi-Fi, Ethernet, or cellular.
-- [Nodes View](/mission-control/nodes-fleet-view) - the fleet-wide console where relayed nodes and their reach paths are laid out.
-- [Connecting to Your Drone](/mission-control/connecting) - the direct and cloud connection methods.
+<CardGroup cols={2}>
+  <Card title="Nodes and fleet view" icon="sitemap" href="/mission-control/nodes-fleet-view">
+    Where relayed nodes and their reach appear.
+  </Card>
+  <Card title="Connect Mission Control" icon="plug" href="/mission-control/connecting">
+    Direct and cloud connections.
+  </Card>
+</CardGroup>

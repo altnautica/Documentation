@@ -1,120 +1,100 @@
 ---
-title: "MAVLink Signing"
-description: "Enable, rotate, and manage MAVLink v2 signing keys for a paired drone from the GCS."
+title: "MAVLink signing in Mission Control"
+sidebarTitle: "MAVLink signing"
+description: "Enable, rotate, export and disable MAVLink v2 signing keys for an ArduPilot flight controller from the Setup tab."
 icon: "shield-check"
-lastUpdated: "2026-09-23"
 ---
 
-# MAVLink Signing
+With signing on, every command Mission Control sends to the flight controller carries a signature made with a key held in your browser. The flight controller rejects commands it cannot verify, so no other client can impersonate you. The key lives only in your browser, not on the companion computer.
 
-Every outgoing command to a signing-enabled drone carries a SHA-256 signature your browser computed with its key. The flight controller rejects anything it cannot verify. Nobody else can impersonate you, and the agent running on the companion computer cannot forge commands either: the key lives only in your browser.
+This page covers the operator flow. For the protocol and the agent routes, see [MAVLink signing in the Drone Agent](/drone-agent/mavlink-signing).
 
-This page covers the operator flow. For the protocol detail and agent REST surface, see [MAVLink Signing in the Drone Agent guide](/drone-agent/mavlink-signing).
+<Frame caption="Setup tab, SECURITY, MAVLink Signing, with signing enabled and the key fingerprint shown.">
+  ![MAVLink Signing panel, enabled, with the key fingerprint and the Rotate key, Export key and Disable signing buttons](/images/mission-control/setup-signing.png)
+</Frame>
 
 ## Where to find it
 
-Select a drone in the fleet sidebar, open the Configure tab, and pick the Security section on the left. The MAVLink Signing panel is the first entry.
+Select the drone, open its **Setup** tab and choose **SECURITY** → **MAVLink Signing**.
 
-The fleet sidebar shows a small pill next to each drone with the current state: Signed, Unconfirmed while a key change waits for you to confirm it, Unsigned, or No signing when the firmware does not expose a signing key store.
-
-## Enabling signing
-
-<Steps>
-<Step title="Confirm capability">
-The panel asks the agent which autopilot the flight controller reports. ArduPilot is supported. PX4, Betaflight, and iNav show a muted "not available" card.
-</Step>
-<Step title="Click Enable signing">
-The browser generates a 32-byte random key, enrolls it with the flight controller via `SETUP_SIGNING`, and stores the key locally. The panel shows a short fingerprint so you can verify the key identity later.
-</Step>
-</Steps>
-
-Enforcement starts with enrollment. There is no separate require switch: ArduPilot has no such parameter. Once it holds a key it accepts unsigned commands only on its USB port and rejects them on every other link.
-
-<Warning>
-Signing can lock you out. If you lose every browser that holds the key, the flight controller rejects every command except over USB. Export a copy of the key, or import it into a second browser, before enabling signing on a drone you cannot physically reach.
-</Warning>
-
-## When the flight controller has not confirmed
-
-The flight controller never acknowledges a signing change, so the panel does not guess at one.
-
-- **Interrupted enrollment or rotation.** If the request fails after a key frame may have gone out, the browser keeps both the new key and the previous one, signs with the new one, and shows an Unconfirmed card. Send a command: if it is accepted, choose `It has the new key`; if it is rejected, choose `It kept the previous key`.
-- **Disable.** `Disable signing` sends the flight controller an all-zero key and then keeps your key, still signing, until you confirm. Once the flight controller accepts unsigned commands on a link other than USB, choose `Signing is off: forget the key`. If it still rejects them, choose `It is still signing: keep the key`.
-
-## Rotating a key
-
-Open the Signing panel, click `Rotate key`, confirm. The browser generates a fresh 32-byte key, enrolls it with the flight controller, and replaces the previous one once the agent reports the new key sent. The flight controller now trusts the new key exclusively.
-
-Other browsers that held the old key stop working for that drone until you re-enroll them. Each browser handles its own keys; there is no automatic cross-browser sync today.
-
-## Key storage in this browser
-
-The key is stored as raw bytes in this browser's IndexedDB, under the `signing-keys-v1` object store, tagged with the drone id and the signed-in user id when you are authenticated. MAVLink signing hashes the key itself with SHA-256, which Web Crypto cannot do with a non-extractable key, so the bytes have to be readable. That means any script running on the Mission Control page can read the key and copy it. Treat the browser profile as holding the key, and rotate it if you suspect the browser or the site was compromised.
-
-<Info>
-If you sign out and someone else signs in on the same browser, the signing records tagged with your user id are purged automatically. Anonymous records (enrolled while signed out) stay on the device. The key is readable by script on this page, so a signed-in session is not a boundary around it.
-</Info>
-
-<Warning>
-Releases before September 2026 produced signatures no autopilot accepts. If a flight controller was enrolled from one of them, it now rejects every command sent over a non-USB link: re-enroll it from this browser over USB, or clear its key with the `disable-on-fc` route under Troubleshooting. Keys saved by those releases are discarded, so the panel shows no browser key until you enroll or import one.
-</Warning>
-
-## Private browsing
-
-IndexedDB in private or incognito windows is scoped to the window session. Signing keys enrolled in a private window vanish when you close it. For durable signing, use a regular browser window, or pair a second browser and rotate a copy across.
-
-## When signing is not available
-
-Firmware compatibility table:
+## Firmware support
 
 | Firmware | Status |
 |---|---|
 | ArduPilot | Supported |
-| PX4 | Not available today. PX4 supports the protocol but lacks a persistent on-board key store. |
-| Betaflight | Not applicable. MSP has no signing concept. |
-| iNav | Not applicable. MSP has no signing concept. |
+| PX4 | Not available. PX4 has no persistent on-board signing key store |
+| Betaflight | Not applicable. MSP has no signing |
+| iNav | Not applicable. MSP has no signing |
 
-The panel shows a muted card explaining the reason. The fleet sidebar badge renders differently from `Unsigned` so operators can distinguish "feature off" from "feature not available".
+On an unsupported firmware the panel shows **Signing not available on this drone**.
 
-## Bringing your own key
+## Enable signing
 
-If you already have a MAVLink signing key from another browser, an export, or another ground station, click `Import an existing key` in the Signing panel and paste the 64-character hex string. The browser stores it as raw bytes in IndexedDB and signs with it. No enrollment happens and nothing is tested: the key must already be on the flight controller, and the next command from this browser shows whether it is.
+<Steps>
+  <Step title="Open the panel">
+    The panel shows **MAVLink signing is off** with **Enable signing** and **Import an existing key**.
+  </Step>
+  <Step title="Click Enable signing">
+    The browser generates a random 32-byte key, enrols it with the flight controller (`SETUP_SIGNING`), and stores it in this browser. The panel shows **Signing enabled** and a short **Key fingerprint** you can compare later.
+  </Step>
+</Steps>
 
-## Exporting a key
+Enforcement starts at enrolment; ArduPilot has no separate require switch. Once it holds a key, it accepts unsigned commands only on its USB port and rejects them on every other link.
 
-`Export key` rotates to a fresh key and copies the new key to your clipboard for 60 seconds; it never appears on screen. The new key is stored in this browser before the clipboard is touched. If the browser refuses the clipboard write, the panel keeps the key and offers `Copy again`. Closing that dialog without copying leaves the key working in this browser; the panel only exports by rotating, so exporting again replaces the key.
+<Warning>
+Signing can lock you out. If you lose every browser that holds the key, the flight controller rejects every command except over USB. Export a copy of the key before enabling signing on an aircraft you cannot reach physically.
+</Warning>
+
+## When the flight controller has not confirmed
+
+The flight controller never acknowledges a signing change, so the panel asks you instead of guessing.
+
+- **Interrupted enrolment or rotation.** If a request fails after the key may have gone out, the browser keeps both the new and the previous key, signs with the new one, and shows that the flight controller may hold either. Send a command: if it is accepted, choose **It has the new key**; if it is rejected, choose **It kept the previous key**.
+- **Disable.** **Disable signing** sends an all-zero key, then keeps your key and keeps signing until you confirm. Once the flight controller accepts unsigned commands on a link other than USB, choose **Signing is off: forget the key**. If it still rejects them, choose **It is still signing: keep the key**.
+
+## Rotate a key
+
+Click **Rotate key** and confirm. The browser generates a new key, enrols it, and replaces the old one. Other browsers that held the old key stop working for that drone until they import the new one. A reminder with **Rotate now** appears when a key has been in use for a long time.
+
+## Import a key
+
+If you have the key from another browser or ground station, click **Import an existing key** and paste the 64-character hex string. The browser stores and signs with it. Nothing is enrolled or tested: the key must already be on the flight controller, and the next command shows whether it is.
+
+## Export a key
+
+**Export key** rotates to a fresh key and copies it to your clipboard for 60 seconds (**Rotate and copy**). It never appears on screen. The new key is stored in this browser before the clipboard is touched; if the browser refuses the clipboard write, the panel offers **Copy again**. Exporting again replaces the key.
+
+## How the key is stored
+
+The key is stored as raw bytes in this browser's IndexedDB (`signing-keys-v1`), tagged with the drone and, when you are signed in, your user id. MAVLink signing hashes the key itself with SHA-256, which Web Crypto cannot do with a non-extractable key, so any script on the Mission Control page can read it. Treat the browser profile as holding the key, and rotate it if you suspect the browser or site is compromised.
+
+- Signing out purges the records tagged with your user id. Records enrolled while signed out stay on the device.
+- Private and incognito windows lose their IndexedDB when closed. Use a normal window for signing.
+- Cloud key sync is off: each browser keeps its own keys. Move a key between browsers with export and import.
 
 ## Troubleshooting
 
-If commands suddenly stop working after enabling signing:
+If commands stop working after enabling signing:
 
-1. Check whether they still work over USB. If they do, the flight controller holds a key this browser does not sign with, usually because another browser rotated it.
-2. Import the current key from the browser that holds it, or re-enroll from this browser over USB.
+1. Try over USB. If commands work there, the flight controller holds a key this browser does not sign with, usually because another browser rotated it.
+2. Import the current key from the browser that holds it, or connect over USB and enable signing again from this browser to enrol a new key.
 
-If you are locked out entirely, clear the flight controller's signing store with `Disable signing` from a browser that still holds the key, or connect over USB and enable signing again from this browser, which enrolls a new key.
-
-If you cannot reach the panel, the same action is available as a direct agent call:
+If you cannot reach the panel, a paired client on the LAN can clear the flight controller's key through the agent:
 
 ```bash
-curl -X POST http://drone-ip:8080/api/mavlink/signing/disable-on-fc \
-  -H "X-ADOS-Key: your_key"
+curl -X POST http://192.168.1.50:8080/api/mavlink/signing/disable-on-fc \
+  -H "X-ADOS-Key: <pairing-key>"
 ```
 
-The agent gates this on the flight controller being connected and answers `503` if it is not.
+The agent answers `503` when the flight controller is not connected, refuses the call while the aircraft is armed, and does not accept it over the cloud relay.
 
-## Related
+## Next steps
 
 <CardGroup cols={2}>
-<Card title="Drone Agent signing reference" icon="lock" href="/drone-agent/mavlink-signing">
-Protocol detail, agent REST surface, firmware support matrix, and security posture.
-</Card>
-<Card title="FC Configuration" icon="sliders" href="/mission-control/fc-configuration">
-Parameter-level reference for the flight controller.
-</Card>
-<Card title="Parameters" icon="list" href="/mission-control/parameters">
-Direct parameter editor for advanced users.
-</Card>
-<Card title="Pairing" icon="handshake" href="/drone-agent/pairing">
-How the browser authenticates to the agent before signing is available.
-</Card>
+  <Card title="Agent signing reference" icon="lock" href="/drone-agent/mavlink-signing">
+    Protocol detail and agent routes.
+  </Card>
+  <Card title="Flash Tool" icon="bolt" href="/mission-control/flash-tool">
+    Flash firmware and back up parameters.
+  </Card>
 </CardGroup>

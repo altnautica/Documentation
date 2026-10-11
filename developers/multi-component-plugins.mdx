@@ -1,138 +1,95 @@
 ---
 title: "Multi-component plugins"
-description: "Patterns for plugins that span agent, GCS, and driver halves. Lifecycle ordering, cross-half RPC, version compatibility."
-lastUpdated: "2026-06-23"
+description: "Ship an agent half and a GCS half in one plugin: when to split, how the halves exchange state, shared manifest and failure modes."
 ---
 
-A plugin can ship up to three pieces in one archive:
+A plugin can ship two halves in one archive:
 
-- An **agent** half (a subprocess on the drone, written in Python or Rust).
-- A **GCS** half (TypeScript bundle in a sandboxed iframe).
-- One or more **drivers** registered by the agent half.
+- An **agent** half: a subprocess on the node, written in Python or Rust.
+- A **GCS** half: a TypeScript bundle that Mission Control runs in a sandboxed iframe.
 
-Each half has its own runtime, its own SDK, and its own sandbox.
-What makes them one plugin is the shared manifest, shared id,
-shared version, and shared install state.
+Each half has its own runtime, SDK and sandbox. The shared manifest, id, version and install state make them one plugin.
 
-The agent half declares its language with `agent.runtime: python` (the
-default) or `agent.runtime: rust`. A Python half uses the `ados.sdk`
-package; a Rust half links the `ados-sdk` crate. Both speak the same
-length-prefixed msgpack wire to the agent's plugin host, so a Rust agent
-half and a Python or Rust host interoperate without changes. The GCS half
-uses the `@altnautica/plugin-sdk` TypeScript SDK regardless of which
-language the agent half is written in.
+The agent half declares its language with `agent.runtime: python` (the default) or `agent.runtime: rust`. A Python half uses the `ados.sdk` package; a Rust half links the `ados-sdk` crate. Both speak the same length-prefixed msgpack wire to the agent's plugin host. The GCS half uses `@altnautica/plugin-sdk` whatever language the agent half is written in.
 
 ## When to ship two halves
 
-Ship two halves when the plugin needs both of:
+Ship two halves when the plugin needs both:
 
-- Hardware or low-level system access on the drone.
-- An operator-facing UI in the GCS.
+- Hardware or system access on the node.
+- An operator-facing UI in Mission Control.
 
-The hello panel in [Your first plugin](/developers/your-first-plugin) is
-GCS-only because it reads normalized telemetry and renders a readout. The Thermal Camera plugin is
-hybrid because it needs `hardware.usb.uvc` on the drone (driver half)
-plus a video overlay in the GCS.
+The panel in [Your first plugin](/developers/your-first-plugin) is GCS-only because it reads normalized telemetry and renders a readout. The first-party Vision Navigation extension is hybrid: a Rust agent half reads camera frames and writes MAVLink, and a GCS half renders the **Vision Nav** tab.
 
-Do not split work that belongs in one half. If the plugin only
-needs telemetry and renders a panel, it is GCS-only. If the
-plugin only does background analytics with no operator UI, it is
-agent-only.
+Keep work in one half when it fits there. A plugin that only reads telemetry and renders a panel is GCS-only. A plugin that runs background work with no operator UI is agent-only.
 
-## Lifecycle ordering
+## Lifecycle
 
-Install order is fixed:
+Both halves install from one `.adosplug` archive, and the operator approves both halves' permissions in one grid. The agent half runs under the agent's supervisor as its own sandboxed unit; the unit and sandbox names are on [Agent runtime and sandbox](/developers/agent-plugin-deep-dive). The GCS half mounts whenever a slot it contributes to renders in Mission Control.
 
-1. Operator drops `.adosplug` into the GCS install dialog.
-2. Manifest is parsed (no disk writes).
-3. Operator approves permissions. Both halves' permissions appear
-   in one grid.
-4. Host calls install on both halves in parallel. The agent host
-   unpacks the agent half; the GCS host registers the bundle in
-   the user's install record.
-5. On enable, the **agent half starts first** as its own systemd
-   subprocess (the Python interpreter for a `runtime: python` half, or
-   the cross-compiled binary for a `runtime: rust` half).
-6. Once the agent half is running, the GCS half mounts in its iframe.
-   The GCS bridge gates outbound RPC to the agent until the agent half
-   is listening.
-
-Disable runs in reverse: GCS unmounts first, then the supervisor
-sends `SIGTERM` to the agent.
+The halves start and stop independently. A GCS half can mount while its agent half is stopped, so render an offline state until state arrives.
 
 ## Cross-half communication
 
-The two halves do **not** speak directly. They speak through the
-host's event bus.
+The halves never call each other. The agent half publishes events on its own topics; the plugin host keeps the latest event per topic in the plugin's state sidecar, and Mission Control reads that sidecar.
 
-```
-GCS plugin (iframe)
-  | postMessage RPC
+```text
+Agent plugin (subprocess)
+  | unix-socket IPC: event.publish
+  v
+Plugin host (agent) -> state sidecar, latest event per topic
+  | LAN: HTTP poll of /api/plugins/<id>/state (750 ms); cloud: heartbeat slice
   v
 Mission Control host
-  | mqtt or local socket
+  | postMessage event
   v
-ADOS Drone Agent host
-  | unix-socket IPC
-  v
-Agent plugin (subprocess)
+GCS plugin (iframe): ctx.events.subscribe
 ```
 
-Use the plugin's own `plugin.<id>.*` topics. The agent half publishes on
-the full topic, prefixed with `plugin.` and the plugin id:
+The GCS sees the latest payload per topic, not every event; carry a sequence or timestamp if you need ordering. Mission Control forwards a topic only when its timestamp changes, so a steady value does not replay.
+
+Publish on your plugin's own `plugin.<id>.` prefix from the agent half:
 
 ```python
-# agent half: publish on the plugin's own topic
+# agent half
 await ctx.events.publish(
-    "plugin.com.example.thermal.frame.ready",
-    {"frame_id": 42, "ts_ms": now_ms()},
+    f"plugin.{ctx.plugin_id}.frame.ready",
+    {"seq": 42, "ts_ms": now_ms()},
 )
 ```
 
 ```ts
-// GCS half (same plugin id): subscribe to the host-pushed event
+// GCS half of the same plugin
 ctx.events.subscribe("plugin.com.example.thermal.frame.ready", (evt) => {
-  redrawOverlay(evt.frame_id);
+  redrawOverlay(evt.seq);
 });
 ```
 
-A topic that starts with `plugin.<your-id>.` is always yours to publish
-and to subscribe to. Any other topic falls under the `event.publish` and
-`event.subscribe` capabilities and is checked against the allowlist:
-reserved namespaces (`vehicle.`, `mavlink.`, `mission.`, `safety.`,
-`agent.`, `swarm.`, `gps.`) cannot be published into, and a small set of
-public safety and lifecycle topics (`vehicle.armed`, `vehicle.geofence_breach`,
-`agent.ready`, and similar) can be subscribed to without a per-topic
-allowlist entry. The GCS half receives host-pushed events through
-`ctx.events.subscribe`, so it does not open a network connection of its
-own.
+Publishing under your own `plugin.<id>.` prefix needs no capability. Reserved, never publishable: `vehicle.`, `mavlink.`, `mission.`, `safety.`, `agent.`, `swarm.`, `gps.`, `vision.`, `telemetry.`, and any `plugin.` topic outside your own `plugin.<id>.` prefix or your declared shared topics. Other topics need `event.publish`. The full rules are on [Agent event bus](/developers/event-hooks-and-bus).
+
+The GCS half reads these events through `ctx.events.subscribe`; it never opens a network connection of its own.
 
 ## Shared manifest
 
-One manifest. Two contributing blocks:
+One manifest with an `agent` block and a `gcs` block. The field reference is [Manifest](/developers/manifest).
 
 ```yaml
 schema_version: 1
 id: com.example.thermal
-name: "Thermal Camera"
+name: "Thermal overlay"
 version: "0.1.0"
-description: "Radiometric thermal imaging with a video overlay and FC tab."
+description: "Thermal readout on the video pane and a flight controller tab."
 license: "GPL-3.0-or-later"
 risk: medium
 
 compatibility:
   ados_version: ">=0.10.0"
-  gcs_version: ">=0.5.0"
-  supported_boards: ["cm4", "cm5", "rk3576", "rk3566"]
 
 agent:
   entrypoint: "agent/plugin.py"
   isolation: subprocess
   permissions:
-    - id: event.publish
-    - id: event.subscribe
     - id: hardware.usb.uvc
-    - id: sensor.camera.register
   resources:
     max_ram_mb: 192
     max_cpu_percent: 35
@@ -144,68 +101,39 @@ gcs:
   permissions:
     - id: ui.slot.video-overlay
     - id: ui.slot.fc-tab
-    - id: telemetry.subscribe.thermal
   contributes:
     panels:
       - id: thermal-overlay
         slot: video.overlay
       - id: thermal-tab
         slot: fc.tab
-  locales:
-    - en
 ```
 
-The top-level fields (`id`, `name`, `version`, `license`, `risk`) are
-flat, not nested under a `plugin:` block. Permissions are a list of
-`- id: <capability>` entries. Both halves carry the same `id` and
-`version`, so the host treats them as one install row.
+The top-level fields (`id`, `name`, `version`, `license`, `risk`) are flat. Permissions are `- id: <capability>` entries. Both halves share one `id` and `version`, so they form one install row.
 
 ## Version compatibility between halves
 
-Both halves ship in the same archive, so they always carry the
-same version. The supervisor refuses to load mismatched halves;
-that case can only happen if someone unpacks an archive and
-hand-edits one side.
+Both halves ship in the same archive, so they always carry the same version. What can drift between releases is the shape of the data they exchange:
 
-What can drift across versions:
+- Event payloads published by the agent and read by the GCS. Put a `schema_version` field in each payload and branch on it in the GCS.
+- Stored data written by one half and read by the other. Carry a `data_version` in each record. See [State and storage](/developers/state-and-storage).
 
-- Topic schemas published from the agent and consumed by the GCS.
-  Use a `schema_version` field in your published payload and
-  branch on it in the GCS.
-- Persistent state on disk written by the agent and read by the
-  GCS via Convex. Carry a `data_version` in those rows.
+The SDKs do not inspect payload schemas; keeping them backward compatible within a major version is your job.
 
-The SDK does not inspect topic payload schemas; it is your job
-to keep them backward compatible inside a major version.
+## Driver code in the agent half
 
-## Driver halves
-
-Drivers live inside the agent half. In Python you implement one of the
-typed driver base classes (`CameraDriver`, `GimbalDriver`, `LidarDriver`,
-`GpsDriver`, `EscDriver`, `PayloadActuatorDriver`); in Rust you implement
-the matching driver trait. Either way you register the instance with the
-peripheral manager. See [driver layer](/developers/driver-layer)
-for the contract.
-
-A plugin can ship multiple drivers. A thermal camera plugin registers a
-`CameraDriver` for the sensor. A multi-sensor plugin can register a
-`CameraDriver` plus a `LidarDriver` from the same agent half:
+Driver code lives in the agent half. In Python, subclass one of the driver base classes (`CameraDriver`, `GimbalDriver`, `LidarDriver`, `GpsDriver`, `EscDriver`, `PayloadActuatorDriver`); in Rust, implement the matching trait. The facade is `ctx.peripheral_manager`:
 
 ```python
 async def on_start(self, ctx) -> None:
-    cam = ThermalCameraDriver()
-    lidar = ExternalLidarDriver()
-    await ctx.peripherals.register_camera_driver(cam)
-    await ctx.peripherals.register_lidar_driver(lidar)
+    await ctx.peripheral_manager.register_camera_driver(ThermalCameraDriver())
 ```
 
-Each registration is gated by its own capability
-(`sensor.camera.register`, `sensor.lidar.register`). Both must be
-declared in the manifest.
+The agent does not route drivers today: `register_*_driver` calls return `not_implemented`. A driver plugin opens and runs its own device from its lifecycle hooks. See [Driver layer](/developers/driver-layer).
 
 ## Worked example: hybrid plugin skeleton
 
-```
+```text
 com.example.thermal/
 ├── manifest.yaml
 ├── agent/
@@ -214,26 +142,24 @@ com.example.thermal/
 ├── gcs/
 │   ├── plugin.bundle.js
 │   └── overlay.tsx
-├── locales/
-│   └── en.json
-└── icon.png
+└── locales/
+    └── en.json
 ```
 
-Agent entry point. For a file-path entrypoint (`agent/plugin.py`), the
-runner imports a class named `Plugin` and calls its lifecycle hooks:
+For a file-path entrypoint such as `agent/plugin.py`, the runner loads the file directly and puts its directory on `sys.path`. Import sibling modules by name, not with a relative import:
 
 ```python
-from ados.sdk import CameraDriver
-from .thermal_driver import ThermalDriver
+from thermal_driver import ThermalDriver
+
 
 class Plugin:
     async def on_start(self, ctx) -> None:
-        driver = ThermalDriver()  # subclasses CameraDriver
-        await ctx.peripherals.register_camera_driver(driver)
+        self.driver = ThermalDriver()
+        await self.driver.open()
+        await ctx.events.publish(f"plugin.{ctx.plugin_id}.status", {"online": True})
 ```
 
-GCS entry point. The manifest declares which panel renders in which
-slot; the bundle sets up its UI from the single `mount` call:
+The GCS half sets up its UI from the single `mount` call; the manifest decides which slot each panel renders in:
 
 ```tsx
 import { definePlugin } from "@altnautica/plugin-sdk";
@@ -242,7 +168,7 @@ import { mountUI } from "./ui";
 definePlugin({
   id: "com.example.thermal",
   version: "0.1.0",
-  mount(ctx, info) {
+  mount(ctx) {
     mountUI(ctx);
   },
 });
@@ -250,15 +176,19 @@ definePlugin({
 
 ## Failure modes
 
-| Scenario | What the host does |
-|----------|---------|
-| Agent half crashes, GCS still running. | GCS half stays mounted; outbound RPC to the agent returns `handler_error`. The GCS half should render an "offline" state. |
-| GCS half fails to load (bundle 404). | Agent half keeps running. The slot orchestrator marks the iframe failed and shows an error tile. |
-| Operator revokes a permission used by only one half. | That half's affected calls return `permission_denied`; the other half is unaffected. |
+| Scenario | What happens |
+|----------|--------------|
+| Agent half stopped or crashed while the GCS half is mounted | The GCS half stays mounted and keeps the last payload per topic. Watch the payload timestamp and render an offline state when it stops moving. |
+| GCS half fails to load | The agent half keeps running. The slot shows an error tile for that contribution. |
+| Operator revokes a capability used by one half | Calls in that half that need it fail with `permission_denied`; the other half is unaffected. |
 
-## See also
+## Next steps
 
-- [Agent plugin deep dive](/developers/agent-plugin-deep-dive)
-- [GCS plugin deep dive](/developers/gcs-plugin-deep-dive)
-- [Driver layer](/developers/driver-layer)
-- [Versioning and updates](/developers/versioning-and-updates)
+<CardGroup cols={2}>
+  <Card title="State and storage" href="/developers/state-and-storage">
+    Where each half keeps data and how it survives updates.
+  </Card>
+  <Card title="Agent event bus" href="/developers/event-hooks-and-bus">
+    Topics, publish and subscribe rules, and shared topics.
+  </Card>
+</CardGroup>

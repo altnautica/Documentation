@@ -1,39 +1,42 @@
 ---
 title: "TypeScript SDK"
-description: "@altnautica/plugin-sdk reference. The GCS browser-half SDK every Mission Control plugin uses."
-lastUpdated: "2026-06-23"
+description: "The @altnautica/plugin-sdk reference: definePlugin, the typed PluginContext, the RPC client, the test harness and the other exports."
 ---
 
-`@altnautica/plugin-sdk` (v1.0.0, GPL-3.0-or-later) is the **GCS
-browser-half SDK**: the package a plugin's Mission Control side imports.
-It is one of three SDKs an ADOS plugin can use. The other two are the
-agent half, which runs on the companion: the [Python SDK](/developers/sdk-python)
-(`ados.sdk`) and the [Rust SDK](/developers/sdk-rust) (the `ados-sdk`
-crate). A plugin's GCS half always uses this one; its agent half picks
-Python or Rust.
+`@altnautica/plugin-sdk` (v1.3.0, GPL-3.0-or-later) is the GCS-half
+SDK: the package a plugin's Mission Control side imports. A plugin's GCS
+half always uses it; its agent half uses the
+[Python SDK](/developers/sdk-python) or the
+[Rust SDK](/developers/sdk-rust).
 
-This SDK hides the postMessage envelope shape and gives you a typed
-`PluginContext` instead.
+The SDK hides the `postMessage` envelope and gives you a typed
+`PluginContext`.
 
 ## Install
 
-The standalone npm publish lands with the hosted registry. Until
-then the supported workflow is to develop your plugin inside the
+The package is not published to npm. Develop your plugin inside the
 [`altnautica/ADOSExtensions`](https://github.com/altnautica/ADOSExtensions)
-monorepo as a pnpm workspace member; the SDK resolves via
+monorepo as a pnpm workspace member; the scaffolder pins the SDK to
 `workspace:^` against the in-tree
 [`packages/plugin-sdk`](https://github.com/altnautica/ADOSExtensions/tree/main/packages/plugin-sdk).
-The [Quickstart](/developers/quickstart) walks through the clone and
-scaffold flow.
+[Your first plugin](/developers/your-first-plugin) walks through the
+clone and scaffold flow.
 
-The package is a peer of the host iframe runtime. It has no runtime
-dependencies and ships ESM only.
+The package ships ESM only, with no runtime dependencies, and four entry
+points:
+
+| Import | What it holds |
+|--------|---------------|
+| `@altnautica/plugin-sdk` | `definePlugin`, the context, the client, the parameter helpers and the types. |
+| `@altnautica/plugin-sdk/harness` | `createPluginHarness`, the synthetic host for unit tests. |
+| `@altnautica/plugin-sdk/inline` | The types for a first-party `gcs.isolation: inline` module. |
+| `@altnautica/plugin-sdk/esbuild` | `inlineSharedExternals()`, the esbuild plugin an inline module builds with. |
 
 ## `definePlugin`
 
 The single entry point:
 
-```ts
+```typescript
 import { definePlugin } from "@altnautica/plugin-sdk";
 
 definePlugin({
@@ -41,31 +44,38 @@ definePlugin({
   version: "1.0.0",
   locale: { "hello.title": "Hello" },
   async mount(ctx, info) {
-    // wire up subscriptions, render the panel, etc.
+    // wire up subscriptions, render the panel
   },
   async unmount(ctx, info) {
-    // optional, runs when the host disposes the iframe
+    // optional teardown
   },
 });
 ```
 
-`mount` is awaited; if it throws, the host receives a `handler_error`
-envelope and surfaces it in the install dialog.
+`mount` is called once the bundle loads. A throw is not reported to the
+host, so catch errors and render your own error state. `info` is
+`{ id, version }` from your `definePlugin` call. Before Mission Control
+destroys the frame it asks the plugin to unmount and waits up to 500 ms;
+keep `unmount` short and do not rely on it to persist state. See
+[Lifecycle](/developers/lifecycle#lifecycle-hooks-gcs-half).
 
-`info` is optional. Most plugins write `async mount(ctx)` and ignore
-it; the second argument carries the host build version, the
-plugin's resolved permission set, and the operator-edited config.
-The same pattern applies to `unmount`.
+`definePlugin` returns a `PluginInstance` with `info`, `ctx` and an
+`unmount()` you can call for your own teardown.
 
 ## `PluginContext`
 
 The argument the SDK hands to `mount`:
 
-```ts
+```typescript
 interface PluginContext {
   client: PluginClient;
   telemetry: {
     subscribe<T>(topic: string, handler: (args: T) => void): Promise<() => void>;
+  };
+  perception: {
+    readTier(): Promise<PerceptionTierInfo>;
+    subscribeDetections(handler: (batch: PerceptionDetectionBatch) => void): Promise<() => void>;
+    readSessionHealth(): Promise<PerceptionSessionHealth>;
   };
   command: {
     send(command: string, args?: unknown): Promise<unknown>;
@@ -85,7 +95,10 @@ interface PluginContext {
   };
   events: {
     subscribe<T>(topic: string, handler: (args: T) => void): () => void;
+    listen<T>(topic: string, handler: (args: T) => void): Promise<() => void>;
+    publish(topic: string, payload: unknown): Promise<unknown>;
   };
+  records: PluginRecordsApi;
   theme: {
     onChange(handler: (vars: Record<string, string>) => void): () => void;
   };
@@ -95,31 +108,59 @@ interface PluginContext {
 }
 ```
 
-Each domain group is small on purpose. Plugins drop down to
-`ctx.client.request(method, capability, args)` for any RPC the
-helpers do not expose.
+`command.send` and `mission.write` wait for the operator's decision
+rather than a fixed deadline. A denial, a command the host does not
+allow, or a rate limit rejects with a `HostError` whose code is
+`refused`.
 
-`definePlugin` builds this context for you. If you need one outside the
-lifecycle (in a test, or to wire it by hand), construct it with
-`createPluginContext`:
+`events.subscribe` reads one-way host pushes (video-overlay host props,
+an agent plugin's state read-back) and needs no grant. `events.listen`
+and `events.publish` use the GCS plugin bus between installed plugin
+panels and need `event.subscribe` and `event.publish`.
 
-```ts
+`records` reads and writes the plugin's own cloud collection:
+`list(opts)`, `get(collection, key)`, `put(collection, key, data)` and
+`remove(collection, key)`.
+
+`definePlugin` builds the context for you. To build one by hand (in a
+test, for example), use `createPluginContext`:
+
+```typescript
 import { createPluginContext } from "@altnautica/plugin-sdk";
 
 const ctx = createPluginContext({ locale: { "hello.title": "Hello" } });
 await ctx.telemetry.subscribe("battery", (s) => store.ingest(s));
 ```
 
-The `events` group subscribes to one-way host pushes that have no
-request and response round-trip: video-overlay host props, an agent
-plugin's state read-back, and any other topic the host forwards to the
-iframe. `subscribe` returns an unsubscribe function.
+### Wrappers and the bridge methods they call
+
+Each wrapper delegates to one `PluginClient` call. The wire methods and
+their capabilities are on [GCS bridge methods](/developers/event-hooks).
+
+| Wrapper | Bridge method | Capability |
+|---------|---------------|-----------|
+| `ctx.telemetry.subscribe(topic, h)` | `telemetry.subscribe` | `telemetry.subscribe.<topic>` |
+| `ctx.perception.readTier()` | `perception.read` | `perception.read` |
+| `ctx.perception.subscribeDetections(h)` | `perception.subscribe` | `perception.subscribe` |
+| `ctx.perception.readSessionHealth()` | `perception.health` | `perception.read` |
+| `ctx.command.send(command, args)` | `command.send` | `command.send`, or `vision.track.designate` for `vision.designate` |
+| `ctx.notifications.publish(payload)` | `notification.publish` | `ui.slot.notification-channel` |
+| `ctx.recording.mark(payload)` | `recording.mark` | `recording.write` |
+| `ctx.mission.read(id)` | `mission.read` | `mission.read` |
+| `ctx.mission.write(update)` | `mission.write` | `mission.write` |
+| `ctx.events.listen(topic, h)` | `events.subscribe` | `event.subscribe` |
+| `ctx.events.publish(topic, payload)` | `events.publish` | `event.publish` |
+| `ctx.records.list/get/put/remove` | `records.list/get/put/remove` | `cloud.records` |
+| `ctx.config.onChange(h)` | host-pushed `config.changed` | none |
+| `ctx.theme.onChange(h)` | host-pushed `theme.changed` | none |
+
+For any other method, call `ctx.client.request(method, capability, args)`.
 
 ## `PluginClient`
 
 The lower-level RPC client:
 
-```ts
+```typescript
 import { PluginClient } from "@altnautica/plugin-sdk";
 
 const client = new PluginClient();
@@ -131,24 +172,29 @@ const result = await client.request<{ ok: boolean }>(
 );
 ```
 
-Methods:
-
 - `request(method, capability, args, options?)`: send a request and
-  await the response. Default timeout 5s.
+  await the response. Default timeout 5 s.
 - `on(method, handler)`: subscribe to host-pushed events.
-- `subscribeTelemetry(topic, handler)`: convenience that does both
-  `request("telemetry.subscribe", ...)` and `on("telemetry.<topic>", ...)`.
-- `dispose()`: tear down listeners and reject in-flight RPCs.
+- `subscribeTelemetry(topic, handler)`: does both the subscribe request
+  and the `telemetry.<topic>` listener.
+- `dispose()`: tear down listeners and reject in-flight requests.
+
+The client caches the capability token Mission Control pushes on the
+`capability.token` event (`CAPABILITY_TOKEN_EVENT`), so token rotation
+needs no plugin code. A request the host refuses with
+`capability_denied:token_missing` is held and sent again once the first
+token arrives. The `capability` argument is typed with the
+`CapabilityId` union of every known id.
 
 ## `HostError`
 
-Thrown by `client.request` when the host returns an error envelope:
+Thrown when the host returns an error envelope:
 
-```ts
+```typescript
 import { HostError } from "@altnautica/plugin-sdk";
 
 try {
-  await ctx.command.send("ARM");
+  await ctx.command.send("land");
 } catch (err) {
   if (err instanceof HostError && err.code === "permission_denied") {
     // show a banner
@@ -158,12 +204,25 @@ try {
 }
 ```
 
-The `code` field is the machine-readable error code from the
-envelope. The `message` is human-readable; do not branch on it.
+Branch on `code`; the `message` is for humans. The codes are listed on
+[GCS bridge methods](/developers/event-hooks#error-envelopes).
+
+## Other exports
+
+- `contributesModel`: an identity helper that types a `contributes`
+  literal (editor autocomplete and a compile-time shape check) and
+  returns it unchanged, for manifest fixtures and codegen.
+- `validateValue`, `clampValue`, `inferWidget`, `resolveBinding`,
+  `defaultFor`, `PARAMETER_WIDGETS`, `PARAMETER_BINDINGS`: the parameter
+  schema helpers. See [Parameter schema](/developers/parameter-schema).
+- `createWindowTransport`, `MemoryTransport`: the transports under
+  `PluginClient`.
+- `PROTOCOL_VERSION`, `TELEMETRY_TOPICS` and the envelope, telemetry,
+  perception, records and contribution types.
 
 ## Test harness
 
-```ts
+```typescript
 import { createPluginHarness } from "@altnautica/plugin-sdk/harness";
 
 const harness = createPluginHarness({
@@ -175,41 +234,43 @@ const harness = createPluginHarness({
 
 await harness.start();
 harness.pushTelemetry("battery", mockSample);
-expect(harness.notifications).toEqual([...]);
+expect(harness.calls.map((c) => c.method)).toContain("telemetry.subscribe");
 await harness.teardown();
 ```
 
 The harness:
 
 - mounts the plugin against an in-memory transport (no real iframe);
-- captures every RPC in `harness.calls`, grouped helpers in
-  `harness.notifications` and `harness.recordingMarks`;
-- accepts `pushTelemetry`, `pushEvent`, `pushConfig`, `pushTheme`;
-- supports `failNext(method, code, message)` to simulate host
-  failures;
-- mirrors the real bridge's capability gate.
-
-This means you can validate a plugin end-to-end inside Vitest without
-running Mission Control or a real drone.
+- records every request in `harness.calls`, with
+  `harness.notifications` and `harness.recordingMarks` as shortcuts;
+- pushes host traffic with `pushTelemetry`, `pushEvent`, `pushConfig`,
+  `pushTheme` and `pushPerceptionDetection`, and stubs reads with
+  `stubPerceptionTier` and `stubPerceptionHealth`;
+- simulates host failures with `failNext(method, code, message)`;
+- gates calls by capability like the bridge: a telemetry subscription
+  needs its topic grant (`telemetry.subscribe.<topic>`), and a `ui.slot.*`
+  RPC needs that slot's capability.
 
 ## Building the bundle
 
-The SDK does not ship a build step. Plugin repos use esbuild,
-Vite, or any other bundler that emits ESM. The `create-ados-plugin`
-template uses esbuild for zero-config builds:
+The SDK has no build step of its own. The `create-ados-plugin` templates
+use esbuild:
 
-```sh
+```bash
 esbuild src/plugin.ts --bundle --format=esm --target=es2022 --outfile=plugin.bundle.js --minify
 ```
 
-Output goes to `gcs/plugin.bundle.js`. The manifest's `gcs.entrypoint`
-field points at the same path. The bundle is not hashed in the
-manifest; its integrity is bound by the canonical payload hash that
-the signing step writes into the separate `SIGNATURE` file.
+Run from `gcs/`, the output is `gcs/plugin.bundle.js`, the path the
+manifest's `gcs.entrypoint` names. The bundle is not hashed in the
+manifest; the archive signature covers it.
 
-<Note>
-This SDK is the GCS browser half only. For the companion-side plugin
-half, see the [Python SDK](/developers/sdk-python) (`ados.sdk`) or the
-[Rust SDK](/developers/sdk-rust) (the `ados-sdk` crate). A hybrid
-plugin ships both halves from a single `manifest.yaml`.
-</Note>
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Your first plugin" href="/developers/your-first-plugin">
+    Build, test, sign and install a GCS-only tab.
+  </Card>
+  <Card title="GCS bridge methods" href="/developers/event-hooks">
+    The wire methods, pushed events and error codes.
+  </Card>
+</CardGroup>

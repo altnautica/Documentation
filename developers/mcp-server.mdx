@@ -1,11 +1,10 @@
 ---
-title: "MCP Server and AI Control"
+title: "MCP server and AI control"
+sidebarTitle: "MCP server"
 description: "Give an AI client scoped, revocable, audited control of a node or a fleet. Token acceptance is off until you turn it on."
 icon: "robot"
-lastUpdated: "2026-09-15"
+keywords: ["ados", "mcp", "ai", "model context protocol", "tokens"]
 ---
-
-# MCP Server and AI Control
 
 ADOS ships a Model Context Protocol connector so an MCP-capable client (Claude
 Code, Claude Desktop, Cursor, VS Code, or a plain HTTP client) can read a node,
@@ -27,7 +26,7 @@ MCP.
 <Warning>
 Token acceptance ships off. `mcp.token_accept_enabled` defaults to `false`, and
 `ados mcp status` reports the posture. A token you mint before flipping the flag
-is a valid token the auth edge will not honour yet.
+is valid, but the auth edge refuses it until the flag is on.
 </Warning>
 
 ## The trust boundary
@@ -94,7 +93,7 @@ Check the posture and the minted tokens at any time:
 ados mcp status
 ```
 
-```
+```text
 MCP access
   token acceptance: disabled (tokens can be minted but are not honored at the edge yet)
   no tokens minted
@@ -174,7 +173,7 @@ tool set; only the reach differs.
 
 | Mode | Invocation | Reaches | Needs |
 |---|---|---|---|
-| Agent (default) | `--target agent <host>` | one node on your LAN | that node's pairing key |
+| Agent | `--target agent <host>` | one node on your LAN | that node's pairing key |
 | Local fleet | `--target local-fleet [<fleet.json>]` | many LAN nodes, no cloud | each node's host and key, inline in one env var or in a file |
 | Fleet | `--target fleet --gcs prod` | your fleet from anywhere, through Mission Control | a signed-in operator and a minted machine credential |
 
@@ -203,13 +202,19 @@ ADOS_MCP_AGENT_KEY=<pairing-key> node dist/index.js --target agent 192.168.1.50 
 | `--fleet-file <path>` | `~/.ados/mcp/fleet.json` | The local-fleet file. |
 | `--gcs <local\|prod\|url>` | none | The Mission Control Convex backend, fleet mode. |
 | `--token <token>` | none | The bearer for the launch principal. |
+| `--convex-url <url>` | none | An explicit Convex deployment URL, fleet mode. `--gcs` is the shortcut. |
+| `--mqtt-url <url>` | none | The MQTT broker URL for live streams, fleet mode. |
+| `--fleet-endpoint <url>` | none | The hosted endpoint name, fleet mode. |
 | `--node-id <id>` | none | This node's device id, agent mode. |
 | `--audit-path <file>` | `~/.ados/mcp/audit.ndjson` | Local audit file. |
 | `--sim` | off | Opt in to the SITL safety waiver. |
 | `--flight-enforced` | off | Declares the MAVLink proxy enforce flag is confirmed on. |
 | `--discover` | off | Local fleet: browse the LAN and auto-adopt unpaired nodes. |
 | `--no-mdns` | off | Disable mDNS advertisement in agent mode. |
+| `--trust-proxy` | off | HTTP only. The listener sits behind a trusted reverse proxy: it binds `127.0.0.1` and takes the client IP from `cf-connecting-ip`, else the right-most `X-Forwarded-For` hop. Without it the listener binds `::` and uses the socket peer address. Fleet mode does not imply it. |
 | `--verify` | off | Check and exit without serving. |
+| `--help` | off | Print usage and exit. |
+| `--version` | off | Print the version and exit. |
 
 Environment equivalents include `ADOS_MCP_AGENT_KEY`, `ADOS_AGENT_HOST`,
 `ADOS_NODE_ID`, `ADOS_MCP_HTTP_PORT`, `ADOS_MCP_FLEET`, `ADOS_MCP_FLEET_PATH`,
@@ -244,6 +249,47 @@ waiver cannot be asserted onto real hardware.
 `readOnlyHint` and `destructiveHint` annotations are advertised honestly, but
 they are hints. The server is the enforcement point.
 
+## Tools
+
+<Warning>
+The `flight.*` tools arm, take off, change mode, land and return a real
+aircraft. Read [Safety](/operations/safety) before you grant a `flight` scope.
+</Warning>
+
+The connector exposes 45 tools at MCP protocol revision `2025-06-18`. Every
+deployment mode exposes the same set. The tools are grouped by prefix:
+
+| Group | What it covers |
+|---|---|
+| `status.*` | Node health, identity and live state. |
+| `telemetry.*` | Telemetry snapshots. |
+| `params.*` | Flight controller parameters. |
+| `config.*` | Agent configuration. |
+| `services.*` | Agent service state and restarts. |
+| `logs.*` | Agent logs. |
+| `plugins.*` | Installed plugins and their lifecycle. |
+| `admin.*` | Platform administration. |
+| `audit.*` | The connector's audit trail. |
+| `flight.*` | Flight actions, behind the `flight` scope and the safety gate. |
+| `vision.*` | Vision target designation, a `flight`-class tool. |
+| `fleet.*` | Fleet listing in the fleet modes. |
+
+The full list, with each tool's scope class and annotations, is in
+[`catalog/tools-catalog.json`](https://github.com/altnautica/ADOS-MCP/blob/main/catalog/tools-catalog.json).
+
+A tool contributed by a plugin is floored at the scope its granted capabilities
+imply. Every non-read flight-control capability (for example `mavlink.write`,
+`msp.write`, `mission.write`, `estimator.pose.inject` and
+`vision.track.designate`) floors the tool at `flight`, and every `hardware.*`
+capability floors it at `admin`. A capability that is neither in the generated
+floor nor on the read and safe-write allowlist is treated as `admin`. See
+[Permissions](/developers/permissions) for the capability catalog.
+
+The [Mission Control MCP tab](/mission-control/mcp) has a guided wizard that
+fills in a node's host and pairing key, generates the `claude mcp add` command,
+builds the inline local-fleet blob for every node you own, and mints the
+machine credential for fleet mode.
+
 ## Extensions that contribute MCP tools
 
 An extension can contribute MCP `tools`, `resources` and `prompts` on both its
@@ -251,9 +297,19 @@ agent and GCS halves. That contribution class needs `schema_version: 3` in
 `manifest.yaml`; `1` is the baseline and `2` unlocks the additional agent
 fields. See the [manifest reference](/developers/manifest).
 
-## Related
+## Next steps
 
-- [Security model](/developers/security-model)
-- [Revocation and incidents](/developers/revocation-and-incidents)
-- [Hardening](/operations/hardening)
-- [Manifest reference](/developers/manifest)
+<CardGroup cols={2}>
+  <Card title="MCP in Mission Control" icon="robot" href="/mission-control/mcp">
+    Use the setup wizard to generate the add command and the fleet blob.
+  </Card>
+  <Card title="Security model" icon="shield" href="/developers/security-model">
+    How credentials, scopes and capabilities fit together.
+  </Card>
+  <Card title="Revocation and incidents" icon="ban" href="/developers/revocation-and-incidents">
+    Rotate and revoke credentials after an incident.
+  </Card>
+  <Card title="Hardening" icon="lock" href="/operations/hardening">
+    Lock a node down before it leaves the bench.
+  </Card>
+</CardGroup>

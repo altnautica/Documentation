@@ -1,98 +1,81 @@
 ---
-title: Firmware Comparison
-description: Side-by-side feature matrix for ArduPilot, PX4, Betaflight, and iNav in Mission Control.
-lastUpdated: "2026-06-18"
+title: "Firmware comparison"
+description: "What Mission Control supports on ArduPilot, PX4, Betaflight and iNav flight controllers, side by side."
+icon: "table-columns"
 ---
 
-Mission Control supports four firmware families. Pick the one that matches your flight controller and your mission profile. This page shows what works where.
+Mission Control works with four flight controller firmware families. It detects the firmware when it connects and shows only the panels and features that firmware supports.
 
-## Quick matrix
+## Feature matrix
 
 | Feature | ArduPilot | PX4 | Betaflight | iNav |
 |---|---|---|---|---|
 | Protocol | MAVLink v2 | MAVLink v2 | MSP v1/v2 | MSP v1/v2 |
-| Primary use case | Autonomous missions, long-range survey, VTOL, sub, rover | Autonomous missions, research, defense | FPV racing and freestyle | FPV freestyle with autonomous navigation, fixed-wing |
-| Detection | HEARTBEAT `autopilot = 3` | HEARTBEAT `autopilot = 12` | MSP `FC_VARIANT = BTFL` | MSP `FC_VARIANT = INAV` |
-| Parameter count | 800+ | 1000+ (63 mapped in handler) | ~300 | ~400 (name-based settings) |
-| Parameter access | Numeric index | Numeric index | Numeric index + virtual params | Name-based settings client |
-| Auto-save on set | Yes | Yes | No (explicit save) | No (explicit save) |
-| Mission upload | Yes (MAVLink mission protocol) | Yes | Not supported | Yes (MSP_WP + multi-mission) |
-| Waypoint actions | ~16 MAV_CMD types | ~16 MAV_CMD types | None | 8 (WAYPOINT, POSHOLD_UNLIM, POSHOLD_TIME, RTH, LAND, SET_POI, JUMP, SET_HEAD) |
-| Multi-mission storage | No | No | No | Yes (up to 9 missions on FC) |
-| Geofence | Polygon + circular | Polygon + circular | No | Polygon + circular (up to 15 zones, 10 vertices per polygon) |
+| Typical use | Autonomous missions, survey, VTOL, rover, boat, sub, heli | Autonomous missions, MAVLink ecosystem integration | FPV racing and freestyle | FPV with navigation modes, fixed-wing |
+| Detection | HEARTBEAT `autopilot = 3` | HEARTBEAT `autopilot = 12` | MSP `FC_VARIANT` = `BTFL` | MSP `FC_VARIANT` = `INAV` |
+| Parameter access | Numeric index | Numeric index | Numeric index plus virtual parameters | Name-based settings |
+| Parameter writes | Stored on set | Stored on set | Explicit save | Explicit save |
+| Mission upload | Yes (MAVLink mission protocol) | Yes (MAVLink mission protocol) | No | Yes (MSP waypoints, multi-mission) |
+| Mission items | 12 navigation commands and 16 attached actions | 12 navigation commands and 16 attached actions | None | WAYPOINT, POSHOLD_UNLIM, POSHOLD_TIME, RTH, LAND, SET_POI, JUMP, SET_HEAD |
+| Multiple missions stored on the FC | No | No | No | Yes |
+| Geofence | Polygon and circle, with zones | Polygon and circle, with zones | No | Geozones (polygon and circle, up to 10 vertices per polygon) |
 | Rally points | Yes | No | No | No |
-| Safehomes | No | No | No | Yes (16 slots) |
-| Flight modes | 18+ (mode switch via MAV_CMD) | 18+ | Box-mode via AUX channels | Box-mode + nav modes (POSHOLD, RTH, WP, CRUISE, COURSE HOLD, LAUNCH, LAND, ALT_HOLD) |
-| OSD configuration | Standard elements + 4 independent screens | Not supported (no OSD in PX4 stack) | Full MSP OSD (25 elements) | Extended element set (100+) + 8 custom text elements |
-| Blackbox | Yes | Yes | Yes | Yes (with iNav nav-extended fields) |
-| CLI panel | No dedicated CLI panel | MAVLink Shell (NuttShell over SERIAL_CONTROL) | Yes (MSP command-line) | No dedicated CLI panel |
-| Firmware flashing | APJ via WebUSB DFU (serial-bootloader fallback) | .px4 via PX4 serial bootloader (WebSerial) | WebUSB DFU | WebUSB DFU (same path as Betaflight) |
-| LED strip | Yes | No (DroneCAN) | Yes | Yes (extended LED config) |
-| Gimbal | Gimbal Manager v2 | Yes | No | No |
-| Camera | Servo + distance trigger | Yes | No | No |
-| MAVLink v2 signing | Yes (ArduPilot 4.0+) | No | N/A | N/A |
-| Manual control input | MANUAL_CONTROL at 50 Hz | MANUAL_CONTROL at 50 Hz | MSP_SET_RAW_RC at 50 Hz | MSP_SET_RAW_RC at 50 Hz |
-| Demo mode coverage | 4 copters in the fleet | 1 copter (Delta) | 0 dedicated | 2 drones (copter + fixed-wing) |
-| Panels in Configure tab | 25+ shared | 22 shared + 3 PX4-specific | 22 shared + 8 Betaflight-specific | 22 shared + 13 iNav-specific |
+| Safehomes | No | No | No | Yes (8 slots) |
+| Flight modes | Mode select over MAVLink | Mode select over MAVLink | Box modes on AUX channels | Box modes plus navigation modes |
+| OSD | OSD Editor | No | OSD Editor and OSD Preview | iNav OSD, Custom OSD and OSD Preview |
+| Flight logs | Download from the FC, Log Analysis | Download from the FC, Log Analysis | Blackbox | Blackbox |
+| Command line | CLI | Shell (NuttShell over MAVLink) | CLI | CLI |
+| Flash from Mission Control | Yes | Yes | Yes | No. Use iNav Configurator |
+| LED strip | Yes | No | Yes | Yes |
+| Gimbal and camera | Yes | Yes | No | No |
+| MAVLink signing | Yes | No | Not applicable | Not applicable |
+| VTX | No | No | Yes | Yes |
+| DroneCAN | Yes | Yes | No | No |
+| Stick control from a gamepad | `MANUAL_CONTROL` up to 50 Hz | `MANUAL_CONTROL` up to 50 Hz | `MSP_SET_RAW_RC` up to 50 Hz | `MSP_SET_RAW_RC` up to 50 Hz |
+
+Stick control streams only while it is switched on, the aircraft is armed and the flight mode gives the pilot stick authority. On MSP links it overrides every RC channel. See [Cockpit and Skills](/mission-control/cockpit).
+
+The demo fleet includes aircraft on every firmware. See [Dashboard and fleet](/mission-control/dashboard).
 
 ## Shared panels
 
-All four firmwares share the same Configure-tab base: Flight Modes, Failsafe, PID Tuning, Power, Receiver, Ports, Sensors, GPS, LED, OSD, CLI, Calibration, Firmware Flasher, Blackbox. Mission Control adapts each shared panel to the connected firmware. For example, the Receiver panel reads RC configuration via MAVLink parameters on ArduPilot / PX4 and via `MSP_RX_CONFIG` on Betaflight / iNav. Operators see a single panel, the protocol layer handles the dispatch.
+The **Setup** tab uses one set of panels across firmwares and adapts each panel to the connected firmware. For example, **Receiver** reads RC settings from parameters on ArduPilot and PX4 and from `MSP_RX_CONFIG` on Betaflight and iNav. Panels gate on firmware capability, vehicle class and firmware type. The full list is on [Flight controller setup](/mission-control/fc-configuration).
 
-## iNav-specific panels
+## Firmware-specific panels
 
-13 panels only appear when iNav is connected:
-
-- Safehome (16 alternate RTH points)
-- Geozones (polygon and circular fences)
-- Nav Config (waypoint speed, RTH altitude, landing slowdown)
-- INav Failsafe (FAILSAFE_PROCEDURE: DROP, LAND, RTH)
-- Battery Profiles (4)
-- Control Profiles (3)
-- Mixer Profiles (3)
-- Output Mapping (timer-to-output with mode override)
-- Servos (fixed-wing and tricopter)
-- Temp Sensors (8)
-- MC Braking (multirotor)
-- Rate Dynamics
-- iNav Mission (read-only mission summary with planner link)
-
-Plus the Tier B panels: Logic Conditions, Global Variables, Programming PID, EZ Tune, FW Approach, iNav OSD, Custom OSD Elements.
-
-## Betaflight-specific panels
-
-Aux Modes, Betaflight Config, Betaflight Motors, VTX, Rate Profile, Adjustments, Blackbox config, OSD editor.
-
-## PX4-specific panels
-
-Airframe selector (SYS_AUTOSTART), Actuator configuration, MAVLink Shell.
-
-## ArduPilot-specific panels
-
-Frame class selector, Gimbal Manager, Camera, Rally Points, MAVLink Signing.
+| Firmware | Panels specific to it |
+|---|---|
+| ArduPilot | **Helicopter**, **VTOL**, **Sub Config**, **Sailboat**, **EKF3**, **Non-GPS Nav**, **Airspeed**, **Gripper / Payload**, **Harmonic Notch**, **TECS / L1**, **ADS-B & Avoidance**, **Stream Rates**, **MAVLink Signing**, **Scripts** (Lua) |
+| PX4 | **Airframe** and **Actuators** (the PX4 names for **Frame** and **Outputs**), **VTOL Transition**, **Thermal Cal**, **Flight Behavior**, **Fixed-Wing Tuning**, **Autotune**, **Control Allocation**, **Shell** |
+| Betaflight | **Configuration**, **All Settings**, and with iNav: **Aux Modes**, **Motors & ESC**, **Rate Profiles**, **Adjustments**, **VTX**, **Blackbox**, **OSD Preview** (MSP DisplayPort) |
+| iNav | **Navigation Config**, **iNav Mission**, **Mixer Profiles**, **Output Mapping**, **Servos (iNav)**, **FW Approach**, **Failsafe (iNav)**, **Safehome**, **Geozones**, **Battery Profiles**, **Temp Sensors**, **Control Profiles**, **MC Braking**, **Rate Dynamics**, **EZ Tune**, **Nav PID**, **iNav OSD**, **Custom OSD**, **Logic Conditions**, **Global Variables**, **Programming PIDs**, **Programming (JS)** |
 
 ## Choosing a firmware
 
-Some quick rules of thumb:
+- **Survey, mapping or delivery aircraft:** ArduPilot offers the widest feature set. iNav on a small F7 or H7 board covers many autonomous missions at lower weight.
+- **FPV with position hold or return to home:** iNav.
+- **FPV racing or freestyle:** Betaflight.
+- **MAVLink ecosystem integration:** PX4 or ArduPilot, depending on the airframe and mission.
 
-- **Building a survey, mapping, or delivery drone?** ArduPilot on a larger flight controller gives the widest feature surface. iNav on a smaller F7 / H7 board gives enough for most civilian autonomous missions at lower weight and cost.
-- **Flying FPV with occasional position hold or RTH?** iNav is the sweet spot.
-- **Pure FPV racing or freestyle?** Betaflight stays the leanest and lowest-latency.
-- **Research or defense requiring MAVLink ecosystem integration?** PX4 or ArduPilot, depending on the mission profile.
+ArduPilot, PX4, Betaflight and iNav are all configurable and flyable from Mission Control. ArduPilot, PX4 and Betaflight are also flashable from the [Flash Tool](/mission-control/flash-tool).
 
-All four firmwares are fully configurable, flashable, and flyable through Mission Control.
+## Outside Mission Control
 
-## What is not covered by the GCS
+- **Telemetry on the RC transmitter** (SmartPort, CRSF, LTM) is handled by the RC system.
+- **Goggle OSD rendering** happens on the aircraft. Mission Control configures what the OSD shows, not how goggles render it.
+- **Dense mapping, terrain meshes and multi-drone aggregation** live in the Drone Agent, not in Mission Control.
+- **Phones:** Mission Control targets desktops, laptops and landscape tablets. For a phone, use the [Android GCS](/android/overview).
 
-This is where the GCS draws scope lines regardless of which firmware you use:
+## Next steps
 
-- **Telemetry-over-RC-link displays (SmartPort, CRSF, LTM).** Mission Control connects over USB WebSerial or TCP. Telemetry that flows up a radio link to the transmitter screen is handled by the RC system itself.
-- **FPV OSD rendering on goggles.** DJI, Walksnail, and analog OSD are rendered on the drone by the flight controller or VTX chip. The GCS configures what appears, not how it renders in-flight.
-- **Real-time dense SLAM, terrain mesh, or multi-drone aggregation.** These live in the separate drone agent + ADOS MeshNet track, not in the Mission Control GCS.
-- **Mobile phone-first UI.** Mission Control is desktop and laptop first. Tablet landscape works. Phones are not specifically targeted.
-
-## Cross-references
-
-- [iNav guide](./inav-guide) detailed walkthrough of iNav-specific workflows.
-- [Connecting](./connecting) general serial, WebSocket, and Bluetooth flows.
-- [Configure tab reference](./fc-configuration) if a dedicated panel reference page exists.
+<CardGroup cols={2}>
+  <Card title="iNav guide" icon="plane" href="/mission-control/inav-guide">
+    iNav-specific workflows.
+  </Card>
+  <Card title="Connect a drone" icon="plug" href="/mission-control/connecting">
+    USB, WebSocket, UDP, TCP and Bluetooth links.
+  </Card>
+  <Card title="Flight controller setup" icon="sliders" href="/mission-control/fc-configuration">
+    Every Setup tab panel.
+  </Card>
+</CardGroup>

@@ -1,0 +1,5 @@
+export const DriverRustNote = ({ trait, methods }) => (
+  <Note>
+    Writing the agent half in Rust? Implement <code>{`ados_sdk::drivers::${trait}`}</code> from the <code>ados-sdk</code> crate. It has the same methods as the Python base class ({methods}). Set <code>agent.runtime: rust</code> in the manifest.
+  </Note>
+);

@@ -1,105 +1,91 @@
 ---
-title: "Overview"
-description: "What the ADOS Ground Agent is and how it connects your drone to any screen."
+title: "Ground Agent overview"
+sidebarTitle: "Overview"
+description: "What the ADOS Ground Agent is: a Linux ground node that receives your drone's radio link and serves video and telemetry to any screen."
 icon: "tower-broadcast"
-lastUpdated: "2026-06-18"
+keywords: ["ados", "ground agent", "ground station", "wfb-ng", "overview"]
 ---
 
-# ADOS Ground Agent
+The Ground Agent is a small Linux ground node that receives the drone's long-range radio link and puts video and telemetry on the screens around it: a laptop browser, a phone, an HDMI monitor with a gamepad, or all of them at once.
 
-The Ground Agent is a small Linux ground node that receives HD video from your drone and puts it on any screen you want. Your laptop browser, your phone, a monitor with a gamepad, or all three at once.
-
-It runs the same ADOS Drone Agent codebase in a different profile. Same install script, same code, same updates. The hardware fingerprint at boot decides whether the SBC acts as a drone companion or a ground station.
-
-The box stays compact. Power comes from an external USB-C source such as a wall adapter, a USB-C power bank, or regulated field power.
+It is the ADOS Drone Agent running with the `ground_station` profile. Same install script, same code, same updates.
 
 ## What it does
 
-The Ground Agent handles three jobs:
-
-1. **Receives the drone video link** on the ground node. Your Mac, Windows laptop, phone, or browser does not need to run the radio stack directly.
-
-2. **Serves video and telemetry** to any connected client. WebRTC for video, WebSocket for telemetry. Your laptop opens a browser, your phone joins the WiFi, or you plug in HDMI and a gamepad.
-
-3. **Bridges to the cloud** when you want remote observers. Connect the ground node to WiFi, Ethernet, or a 4G modem and telemetry flows to Altnautica cloud automatically.
+1. **Receives the drone link.** The ground node runs the WFB-ng radio receive path, so your laptop or phone never needs radio drivers.
+2. **Serves video and telemetry.** WebRTC (WHEP) for video, a MAVLink WebSocket for telemetry, and the agent's own dashboard and cockpit over HTTP.
+3. **Bridges to the cloud when you choose to.** The default cloud posture is local only. Once you pick a cloud or self-hosted posture in setup, telemetry flows to the cloud relay over whichever uplink is active (Ethernet, Wi-Fi client or a cellular modem).
 
 ## How it fits together
 
 ```mermaid
 %%{init: {'theme': 'dark'}}%%
 flowchart LR
-    Drone["Drone"] -->|long-range video link| GS["Ground Agent<br/>(receiver bridge)"]
-    GS -->|WiFi AP| Laptop["Laptop Browser"]
-    GS -->|USB-C| Mac["Mac / Windows"]
-    GS -->|HDMI| Monitor["Monitor + Gamepad"]
-    GS -->|WiFi AP| Phone["Android Phone"]
-    GS -.->|4G / WiFi| Cloud["Altnautica Cloud"]
+    Drone["Drone"] -->|WFB-ng radio link| GS["Ground Agent"]
+    GS -->|Wi-Fi AP| Laptop["Laptop browser"]
+    GS -->|USB-C tether| Wired["Laptop or phone"]
+    GS -->|HDMI| Monitor["Monitor and gamepad"]
+    GS -->|Wi-Fi AP| Phone["Android GCS"]
+    GS -.->|Ethernet, Wi-Fi or cellular| Cloud["Cloud relay"]
 ```
 
-## Four ways to connect
+## Ways to connect
 
-Every client talks to the same endpoints on the Ground Agent. The only difference is the physical link.
+Every client reaches the same endpoints on the ground node. Only the physical link differs.
 
-| Client | Connection | Video latency | Best for |
-|--------|-----------|---------------|----------|
-| Laptop over WiFi | Join `ADOS-GS-XXXX` hotspot | 80-100 ms | Bench testing, training |
-| Laptop over USB-C | Plug in a data cable | 40-70 ms | Indoor lab, wired reliability |
-| HDMI + gamepad | Plug monitor and controller into the SBC | Under 60 ms | Field flying, no laptop needed |
-| Android phone | Join WiFi or plug USB-C | 50-80 ms (app), 80-120 ms (browser) | Mobile field use |
+| Client | Connection | Page |
+|---|---|---|
+| Laptop or phone over Wi-Fi | Join the `ADOS-GS-<id>` access point | [Wi-Fi access point](/ground-agent/wifi-ap) |
+| Laptop or phone over a cable | USB-C data cable to the node | [USB tether](/ground-agent/usb-tether) |
+| Monitor and gamepad | HDMI monitor and a USB or Bluetooth gamepad on the node | [HDMI kiosk](/ground-agent/hdmi-kiosk) |
+| Android phone or tablet | Wi-Fi or USB, browser or the Android GCS app | [Android client](/ground-agent/android-client) |
 
-All four can connect at the same time. One takes pilot-in-command (PIC), the rest watch.
+All of them can connect at the same time. One client at a time holds pilot-in-command (PIC); the others watch.
 
-## Key numbers
+## Key facts
 
-| Metric | Value |
-|--------|-------|
-| Codebase | Same as ADOS Drone Agent |
-| Profile | `ground-station` (auto-detected) |
-| License | GPLv3 |
-| WiFi AP | `ADOS-GS-XXXX` on 2.4 GHz |
-| USB tether IP | `192.168.7.1/24` |
-| Video transport | WebRTC WHEP |
-| MAVLink transport | WebSocket |
-| REST API | Port 8080 |
+| Item | Value |
+|---|---|
+| Profile | `ground_station` |
+| Wi-Fi access point | `ADOS-GS-<id>` on 2.4 GHz, `192.168.4.1` |
+| USB tether address | `192.168.7.1` |
+| Video transport | WebRTC WHEP at `/whep` on port 8080 |
+| Telemetry transport | MAVLink WebSocket on port 8765 |
+| Dashboard and REST API | Port 8080 |
+| Local display | Optional 480x320 SPI touch LCD; optional 128x64 or 128x32 I2C OLED |
+| Buttons | Optional four front-panel buttons |
 | Power | External USB-C source |
-| Physical UI | 128x64 OLED + 4 buttons |
+| Licence | GPLv3 |
 
-## One codebase, two profiles
+## One codebase, four profiles
 
-You do not install separate software for the ground side. The same `curl | bash` one-liner that installs the drone agent also installs the ground agent. On first boot, a score-based hardware fingerprint checks what is attached:
+You do not install separate software for the ground side. The agent has four profiles (`drone`, `ground_station`, `workstation` and `compute`), and the profile decides which services run. A ground station is a node installed with `--profile ground_station`. The installer's interactive wizard also offers it as "This receives on the ground (Ground station)".
 
-- OLED on I2C + GPIO buttons + RTL8812EU + no flight controller = **ground station profile**
-- Flight controller on UART + GPS = **drone profile**
+The installer does not guess from attached hardware. It uses the `--profile` flag, else the profile already recorded in `/etc/ados/profile.conf`, else `drone`. To change the profile of an installed node, run `sudo ados profile set ground_station`, which restarts the affected services itself. See [Install the Ground Agent](/ground-agent/installation) and [Node profiles](/getting-started/node-profiles).
 
-If the fingerprint is ambiguous, the OLED shows a pick-profile screen. You press a button and you are done.
+## Three deployment roles
 
-<Note>
-You can always override the auto-detected profile by setting `agent.profile: ground_station` in `/etc/ados/config.yaml`. Use the underscore form. The config validator rejects the hyphenated `ground-station`.
-</Note>
+A ground station runs in one of three roles. One node in `direct` mode, the default, covers most setups. When terrain blocks a single receive point, or you want a longer corridor or a backup receiver, two or more ground stations can share the receive job over a local mesh.
 
-## Bench hardware
+- **direct**: single-node receive. The default.
+- **relay**: forwards what it hears from the drone to a receiver over the mesh.
+- **receiver**: the hub. Combines what it hears with what every paired relay forwards.
 
-The simplest ground station is a Raspberry Pi 4B, an RTL8812EU USB WiFi adapter, a small OLED, and four buttons. Add an HDMI cable and a gamepad for standalone flight without a laptop.
+[Pick a role](/ground-agent/setup#pick-a-role) compares the three. [Mesh and distributed receive](/ground-agent/mesh-overview) explains when a mesh is worth it.
 
-Production boards (Radxa CM3 Lite, Radxa CM4 Pro) are smaller, more rugged, and support features like antenna diversity and internal 4G modems.
+## Next steps
 
-For field runtime, use an external USB-C power bank. A compact direct node is planned around roughly 7.5 W expected draw. HDMI, dual-radio, or uplink-heavy setups should be planned around roughly 9-11 W. [Power and Runtime](/ground-agent/power-and-runtime) has the sizing table.
-
-## Three deployment modes
-
-A single Ground Agent runs in `direct` mode by default and that covers most setups. When the flight area has obstructions, when you want to extend coverage along a long corridor, or when you want a backup receiver in case the primary fails, you can deploy two or three Ground Agents together as a mesh. The roles in a mesh are:
-
-- **direct** - single-node behavior. The default.
-- **relay** - forwards drone fragments to a receiver elsewhere on the mesh.
-- **receiver** - hub that combines fragments from itself and every paired relay.
-
-[Read the Distributed Receive & Mesh overview](/ground-agent/mesh-overview) for when to use mesh and how it works. [Pick a role](/ground-agent/setup#pick-a-role) covers the three options side by side.
-
-## What is next
-
-- [Supported Hardware](/ground-agent/supported-hardware) for the full parts list
-- [Power and Runtime](/ground-agent/power-and-runtime) to size an external power source
-- [Installation](/ground-agent/installation) to set up your ground station
-- [WiFi AP](/ground-agent/wifi-ap) to connect your laptop
-- [Set Up a Ground Station](/ground-agent/setup) for the first-time walkthrough
-- [Mesh & Distributed Receive](/ground-agent/mesh-overview) when you need more than one Ground Agent
+<CardGroup cols={2}>
+  <Card title="Supported hardware" icon="microchip" href="/ground-agent/supported-hardware">
+    Boards, radios and the optional front panel.
+  </Card>
+  <Card title="Power and runtime" icon="battery-full" href="/ground-agent/power-and-runtime">
+    Size an external power source.
+  </Card>
+  <Card title="Install the Ground Agent" icon="download" href="/ground-agent/installation">
+    One command on a fresh SBC.
+  </Card>
+  <Card title="Set up a ground station" icon="list-check" href="/ground-agent/setup">
+    Reach the node, pick a role, pair.
+  </Card>
+</CardGroup>

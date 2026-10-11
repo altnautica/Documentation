@@ -1,11 +1,8 @@
 ---
 title: "Regulatory"
-description: "Your obligations as the operator, and the regulatory posture the agent ships with."
+description: "Your obligations as the operator, and the radio region posture the agent ships with."
 icon: "scale-balanced"
-lastUpdated: "2026-07-31"
 ---
-
-# Regulatory
 
 ADOS is open-source software that talks to a flight controller and a radio. It does not hold a certificate, does not register your aircraft, and does not know where you are. Every obligation described here is yours.
 
@@ -25,25 +22,25 @@ The long-range video link is the part of ADOS most likely to put you outside a r
 
 ## Set your operating region
 
-The agent has two postures.
+The agent has two postures, stored in `network.regulatory.mode`.
 
-**Unrestricted** is the default. The radio comes up on the configured channel at the hardware-bounded power budget with no regional domain verified. You are responsible for legal RF operation where you fly. This state is shown on every status surface, never silently.
+**`unrestricted`** is the default. The radio comes up on the configured channel at the hardware-bounded power budget with no regional domain verified. You are responsible for legal RF operation where you fly. This state is shown on every status surface.
 
-**Region** is what you opt into. The radio applies that region's channel set and per-channel power limit before transmitting, and refuses to radiate on a channel the region forbids.
+**`region`** is what you opt into. The radio applies that region's channel set and per-channel power limit before transmitting, and refuses to radiate on a channel the region forbids.
 
-Pin a region from the CLI:
+Pin a region from the CLI with an ISO 3166-1 alpha-2 country code:
 
 ```bash
 ados network regulatory status
 ados network regulatory region US
 ```
 
-Or from the on-box dashboard at `/settings/region`.
+Or from the agent dashboard at **Settings → Region** (`/settings/region`).
 
-Restart the agent, or reboot, to apply. The radio reads the posture at service start.
+Restart the agent, or reboot, to apply. The radio reads the posture at service start. Through the REST API, a `regulatory` setup section or a `network.regulatory` config write is refused while the vehicle is armed unless the request carries the override; see [Safety](/operations/safety#what-the-agent-refuses-while-armed). The CLI writes the configuration file directly and is not gated, so change the region on the ground.
 
 <Note>
-A region mode with a missing or unrecognised region code falls back to unrestricted rather than refusing to transmit. Confirm with `ados network regulatory status` that the region you intended is actually pinned, rather than assuming the write took.
+A region mode with a missing or unrecognised region code falls back to unrestricted rather than refusing to transmit. Confirm with `ados network regulatory status` that the region you intended is pinned, rather than assuming the write took.
 </Note>
 
 To go back:
@@ -52,7 +49,7 @@ To go back:
 ados network regulatory unrestricted
 ```
 
-The region setting governs the legal cap only. The transmit power budget and brownout clamps and the link-liveness checks stay in force in both postures. Pinning a region cannot raise transmit power past what the hardware can carry, and running unrestricted does not lift that ceiling either.
+The region setting governs the legal cap only. The transmit power budget, the brownout clamps, and the link-liveness checks stay in force in both postures. Pinning a region cannot raise transmit power past what the hardware can carry, and running unrestricted does not lift that ceiling either.
 
 ## Remote ID
 
@@ -60,15 +57,15 @@ The region setting governs the legal cap only. The transmit power budget and bro
 
 Mission Control's aircraft registry has a field to record a Remote ID serial number for your own record-keeping. It is stored locally and is never transmitted or sent to the flight controller. Recording it there does not make your aircraft compliant.
 
-Where Remote ID is required, it has to come from your flight controller's own Remote ID support or from a separate broadcast module. Check that requirement before you fly, because it applies in a growing number of jurisdictions and is not something you can add later in the field.
+Where Remote ID is required, it has to come from your flight controller's own Remote ID support or from a separate broadcast module. Check that requirement before you fly, because it applies in many jurisdictions and is not something you can add in the field.
 
 ## Altitude and airspace
 
 ADOS does not impose an altitude ceiling. Mission Control lets you record an operating jurisdiction, which sets default altitude and distance suggestions for geofence planning, and it recognises FAA, EASA, CASA, DGCA, and an ICAO fallback for that purpose. Those are planning defaults to save you typing, not compliance checks, and they do not stop you drawing a mission outside them.
 
-The limit the aircraft actually respects is the one you set in `FENCE_ALT_MAX` and the fence geometry you upload to the flight controller. See [Geofences and rally points](/mission-control/geofences-rally).
+The limit the aircraft respects is the one you set in `FENCE_ALT_MAX` and the fence geometry you upload to the flight controller. See [Geofences and rally points](/mission-control/geofences-rally).
 
-Airspace authorisation, flight permissions, and no-fly zones are not handled by ADOS. Check them through whatever service your authority requires before each flight.
+ADOS does not handle airspace authorisation, flight permissions, or no-fly zones. Check them through whatever service your authority requires before each flight.
 
 ## A short operator checklist
 
@@ -81,8 +78,16 @@ Before flying a new aircraft in a new place:
 5. Is your radio channel and transmit power legal here? Is a region pinned?
 6. Is `FENCE_ALT_MAX` set to the local ceiling and the fence uploaded?
 
-## Where to next
+## Next steps
 
-- [Safety](/operations/safety) - the failsafes to configure before the first flight.
-- [Operating limits](/operations/operating-limits) - measured performance, and what is not yet characterised.
-- [WFB-ng](/drone-agent/wfb-ng) - channel and transmit power configuration.
+<CardGroup cols={2}>
+  <Card title="Hardening" icon="lock" href="/operations/hardening">
+    The credentials a node holds and how to lock it down.
+  </Card>
+  <Card title="Safety" icon="shield-halved" href="/operations/safety">
+    The failsafes to configure before the first flight.
+  </Card>
+  <Card title="WFB-ng" icon="tower-broadcast" href="/drone-agent/wfb-ng">
+    Channel and transmit power configuration.
+  </Card>
+</CardGroup>

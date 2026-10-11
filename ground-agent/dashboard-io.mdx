@@ -1,70 +1,65 @@
 ---
-title: "Display & Joystick"
-description: "HDMI display state, gamepad assignment, Bluetooth pairings."
+title: "Ground dashboard: Display and joystick"
+sidebarTitle: "Display & Joystick"
+description: "Kiosk display state, gamepad assignment and Bluetooth controller pairing on the ground station's browser dashboard."
 icon: "gamepad-2"
-lastUpdated: "2026-06-18"
 ---
 
-# Display & Joystick
+Display & Joystick is a ground-station page at `/io`: HDMI kiosk display, joystick / gamepad assignment, and Bluetooth pairings for this ground station. **Refresh** reloads all three cards.
 
-The Display & Joystick page surfaces the input and output hardware the
-ground station uses for its standalone kiosk mode: the local display
-panel, attached gamepads, and Bluetooth controllers.
-
-<Frame caption="Display & Joystick page on a ground station with no controllers attached.">
-  ![IO page](/images/dashboard/ground/io-full.png)
+<Frame caption="Display & Joystick with the kiosk on, no gamepad attached and a Bluetooth scan running.">
+  ![Ground dashboard Display and Joystick page with the Kiosk display, Gamepads / joysticks and Bluetooth cards](/images/ground-agent/dashboard/io.png)
 </Frame>
 
-## Display
+## Kiosk display
 
-The local panel state: panel name, resolution, rotation, touch support,
-brightness. Driven by the agent's display service. Empty state suggests
-running the setup wizard's display step if no panel is configured. The
-installer auto-provisions a supported panel end to end, so a fresh
-install usually needs no manual step.
+The **Kiosk display** card shows:
+
+| Field | Shows |
+| --- | --- |
+| kiosk | on or off |
+| resolution | the kiosk output resolution |
+| target | the URL the kiosk opens (`default` is the on-box cockpit) |
+
+See [HDMI kiosk](/ground-agent/hdmi-kiosk) to change it.
 
 ## Gamepads / joysticks
 
-Every controller the agent enumerates: USB joysticks, Bluetooth
-gamepads, the JR-bay coprocessor on the RC controller hardware family.
-The **primary** badge marks the controller currently routed to the
-flight controller.
+The live controllers the ground station sees. The current primary carries a `primary` badge; each other controller has a **Make primary** button. With none attached the card reads "No game controllers attached. Plug in a USB joystick or pair a Bluetooth controller below."
 
 ## Bluetooth
 
-Paired Bluetooth devices, with pair / connect state. Click **Scan** to
-trigger a discovery sweep for nearby controllers; pair through the
-agent CLI once you have a MAC.
+**Paired** lists paired devices as connected or paired. Press **Scan**: the station listens for 8 seconds, then lists **Found nearby** devices, each with a **Pair** button. A successful pair reports "Paired and connected."
 
-## Profile gating
+## Data sources
 
-Ground-station only. On a drone profile this URL renders the "Not
-available on this profile" panel.
-
-## Backend endpoints
-
-| Method | Path | Purpose |
-|---|---|---|
-| GET | `/api/v1/ground-station/display` | Display state |
-| GET | `/api/v1/ground-station/gamepads` | Gamepad list with primary flag |
-| GET | `/api/v1/ground-station/bluetooth/paired` | Paired BT devices |
-| POST | `/api/v1/ground-station/bluetooth/scan` | Trigger BT discovery |
+| Endpoint | Used for |
+| --- | --- |
+| `GET /api/v1/ground-station/display` | Kiosk display |
+| `GET /api/v1/ground-station/gamepads` | Gamepads / joysticks |
+| `PUT /api/v1/ground-station/gamepads/primary` | **Make primary** |
+| `GET /api/v1/ground-station/bluetooth/paired` | Paired |
+| `POST /api/v1/ground-station/bluetooth/scan` | **Scan** |
+| `POST /api/v1/ground-station/bluetooth/pair` | **Pair** |
 
 ## Troubleshooting
 
-<Accordion title="Gamepad lists as `idle` after plugging in">
-The kernel saw the device but the agent has not claimed it yet. Wait a
-poll cycle. If it stays idle, check Peripherals to confirm the row
-shows up there, and Diagnostics for the `ados-input` unit state.
-</Accordion>
+<AccordionGroup>
+  <Accordion title="Gamepad does not appear">
+    Plug the controller in again, or pair it over Bluetooth, then press **Refresh**. If it still does not appear, check [Peripherals](/drone-agent/dashboard-peripherals) and restart `ados-input` from [Diagnostics](/drone-agent/dashboard-diagnostics).
+  </Accordion>
+  <Accordion title="Paired, but the device did not connect">
+    Wake the controller or put it back in pairing mode, then scan and pair again.
+  </Accordion>
+</AccordionGroup>
 
-<Accordion title="HDMI panel shows but isn't lit">
-The kiosk service runs on a separate unit. Open Diagnostics and
-restart `ados-kiosk` if its row reports inactive.
-</Accordion>
+## Next steps
 
-## Related
-
-- [Display setup](/ground-agent/display)
-- [HDMI kiosk](/ground-agent/hdmi-kiosk)
-- [Physical UI](/ground-agent/physical-ui)
+<CardGroup cols={2}>
+  <Card title="Extensions" icon="puzzle" href="/drone-agent/dashboard-extensions">
+    Installed extensions and the catalog.
+  </Card>
+  <Card title="Front panel" icon="monitor" href="/ground-agent/display">
+    OLED, buttons and touch display.
+  </Card>
+</CardGroup>

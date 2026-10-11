@@ -1,8 +1,11 @@
 ---
-title: "Manifest reference"
-description: "Every field of plugin manifest.yaml, in dependency order."
-lastUpdated: "2026-09-24"
+title: "Plugin manifest reference"
+sidebarTitle: "Manifest"
+description: "Every field of a plugin's manifest.yaml, in dependency order."
+keywords: ["ados", "plugin", "manifest", "manifest.yaml", "schema"]
 ---
+
+import PluginManifestFields from '/snippets/generated/plugin-manifest-fields.mdx';
 
 The manifest is the entire contract between a plugin and the host.
 Get it right and everything else (install, permission grants, slot
@@ -61,9 +64,9 @@ not interpret any of them.
 
 | Field | Notes |
 |-------|-------|
-| `ados_version` | Required. Semver range. The agent half compares against setup status or `/api/version`. |
+| `ados_version` | Required. Semver range. Checked by the agent at install for every plugin, including GCS-only ones. |
 | `gcs_version` | Optional. Semver range matched against the running Mission Control build. |
-| `supported_boards` | Array of board ids, exact match. An empty list (the default) means any board passes; a non-empty list is checked by exact membership, so the supervisor refuses install or enable on a board id not in the list. |
+| `supported_boards` | Optional list of board tokens. Each entry is a board id (the HAL profile stem, such as `cm4` or `rock-5c-lite`) or a SoC (such as `rk3588s2`), compared case-insensitively, or `"*"` for any board. An empty list (the default) also means any board. The agent refuses install or enable on a board that matches no entry. The tokens for each board are listed on [Supported hardware](/drone-agent/supported-hardware). |
 | `min_tier` | Optional integer 1 to 4. Minimum compute-class tier the plugin needs. The supervisor refuses install or enable on a board whose detected tier is below this; a board with an unknown tier is never blocked. |
 
 Node profiles are declared on the agent half (`agent.target_profiles`),
@@ -97,8 +100,8 @@ agent:
 `entrypoint` is a relative path inside the archive (no absolute paths,
 no `..`). For a file-path entrypoint like `agent/plugin.py` the runner
 loads a class named `Plugin`. A `module:Class` entrypoint is also
-accepted and is how built-in plugins declare themselves. A `runtime:
-rust` entrypoint may instead be `bin:<name>`, resolved through
+accepted and is how built-in plugins declare themselves. A
+`runtime: rust` entrypoint may instead be `bin:<name>`, resolved through
 [`binaries`](#per-architecture-binaries).
 
 `isolation: subprocess` is the default and the only mode the agent runs.
@@ -246,7 +249,7 @@ agent:
 
 | Field | Notes |
 |-------|-------|
-| `name` | Lowercase alphanumeric plus `._-`, starting with an alphanumeric. The unit is `ados-plugin-<id>-<name>.service`, dots in the id as hyphens. |
+| `name` | Lowercase alphanumeric plus `._-`, starting with an alphanumeric. The unit is `ados-plugin-<id>-<hash8>-<name>.service`: dots in the id become hyphens, and `<hash8>` is the first 8 hex digits of the SHA-256 of the id. `GET /api/plugins/<id>` reports each service's log path. |
 | `command` | The argv. The first word may be `bin:<name>`. |
 | `restart` | `always`, `on-failure` or `no`. |
 | `ready_check` | An `http(s)://127.0.0.1:<port>/...` URL or a command, probed by `GET /api/plugins/<id>/readiness`. |
@@ -321,7 +324,7 @@ so an experimental manifest still parses. See the
 #### Schema-2 agent fields
 
 `contains_vendor_binary`, `vendor_attribution`, `subprocess_spawn`, and
-`per_drone_config` are schema-2 fields. A v1 manifest gets the defaults.
+`per_drone_config` are schema-2 fields. A `schema_version: 1` manifest gets the defaults.
 
 - **`per_drone_config: true`** runs one process per connected drone, each
   with its own `ctx.agent_id` and config at
@@ -419,20 +422,17 @@ gcs:
     notifications:
       - id: power-alert
         title: "Power alert"
-        severity: warning
   locales:
     - "en"
 ```
 
-`contributes` carries `skills`, `tabs`, `parameters`, `settings`,
-`panels`, `overlays`, `notifications`, `missionTemplates`, `mapOverlays`,
-`models`, `agent_pages` and `node_surfaces`. The `slot` value in
-`contributes.panels[].slot` comes from the slot taxonomy (`fc.tab`,
-`hardware.tab`, `settings.section`, and the rest; see the
-[contribution points](/developers/contribution-points) reference).
-Mounting in a slot also requires the matching `ui.slot.*` permission
-listed under `gcs.permissions`. Locales are listed under `gcs.locales`, a
-sibling of `contributes`.
+| Field | Notes |
+|-------|-------|
+| `entrypoint` | The built bundle inside the archive. Required only when the half contributes `panels`, `tabs`, `agent_pages` or `node_surfaces`; a parameters- or skills-only half needs no bundle. |
+| `isolation` | `iframe` (default) or `inline`. See below. |
+| `permissions` | GCS capability requests, same [shape](#permission-shape) as the agent half. Mounting in a slot requires the matching `ui.slot.*` permission. |
+| `contributes` | What the half adds to Mission Control. Every key, its fields and its slot are on [Contribution points](/developers/contribution-points). Keys are snake_case (`mission_templates`, `map_overlays`, `target_actions`); Mission Control also reads the camelCase spelling, but the agent's validator rejects it. |
+| `locales` | Locale codes the half ships under `locales/<code>.json`. A sibling of `contributes`. The agent serves an installed bundle at `GET /api/plugins/{plugin_id}/locales/{lang}`. |
 
 ### `gcs.isolation`
 
@@ -461,72 +461,14 @@ manifest's hash matches its attested digest and it declares
 never falls back to an iframe. An inline half loads from the node over the
 LAN or the relay proxy, not from a cloud-stored bundle.
 
-`skills` declares flight Skills that surface in the cockpit Skill Bar
-(toggle, hotkey or gamepad binding, activation through per-drone config,
-read-back over an event topic). Each skill entry needs the
-`ui.slot.flight-skill` permission. The agent does not interpret skill
-entries; the GCS skill registry reads them.
+## All fields
 
-| `contributes` key | Mounts |
-|-------------------|--------|
-| `skills` | A flight Skill in the cockpit Skill Bar (`flight.skill`). |
-| `tabs` | A node-detail tab on any node profile (`node.detail.tab`). |
-| `parameters` | Native schema-driven form fields (no UI slot of their own). |
-| `settings` | A native settings section (`settings.section`). |
-| `panels` | A tab or panel in a UI slot (`fc.tab`, `hardware.tab`, `settings.section`). |
-| `overlays` | A video overlay (`video.overlay`). |
-| `notifications` | A notification channel (`notification.channel`). |
-| `missionTemplates` | A mission template entry (`mission.template`). |
-| `mapOverlays` | A map overlay (`map.overlay`). |
-| `models` | A vision model registration (no UI slot). |
-| `agent_pages` | A page in a node's Agent sidebar (`node.agent.page`). Needs `ui.slot.node-agent-page`. |
-| `node_surfaces` | A top-level tab on a node's detail panel (`node.surface`). Needs `ui.slot.node-surface`. |
+The table below is generated from the strict schema that
+`ados plugin lint`, `sign` and `test` enforce. The agent applies the same
+shape rules at install: a key that is not in this table, in any block,
+refuses the manifest.
 
-### `agent_pages` and `node_surfaces`
-
-These two put a plugin's pages where the built-in node pages live, rather
-than in a generic plugin tab.
-
-```yaml
-gcs:
-  permissions:
-    - id: ui.slot.node-agent-page
-    - id: ui.slot.node-surface
-  contributes:
-    agent_pages:
-      - { id: survey, title: "Survey", section: videoVision, profile: [drone] }
-      - { id: survey-setup, title: "Survey setup", setup_for: survey, profile: [drone] }
-      - { id: survey-live, title: "Live survey", section: videoVision, after: survey, profile: [drone] }
-    node_surfaces:
-      - { id: overview, title: "Survey", profile: [workstation, compute], group: status, order: 10 }
-```
-
-`agent_pages[]`:
-
-| Field | Required | Notes |
-|-------|----------|-------|
-| `id` | yes | `[a-z0-9][a-z0-9_-]{0,63}`, unique in the list. |
-| `title` | yes | 1 to 80 printable characters. |
-| `icon` | no | An icon name. |
-| `section` | no | The sidebar section: `node`, `radioLink`, `networking`, `fleet`, `videoVision`, `cloud`, `system` or `software`. An unknown section falls back to `software`. |
-| `after` | no | Place the page after this page id when the section has it. |
-| `order` | no | Order among plugin pages when `after` does not apply. |
-| `profile` | no | Node profiles the page appears on. Absent means every profile. |
-| `setup_for` | no | The id of another page of this plugin. The page then renders as that page's Setup segment instead of a row of its own. It cannot name itself or another setup page. |
-
-`node_surfaces[]`:
-
-| Field | Required | Notes |
-|-------|----------|-------|
-| `id` | yes | `[a-z0-9][a-z0-9_-]{0,63}`, unique in the list. |
-| `title` | yes | 1 to 80 printable characters. The tab label. |
-| `profile` | yes | Node profiles the tab appears on. At least one. |
-| `group` | no | `status`, `vehicle`, `link`, `device` or `compute`. The tab lands at the end of that group's run, or just before the Agent tab when the node has no such group. |
-| `order` | no | Order among plugin tabs. |
-
-The full contribution reference, with the manifest shape of each kind and
-where it renders, is on the
-[contribution points](/developers/contribution-points) page.
+<PluginManifestFields />
 
 ## Signing and the archive
 
@@ -549,8 +491,19 @@ At install the agent writes an attestation beside the unpacked plugin: the
 archive's `SIGNATURE` text and the sha256 of every attested file, payloads
 marked. `GET /api/plugins/<id>/attestation` serves it.
 
-## See also
+## Next steps
 
-- [Permissions reference](/developers/permissions)
-- [Lifecycle](/developers/lifecycle)
-- [Signing keys](/developers/signing-keys)
+<CardGroup cols={2}>
+  <Card title="Contribution points" href="/developers/contribution-points">
+    Every `contributes` key and the slot it mounts in.
+  </Card>
+  <Card title="Permissions" href="/developers/permissions">
+    The capabilities a manifest can request.
+  </Card>
+  <Card title="Lifecycle" href="/developers/lifecycle">
+    What happens after install.
+  </Card>
+  <Card title="Signing keys" href="/developers/signing-keys">
+    Sign the archive the manifest ships in.
+  </Card>
+</CardGroup>

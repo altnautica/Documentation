@@ -1,0 +1,3 @@
+<Warning>
+The driver base classes and data types ship in both SDKs (`ados.sdk.drivers` in Python, `ados_sdk::drivers` in Rust), and the method contracts on these pages match them. The agent does not route drivers. It never calls `discover()`, `open()` or the iterators. `register_*_driver` calls return `not_implemented`, and the `sensor.*.register` capabilities are refused at grant time. A driver plugin opens and runs its own device from its lifecycle hooks, as the first-party Gimbal v2 plugin does. No Mission Control panel renders driver output.
+</Warning>

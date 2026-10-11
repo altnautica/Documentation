@@ -1,150 +1,118 @@
 ---
 title: "Quickstart: Drone Agent"
-description: "Install the ADOS Drone Agent and open the local setup webapp."
+sidebarTitle: "Drone Agent"
+description: "Install the ADOS Drone Agent on a companion computer, check it is running, and add it to Mission Control."
 icon: "microchip"
+keywords: ["ados", "drone agent", "quickstart", "install", "companion computer"]
 ---
 
-## What You Will Build
+import InstallAgent from "/snippets/install-agent.mdx";
 
-By the end of this page, ADOS Drone Agent will be running on a companion
-computer connected to your drone's flight controller. You will open the local
-setup webapp, confirm MAVLink telemetry, and connect Mission Control.
+By the end of this page the Drone Agent runs on a companion computer wired to your flight controller, and Mission Control shows it in the fleet.
 
-<Note>
-The agent is a Rust-first hybrid. Native Rust services run the REST front on
-port 8080, MAVLink routing, video, radio, and the cloud relay. Python handles AI
-and vision, hardware bootstrap, and the plugin runtime. systemd supervises every
-service.
-</Note>
+## Hardware
 
-## Prerequisites
-
-**Hardware you need:**
-
-- A supported Linux single-board computer.
-- A flight controller running ArduPilot, PX4, Betaflight, or iNav, connected by
-  UART or USB.
+- A supported single-board computer. See [Supported hardware](/drone-agent/supported-hardware) for the board list.
+- A flight controller running ArduPilot, PX4, Betaflight or iNav, wired to the board by UART or USB.
 - A USB or CSI camera if you want video.
-- Internet access on the SBC for install.
+- Internet access on the board during install, and SSH access to it.
 
-**Software requirements:**
-
-- Raspberry Pi OS Bookworm, Ubuntu 22.04+, Armbian, Debian 12+, or another
-  supported Linux distribution.
-- SSH access to the SBC.
-- `curl`.
+The board needs a 64-bit (aarch64) Linux image. On a Raspberry Pi, use Raspberry Pi OS Lite 64-bit. 32-bit images are not supported. On x86_64 Linux the one-line installer stops, because there is no published x86_64 installer: build `ados-installer` from source (`cargo build --release --workspace`) and run it with `--channel edge --artifacts <dir>`. The full procedure is on [Install the Drone Agent](/drone-agent/installation).
 
 ## Install
 
-The recommended path is to open Mission Control's [Flash Tool](/mission-control/flash-tool) and pick your board. The Flash Tool hands you a one-line install command to paste over SSH on a board running a stock OS (Pi 4B, Pi Zero 2 W, Radxa CM3, CM4, Rock 5C Lite, Cubie A7Z). See [Install paths](/getting-started/install-paths) for the full decision tree.
+Run this over SSH on the board:
 
-The install usually takes 3-8 minutes. It installs dependencies, creates the
-`ados` user and directories, detects the board, writes config, sets up systemd,
-and starts the agent.
+<InstallAgent />
 
-<Warning>
-Run the install script with `sudo`. The agent needs root access during install
-to create services, set up device rules, and configure hardware. Runtime
-services run with restricted permissions where possible.
-</Warning>
+Mission Control's [Flash Tool](/mission-control/flash-tool) shows the same command for your board if you prefer to copy it from there.
 
-## Open Local Setup
+On a fresh install in an interactive terminal, the installer opens a full-screen wizard with seven screens:
 
-After the script finishes, run:
+1. **Role**: what the device is. Pick **This flies (Drone)**.
+2. **Hardware**: the detected board and peripherals.
+3. **Features**: optional components to install.
+4. **Wi-Fi**: the network the board joins.
+5. **Name**: the node's hostname.
+6. **Pairing**: optional pairing with Mission Control.
+7. **Review**: confirm and install.
+
+The Workstation role has no Pairing screen.
+
+<Note>
+Pass `--yes` for a silent install with the defaults, or `--profile drone` to pin the role. Either flag skips the wizard, as do `--non-interactive`, `--json`, `--quiet`, `--pair` and `--upgrade`. Pass flags after `-s --`, for example `curl -sSL https://raw.githubusercontent.com/altnautica/ADOSDroneAgent/main/scripts/install.sh | sudo bash -s -- --yes`. Every flag is listed on [Install the Drone Agent](/drone-agent/installation).
+</Note>
+
+## Verify
+
+Run the terminal status page:
 
 ```bash
 ados
 ```
 
-Open the setup URL shown at the top of the terminal page. Common URLs are:
+It shows the node name, profile, the addresses the node answers on (best first), MAVLink, video and cloud state, and any setup steps still open. `ados status` prints a compact summary and `ados status --json` prints the same data for scripts.
+
+Open the agent dashboard in a browser on the same network:
 
 | Access path | URL |
 |---|---|
 | Same machine | `http://127.0.0.1:8080` |
-| mDNS | `http://<node-name>.local:8080` (the node's hostname, set with `--name`) |
+| mDNS | `http://<hostname>.local:8080` |
 | Hotspot | `http://192.168.4.1:8080` |
 | USB tether | `http://192.168.7.1:8080` |
-| LAN | `http://<sbc-ip>:8080` |
+| LAN | `http://<board-ip>:8080` |
 
-Use `ados status` for a compact terminal summary, or `ados status --json` for
-support scripts.
+<Frame caption="Agent dashboard Home while setup is still incomplete.">
+  ![Agent dashboard Home with a red status dot on the HW tile reading 2/3 and naming the missing Camera](/images/drone-agent/dashboard/home-setup-incomplete.png)
+</Frame>
 
-## Finish the Checklist
+The setup steps the agent tracks are, in order:
 
-The setup webapp walks through:
+1. **Welcome**: the device identity is known and a network (Wi-Fi, hotspot, USB tether or LAN) is up.
+2. **Profile**: confirm the node's role.
+3. **Operating region**: set the region for radio rules.
+4. **Hardware check**: required components are detected.
+5. **Cloud posture**: choose local only, cloud or a self-hosted backend.
+6. **Pair with Mission Control**: shown only when a cloud or self-hosted backend is chosen.
+7. **Flight controller**: MAVLink is connected.
+8. **Video**: a camera is streaming. Skip it if the node carries no camera.
+9. **Remote access**: optional Cloudflare tunnel.
+10. **Finish**: setup is complete and Mission Control can reach the node.
 
-1. Identify device.
-2. MAVLink.
-3. Video.
-4. Network.
-5. Remote access.
-6. Mission Control.
-7. Finish.
+On a ground station there is no **Flight controller** step, and **Ground receiver** and **Local display** follow **Video**.
 
-MAVLink and video are local-first. They can work over hotspot, LAN, USB tether,
-or direct Mission Control before any cloud or tunnel link is configured.
-
-## Connect Mission Control
-
-If your laptop and the SBC are on the same network:
-
-1. Open ADOS Mission Control.
-2. Use the agent URL shown in setup, usually `http://<sbc-ip>:8080`.
-3. Use the advertised WHEP URL for video when Mission Control asks for a video
-   source.
-
-If you want remote access, open the Remote Access page in the setup webapp and
-configure Cloudflare Tunnel with the token or install command from Cloudflare.
-
-## Useful Commands
-
-```bash
-ados                 # terminal status page and setup URLs
-ados status          # compact status
-ados status --json   # machine-readable setup status
-ados update          # update the agent
-ados uninstall       # uninstall the agent
-```
-
-## Troubleshooting
-
-**Agent will not start:**
+If something is missing, start with:
 
 ```bash
 journalctl -u ados-supervisor -n 50 --no-pager
-ss -tlnp | grep 8080
-```
-
-**Flight controller is not detected:**
-
-```bash
-ls -la /dev/ttyUSB* /dev/ttyAMA* /dev/ttyACM* 2>/dev/null
 journalctl -u ados-mavlink -n 50 --no-pager
 ```
 
-**Camera is not detected:**
+The units on a drone node are listed on [systemd services](/drone-agent/systemd-services). More fixes are in [Drone Agent troubleshooting](/drone-agent/troubleshooting).
 
-```bash
-ls -la /dev/video*
-v4l2-ctl --list-devices
-```
+## Connect Mission Control
 
-See the full [Troubleshooting guide](/drone-agent/troubleshooting) for more.
+1. Open Mission Control on a laptop on the same network as the board.
+2. Click **+** next to **Fleet** in the sidebar, or press `Ctrl+K` (`Cmd+K` on macOS) and choose **Connect Drone**.
+3. Under **Companion Computer**, in **Add a drone or ground station**, enter `<hostname>.local` or the board's IP (for example `192.168.1.50`). A new agent also shows a 6-character pairing code in `ados status`; you can type that instead.
+4. Click **Pair**.
 
-## Next Steps
+The node joins the fleet. Mission Control finds the agent's video on its own; there is no video URL to enter.
+
+## Next steps
 
 <CardGroup cols={2}>
-  <Card title="Setup Webapp" icon="browser" href="/drone-agent/setup-webapp">
-    Finish onboarding and find local URLs.
+  <Card title="Pairing" icon="link" href="/drone-agent/pairing">
+    How Mission Control pairing works and how to unpair.
   </Card>
-  <Card title="Terminal Status Page" icon="terminal" href="/drone-agent/tui-dashboard">
-    Learn what `ados` shows over SSH.
+  <Card title="Agent dashboard" icon="browser" href="/drone-agent/dashboard-overview">
+    Every page of the on-board dashboard.
   </Card>
-  <Card title="Video Pipeline" icon="video" href="/drone-agent/video-pipeline">
-    Configure video and WHEP playback.
+  <Card title="Your first flight" icon="plane" href="/getting-started/your-first-flight">
+    Arm and fly from the Cockpit tab.
   </Card>
-  <Card title="Cloud Relay" icon="cloud" href="/drone-agent/cloud-relay">
-    Add optional remote access.
+  <Card title="Add a ground station" icon="tower-broadcast" href="/getting-started/quickstart-ground-agent">
+    Long-range video and telemetry over WFB-ng.
   </Card>
 </CardGroup>
-

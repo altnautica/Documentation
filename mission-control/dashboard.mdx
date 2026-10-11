@@ -1,137 +1,189 @@
 ---
-title: "Dashboard"
-description: "The main view showing your fleet, drone cards, and live map."
+title: "Dashboard and fleet"
+description: "The Mission Control Dashboard: top bar, Fleet sidebar, the Grid, Overview, Nodes and Swarm views, the node detail tabs and the demo fleet."
 icon: "grid-2"
-lastUpdated: "2026-06-18"
 ---
 
-The Dashboard is the first screen you see when you open Mission Control. It shows all connected drones, their live positions on a map, and quick-access telemetry cards.
+import GcsRoutes from "/snippets/generated/gcs-routes.mdx";
 
-<Frame caption="Dashboard with drone list, map, and detail panel">
-  <img src="/images/dashboard/dashboard.png" alt="Mission Control dashboard showing connected drones and map" />
+The Dashboard (`/`) is the main screen. The Fleet sidebar lists every node on the left. With no node selected, the main area shows one of four fleet views. Select a node and the main area becomes that node's detail panel.
+
+<Frame caption="The Dashboard in Grid view (Agent Overview).">
+  ![Mission Control Dashboard in Grid view with Agent Overview stat tiles, filter chips, the view switcher and the Fleet sidebar](/images/mission-control/dashboard-grid.png)
 </Frame>
 
-## Layout
+## Top bar
 
-The dashboard has three main areas:
+The top navigation has five tabs:
 
-1. **Drone List Panel (left):** A scrollable list of all connected drones. Each card shows the drone's name, firmware type, flight mode, armed state, and battery level.
-2. **Map (center):** A Leaflet map showing live drone positions with heading indicators. Supports OpenStreetMap, satellite, terrain, and dark tile sources.
-3. **Drone Detail Panel (right):** Expanded information about the selected drone, including telemetry, GPS, battery, and quick actions.
+| Tab | Route | What it holds |
+|---|---|---|
+| **Dashboard** | `/` | Fleet views and node detail (this page) |
+| **Plan** | `/plan` | The [mission planner](/mission-control/mission-planning). A dot means the plan has unsaved changes. |
+| **Simulate** | `/simulate` | The [3D mission preview](/mission-control/simulation) |
+| **Logs** | `/flight-logs` | [Flight logs](/mission-control/flight-logs), reports and replay |
+| **MCP** | `/mcp` | The [MCP tab](/mission-control/mcp) |
 
-## Drone Cards
+The right side of the top bar holds, in order:
 
-Each connected drone gets a card in the left panel. The card displays:
+- The ground-station role (**Direct**, **Relay**, **Receiver** or **Unset**), when Mission Control is talking to a ground station.
+- An alert count, when there are unacknowledged alerts.
+- A **⌘K** hint for the command palette.
+- **Community**: the changelog, with a dot for unseen entries.
+- **Join Discord**, **Docs** and **Star on GitHub**.
+- **Flash Tool** (the lightning icon), which opens the [Flash Tool](/mission-control/flash-tool).
+- **Settings** (the gear), which opens [Settings](/mission-control/settings).
+- **Local only** when you are not signed in (click it to sign in), or your account avatar when you are.
 
-- **Connection status** (connected, degraded, disconnected)
-- **Firmware badge** (ArduPilot, PX4, Betaflight, iNav)
-- **Flight mode** (Stabilize, Loiter, Auto, etc.)
-- **Armed state** with a color indicator (red when armed, gray when disarmed)
-- **Battery percentage** with a color-coded bar
-- **GPS status** showing fix type and satellite count
+In demo mode a **Demo** pill sits next to the logo; its **X** turns demo mode off.
 
-Click a drone card to select it. The map centers on that drone, and the detail panel updates.
+## Command palette
 
-## Map View
+Press Ctrl+K (⌘K on macOS) anywhere. The palette searches:
 
-The map shows real-time drone positions. Each drone is represented by an icon that rotates to match its heading. As drones move, their position updates in real time from MAVLink telemetry.
+- **Navigation**: Go to Dashboard, Mission Planner, Simulate, History (the Logs tab), MCP or Config, and **Open Cockpit** for a selected drone.
+- **Commands**: **Connect Drone**, **Return to Home All** and **Check Battery Status**.
+- **Flight**: the selected drone's flight and safety Skills, such as Arm, Take Off, Land, Return to Home, Pause, Abort, Kill Motors and mode presets. They use the same confirmations as the [cockpit](/mission-control/cockpit#skill-bar-and-confirmations).
+- **Parameters**: type two or more characters while connected to jump to a parameter in the Parameters tab.
 
-**Map controls:**
-- Zoom with scroll wheel or +/- buttons
-- Pan by clicking and dragging
-- Switch tile source (OSM, satellite, terrain, dark) from the map controls
+Esc closes the palette. Flight hotkeys are on [Cockpit and Skills](/mission-control/cockpit#default-hotkeys).
 
-**Map overlays:**
-- Drone position and heading arrow
-- Drone trail showing recent flight path
-- Home position marker
-- GCS location (if browser geolocation is enabled)
+## Fleet sidebar
 
-## Drone Detail Panel
+The sidebar header reads **Fleet**, with **+** (**Add drone**) to open the [Connect to Drone](/mission-control/connecting) dialog and a chevron to collapse the panel. **Fleet Overview** clears the selection and returns to the fleet views. A search box filters by name or device id, and the footer counts nodes.
 
-Select a drone to see expanded information:
+Each row shows:
 
-- **Attitude:** Roll, pitch, yaw with a compact HUD
-- **Position:** Latitude, longitude, altitude (AGL and MSL)
-- **Speed:** Ground speed and climb rate
-- **Battery:** Voltage, current, remaining percentage, consumed mAh
-- **GPS:** Fix type, satellite count, HDOP
-- **Radio:** RSSI, remote RSSI, noise floor
-- **EKF:** Status flags and variance ratios
+- A type tile (Drone, Flight controller, Ground station or Workstation) whose ring shows health: steady when live, pulsing when stale, dimmed when offline. A small Wi-Fi mark means the node is on your LAN.
+- The node name and a **…** actions menu (also on right-click).
+- Up to three badges, for example the firmware and airframe (such as ArduPilot copter), **FC + SBC** or **FC**, **Relayed**, a ground-station role, or **Stale** and **Offline**.
 
-## Demo Mode
+## Fleet views
 
-In demo mode (`npm run demo`), the dashboard populates with fourteen simulated
-aircraft, plus a workstation node and a ground-station node. The fixture is
-chosen so every vehicle-gated configuration panel is reachable without hardware:
+With no node selected, a switcher picks the view. Grid is the default.
 
-| Drone | Firmware and class | Companion agent |
-|-------|--------------------|-----------------|
-| Alpha-01 | ArduPilot copter, running a security patrol suite | Yes |
-| Bravo-02 | ArduPilot copter, survey grid | No. This is the FC-only baseline, so the overview shows the "add a companion computer" path |
-| Charlie-03 | PX4 copter | Yes |
-| Delta-04 | PX4 VTOL | Yes |
-| Echo-05 | ArduPilot plane | Yes |
-| Foxtrot-06 | ArduPilot plane VTOL | Yes |
-| Golf-07 | ArduPilot plane tailsitter | Yes |
-| Hotel-08 | ArduPilot plane tiltrotor | Yes |
-| India-09 | ArduPilot rover | Yes |
-| Juliet-10 | ArduPilot boat | Yes |
-| Kilo-11 | ArduPilot sub | Yes |
-| Lima-12 | ArduPilot heli | Yes |
-| Mike-13 | Betaflight | Yes |
-| November-14 | iNav plane | Yes |
+### Grid
 
-Each one generates telemetry with GPS noise, battery discharge and radio signal
-variation. Useful for exercising the UI, building dashboards, or learning the
-interface.
+The **Agent Overview** grid has one tile per node with live video where the node has it.
 
-## Top Navigation
+- **Stat tiles**: Total, Live, Stale and Offline, plus Video, FC and GPU nodes when they apply.
+- **Filter chips**: All, Live, Video, Stale/offline, and Workstation when workstations exist.
+- **Tiles**: chips for liveness, node type, **FC ON** or **FC OFF**, and **ARMED** or **DISARMED**. Drone tiles show Battery, GPS, Alt, Mode, CPU, Mem, Temp and Video. Ground tiles show the role, link state and RSSI, SNR, Loss and Link. Workstation tiles show CPU, Mem, Disk and Temp.
 
-The top bar is consistent across the app. The primary tabs are:
+Up to four video feeds play at once. Pin a tile to keep its feed, or pause it.
 
-- **Dashboard:** the fleet overview and live map (this screen)
-- **Plan:** the mission planner
-- **Simulate:** the 3D mission preview and replay
-- **History:** recorded flight logs
+### Overview
 
-The top bar also carries:
+A map beside four cards: **Fleet Status**, **Active Missions**, **Fleet Battery** and **Alerts**, followed by fleet telemetry, **Recent Alerts** and **Quick Actions**.
 
-- **Connection button:** opens the connect dialog
-- **Active drone selector:** switch between connected drones
-- **Armed/Disarmed badge:** shows the selected drone's armed state
-- **Settings gear:** opens the configuration pages
-- **Quick links:** community chat, documentation, and the source repository
+### Nodes and Swarm
 
-Agent and ground-station management is unified into the per-drone detail view on the Dashboard, so there is no separate Command tab.
+**Nodes** is one console for the whole fleet: how each node is reached, relay streams, and per-node, bulk and fleet actions. **Swarm** shows one row per fleet slot from the swarm-bus beacons, with formation and bulk flight actions. Both are described on [Nodes and Swarm views](/mission-control/nodes-fleet-view).
 
-## Fleet Management
+## Node detail
 
-When multiple drones are connected, the dashboard becomes a fleet overview. You can:
+Select a node to open its detail panel. The header shows the node name, connection and authority chips, the device id, **Delete**, link and traffic indicators, and for a connected drone, **Open cockpit** (the monitor icon) and **Reboot FC**. Close it with **X** to return to the fleet views.
 
-- See all drones at a glance in the list panel
-- Click any drone to focus on it
-- Monitor battery levels across the fleet
-- Spot connection issues quickly (degraded or offline drones are highlighted)
+Tabs are grouped under small labels. Extension tabs follow the built-in ones.
 
-<Tip>
-In cloud mode, drones paired with your Convex backend appear automatically on the dashboard, even if they are on a different network. The Drone Agent pushes status updates through the cloud relay.
-</Tip>
+<Tabs>
+  <Tab title="Drone">
+    | Group | Tabs |
+    |---|---|
+    | Status | **Overview**, **Flight**, **Cockpit** |
+    | Vehicle | **Setup**, **Parameters**, **RC / ELRS Link** (only when an ExpressLRS CRSF link is present) |
+    | No group | **Logs**, **Agent** |
 
-## Quick Actions
+    - **Overview**: node status, the Agent Status card and the video card.
+    - **Flight**: instruments, readouts, map and actions. See [Flight tab](/mission-control/flight-control).
+    - **Cockpit**: video, HUD and the Skill Bar. See [Cockpit and Skills](/mission-control/cockpit).
+    - **Setup**: flight controller panels. See [FC configuration](/mission-control/fc-configuration).
+    - **Parameters**: the full parameter list. See [Parameters](/mission-control/parameters).
+    - **Logs**: flights and flight controller logs.
+    - **Agent**: the companion computer's configuration. See [Node configuration](/mission-control/node-configuration).
+  </Tab>
+  <Tab title="Ground station">
+    | Group | Tabs |
+    |---|---|
+    | Status | **Overview**, **Cockpit**, **Carried drones** |
+    | Link | **Radio** (not in the receiver role), **Network**, **Mesh & RX**, **RC / ELRS Link** (only when CRSF is present) |
+    | Device | **Display**, **Buttons**, **Peripherals** |
+    | No group | **Logs**, **Agent** |
 
-From the dashboard, you can:
+    Each tab is described on [Ground station node panel](/mission-control/ground-station-panel).
+  </Tab>
+  <Tab title="Workstation">
+    | Group | Tabs |
+    |---|---|
+    | Status | **Overview** |
+    | No group | **Logs**, **Agent** |
 
-- **Arm/Disarm** the selected drone (with safety confirmation)
-- **Change flight mode** using the mode selector
-- **Set home position** to the drone's current location
-- Navigate to any other tab for the selected drone
+    A compute node uses the same tabs. Extensions can add pages, for example under a **Compute** group.
+  </Tab>
+</Tabs>
 
-## Keyboard Shortcuts
+### Agent Status card
 
-| Shortcut | Action |
-|----------|--------|
-| `1-9` | Select drone by index |
-| `M` | Toggle map fullscreen |
-| `D` | Open drone detail panel |
-| `C` | Open connect dialog |
+The **Agent Status** card on a drone or ground station Overview shows CPU, memory, disk and temperature, the age of the last MAVLink heartbeat, and the control-plane round-trip time to the agent in milliseconds (hover title **Control-plane round-trip time to the agent**).
+
+| Round-trip time | Colour |
+|---|---|
+| Under 80 ms | Green |
+| 80 ms to under 250 ms | Amber |
+| 250 ms or more | Red |
+
+The round-trip time appears only while the node is live over a direct LAN link. Over the cloud relay, or before the first measurement, it is not shown. A node that stops answering shows **Agent offline**, and old data is marked **Stale data** with its age.
+
+## Demo fleet
+
+In demo mode (`npm run demo`, `?demo=true`, or **Demo Mode** in **Settings → General**) the fleet holds 19 nodes. Every vehicle-gated panel has a node to render on.
+
+| Node | Firmware and class | Notes |
+|---|---|---|
+| Alpha-01 | ArduPilot copter | Companion agent |
+| Bravo-02 | ArduPilot copter | Flight controller only, no companion agent |
+| Charlie-03 | PX4 copter | Companion agent |
+| Delta-04 | PX4 VTOL | Companion agent |
+| Echo-05 | ArduPilot plane | Companion agent |
+| Foxtrot-06 | ArduPilot plane VTOL | Companion agent, also reachable on the LAN |
+| Golf-07 | ArduPilot tailsitter | Companion agent |
+| Hotel-08 | ArduPilot tiltrotor | Companion agent |
+| India-09 | ArduPilot rover | Companion agent |
+| Juliet-10 | ArduPilot boat | Companion agent |
+| Kilo-11 | ArduPilot sub | Companion agent |
+| Lima-12 | ArduPilot heli | Companion agent |
+| Mike-13 | Betaflight | Companion agent, also reachable on the LAN |
+| November-14 | iNav plane | Companion agent |
+| Sierra-19 (USB FC) | ArduPilot copter | A flight controller connected directly over USB |
+| Romeo-15 | Relayed drone | Reached over WFB through Ground Station Alpha |
+| Whiskey-23 | Relayed drone | Reached over WFB through Ground Station Alpha, shown as a down relay |
+| Forge Workstation | Workstation | Compute node |
+| Ground Station Alpha | Ground station | Relay role |
+
+Each simulated vehicle generates telemetry with GPS noise, battery discharge and radio signal variation.
+
+## First run
+
+On first launch a setup wizard asks for your language, shows the **Before You Fly** disclaimer (you must accept it to continue), then sets jurisdiction, units, demo mode, audio alerts, map position, operating region and theme. Re-run it from **Settings → General → Re-run Setup Wizard**.
+
+Until you sign in, a banner notes that your data is saved in this browser only.
+
+## Route reference
+
+<Accordion title="Every Mission Control route">
+  <GcsRoutes />
+</Accordion>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Nodes and Swarm views" icon="network-wired" href="/mission-control/nodes-fleet-view">
+    Reach, relay streams and fleet-wide actions.
+  </Card>
+  <Card title="Cockpit and Skills" icon="gamepad" href="/mission-control/cockpit">
+    Fly with video, a HUD and bound Skills.
+  </Card>
+  <Card title="Flight tab" icon="paper-plane" href="/mission-control/flight-control">
+    Instruments, map and the action panel.
+  </Card>
+</CardGroup>

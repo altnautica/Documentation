@@ -1,116 +1,75 @@
 ---
-title: "HDMI Kiosk Mode"
-description: "Fly with a monitor and gamepad plugged directly into the ground station. No laptop needed."
+title: "HDMI kiosk"
+description: "Plug a monitor and a gamepad into the ground station and run the agent's own cockpit full screen, with no laptop."
 icon: "display"
-lastUpdated: "2026-06-18"
 ---
 
-# HDMI Kiosk Mode
+Plug an HDMI monitor and a gamepad into the ground station. The agent opens its own cockpit full screen in Chromium: video, telemetry, alerts and skill buttons, with no laptop, phone or internet connection.
 
-Plug a monitor and a gamepad into the ground station SBC. The agent launches Chromium in kiosk mode, rendering the Mission Control HUD route at full screen. You get video, telemetry overlays, and stick control without a laptop, phone, or internet connection.
+<Warning>
+The cockpit can arm, take off, land and return the aircraft. Read [Safety](/operations/safety) before flying from the kiosk.
+</Warning>
 
 ## What you need
 
-- Micro-HDMI to HDMI cable (Pi 4B uses micro-HDMI)
-- Any HDMI monitor or display (7" field monitors work well)
-- USB or Bluetooth gamepad (Logitech F310, Xbox, PS4, PS5, 8BitDo)
+- An HDMI cable (a Pi 4B uses micro-HDMI) and any HDMI monitor.
+- A USB or Bluetooth gamepad.
 
-The agent serves the cockpit itself, on its own HTTP surface. Nothing else needs installing for the panel to work.
+The agent serves the cockpit itself. Nothing else needs installing.
 
-## How it works
+## How it starts
 
-When a display is connected, the kiosk path comes up. The DRM node is not assumed to be `card0`: the service scans every card for a connected connector, because on a Pi 4 the render node and the display are different cards, and it waits for one to appear rather than checking once (the driver probes asynchronously, so a one-shot check loses the boot race).
+The `ados-kiosk` service runs on every ground station unless you turn it off:
 
-1. The agent serves the cockpit at `http://localhost:8080/cockpit/`. It is a light single-page app served by the agent's own front. The kiosk waits for that URL to answer before launching, so the panel never lands on an error page it will not retry from.
-2. **`ados-kiosk`** launches Chromium pointed at it, either inside the `cage` Wayland compositor (when the board has no desktop, the appliance case) or as a fullscreen window inside a running desktop session (cage needs the DRM master, which a running compositor already holds).
-3. **Chromium** renders it fullscreen, with no address bar, no tabs, no browser chrome. Its profile and cache are kept in a RAM-backed directory with a bounded cache, so a panel running for months does not wear out the card.
+1. It stands down when `ground_station.kiosk.enabled` is `false` or `ground_station.display.type` is `lcd` or `none`.
+2. It waits for any connected display, checking every DRM card rather than assuming `card0`, and keeps waiting, so a monitor plugged in long after boot still gets the cockpit.
+3. It waits up to 90 seconds for the cockpit at `http://localhost:8080/cockpit/?kiosk=1` to answer, so the screen never lands on an error page.
+4. It launches Chromium full screen: under the `cage` compositor on a board with no desktop, or as a full-screen window inside a running desktop session.
 
-The display chain runs locally on the SBC. No network traffic, no external server. Video from the radio link flows through MediaMTX (`ados-mediamtx-gs`) on localhost. Telemetry comes from the local MAVLink WebSocket.
+The kiosk re-reads its config every few seconds: changing `enabled` or the resolution restarts or stops it without a reboot. Without HDMI the rest of the ground station works normally.
 
-## The cockpit layout
+## The cockpit
 
-The cockpit is a flight view designed for a small fullscreen panel:
+<Frame caption="The on-box cockpit on an HDMI monitor: full-frame video (a test pattern here) with the safety band, HUD, radar, mini-map and skill bar.">
+  ![Agent cockpit running full screen in kiosk mode with the link strip, safety band, HUD overlay, radar and map tiles, and the skill bar with Arm and Mode available while disarmed](/images/ground-agent/cockpit-kiosk.png)
+</Frame>
 
-- **Full-frame video background** (WebRTC from the local MediaMTX)
-- **Top bar:** link RSSI, flight mode, battery percentage, altitude, speed, GPS satellite count
-- **Bottom bar:** crosshair, artificial horizon, heading tape
-- **Corner alerts:** failsafe indicators, home distance, connection health
-- No menus, no maps, no multi-drone fleet views
+The cockpit has a menu rail: **Feed**, **Link**, **Mesh**, **Pair**, **Uplink**, **System**, **Extensions** and **Settings**. **Feed** is full-frame video with the HUD, an alert stack, a mini-map and the skill bar. It works by touch or gamepad.
 
-This is the pilot-in-command view. For mission planning and fleet management, use a laptop connected over WiFi or USB.
-
-## Performance on Pi 4B
-
-| Scenario | CPU usage | RAM usage |
-|----------|-----------|-----------|
-| HUD idle (no video) | 12% | 280 MB |
-| WebRTC 720p at 30 fps | 38% | 440 MB |
-| WebRTC 1080p at 30 fps | 62% | 520 MB |
-| WebRTC 1080p at 60 fps | 88% | 620 MB |
-
-<Tip>
-For the Pi 4B, 720p at 30 fps is the sweet spot for kiosk mode. It leaves enough CPU headroom for the WFB-ng receiver, MediaMTX, and the agent services. Use 1080p only if you have a 4 GB Pi.
-</Tip>
+Video comes from the ground station's own WHEP stream. Telemetry comes from the agent's `/api/telemetry` endpoint, polled at 5 Hz.
 
 ## Gamepad input
 
-The Web Gamepad API in Chromium handles controller mapping. USB gamepads work immediately. Bluetooth gamepads need to be paired first.
+USB gamepads work immediately. Pair a Bluetooth gamepad first, from Mission Control (node panel, **Buttons**) or with `POST /api/v1/ground-station/bluetooth/scan` and `POST /api/v1/ground-station/bluetooth/pair`.
 
-To pair a Bluetooth gamepad:
+In the cockpit the gamepad navigates the menus and fires the bound skills (Arm/Disarm, Takeoff, Land, RTL). Manual stick control from a ground station is carried by the ELRS/CRSF control lane, which reads the primary gamepad when it is enabled. See [ELRS/CRSF control lane](/ground-agent/elrs-crsf-control-lane).
 
-1. Put the controller in pairing mode
-2. Use the OLED menu: navigate to Network > Bluetooth > Scan
-3. Select the controller from the list
-4. Press B3 (Select) to confirm
+## Pilot-in-command
 
-Or pair through the setup webapp Display page from your phone.
+A gamepad on the kiosk claims pilot-in-command (PIC) automatically when no one holds it. Other clients watch until they claim PIC. Claim or release PIC from Mission Control or the cockpit; the agent routes are `POST /api/v1/ground-station/pic/claim` and `POST /api/v1/ground-station/pic/release`.
 
-Once paired, the gamepad sends stick inputs at 50 Hz through the existing `MANUAL_CONTROL` MAVLink message path. The same code that handles gamepad input in the browser on your laptop handles it here.
-
-## Pilot-in-command (PIC)
-
-When the kiosk starts and a gamepad is connected, the kiosk automatically claims PIC. If a laptop or phone also connects, they are observers until PIC is explicitly transferred.
-
-PIC transfer is done through:
-- The ground-station panel in Mission Control on a connected laptop (click "Take Control")
-- The OLED menu (B3 long-press to release PIC)
-
-If the kiosk client disconnects (monitor unplugged, gamepad dies), PIC auto-transfers to the next connected client with an active gamepad. If no client has a gamepad, the agent sends failsafe intent to the flight controller (hover or RTL, depending on FC configuration).
+If the PIC client disconnects, the agent clears the claim and sends nothing on its behalf. What the aircraft does next is decided by the flight controller's own RC-loss and GCS-loss failsafe. Configure and bench-test that failsafe before flying from the kiosk.
 
 ## Display settings
 
-You can configure HDMI output from three places:
+The kiosk resolution is `ground_station.kiosk.resolution`: `auto` (keep the mode the compositor picked), `720p` or `1080p`. Set it from Mission Control (node panel, **Display**) or with `PUT /api/v1/ground-station/display`.
 
-- **OLED menu:** Display > HDMI Resolution
-- **Setup webapp:** Display page
-- **Mission Control:** ground-station panel > Physical UI tab
+## When things change
 
-Available settings:
-- Resolution (auto-detect, 720p, 1080p)
-- Refresh rate (30 Hz, 60 Hz)
-- OLED brightness and auto-dim
+| Event | Behaviour |
+|---|---|
+| Monitor unplugged | The kiosk waits for a display again and relaunches when one returns. |
+| Gamepad disconnected | PIC is released; the flight controller's failsafe governs. |
+| Chromium crashes | The service relaunches it. Repeated crashes in GPU mode fall back to software rendering. |
+| No display at boot | The kiosk keeps waiting; nothing else is affected. |
 
-## Booting into kiosk
+## Next steps
 
-The kiosk service uses `cage` as a minimal Wayland compositor. `cage` is designed for single-application kiosk use. It starts only when:
-
-1. A display output is detected (`/dev/dri/card0` exists)
-2. The ground-station profile is active
-3. The local Mission Control build is available
-
-If any of these conditions are not met, the kiosk service does not start. The OLED and WiFi AP still work normally.
-
-## Graceful degradation
-
-| Event | Behavior |
-|-------|----------|
-| Monitor unplugged mid-flight | Kiosk keeps running on virtual framebuffer. On re-plug, display returns in ~2 seconds |
-| Gamepad disconnected | PIC transfers to next client, or failsafe triggers |
-| Mission Control build missing | Chromium shows blank page, OLED shows error, agent runs normally |
-| No display output at boot | Kiosk service skips, no errors |
-
-## What is next
-
-- [Physical UI](/ground-agent/physical-ui) for the OLED and button system
-- [WiFi AP](/ground-agent/wifi-ap) to add laptop observers while flying on HDMI
-- [Set Up a Ground Station](/ground-agent/setup) for the first-time walkthrough
+<CardGroup cols={2}>
+  <Card title="ELRS/CRSF control lane" icon="tower-cell" href="/ground-agent/elrs-crsf-control-lane">
+    Stick control from the ground station.
+  </Card>
+  <Card title="Front panel" icon="tv" href="/ground-agent/display">
+    The OLED, buttons and touch LCD.
+  </Card>
+</CardGroup>

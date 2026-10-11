@@ -1,168 +1,90 @@
 ---
 title: "Community"
-description: "Discord first, GitHub for issues. Where to ask questions, report bugs, and share your builds."
+description: "Discord for questions, GitHub issues for bugs, email for security. Where to ask, report and share your ADOS builds."
 icon: "users"
 ---
 
-## Join the Community
-
-ADOS is built by a small team and a growing community of drone builders, pilots, researchers, and developers. Here is where to find us.
+ADOS is built by a small team and a community of drone builders, pilots, researchers and developers. Here is where to find us.
 
 ## Discord
 
-The primary community channel. This is where most day-to-day conversation happens.
+Discord is the main place for day-to-day conversation: quick questions, debugging help, feature discussion and sharing builds. Extension authors have their own channel.
 
 **[discord.gg/uxbvuD4d5q](https://discord.gg/uxbvuD4d5q)**
 
-### Channels
-
-| Channel | What It Is For |
-|---------|---------------|
-| `#general` | Introductions, general discussion, sharing your builds |
-| `#mission-control` | GCS questions, feature requests, bug reports |
-| `#drone-agent` | Agent installation, configuration, debugging |
-| `#ground-station` | Ground station setup, WFB-ng, video link |
-| `#development` | Contributing, architecture discussion, PR reviews |
-| `#show-and-tell` | Share photos, videos, and flight logs from your ADOS-powered drones |
-| `#help` | Stuck on something? Ask here. No question is too basic. |
-
-### When to Use Discord
-
-- Quick questions ("How do I change the survey altitude?")
-- Debugging help ("My agent won't detect the FC, here are the logs")
-- Feature discussion ("Would it make sense to add X?")
-- Sharing builds and flight reports
-- Getting feedback on a PR before submitting
-
 ## GitHub
 
-The source of truth for code and issues.
+Each repository has its own issue tracker. Open an issue in the repository the problem affects:
 
-<CardGroup cols={2}>
-  <Card title="ADOS Mission Control" icon="github" href="https://github.com/altnautica/ADOSMissionControl">
-    Browser-based GCS. Star the repo if you find it useful.
-  </Card>
-  <Card title="ADOS Drone Agent" icon="github" href="https://github.com/altnautica/ADOSDroneAgent">
-    Companion computer agent. Star the repo if you find it useful.
-  </Card>
-</CardGroup>
+| Repository | Issues for |
+|---|---|
+| [ADOSMissionControl](https://github.com/altnautica/ADOSMissionControl/issues) | Mission Control in the browser or desktop app |
+| [ADOSDroneAgent](https://github.com/altnautica/ADOSDroneAgent/issues) | The agent on drones, ground stations and workstations |
+| [ADOSExtensions](https://github.com/altnautica/ADOSExtensions/issues) | First-party extensions |
+| [ADOS-MCP](https://github.com/altnautica/ADOS-MCP/issues) | The MCP server |
+| [ADOSAndroidGCS](https://github.com/altnautica/ADOSAndroidGCS/issues) | The Android GCS |
+| [Documentation](https://github.com/altnautica/Documentation/issues) | Something wrong or missing on this site |
 
-### When to Use GitHub Issues
+A useful bug report includes:
 
-- **Bug reports** with steps to reproduce
-- **Feature requests** with a clear use case
-- **Documentation issues** (something wrong or missing in the docs)
-- **Questions that need code-level answers** (e.g., "Is `MISSION_ITEM_INT` used for rally point upload?")
+1. What you expected to happen
+2. What happened, with exact error messages, screenshots or logs
+3. Numbered steps to reproduce
+4. Your environment: OS, browser, flight controller firmware, agent version and board
 
-### Issue Templates
+"It doesn't work" is hard to act on. "Arming ArduPilot Copter over WebSerial in Chrome shows `PreArm: Need 3D Fix` with 12 satellites in view" is something we can fix.
 
-Both repos have issue templates. Please use them. A good bug report includes:
+To send code, read [Contributing](/getting-started/contributing) first.
 
-1. **What you expected** to happen
-2. **What actually happened** (include error messages, screenshots, or logs)
-3. **Steps to reproduce** (numbered, specific)
-4. **Environment** (OS, browser, FC firmware, agent version, board model)
+## Where to ask what
 
-A vague "it doesn't work" is hard to act on. A specific "clicking Arm on ArduPilot Copter 4.5.7 over WebSerial on Chrome 124 shows 'PreArm: Need 3D Fix' even though I have 12 satellites" is actionable.
+| Question | Best place |
+|---|---|
+| "How do I...?" | Discord |
+| "Is this a bug or am I doing it wrong?" | Discord first, then a GitHub issue if confirmed |
+| Bug report with steps to reproduce | GitHub issue in the affected repository |
+| Feature request with a use case | GitHub issue in the affected repository |
+| Flight controller firmware behaviour | Discord first; the firmware projects also run their own communities |
+| Security vulnerability | Email [team@altnautica.com](mailto:team@altnautica.com), not a public issue |
+| Anything else | Email [team@altnautica.com](mailto:team@altnautica.com) |
 
-### Pull Requests
+## Getting help quickly
 
-Want to contribute code? Read the [Contributing](/getting-started/contributing) guide first. PRs that follow the guidelines get reviewed faster.
-
-## YouTube
-
-Technical video content about ADOS, drone building, and open-source drone software.
-
-**[@altnautica on YouTube](https://www.youtube.com/@altnautica)**
-
-Videos cover topics like WebSerial firmware flashing, SITL setup, MAVLink packet structure, and WFB-ng video links. New videos regularly. If you prefer watching over reading, start here.
-
-## LinkedIn
-
-For company and product announcements, release highlights, and partnership news.
-
-**[linkedin.com/company/altnautica](https://www.linkedin.com/company/altnautica/)**
-
-Follow here if you want a monthly-cadence view of what is shipping instead of the day-to-day Discord chatter.
-
-## Where to Ask What
-
-Not sure where to post? Here is a quick guide.
-
-| Question Type | Best Place |
-|--------------|-----------|
-| "How do I...?" (quick) | Discord `#help` |
-| "How do I...?" (detailed, needs code) | Discord `#development` first. GitHub Discussion if it needs version tracking |
-| Bug report (with repro) | GitHub Issues |
-| Feature request (with use case) | GitHub Issues |
-| "Is this a bug or am I doing it wrong?" | Discord `#help` first, GitHub Issues if confirmed |
-| Flight controller firmware behavior | Discord `#drone-agent` first. The upstream firmware projects also have their own communities |
-| "Look at my drone!" | Discord `#show-and-tell` |
-| Security vulnerability | Email [team@altnautica.com](mailto:team@altnautica.com) (not public) |
-| Partnership or business inquiry | Email [team@altnautica.com](mailto:team@altnautica.com) |
-
-## Getting Help Effectively
-
-When asking for help, include context. The more specific you are, the faster someone can help you.
+The more specific you are, the faster someone can help.
 
 **Good question:**
-> I installed the Drone Agent on a Raspberry Pi 4B running Bookworm. `ados status` shows `ados-mavlink: failed`. The FC is a SpeedyBee F405 connected via USB. Here is the output of `journalctl -u ados-mavlink -n 30`.
 
-**Less helpful question:**
+> I installed the Drone Agent on a Raspberry Pi 4B running Raspberry Pi OS Lite 64-bit. `ados status` shows `ados-mavlink` failed. The flight controller is connected over USB. Here is the output of `journalctl -u ados-mavlink -n 30`.
+
+**Hard to answer:**
+
 > The agent doesn't work. Help?
 
-Include:
-- What you tried
-- What happened (exact error messages, not paraphrased)
-- What you expected to happen
-- Relevant hardware (board, FC, camera, radio)
-- Software versions (`ados status --json`, browser version, firmware version)
-- Logs when relevant (`journalctl`, browser console, setup webapp support output)
+Include what you tried, the exact errors, your hardware (board, flight controller, camera, radio), software versions (`ados status --json`, browser and firmware versions) and relevant logs. For a structured path through common faults, see [Troubleshooting](/operations/troubleshooting).
 
-## Stay Updated
+## Stay updated
 
-### GitHub Releases
+- **GitHub releases.** On each repository choose **Watch**, then **Custom**, then **Releases** to be notified of new versions. Release notes describe what changed.
+- **YouTube.** Technical videos at [@altnautica](https://www.youtube.com/@altnautica).
+- **LinkedIn.** Release highlights at [linkedin.com/company/altnautica](https://www.linkedin.com/company/altnautica/).
 
-Watch the repos on GitHub (click "Watch" > "Releases only") to get notified of new versions. Release notes describe what changed.
+## Community guidelines
 
-### Changelog
+1. **Be respectful.** No personal attacks and no gatekeeping.
+2. **Be specific.** Include context with every question.
+3. **Search first.** The docs, GitHub issues and Discord history may already have the answer.
+4. **Share back.** If you solve something, post the solution for the next person.
+5. **Stay on topic.** No spam or self-promotion unrelated to drones or ADOS.
 
-Mission Control includes a community changelog at [command.altnautica.com/community](https://command.altnautica.com/community). It shows new features, bug fixes, and updates in a timeline format.
+Built something with ADOS? Share it on Discord.
 
-### Roadmap
+## Next steps
 
-The community roadmap is visible at [command.altnautica.com/community](https://command.altnautica.com/community). It shows what is planned, what is in progress, and what shipped recently. Feature requests and votes happen here.
-
-## Community Guidelines
-
-A few simple rules:
-
-1. **Be respectful.** Everyone is here to learn and build. No personal attacks, no gatekeeping, no "RTFM" responses.
-2. **Be specific.** Vague questions get vague answers. Include context.
-3. **Search first.** Your question may already be answered in the docs, GitHub issues, or Discord history.
-4. **Share back.** If you figure something out, post the solution. The next person with the same problem will thank you.
-5. **No spam.** No self-promotion unrelated to drones or ADOS. No crypto, no NFTs, no off-topic sales.
-
-## Community Projects
-
-People are building interesting things with ADOS. Some examples:
-
-- Custom survey workflows for agricultural mapping
-- Integration with open-source photogrammetry tools (WebODM, OpenDroneMap)
-- Custom Betaflight configuration presets shared as JSON
-- Ground station builds with 3D-printed enclosures
-- SITL-based testing frameworks for drone software
-
-If you build something, share it in Discord `#show-and-tell` or open a PR to add it to the docs.
-
-## Contact
-
-**Community:** [Discord](https://discord.gg/uxbvuD4d5q)
-
-**Code:** [GitHub](https://github.com/altnautica)
-
-**Email:** [team@altnautica.com](mailto:team@altnautica.com)
-
-**LinkedIn:** [linkedin.com/company/altnautica](https://www.linkedin.com/company/altnautica)
-
-**YouTube:** [@altnautica](https://www.youtube.com/@altnautica)
+<CardGroup cols={2}>
+  <Card title="Contributing" icon="code-pull-request" href="/getting-started/contributing">
+    Set up a repository and open a pull request.
+  </Card>
+  <Card title="Troubleshooting" icon="life-ring" href="/operations/troubleshooting">
+    Work through common faults step by step.
+  </Card>
+</CardGroup>

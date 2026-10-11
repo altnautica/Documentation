@@ -1,151 +1,168 @@
 ---
-title: "FC Configuration"
-description: "Configure your flight controller across 60+ panels covering flight, safety, sensors, tuning, and more."
+title: "Flight controller setup"
+sidebarTitle: "FC configuration"
+description: "Every panel in a node's Setup tab: how panels read and write the flight controller, the armed rules, shortcuts and the panel list per section."
 icon: "sliders"
-lastUpdated: "2026-06-18"
 ---
 
-The Configure section provides more than 60 panels for setting up your flight controller. Each panel reads parameters from the FC, lets you edit them, and writes changes back. The panels adapt automatically based on the detected firmware (ArduPilot, PX4, Betaflight, or iNav).
+A node's **Setup** tab configures its flight controller. The left sidebar lists panels in sections (**FLIGHT**, **SAFETY**, **SENSORS**, **TUNING**, **DISPLAY**, **SYSTEM**, **SECURITY**, **DEBUG**, **PROGRAMMING**). Mission Control shows only the panels the connected firmware and vehicle support.
 
-<Frame caption="Configuration panel list with flight modes selected">
-  <img src="/images/dashboard/fc-configuration.png" alt="FC configuration showing flight mode panel with mode slots" />
+<Frame caption="Setup tab with Flight Modes open on a landed, disarmed ArduPilot copter.">
+  ![Setup tab with the FLIGHT section expanded and the Flight Modes panel showing the current mode, the mode switch channel and six mode slots](/images/mission-control/setup-flight-modes.png)
 </Frame>
 
-## How Configuration Works
+## How panels work
 
-Every panel follows the same workflow:
+1. **Read from FC** loads the panel's parameters. **Refresh** reloads them.
+2. Edit values. Changed values are highlighted, and leaving a panel with unsaved changes asks first.
+3. **Save** writes the changes to the flight controller.
+4. **Write to Flash** stores them across reboots. ArduPilot and PX4 already store each parameter as it is written; Betaflight and iNav need the explicit save.
 
-1. **Read from FC:** Click "Read" to fetch parameters from the flight controller.
-2. **Edit values:** Change parameters in the UI. Modified values are highlighted.
-3. **Save to RAM:** Click "Save" to write changes to the FC's working memory.
-4. **Write to Flash:** Click "Write to Flash" to persist changes across reboots. (ArduPilot auto-saves to EEPROM on each parameter write, so this is a belt-and-suspenders step.)
+When a change needs a reboot, a banner offers **Reboot Now**.
 
-<Note>
-Parameters cannot be written while the vehicle is armed. The armed-lock overlay blocks all writes as a safety measure. Disarm first, then configure.
-</Note>
+| Shortcut | Action |
+|---|---|
+| `Ctrl+S` | Save the panel's changed parameters |
+| `Ctrl+Shift+S` | Write to flash |
+| `Ctrl+R` | Refresh the panel |
 
-## Panel Categories
+`Ctrl` is `⌘` on macOS.
 
-### Flight
+### While the aircraft is armed
 
-| Panel | Description |
-|-------|-------------|
-| **Flight Modes** | Map RC switch positions to flight modes. ArduPilot supports 6 mode slots. PX4 supports 6 main modes plus sub-modes. |
-| **Frame** | Select the airframe type (quad, hexa, octa, Y6, etc.) and motor layout. |
-| **Airframe** (PX4) | PX4-specific airframe selection with model presets. |
-| **Actuator** (PX4) | PX4 actuator configuration and testing. |
-| **Outputs** | Map motors and servos to physical outputs. Timer group diagram shows which outputs share PWM timers. |
-| **Receiver** | RC receiver protocol, channel mapping, and failsafe values. |
+Each panel shows an amber banner: **Vehicle is armed. Parameter changes write live, so review before saving.** Parameter writes still work, but each write opens a **Vehicle is armed** dialog listing the parameters; click **Write Anyway** to send them. A small set of controls is disabled while the aircraft is armed, and stays disabled until the flight controller reports it is disarmed: motor and servo tests, ESC calibration, every sensor and RC calibration start, frame-class changes and reset to defaults. The disabled control says why.
 
-### Safety
+<Warning>
+Armed writes take effect immediately and can change how the aircraft flies. Disarm before configuring. See [Safety](/operations/safety).
+</Warning>
 
-| Panel | Description |
-|-------|-------------|
-| **Failsafe** | Configure battery, GCS, RC, and geofence failsafe actions and thresholds. |
-| **Geofence** | FC-level geofence parameters (max altitude, max distance, breach action). See also the [Geofence Editor](/mission-control/geofences-rally). |
-| **Pre-Arm Checks** | View and configure which pre-arm checks the FC enforces before allowing arming. |
+## Panels by section
 
-### Sensors
+Panel names below are the sidebar labels. A firmware note means the panel appears only there.
 
-| Panel | Description |
-|-------|-------------|
-| **Sensors** | Configure rangefinder, optical flow, airspeed sensor, and barometer settings. Each sensor type is in a collapsible section. |
-| **GPS** | GPS module configuration, constellation selection, and GNSS settings. |
-| **Sensor Graph** | Live plots of sensor data for debugging (accel, gyro, mag, baro). |
+### FLIGHT
 
-### Tuning
+| Panel | Shown for |
+|---|---|
+| **Outputs** (**Actuators** on PX4) | All |
+| **Receiver** | All |
+| **Flight Modes** | All |
+| **Aux Modes** | Betaflight, iNav |
+| **Motors & ESC** | Betaflight, iNav |
+| **Frame** (**Airframe** on PX4) | All |
+| **Helicopter** | ArduPilot traditional helicopters |
+| **VTOL** | ArduPilot planes and VTOL |
+| **VTOL Transition** | PX4 VTOL |
+| **Sub Config** | ArduPilot subs |
+| **Sailboat** | ArduPilot rovers |
+| **Navigation Config**, **iNav Mission**, **Mixer Profiles**, **Output Mapping**, **Servos (iNav)**, **FW Approach** | iNav |
 
-| Panel | Description |
-|-------|-------------|
-| **PID Tuning** | Adjust roll, pitch, and yaw PID gains. Autotune trigger. Preset profiles. Filter settings. Live PID response graph for tuning analysis. |
-| **Rate Profile** (Betaflight) | Betaflight rate curve configuration with visual curve preview. |
-| **Adjustments** (Betaflight) | In-flight adjustment mappings (RC channel to PID adjustments). |
+### SAFETY
 
-### Display
+| Panel | Shown for |
+|---|---|
+| **Failsafe** | ArduPilot, PX4 |
+| **Failsafe (iNav)** | iNav |
+| **Geofence** | ArduPilot, PX4 |
+| **Safehome**, **Geozones** | iNav |
+| **Health Check** | All. Pre-arm and sensor health |
+| **ADS-B & Avoidance** | ArduPilot copters, planes and VTOL |
 
-| Panel | Description |
-|-------|-------------|
-| **OSD Editor** | Drag-and-drop OSD element placement across 4 independent screens. 25+ configurable elements. Preset layouts. |
-| **OSD Editor** (Betaflight) | Betaflight-specific OSD configuration with BF element set. |
-| **LED** | Configure LED strip patterns. 11 LED types, brightness, color picker, and pattern preview animation. |
+### SENSORS
 
-### Communications
+| Panel | Shown for |
+|---|---|
+| **Calibration** | All. See [Sensor calibration](/mission-control/calibration) |
+| **Sensors** | All |
+| **Thermal Cal** | PX4 |
+| **Power** | ArduPilot, PX4, Betaflight |
+| **Battery Profiles** | iNav |
+| **GPS** | ArduPilot, PX4, Betaflight |
+| **EKF3**, **Non-GPS Nav**, **Gripper / Payload** | ArduPilot |
+| **Airspeed** | ArduPilot planes and VTOL |
+| **Gimbal**, **Camera** | ArduPilot, PX4 |
+| **Temp Sensors** | iNav |
 
-| Panel | Description |
-|-------|-------------|
-| **Serial Ports** | Configure serial port protocols, baud rates, and options. 8 ports, 25+ protocols, 14 baud rates. |
-| **Telemetry Radio** | SiK radio configuration (air speed, ECC, MAVLink version, TX power). |
-| **MAVLink Inspector** | Live view of incoming and outgoing MAVLink messages with decode. |
-| **MAVLink Shell** (PX4) | PX4 NuttShell console over MAVLink. Type commands directly to the FC. |
-| **CLI** (Betaflight) | Betaflight command-line interface over MSP. |
-| **Blackbox** (Betaflight) | Betaflight blackbox data log configuration and download. |
-| **CAN Monitor** | DroneCAN/UAVCAN bus monitoring. View CAN node info and messages. |
+### TUNING
 
-### Power
+| Panel | Shown for |
+|---|---|
+| **PID Tuning** | ArduPilot, PX4 |
+| **Harmonic Notch** | ArduPilot |
+| **TECS / L1** | ArduPilot planes and VTOL |
+| **Flight Behavior**, **Autotune** | PX4 copters (Autotune also on planes and VTOL) |
+| **Fixed-Wing Tuning** | PX4 planes and VTOL |
+| **Control Allocation** | PX4 |
+| **Rate Profiles**, **Adjustments** | Betaflight, iNav |
+| **Control Profiles**, **MC Braking**, **Rate Dynamics**, **EZ Tune**, **Nav PID** | iNav |
+| **Sensor Graphs** | All |
 
-| Panel | Description |
-|-------|-------------|
-| **Power** | Battery monitor configuration for BATT1 and BATT2. Voltage divider, amps per volt, cell count, and capacity. Live cell voltage display. |
+### DISPLAY
 
-### Peripherals
+| Panel | Shown for |
+|---|---|
+| **OSD Editor** | ArduPilot, Betaflight |
+| **LED Strip** | ArduPilot, Betaflight |
+| **VTX** | Betaflight, iNav |
+| **iNav OSD**, **Custom OSD** | iNav |
+| **OSD Preview** | Betaflight, iNav (MSP DisplayPort) |
 
-| Panel | Description |
-|-------|-------------|
-| **Gimbal** | Mount type, axis limits, manual control sliders, ROI targeting. Supports Gimbal Manager v2 protocol. |
-| **Camera** | Camera trigger configuration (servo, relay, distance-based). Survey helper calculator for trigger intervals. |
-| **VTX** (Betaflight) | Video transmitter settings (band, channel, power, pit mode). |
-| **Betaflight Config** (Betaflight) | Betaflight system configuration (features, board alignment, name). |
-| **Aux Modes** (Betaflight) | Map RC aux channels to Betaflight modes (arm, angle, horizon, beeper, etc.). |
-| **Motors** (Betaflight) | Motor testing and direction configuration for Betaflight. |
+### SYSTEM
 
-### Debug
+| Panel | Shown for |
+|---|---|
+| **FC source** | Nodes with the Drone Agent. Sets how the agent reaches the flight controller and stays usable while the FC link is down |
+| **Ports** | All |
+| **Stream Rates** | ArduPilot |
+| **Radio Config** | ArduPilot, PX4 (SiK telemetry radios) |
+| **Configuration**, **All Settings** | Betaflight |
+| **Firmware** | All. See [Flash Tool](/mission-control/flash-tool) |
+| **CLI** (**Shell** on PX4) | All |
 
-| Panel | Description |
-|-------|-------------|
-| **Debug** | Real-time data graphing with table view, CSV export. 4-chart limit. 300-sample ring buffer per chart. Useful for debugging sensor issues or tuning. |
+### SECURITY
 
-### Firmware
+| Panel | Shown for |
+|---|---|
+| **MAVLink Signing** | ArduPilot. See [MAVLink signing](/mission-control/mavlink-signing) |
 
-| Panel | Description |
-|-------|-------------|
-| **Firmware** | Flash firmware, view board info, backup and restore parameters. See [Firmware Flashing](/mission-control/firmware-flashing). |
+### DEBUG
 
-### Parameters
+| Panel | Shown for |
+|---|---|
+| **MAVLink Inspector** | ArduPilot, PX4 |
+| **Blackbox** | Betaflight, iNav |
+| **Debug** | All |
+| **Diagnostics**, **Log Analysis** | All |
+| **DroneCAN** | ArduPilot, PX4 |
 
-| Panel | Description |
-|-------|-------------|
-| **Parameters** | Full parameter tree browser with search, edit, modified filter, and import/export. See [Parameters](/mission-control/parameters). |
+### PROGRAMMING
 
-### Calibration
+| Panel | Shown for |
+|---|---|
+| **Scripts** | ArduPilot (Lua scripts over MAVLink FTP) |
+| **Logic Conditions**, **Global Variables**, **Programming PIDs**, **Programming (JS)** | iNav. See [iNav guide](/mission-control/inav-guide#programming) |
 
-| Panel | Description |
-|-------|-------------|
-| **Calibration** | 9 sensor calibration wizards. See [Calibration](/mission-control/calibration). |
+Panels contributed by installed extensions appear in an **EXTENSIONS** section.
 
-## Firmware-Specific Panels
+**Parameters** is its own node tab, not a Setup panel. See [Parameters](/mission-control/parameters).
 
-Some panels only appear for certain firmware:
+## How a panel is chosen
 
-| Panel | ArduPilot | PX4 | Betaflight |
-|-------|-----------|-----|------------|
-| Airframe | No | Yes | No |
-| Actuator | No | Yes | No |
-| MAVLink Shell | No | Yes | No |
-| Aux Modes | No | No | Yes |
-| Rate Profile | No | No | Yes |
-| BF Config | No | No | Yes |
-| BF Motors | No | No | Yes |
-| BF OSD | No | No | Yes |
-| CLI | No | No | Yes |
-| VTX | No | No | Yes |
-| Blackbox | No | No | Yes |
-| Adjustments | No | No | Yes |
+Each panel can declare up to five gates, and all must pass:
 
-The FC configuration navigation filters panels by the `requiredCapability` field. Only panels compatible with the connected firmware appear.
+- a firmware capability (for example MAVLink signing support),
+- the vehicle classes it applies to (copter, plane, VTOL, rover, sub),
+- a specific vehicle type (for example a traditional helicopter),
+- firmwares it is hidden on,
+- whether it configures the companion agent instead of the flight controller.
 
-## Safety Features
+## Next steps
 
-- **Armed lock:** All parameter writes are blocked while the vehicle is armed
-- **Unsaved changes guard:** Navigating away from a panel with dirty (unsaved) parameters triggers a warning
-- **Parameter validation:** Values are checked against min/max ranges before writing
-- **Reboot banner:** Panels that require a reboot after changes show a persistent banner
+<CardGroup cols={2}>
+  <Card title="Parameters" icon="table" href="/mission-control/parameters">
+    Search and edit every parameter.
+  </Card>
+  <Card title="MAVLink signing" icon="key" href="/mission-control/mavlink-signing">
+    Sign the link once the flight controller is configured.
+  </Card>
+</CardGroup>

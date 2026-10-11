@@ -1,108 +1,109 @@
 ---
-title: "Home"
-description: "The dashboard landing page. Live tiles, video, FC, hardware, network, cloud, services."
+title: "Agent dashboard: Home"
+sidebarTitle: "Home"
+description: "Status tiles, live charts and the per-profile panels on the agent dashboard's landing page."
 icon: "house"
-lastUpdated: "2026-06-18"
 ---
 
-# Home
+Home is the landing page at `/` and `/home`. It opens with the **Enter Cockpit** banner and the Region chip, then six status tiles, four live charts, and a stack of panels that depends on the profile.
 
-The dashboard's `/home` route is the live operations board. It renders
-two layouts depending on profile: a drone-focused board with flight
-telemetry tiles and a video panel, and a ground-station board with WFB
-receive plus mesh tiles.
+## Status tiles
 
-## Drone profile
+| Tile | Shows |
+| --- | --- |
+| MAV (FC for MSP firmware) | Satellites once GPS reports, else linked or off. A Betaflight or iNav FC reads `FC linked · <variant> · msp`. |
+| HW | Required components ok/total, with the names of any that fail. |
+| VID | Bitrate, or the video pipeline state. |
+| NET | Uplink kind and RSSI in dBm. |
+| CLD | The chosen cloud posture (local, cloud, self_hosted). The relay's live link state is not reported here. |
+| PAIR | `paired · linked` once the node is paired with Mission Control (over the LAN or the relay), otherwise the current pairing code, `n/a · local mode` for an unpaired local node, or `unpaired`. |
 
-<Frame caption="Drone Home: status tiles, sparklines, video, flight controller, hardware, network, cloud, services.">
-  ![Drone Home](/images/dashboard/drone/home-full.png)
-</Frame>
+The tiles are status only; they do not link to other pages.
 
-### Tiles
+## Charts
 
-| Tile | Source |
-|---|---|
-| MAV | MAVLink heartbeat state |
-| HW | Required-component count from hardware check |
-| VID | Video pipeline state (`running`, `idle`, `error`) |
-| NET | Active uplink kind and signal |
-| CLD | Cloud relay MQTT and HTTP state |
-| PAIR | Pairing state and current code |
+Four 60-second charts: Battery (V), RC RSSI (%), Bitrate (kbps), CPU (%). Headlines show the current value, or a dash when the source is gone. CPU comes from `GET /api/status`; the others come from the dashboard snapshot.
 
-### Sparklines
+## Panels by profile
 
-A 60-second history of battery voltage, link percent, video bitrate, and
-CPU draw. Each chart updates every poll tick (about 1 Hz) from the
-dashboard snapshot endpoint.
+<Tabs>
+  <Tab title="Drone">
+    <Frame caption="Home on a drone-profile node with live video.">
+      ![Agent dashboard Home on a drone node showing tiles, charts, Video and Flight Controller panels](/images/drone-agent/dashboard/home.png)
+    </Frame>
 
-### Panels
+    Panels, in order:
 
-- **Video**: the live stream. WHEP first, HLS fallback, snapshot
-  fallback. Reads encoder details (codec, resolution, fps, bitrate,
-  and frame age) from the snapshot.
-- **Flight Controller**: connection state, vehicle type, firmware,
-  mode, arm state, GPS fix and satellites, battery voltage and remaining,
-  RC link, prearm.
-- **Hardware**: the required and optional component list, the
-  same rows the wizard's hardware check used.
-- **Network**: active uplink, RSSI, IP addresses by interface.
-- **Cloud Relay**: MQTT, HTTPS heartbeat, RTT, pairing state.
-- **Services**: quick health line for the systemd unit set.
+    - **Video:** the live stream with an HLS / WebRTC transport chip. The drone tries WebRTC (WHEP) first. If neither plays, the panel falls back to a still frame from `GET /api/video/snapshot`. See [Video](/drone-agent/dashboard-video#player).
+    - **Flight Controller:** vehicle, firmware, mode with ARMED or disarmed, gps (sats · hdop), battery (V · %), rc, port. A Betaflight or iNav FC shows firmware, `telemetry via MSP` and port.
+    - **WFB Transmit:** interface, channel (MHz), bandwidth, tx power and its maximum, MCS, domain, bitrate, packets, restarts. See [WFB Transmit](/drone-agent/dashboard-transmit).
+    - **Cloud Relay:** mode, broker, status post and Pairing. In local posture it reads "Relay disabled. Mission Control reaches this drone over the LAN."
+    - **Hardware:** detected components with their state, and a **Rescan** button.
+    - **Network:** the active uplink and its interfaces.
+    - **Services:** each agent unit with its state.
+  </Tab>
+  <Tab title="Ground station">
+    <Frame caption="Home on a ground station in the direct role.">
+      ![Agent dashboard Home on a ground station showing tiles, charts, Video and WFB Receive panels](/images/ground-agent/dashboard/home.png)
+    </Frame>
 
-## Ground-station profile
+    Same tiles and charts as the drone. Panels: Video, WFB Receive, Cloud Relay, then Mesh (relay, receiver) and Sources (receiver), Hardware, Network, Services.
 
-<Frame caption="Ground Home: WFB receive, peers, hardware, network, cloud, services.">
-  ![Ground Home](/images/dashboard/ground/home-full.png)
-</Frame>
+    - **Video** tries HLS first and reads "Waiting for WFB stream from drone." until frames arrive.
+    - **WFB Receive** fields are on [WFB Receive](/ground-agent/dashboard-receive#fields).
+    - **Mesh** and **Sources** fields are on [Mesh and sources](/ground-agent/dashboard-mesh).
 
-### Tiles
+    The page subtitle follows the ground role:
 
-Same chrome as the drone home, with link tiles oriented toward the
-receive side (WFB-rx, mesh peers, downlink quality).
+    | Role | Subtitle |
+    | --- | --- |
+    | direct | Direct ground node. Live receive metrics for the drone link. |
+    | relay | Forwarding the drone link. Live receive metrics, mesh state, and gateway election. |
+    | receiver | Aggregating relays into one stream. Live receive metrics, mesh state, and per-source FEC. |
+  </Tab>
+</Tabs>
 
-### Panels
+## Data sources
 
-- **WFB Receive**: adapter, channel, RSSI, packet loss, FEC
-  counters, active streams.
-- **Mesh**: visible when the node's role is `relay` or `receiver`.
-  Shows batman-adv peers, gateway node, partition state, and the local
-  mesh address.
-- **Sources**: visible only on the `receiver` role. Aggregated
-  bitrate, frames combined, dedup, per-relay FEC stats.
-- **Hardware**, **Network**, **Cloud Relay**, **Services**: same
-  set as on the drone home.
-
-## Backend endpoints
-
-| Method | Path | Used by |
-|---|---|---|
-| GET | `/api/v1/dashboard/snapshot` | All panels (single aggregator, ~1 Hz) |
-| GET | `/api/v1/setup/status` | Top-bar device card, profile gating |
-| GET | `/api/status/full` | Uptime, board info |
+| Endpoint | Used by | Interval |
+| --- | --- | --- |
+| `GET /api/v1/dashboard/snapshot` | tiles, charts, Flight Controller, Hardware, Network | 1 s |
+| `GET /api/v1/setup/status` | layout, video URLs | 8 s |
+| `GET /api/status` | CPU chart, top bar | 5 s |
+| `GET /api/wfb` | WFB Transmit, WFB Receive | 2 s |
+| `GET /api/cloud/link` | Cloud Relay | 5 s |
+| `GET /api/services` | Services | 4 s |
+| `GET /api/video/snapshot` | Video still-frame fallback | on fallback |
+| `POST /api/v1/setup/hardware-check/refresh` | Hardware **Rescan** | on click |
+| `GET /api/v1/setup/nudges` | cloud-posture nudge | on load |
+| `GET /api/v1/ground-station/mesh` | Mesh (ground) | 2 s |
+| `GET /api/v1/ground-station/wfb/receiver/combined`, `.../relays` | Sources (ground receiver) | 2 s |
 
 ## Troubleshooting
 
-<Accordion title="Tiles say `unknown` after a fresh boot">
-The snapshot endpoint takes a couple of polls to populate. Wait 5-10
-seconds. If they stay unknown, check that the `ados-supervisor` service
-is running in Diagnostics.
-</Accordion>
+<AccordionGroup>
+  <Accordion title="A red HW tile">
+    The tile names the failing required component. Open the Hardware panel for its detail and fix hint, fix the connection, then press **Rescan**.
 
-<Accordion title="Video panel shows `No camera detected`">
-The agent did not see a UVC or CSI camera. Open Peripherals and confirm
-the camera enumerates. The detection is hot-plug aware, so plugging the
-camera in should resolve within a poll cycle.
-</Accordion>
+    <Frame caption="Home with a required component missing.">
+      ![Agent dashboard Home with a red status dot on the HW tile reading 2/3 and naming the missing Camera](/images/drone-agent/dashboard/home-setup-incomplete.png)
+    </Frame>
+  </Accordion>
+  <Accordion title="Camera does not appear">
+    The Video panel reads "No camera detected." and the Video page reads "No cameras detected." Plug the camera in and open Video → **Rescan**. If it still does not appear, check Peripherals and restart the video service from Diagnostics.
+  </Accordion>
+  <Accordion title="Cloud Relay says awaiting code…">
+    The node is in a cloud posture, unpaired, and you are not on its own network. Open the dashboard from the node's LAN, hotspot or USB link to see the code.
+  </Accordion>
+</AccordionGroup>
 
-<Accordion title="Cloud Relay says `awaiting code`">
-The agent is unpaired. Open Pairing, copy the code, paste it into
-Mission Control. The relay reconnects automatically after a successful
-pair.
-</Accordion>
+## Next steps
 
-## Related
-
-- [Pairing UI](/drone-agent/dashboard-pairing)
-- [Video UI](/drone-agent/dashboard-video)
-- [Diagnostics UI](/drone-agent/dashboard-diagnostics)
-- [Per-profile visibility](/drone-agent/dashboard-per-profile)
+<CardGroup cols={2}>
+  <Card title="Pairing" icon="link" href="/drone-agent/dashboard-pairing">
+    Link this node to its Mission Control owner.
+  </Card>
+  <Card title="Telemetry" icon="radio" href="/drone-agent/dashboard-telemetry">
+    Edit FC parameters and read live sensors.
+  </Card>
+</CardGroup>

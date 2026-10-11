@@ -1,99 +1,163 @@
 ---
-title: "Browser Dashboard"
-description: "A guided tour of the post-setup web dashboard served at port 8080."
+title: "Agent dashboard: Overview"
+sidebarTitle: "Overview"
+description: "Open the agent's browser dashboard on port 8080, unlock it, and find each page by profile."
 icon: "layout-dashboard"
-lastUpdated: "2026-06-18"
+keywords: ["ados", "drone agent", "dashboard", "browser", "pin", "profile", "setup"]
 ---
 
-# Browser Dashboard
+import AgentDashboardRoutes from "/snippets/generated/agent-dashboard-routes.mdx";
 
-After the setup wizard finishes, the same URL at port `8080` becomes the
-ADOS Drone Agent's live operations dashboard. The sidebar adapts to the
-profile the node was assigned (drone or ground station), the home page
-becomes a tile board of live telemetry, and every supporting screen
-(plugins, logs, diagnostics, settings) is one click away.
-
-This page is a tour. Each route also has its own page below it in the
-sidebar.
+Every Drone Agent serves a browser dashboard on port `8080`. Port 8080 serves the live dashboard as soon as the agent is installed. `/` and `/home` both open Home. The pages it shows depend on the node's profile (drone or ground station), and every page reads live data from the agent's own REST API.
 
 ## Open the dashboard
 
-| Link | URL |
-|---|---|
-| mDNS | `http://<node-name>.local:8080` |
-| Hotspot | `http://192.168.4.1:8080` |
-| USB tether | `http://192.168.7.1:8080` |
-| LAN | `http://<node-ip>:8080` |
+Use any of these addresses from a browser on the same network as the node:
 
-Any browser served the page from the agent's own listener is trusted by
-the auth middleware (same-origin physical-presence model). Browsers on a
-remote LAN can pair an explicit API key in **Settings &rarr; Cloud** when
-the trust model is escalated.
+| Path | Address |
+| --- | --- |
+| mDNS | `http://<hostname>.local:8080`. Use the exact name shown next to the device name in the top bar. |
+| LAN IP | `http://192.168.1.50:8080` (the address your router gave the node) |
+| Node hotspot | `http://192.168.4.1:8080` |
+| USB tether | `http://192.168.7.1:8080` |
+
+A path that matches no page shows a not-found page with a link back to Home.
+
+## Access and authentication
+
+Who can open the dashboard depends on where the browser is. A browser on the node itself is trusted. While the node is unpaired, a browser on its hotspot, USB link or a link-local address gets in directly, and a browser elsewhere on your LAN is asked for the dashboard PIN (4 to 12 digits; the first visitor sets it). Once the node is paired, an off-box browser needs the PIN or the pairing key. Callers from outside your networks are refused.
+
+### Dashboard PIN
+
+When the agent refuses the browser, the dashboard shows a PIN splash instead of the pages:
+
+- **No PIN yet:** "Set a PIN to unlock this dashboard from other devices on your network." Enter the PIN twice and press **Set PIN**.
+- **PIN set:** "Enter the PIN to unlock this dashboard." Enter it and press **Unlock**.
+- **Too many wrong attempts:** the splash counts down until this browser may try again. If wrong PINs pile up from many callers, the whole node locks (HTTP `423` `E_PIN_LOCKED`) and the splash reads "Too many wrong PINs on this node; locked for N min. Clear it from the node console or with the pairing key."
+
+A correct PIN gives the browser a dashboard session. **Settings → Security** shows whether a PIN is set, alongside the agent API key state. Unpairing the node from Mission Control makes the dashboard ask for its PIN again.
+
+<Note>
+Scripts and other non-browser clients use the `X-ADOS-Key` header instead of a PIN. See [REST API](/drone-agent/rest-api) for API authentication.
+</Note>
 
 ## Layout
 
-<Frame caption="Drone profile home page.">
-  ![Drone profile home](/images/dashboard/drone/home-full.png)
+<Frame caption="Home on a drone-profile node.">
+  ![Agent dashboard Home on a drone node with the Enter Cockpit banner, status tiles and panels](/images/drone-agent/dashboard/home.png)
 </Frame>
 
-Top bar, left sidebar, main pane.
+- **Top bar:** online dot, device name, the node's .local name (click to copy), profile badge with ground role, board, agent version, uptime, a Settings shortcut and the theme toggle (dark, light, system).
+- **Sidebar:** the pages for this profile (see the next section). Below the `lg` width the sidebar becomes a drawer, and a bottom dock carries Home and Settings.
+- **Enter Cockpit banner:** on Home, opens the full-screen cockpit at `/cockpit`.
+- **Region chip:** on Home, reads **Region: Unrestricted** or **Region: Pinned to** a country code, and opens **Settings → Region**.
+- **Banners:** "Agent is unreachable. Reconnecting…" while the agent stops answering, and "Flight controller is disconnected." on a drone with no FC link.
+- **Offline page:** Home shows **Agent unreachable** when the agent's REST API does not answer (check power, network and that `ados-supervisor` is running), or **Access not set up yet** when the agent answered and declined; reload to set up access with the PIN.
 
-1. **Top bar**: device name, profile badge, board, agent version, uptime,
-   theme toggle, and a Mission Control quick-jump button on the right.
-2. **Sidebar**: profile-gated navigation. The shared rail (Home,
-   Pairing, Plugins, Peripherals, Logs, Diagnostics, Settings) is
-   always present. Drone nodes also see Telemetry and Video.
-   Ground-station nodes see Receive, Display & Joystick, and the
-   Mesh / Sources entries when their mesh role unlocks them.
-3. **Main pane**: the active route's content.
+Each page downloads its code on first visit. The shell and the access gate poll these endpoints:
 
-For the per-route detail of what shows up on each profile, see the
-[Per-profile visibility matrix](/drone-agent/dashboard-per-profile).
+| Endpoint | Used for | Interval |
+| --- | --- | --- |
+| `GET /api/pairing/info` | profile | every load |
+| `GET /api/status` | top bar, access probe | 5 s |
+| `GET /api/v1/setup/status` | profile badge, Home layout | 8 s |
+| `GET /api/v1/dashboard/snapshot` | Home | 1 s |
+| `GET /api/dashboard/pin/status`, `POST /api/dashboard/pin/set`, `POST /api/dashboard/pin/verify` | PIN splash | on demand |
+
+## What each profile shows
+
+The sidebar and the routes follow the profile the agent reports through `GET /api/pairing/info`:
+
+- **Shared:** Home, Pairing, Extensions, Peripherals, Logs, Diagnostics, Settings.
+- **Drone adds:** Telemetry, Video, WFB Transmit.
+- **Ground station adds:** WFB Receive, Display & Joystick, Mesh (relay and receiver roles), Sources (receiver role).
+
+Until the agent reports drone or ground_station (profile auto, or a profile the dashboard has no pages for), every route renders and the sidebar shows only shared entries.
+
+Opening a route that belongs to another profile shows a **Not available on this profile** panel instead of the page.
+
+<Frame caption="A ground-only route opened on a drone node.">
+  ![Not available on this profile panel shown on a drone node opening WFB Receive](/images/drone-agent/dashboard/route-gate.png)
+</Frame>
+
+### Routes and profiles
+
+The Profiles column lists where a route renders; `n/a` means every profile. Settings sections are filtered the same way.
+
+<AgentDashboardRoutes />
+
+To change the profile, open **Settings → Profile**, pick Drone or Ground station (and a role), keep **Restart services after apply** on, press **Save profile** and confirm. See [Settings](/drone-agent/dashboard-settings#profile).
+
+## First-run setup
+
+There is no separate setup web app. Onboarding lives in the CLI installer, and the dashboard is operational immediately after install. The agent still tracks setup progress as a step list, which Mission Control and scripts read from `GET /api/v1/setup/status`:
+
+| Step | Label | Shown on |
+| --- | --- | --- |
+| `welcome` | Welcome | every profile |
+| `profile` | Profile | every profile |
+| `region` | Operating region | every profile |
+| `hardware_check` | Hardware check | every profile |
+| `cloud_choice` | Cloud posture | every profile |
+| `pair` | Pair with Mission Control | cloud and self-hosted postures only |
+| `mavlink` | Flight controller | drone |
+| `video` | Video | every profile |
+| `ground_receiver` | Ground receiver | ground station |
+| `display` | Local display | ground station |
+| `remote_access` | Remote access | every profile (optional) |
+| `finish` | Finish | every profile |
+
+Each step reports a state (`complete`, `needs_action` or `optional`) and a detail line. On the dashboard, Home's status tiles cover the same ground: a red HW tile names the missing required component.
+
+### Remote access through Cloudflare
+
+The agent can run a remotely managed Cloudflare Tunnel. Install its token, or the install command Cloudflare gives you, through the setup API:
+
+```bash
+curl -X POST http://192.168.1.50:8080/api/v1/setup/remote-access/cloudflare \
+  -H "X-ADOS-Key: <your-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{"token_or_script": "<cloudflare-tunnel-token>"}'
+```
+
+The dashboard also accepts the token in **Settings → Cloud**, in the set-only **Tunnel token** field of the **Remote access** card, which never displays a stored value. `GET /api/v1/setup/cloudflare/verify` confirms the tunnel routes back to the agent.
+
+## Safety interlocks
+
+While the vehicle is armed, the agent refuses actions that can drop the aircraft's link or change how it flies, on the drone and ground station profiles. A vehicle state older than 3 seconds, or none at all, counts as armed. In the dashboard that covers:
+
+- parameter writes on [Telemetry](/drone-agent/dashboard-telemetry);
+- **Reboot board** and restarts of link services on [Diagnostics](/drone-agent/dashboard-diagnostics);
+- profile, network, region and Wi-Fi changes in [Settings](/drone-agent/dashboard-settings);
+- installing, enabling or disabling an extension, and peripheral actions.
+
+A refused request answers HTTP `409` with `E_ARMED`. **Settings → Profile** asks **Vehicle is armed** and offers **Apply anyway**; the other pages show the refusal and leave the action undone.
+
+<Warning>
+Overriding the interlock can drop the link to an armed aircraft. Read [Safety](/operations/safety) before you do it.
+</Warning>
 
 ## First five minutes
 
 <Steps>
-  <Step title="Confirm health">
-    Open **Home**. Every tile across the top should report a value
-    (battery, link, video bitrate, CPU). Red or empty tiles point at
-    missing hardware or services and link into the right detail screen.
+  <Step title="Check Home">
+    Open Home. Check the six status tiles (MAV, HW, VID, NET, CLD, PAIR) and the 60-second charts below them (Battery, RC RSSI, Bitrate, CPU). A red HW tile names the failing required component; open the Hardware panel for the fix.
   </Step>
-  <Step title="Pair Mission Control">
-    Open **Pairing**. Copy the six-character code, paste it into Mission
-    Control's "Pair a drone" dialog, and accept the pairing here. The
-    Cloud tile on Home flips to "paired".
+  <Step title="Pair with Mission Control">
+    Local-only node (default): in Mission Control open **Pair New Node** and enter the node's hostname or IP. Cloud-relay node: copy the six-character code from Pairing and enter it in Mission Control, or paste a code Mission Control shows into **Accept from Mission Control**. The PAIR tile reads paired once linked.
   </Step>
-  <Step title="Walk every screen">
-    Click each sidebar entry once. The first visit warms the polling
-    intervals so subsequent loads feel instantaneous.
-  </Step>
-  <Step title="Open Diagnostics">
-    Confirm the systemd services list is green. A failing service is the
-    fastest signal that hardware or config is off.
+  <Step title="Set a dashboard PIN">
+    Open the dashboard from another device on your LAN and set a PIN, so later visits from the LAN need it.
   </Step>
 </Steps>
 
-## Backend endpoints
+## Next steps
 
-Every screen reads from one or more of these endpoints. The dashboard
-itself never requires an `X-ADOS-Key` header because same-origin browser
-requests are trusted by the agent.
-
-| Method | Path | Used by |
-|---|---|---|
-| GET | `/api/v1/setup/status` | Sidebar, top bar, profile gating |
-| GET | `/api/v1/dashboard/snapshot` | Every Home tile + ground panels |
-| GET | `/api/status`, `/api/status/full` | Top bar device card, uptime, board info |
-| GET | `/api/system` | Diagnostics CPU / memory / disk |
-| GET | `/api/services` | Diagnostics services list |
-| GET | `/api/v1/peripherals` | Peripherals page |
-
-The full REST surface is documented in the
-[REST API reference](/drone-agent/rest-api).
-
-## Related
-
-- [Per-profile visibility](/drone-agent/dashboard-per-profile)
-- [Home page](/drone-agent/dashboard-home)
-- [Setup webapp (first-run wizard)](/drone-agent/setup-webapp)
-- [REST API reference](/drone-agent/rest-api)
+<CardGroup cols={2}>
+  <Card title="Home" icon="house" href="/drone-agent/dashboard-home">
+    Status tiles, charts and panels on the landing page.
+  </Card>
+  <Card title="Ground dashboard" icon="layout-dashboard" href="/ground-agent/dashboard-overview">
+    The ground-station pages.
+  </Card>
+</CardGroup>

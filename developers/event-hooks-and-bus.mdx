@@ -1,117 +1,122 @@
 ---
-title: "Event hooks and bus"
-description: "Topic taxonomy, capability-token RBAC, delivery, and back-pressure handling."
-lastUpdated: "2026-06-23"
+title: "Agent event bus"
+description: "Topics the agent's plugin host publishes, subscribe and publish rules, shared topics between plugins, and delivery limits."
 ---
 
-The event bus is how the host pushes data to agent plugins and how
-plugins publish to each other. This page is the topic-by-topic reference.
-For the GCS-side envelope and RPC mechanics, see
-[event hooks](/developers/event-hooks).
+The agent's plugin host runs an event bus. The host publishes vehicle and lifecycle events on it, and plugins publish their own events. This page covers the agent-side bus. For the methods a GCS half calls on Mission Control, see [GCS bridge methods](/developers/event-hooks).
 
-## Topic taxonomy
+## Published topics
 
-Every event has a dotted topic name. The first segment is the namespace.
-The host owns every namespace except a plugin's own.
+These are the topics the host itself publishes:
 
-| Namespace | Owner | Purpose |
-|-----------|-------|---------|
-| `mavlink.*` | Host | MAVLink message stream. |
-| `vehicle.*` | Host | Canonical vehicle events (mode change, arm, disarm). |
-| `mission.*` | Host | Mission lifecycle. |
-| `safety.*` | Host | Safety events. |
-| `gps.*` | Host | GPS events. |
-| `sensor.<id>.*` | Host | Per-sensor events. |
-| `vision.*` | Host | Vision engine events. |
-| `video.*` | Host | Video pipeline state. |
-| `swarm.*` | Host | Swarm coordination events. |
-| `agent.*` | Host | Agent lifecycle (`agent.ready`, `agent.shutdown`). |
-| `gcs.*` | Host | GCS-originated events. |
-| `plugin.<id>.*` | Plugin | The plugin's own published topics. |
+| Topic | How a plugin receives it |
+|-------|--------------------------|
+| `vehicle.armed`, `vehicle.disarmed`, `vehicle.mode_changed`, `vehicle.battery_low`, `vehicle.geofence_breach` | `ctx.events.subscribe` with `event.subscribe`. Derived from the flight controller's own MAVLink stream. |
+| `agent.ready`, `agent.shutdown` | `ctx.events.subscribe` with `event.subscribe`. |
+| `telemetry.state` | The `telemetry.subscribe` method, gated on `telemetry.read`. See [Telemetry](#telemetry). |
+| `vision.frame`, `vision.detection` | The vision facade on `ctx.vision`. See [Vision plugins](/developers/vision-plugins). |
+| `plugin.<id>.*` | Each plugin's own events. See [Plugin-to-plugin](#plugin-to-plugin). |
 
-A plugin cannot publish into the host namespaces. A plugin's own topics
-live under `plugin.<id>.*`.
+Topics are printable ASCII, at most 256 bytes. A subscription pattern can end in `.*` within your own namespace: `plugin.<id>.*` matches `plugin.<id>.alert` but not the bare `plugin.<id>`. Public host topics are subscribed by exact name.
 
-Wildcards apply a trailing `.*`: `mavlink.*` matches `mavlink.heartbeat`
-but not the bare `mavlink`.
+## Subscribe and publish rules
 
-## Capability RBAC
+Subscribing needs `event.subscribe`, and the topic must be one of:
 
-Subscribing requires the `event.subscribe` capability, and the topic must
-be allowed for this plugin. The allowlist is the union of:
+- your own `plugin.<id>.` namespace;
+- one of the public host topics: `vehicle.armed`, `vehicle.disarmed`, `vehicle.mode_changed`, `vehicle.battery_low`, `vehicle.geofence_breach`, `agent.ready`, `agent.shutdown`;
+- a shared topic another plugin declares, when you also hold its `subscribe_capability`.
 
-- The plugin's own `plugin.<id>.*` namespace (always allowed).
-- A fixed set of public topics any plugin may subscribe to:
-  `vehicle.armed`, `vehicle.disarmed`, `vehicle.mode_changed`,
-  `vehicle.battery_low`, `vehicle.geofence_breach`, `agent.ready`,
-  `agent.shutdown`. The host derives the vehicle topics from the flight
-  controller's own MAVLink stream.
-- Any extra topics the supervisor seeds from the plugin's manifest.
+Publishing under your own `plugin.<id>.` prefix needs no capability. Reserved, never publishable: `vehicle.`, `mavlink.`, `mission.`, `safety.`, `agent.`, `swarm.`, `gps.`, `vision.`, `telemetry.`, and any `plugin.` topic outside your own `plugin.<id>.` prefix or your declared shared topics. Other topics need `event.publish`.
 
-Publishing requires `event.publish` (the plugin's own `plugin.<id>.*`
-topics are always publishable). These namespaces are reserved and a
-plugin may never publish into them: `vehicle.`, `mavlink.`, `mission.`,
-`safety.`, `agent.`, `swarm.`, `gps.`.
-
-The host re-resolves the required capability from the topic, not from the
-plugin's say-so.
+The host decides from the topic, not from what the plugin claims, and it stamps every event with the publishing plugin's id. Topics are delivered verbatim; the host adds no prefix.
 
 ```python
-# manifest grants: event.subscribe, event.publish
-async def on_start(self, ctx) -> None:
-    await ctx.events.subscribe("vehicle.armed", self._on_armed)
-    # publish into your own namespace so other plugins can subscribe;
-    # the topic is delivered verbatim, the host does not rewrite it
-    await ctx.events.publish(
-        f"plugin.{self.plugin_id}.alert", {"kind": "cell_low", "v": 3.4}
-    )
+# manifest grants: event.subscribe
+class Plugin:
+    async def on_start(self, ctx) -> None:
+        await ctx.events.subscribe("vehicle.armed", self._on_armed)
+        # Your own namespace: no capability needed to publish.
+        await ctx.events.publish(
+            f"plugin.{ctx.plugin_id}.alert", {"kind": "cell_low", "v": 3.4}
+        )
+
+    async def _on_armed(self, event: dict) -> None:
+        ...
 ```
 
 ## Telemetry
 
-Subscribe to telemetry through the telemetry surface, gated by the
-`telemetry.read` capability on the agent (or `telemetry.subscribe` on the
-GCS half). Per-topic GCS grants use the `telemetry.subscribe.<topic>`
-form, as in `telemetry.subscribe.battery`. Representative topics include
-battery, gps, attitude, position, and system; treat the exact payload
-fields as the live telemetry shape, not a frozen contract.
+The Python `ctx.telemetry.extend(channel, payload)` adds a channel to the node's heartbeat (gated on `telemetry.extend`).
+
+To read vehicle state, call `telemetry.subscribe` (gated on `telemetry.read`). The host pushes the newest vehicle-state snapshot as a `telemetry.state` event, at most 10 times a second. A node with no flight controller never fires it.
+
+- **Rust:** `telemetry_subscribe(callback)` on the SDK client.
+- **Python:** `subscribe_telemetry()` on the IPC client, an async iterator over the same `telemetry.state` snapshots. For individual MAVLink messages, use `ctx.mavlink.subscribe` (gated on `mavlink.read`). See [MAVLink extensions](/developers/mavlink-extensions#subscribing-to-messages).
+
+A GCS half reads telemetry through `ctx.telemetry.subscribe`, gated on `telemetry.subscribe` or a per-topic `telemetry.subscribe.<topic>` grant. See [Permissions](/developers/permissions).
 
 ## Delivery and back-pressure
 
-Each subscriber has its own bounded queue (256 messages deep). The bus
-fans out without blocking the publisher: when a subscriber's queue is
-full the event is dropped and the host logs a warning rather than stalling
-the producer. Telemetry and raw streams are therefore best-effort. If
-your plugin needs a complete record, persist from a recording rather than
-trying to capture every live event.
+Each subscriber has its own queue, 256 events deep. Event payloads are capped at 64 KiB. The bus never blocks a publisher: when a subscriber's queue is full, events are dropped for that subscriber and the host logs a warning. Treat live events as best-effort; if you need a complete record, persist from a recording instead.
 
-To avoid dropping, do not block in the event handler. Hand work to a
-background task and let the handler return quickly:
+Do not block in an event handler. Hand work to a background task and return quickly:
 
 ```python
-async def on_start(self, ctx) -> None:
-    queue: asyncio.Queue = asyncio.Queue(maxsize=64)
-    asyncio.create_task(self._worker(queue))
+import asyncio
 
-    async def _ingest(sample: dict) -> None:
+
+class Plugin:
+    async def on_start(self, ctx) -> None:
+        self.queue: asyncio.Queue = asyncio.Queue(maxsize=64)
+        asyncio.create_task(self._worker())
+        await ctx.events.subscribe("vehicle.battery_low", self._ingest)
+
+    async def _ingest(self, event: dict) -> None:
         try:
-            queue.put_nowait(sample)
+            self.queue.put_nowait(event)
         except asyncio.QueueFull:
-            pass  # drop locally; do not block the bus
+            pass  # drop locally; never block the bus
 
-    await ctx.events.subscribe("vehicle.battery_low", _ingest)
+    async def _worker(self) -> None:
+        while True:
+            event = await self.queue.get()
+            ...
 ```
 
 ## Plugin-to-plugin
 
-Plugins publish into their own `plugin.<id>.*` namespace. Another plugin
-subscribes to that namespace only if it declares `event.subscribe` and
-the operator approves, and the supervisor has the subscriber's allowlist
-seeded for that topic. Plugin topics are derived data on a sandboxed bus;
-they never command the vehicle.
+A `plugin.*` event reaches only its publisher unless the publisher declares it in `agent.contributes.shared_topics`. A shared topic lives under `plugin.<leaf>.`, where `<leaf>` is the last segment of the publisher's id, and names the capability a subscriber must hold:
 
-## See also
+```yaml
+id: com.example.rangefinder
+agent:
+  permissions:
+    - id: event.publish
+    - id: mavlink.read
+  contributes:
+    shared_topics:
+      - topic: plugin.rangefinder.reading
+        subscribe_capability: mavlink.read
+```
 
-- [Event hooks](/developers/event-hooks)
-- [Permissions](/developers/permissions)
-- [State and storage](/developers/state-and-storage)
+`subscribe_capability` is either a catalog capability or one the publisher declares itself under `agent.declared_capabilities` (`plugin.<leaf>.<name>`). The publisher needs `event.publish` to publish a shared topic. A subscriber needs `event.subscribe` plus that capability. Shared topics match exactly: `plugin.rangefinder.reading.x` gains nothing from the declaration.
+
+Plugin topics are derived data on a sandboxed bus. Nothing on the bus commands the vehicle.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="MAVLink extensions" href="/developers/mavlink-extensions">
+    Read and write MAVLink, register components and re-publish decoded data.
+  </Card>
+  <Card title="Multi-component plugins" href="/developers/multi-component-plugins">
+    How agent events reach the GCS half.
+  </Card>
+  <Card title="Permissions" href="/developers/permissions">
+    Every capability and its risk level.
+  </Card>
+  <Card title="GCS bridge methods" href="/developers/event-hooks">
+    Events and RPC on the Mission Control side.
+  </Card>
+</CardGroup>

@@ -1,46 +1,29 @@
 ---
 title: "Python SDK"
-description: "ados.sdk reference. The driver, vision, and testing surface every agent-side Python plugin uses."
-lastUpdated: "2026-06-23"
+description: "The ados.sdk reference: the plugin context, driver base classes, vision client and test harness for a Python agent half."
 ---
 
-A plugin's agent half can be written in two languages. This page covers
-the Python SDK, `ados.sdk`. The other agent-half language is Rust, with
-the [`ados-sdk` crate](/developers/sdk-rust); both speak the same
+A plugin's agent half can be written in Python or Rust. This page covers
+the Python SDK, `ados.sdk`. The other option is the
+[`ados-sdk` crate](/developers/sdk-rust); both speak the same
 length-prefixed msgpack wire and capability-token handshake to the
-plugin host, so the choice is per plugin. Python is the right pick when
-the plugin leans on the Python ecosystem (machine-learning inference,
-scripting, fast hardware bring-up); Rust is the right pick for a tight,
-low-overhead, long-running service.
+plugin host. Python suits a plugin that leans on the Python ecosystem
+(inference, scripting, fast hardware bring-up); Rust suits a tight,
+long-running service.
 
-A Python plugin's agent half runs as a subprocess under
-`ados-supervisor`. The public author surface is the `ados.sdk`
-package: the typed driver base classes, the vision-engine client
-types, and an in-process test harness. Import from `ados.sdk`, not
-from internal agent modules.
-
-<Warning>
-The plugin lifecycle context (the `ctx` object passed to a plugin's
-hooks) is **not yet re-exported from `ados.sdk`**. The SDK's own
-docstring says the context, event, and MAVLink-component helpers
-"land here as the host APIs stabilise." The runtime hands `ctx` to the
-plugin at call time and the plugin uses it duck-typed: there is no
-imported context class to construct or subclass. A plugin that wants
-static typing declares a local `Protocol` for the parts of `ctx` it
-touches, the way the reference extensions do. This page documents the
-real, current surface and does not invent an API that does not exist
-yet.
-</Warning>
+A Python agent half runs in its own systemd unit, started by the plugin
+runner. Import the author surface from `ados.sdk`, not from internal
+agent modules.
 
 ## Install
 
-The standalone `ados-sdk` PyPI package is still in flight. Until it
-publishes, plugin source vendors the contract types directly from the
-agent tree at
-[`altnautica/ADOSDroneAgent/src/ados`](https://github.com/altnautica/ADOSDroneAgent/tree/main/src/ados),
-or develops against a checked-out agent so `import ados.sdk` resolves.
+There is no PyPI package. Develop against a checkout of
+[`altnautica/ADOSDroneAgent`](https://github.com/altnautica/ADOSDroneAgent)
+installed in your environment (`pip install -e .` in the checkout) so
+`import ados.sdk` resolves. On a node, the runner provides the same
+package.
 
-## What `ados.sdk` exports today
+## What `ados.sdk` exports
 
 ```python
 from ados.sdk import (
@@ -57,120 +40,116 @@ from ados.sdk import (
     PayloadCommand, PayloadState,
     # Driver errors
     DriverError, DriverDeviceNotFound, DriverPermissionDenied,
-    # Vision-engine client + types
+    # Vision-engine client and types
     VisionClient, Frame, FrameDescriptor, FrameFormat, RingLayout,
     Detection, DetectionBatch, BoundingBox,
     ModelKind, ModelExecution, ModelMetadata, Pose, Odometry,
+    # Camera selection helpers
+    CAMERA_SELECTOR_AUTO, CAMERA_SELECTOR_BINDING, CAMERA_SELECTOR_CONTROL,
+    primary_camera_id, resolve_camera_selection,
+    # Perception offload gates
+    FreshnessGate, GateState, LockGate, LockState, ExecutionTier, ResolvedTier,
+    # Target lock tracking
+    LockedTargetTracker, LockedTarget, EffectiveLock,
+    LOCK_LOCKED, LOCK_UNCERTAIN, LOCK_LOST, DEFAULT_COAST_WINDOW_S,
     # Testing
     PluginTestHarness, FakeVisionEngine, load_fixture,
 )
 ```
 
-Three groups:
+- **Driver layer.** The base classes hardware-driver plugins subclass,
+  plus the dataclasses they exchange with the host. See the
+  [driver layer](/developers/driver-layer).
+- **Vision.** `VisionClient` and the frame, detection and model types a
+  plugin uses to read frames and publish detections.
+- **Camera selection.** Helpers that resolve a camera parameter (a
+  camera id or `auto`) to the camera the plugin should use.
+- **Offload gates and lock tracking.** The freshness and lock gates and
+  `LockedTargetTracker` that a behavior plugin uses to act only on a
+  fresh, locked target.
+- **Testing.** `PluginTestHarness`, `FakeVisionEngine` and
+  `load_fixture` exercise a plugin in-process with no agent.
 
-- **Driver layer.** The base classes hardware-driver plugins
-  subclass, plus the dataclasses they exchange with the host. See
-  [driver layer](/developers/driver-layer) and the per-kind pages.
-- **Vision.** `VisionClient` and the frame, detection, and model
-  types a plugin uses to read frames from the vision engine and
-  publish detections back.
-- **Testing.** `PluginTestHarness`, `FakeVisionEngine`, and
-  `load_fixture` let you exercise a plugin in-process with no real
-  agent.
+`ados.sdk` does not export a context class. The runner hands `ctx` to
+your hooks at call time; a plugin that wants static typing declares a
+local `Protocol` for the parts of `ctx` it uses, as the reference
+extensions do.
 
 ## The agent-half plugin shape
 
-A plugin's agent half is a plain Python class. There is no base class
-to import or subclass. The manifest's `agent.entrypoint` points the
-runner at it, in one of two forms:
+An agent half is a plain Python class with no base class. The
+manifest's `agent.entrypoint` points the runner at it:
 
 - `module:Class`, for code packaged as an importable module
   (`follow_me:FollowMePlugin`).
-- A path inside the archive (`agent/plugin.py`), in which case the
-  class must be named `Plugin`.
+- A path inside the archive (`agent/plugin.py`), in which case the class
+  must be named `Plugin`.
 
-The runner constructs the class with no arguments, then calls the
-lifecycle hooks it finds. Every hook is optional and may be sync or
-async, and `ctx` is duck-typed (see the warning above):
+The runner constructs the class with no arguments, then calls the hooks
+it finds. Every hook is optional and may be sync or async:
 
 ```python
 class Plugin:
     async def on_start(self, ctx):
-        # Build and register drivers, open subscriptions, etc.
+        # Open subscriptions, start work.
         ...
 
     async def on_stop(self, ctx):
         # Release anything on_start acquired.
         ...
-
-    async def on_disable(self, ctx):
-        # Optional. Tear down when the plugin is disabled.
-        ...
 ```
 
-The full hook order the runner walks is `on_install`, `on_enable`,
-`on_configure(ctx, config)`, `on_start`, then it waits for shutdown
-(`SIGTERM`), then `on_stop`, `on_disable`. Most plugins implement
-only `on_start` and `on_stop`.
+The hook order is `on_install`, `on_enable`, `on_configure(ctx, config)`,
+`on_start`, then the runner waits for shutdown, then `on_stop` and
+`on_disable`. See [Lifecycle](/developers/lifecycle) for when each runs.
 
-`ctx` is the runtime-provided plugin context. It exposes the host
-service helpers a plugin needs, including `ctx.mavlink.subscribe(...)`
-and `ctx.mavlink.send(...)`, `ctx.events.subscribe(...)` and
-`ctx.events.publish(...)`, `ctx.vision.subscribe_detections(...)` and
-`ctx.vision.designate_track(...)`,
-`ctx.flight.guided_setpoint(...)` (a scoped guided-mode
-position/velocity sender for flight-behaviour plugins, gated on
-`flight.guided_setpoint`), `ctx.video.set_source(...)` (a driver plugin
-declares the video pipeline's stream sources, gated on
-`video.source.set`), `ctx.peripheral_manager.register_*_driver(...)`,
-`ctx.config`, and `ctx.process.spawn`. Each call is gated on a manifest permission;
-calling a method whose capability was not granted is rejected. Because
-the context type is not yet published in `ados.sdk`, the reference
-extensions declare a local `Protocol` for the parts they use. Read the
-[thermal camera](/developers/camera-driver) and
-[gimbal](/developers/gimbal-driver) extensions for the current shape.
+## The plugin context
+
+Every facade call is gated on a capability; a call whose capability was
+not granted is rejected with `capability_denied: <cap>`.
+
+| Member | What it does | Capability |
+|--------|--------------|------------|
+| `ctx.plugin_id`, `ctx.plugin_version`, `ctx.agent_id` | Identity; `agent_id` is the bound drone for a per-drone plugin. | none |
+| `ctx.data_dir`, `ctx.config_dir`, `ctx.temp_dir` | The plugin's writable directories. | none |
+| `ctx.config` | The static config dict loaded at start. | none |
+| `ctx.config_kv` | Live config: `await get(key, default)`, `await set(key, value, scope)`, `static(key)`. | none |
+| `ctx.log` | Structured logger. | none |
+| `ctx.events` | `publish(topic, payload)` and `subscribe(pattern, callback)` on the agent event bus. | `event.publish`, `event.subscribe` |
+| `ctx.mavlink` | `subscribe`, `send` and `register_component`. | `mavlink.read`, `mavlink.write`, `mavlink.component.*` |
+| `ctx.msp` | The raw MSP byte plane to a Betaflight, iNav or KISS flight controller: `send`, `subscribe`. | `msp.write`, `msp.read` |
+| `ctx.flight` | `guided_setpoint(...)` and `rate_setpoint(...)`, scoped setpoint senders. | `flight.guided_setpoint`, `flight.rate_setpoint` |
+| `ctx.vision` | The `VisionClient`: frames, models, inference, `subscribe_detections`, `designate_track`, detection publishing. | `vision.*` |
+| `ctx.camera` | `claim(device_path, exclusive)`, `release`, and `get_frame` for the latest frame from a claimed camera. | The camera hardware capabilities |
+| `ctx.video` | `set_source(cameras)`: declare the video pipeline's stream sources. | `video.source.set` |
+| `ctx.buttons` | Front-panel button press events. | `button.subscribe` |
+| `ctx.telemetry` | `extend(channel, payload)`: add fields to the telemetry sent to the GCS. To read vehicle state, use `subscribe_telemetry()` on the IPC client (`PluginIpcClient`), gated on `telemetry.read`. | `telemetry.extend` |
+| `ctx.peripheral_manager` | `claim_camera` and the `register_*_driver(...)` calls (the agent does not route drivers; see the [driver layer](/developers/driver-layer)). | `sensor.*.register` |
+| `ctx.process` | `spawn(...)` from the manifest's `subprocess_spawn` allowlist. | `process.spawn` |
+| `ctx.lifecycle` | `on_pause` and `on_resume` callbacks, fired when the operator switches away from and back to the drone hosting the plugin's UI. | `event.subscribe` |
+| `ctx.tools` | Register MCP tool handlers with `register(name, handler)` or the `@ctx.tools.tool()` decorator. | `mcp.expose` |
 
 ### A real skeleton
 
 This is the Follow-Me reference plugin, trimmed to its lifecycle shape.
-It is a plain class the runner instantiates with no arguments. `on_start`
-opens the subscriptions the plugin needs (FC pose over MAVLink, the
-operator's designate clicks over the event bus, the detection stream
-from the vision engine) and launches a control loop; `on_stop` and
-`on_disable` tear it down. Each subscription matches a manifest
-permission (`mavlink.read`, `event.subscribe`,
-`vision.detection.subscribe`, `vision.track.designate`).
+Each subscription matches a manifest permission (`mavlink.read`,
+`event.subscribe`, `vision.detection.subscribe`).
 
 ```python
 import asyncio
 from typing import Any
 
-from ados.sdk.vision import BoundingBox, DetectionBatch
-
 
 class FollowMePlugin:
-    """Lifecycle-hook plugin class the runner instantiates with no args."""
-
     def __init__(self) -> None:
         self._ctx: Any = None
         self._loop_task: asyncio.Task | None = None
-        self._locked_id: int | None = None
 
     async def on_start(self, ctx: Any) -> None:
         self._ctx = ctx
-
-        # FC pose over MAVLink.
         await ctx.mavlink.subscribe("ATTITUDE", self._on_attitude)
-        await ctx.mavlink.subscribe(
-            "GLOBAL_POSITION_INT", self._on_global_position
-        )
-
-        # The operator's designate click on the event bus.
-        await ctx.events.subscribe("follow.designate", self._on_designate)
-
-        # Detection stream from the configured camera.
+        await ctx.mavlink.subscribe("GLOBAL_POSITION_INT", self._on_global_position)
         await ctx.vision.subscribe_detections(self._on_batch)
-
         self._loop_task = asyncio.create_task(self._follow_loop())
         ctx.log.info("follow_me_started")
 
@@ -178,39 +157,34 @@ class FollowMePlugin:
         if self._loop_task is not None:
             self._loop_task.cancel()
         ctx.log.info("follow_me_stopped")
-
-    async def on_disable(self, ctx: Any) -> None:
-        if self._loop_task is not None:
-            self._loop_task.cancel()
 ```
 
-The complete plugin (image-to-world projection, the standoff-follow
-loop, the lock-state safety gate) lives in
+The complete plugin lives in
 [`altnautica/ADOSExtensions`](https://github.com/altnautica/ADOSExtensions)
 under `extensions/follow-me/`.
 
 ## IPC
 
-The supervisor passes a Unix domain socket path in the
-`ADOS_PLUGIN_SOCKET` environment variable, the capability token in
-`ADOS_PLUGIN_TOKEN`, and the bound drone id in `ADOS_PLUGIN_AGENT_ID`.
-The runtime opens the socket and speaks msgpack RPC over it:
+The unit passes the Unix socket path in `ADOS_PLUGIN_SOCKET` and the
+node profile in `ADOS_NODE_PROFILE`. The token, the bound agent id and
+the data dir arrive in a systemd credential at
+`$CREDENTIALS_DIRECTORY/ados-plugin-token`, never in the environment;
+the runner reads it for you. If the socket or the credential is not
+there yet, the runner keeps retrying until the plugin host accepts the
+connection. It then speaks msgpack RPC:
 
-```
+```text
 plugin -> {"id": "...", "type": "request", "method": "event.publish", "args": {...}}
 host   -> {"id": "...", "type": "response", "args": {...}}
-host   -> {"id": "...", "type": "event",    "method": "telemetry.battery", "args": {...}}
+host   -> {"id": "...", "type": "event",    "method": "...", "args": {...}}
 ```
 
-The envelope and the capability gate match the GCS bridge. Every
-privileged method is checked against the granted capability set
-before it reaches a handler; a call that exercises an ungranted
-capability is rejected with a `capability_denied` error naming the
-missing capability.
+Every privileged method is checked against the granted capability set
+before it reaches a handler.
 
 ## Resource limits
 
-The supervisor enforces the resource block from the manifest:
+The plugin host enforces the manifest's resource block:
 
 ```yaml
 agent:
@@ -220,68 +194,78 @@ agent:
     max_pids: 12                 # default 12, range 1 to 256
 ```
 
-On Linux these become cgroup v2 controllers in the plugin slice
-(`ados-plugins.slice`). The plugin sees them as hard caps; an
-out-of-memory kill is reported to the host as a `crashed` lifecycle
-event and trips the circuit breaker.
+On Linux these become `MemoryMax`, `CPUQuota` and `TasksMax` on the
+plugin's unit in `ados-plugins.slice`. An OOM kill ends the process and
+systemd restarts it after 2 s, with no start limit.
 
 ## Testing
 
-`ados.sdk` ships an in-process harness. It wires a real plugin
-context to fake host stubs so a single `pytest` run drives the
-plugin's lifecycle hooks with no agent and no hardware:
+`PluginTestHarness` wires a real plugin context to fake host stubs, so a
+`pytest` run drives your hooks with no agent and no hardware:
 
 ```python
 import pytest
-from ados.sdk import PluginTestHarness, load_fixture
+from ados.sdk import PluginTestHarness
+
+from plugin import Plugin
 
 
 @pytest.mark.asyncio
 async def test_plugin_publishes_on_low_battery():
     async with PluginTestHarness(
         plugin_id="com.example.hello",
-        granted_capabilities={"event.publish", "telemetry.read"},
+        granted_capabilities={"event.publish", "event.subscribe"},
     ) as harness:
         plugin = Plugin()
         await plugin.on_start(harness.context)
 
-        # Deliver an event as if a peer published it.
-        await harness.publish_event("telemetry.battery", {"remaining_percent": 18})
+        await harness.publish_event("battery.status", {"remaining_percent": 18})
 
-        # Assert on what the plugin published back.
         events = harness.published_events()
         assert any(topic == "battery.low" for topic, _ in events)
 ```
 
 The harness:
 
-- exposes `harness.context`, the `PluginContext` to pass to the
-  plugin's hooks;
-- injects events with `await harness.publish_event(topic, payload)`
-  and captures the plugin's output with `harness.published_events()`;
+- exposes `harness.context`, the context to pass to your hooks;
+- delivers events with `await harness.publish_event(topic, payload)` and
+  captures the plugin's output with `harness.published_events()`, a list
+  of `(topic, payload)` tuples;
 - replays recorded scenarios with
   `await harness.replay_fixture(name_or_path)` (load files with
   `load_fixture`);
-- grants and revokes capabilities at runtime with `harness.grant(...)`
-  and `harness.revoke(...)`.
+- grants and revokes capabilities with `harness.grant(...)` and
+  `harness.revoke(...)`.
 
-For vision plugins, `FakeVisionEngine` stands in for the real engine
-and lets a test push synthetic frames into a `VisionClient`.
+`FakeVisionEngine` stands in for the vision engine and pushes synthetic
+frames into a `VisionClient`. `ados plugin test <dir>` runs a plugin's
+pytest suite with the manifest validated first; see the
+[Plugin CLI reference](/developers/cli-reference).
 
 ## Where the rest of the contract lives
 
-The agent host modules at
-[`altnautica/ADOSDroneAgent/src/ados/plugins/`](https://github.com/altnautica/ADOSDroneAgent/tree/main/src/ados/plugins)
-define the install and runtime machinery the SDK sits on:
+- `src/ados/plugins/manifest.py`: the strict manifest model the CLI's
+  `lint`, `sign` and `test` enforce.
+- `src/ados/plugins/runner.py`: the process entrypoint that loads a
+  plugin and calls its hooks.
+- `crates/ados-plugin-host/src/{signing,state,supervisor,archive}.rs`:
+  signature verification and the revocation list, persistent install
+  and grant state, the install and enable lifecycle, and archive
+  unpacking with traversal protection.
 
-- `manifest` (the Pydantic manifest schema)
-- `signing` (Ed25519 verification + revocation list)
-- `archive` (pack and unpack with traversal protection)
-- `state` (persistent install and permission state)
-- `supervisor` (lifecycle: install / enable / disable / remove)
-- `runner` (the process entrypoint that loads a plugin and calls its
-  hooks)
+## Next steps
 
-Watch the [GitHub releases](https://github.com/altnautica) for the
-`ados-sdk` PyPI publish, which will re-export the contracts above and
-add the context helpers once they stabilise.
+<CardGroup cols={2}>
+  <Card title="Your first plugin" href="/developers/your-first-plugin">
+    Build, sign and install a plugin end to end.
+  </Card>
+  <Card title="Event hooks and bus" href="/developers/event-hooks-and-bus">
+    Topics and the agent event bus.
+  </Card>
+  <Card title="Vision plugins" href="/developers/vision-plugins">
+    Frames, models and detections.
+  </Card>
+  <Card title="Rust SDK" href="/developers/sdk-rust">
+    The same surface in Rust.
+  </Card>
+</CardGroup>

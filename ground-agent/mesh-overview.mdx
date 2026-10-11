@@ -1,94 +1,75 @@
 ---
-title: "Mesh & Distributed Receive"
-description: "Run more than one Ground Agent and let them share the receive job. The why, the what, and the high-level shape."
+title: "Mesh and distributed receive"
+sidebarTitle: "Mesh overview"
+description: "Run more than one ground station and let them share the job of receiving one drone: when it helps and how it is shaped."
 icon: "share-nodes"
-lastUpdated: "2026-06-18"
+keywords: ["ados", "ground agent", "mesh", "distributed receive", "batman-adv"]
 ---
 
-# Mesh & Distributed Receive
+A single ground station hears the drone from one antenna at one place. That is enough most of the time. It is not enough when a hill is in the way, when the flight area is long and narrow, or when you want a second receiver in case the first loses line of sight.
 
-A single Ground Agent listens to your drone with one antenna at one location. That works most of the time. It does not work when there is a hill in the way, when the flight area is long and narrow, or when you want a backup node in case the primary loses line of sight.
+Distributed receive puts two or three ground stations around the flight area, links them over a small private mesh, and has them share the receive job. The drone transmits once. The mesh combines what each node heard into one clean stream.
 
-Distributed Receive lets you put two or three Ground Agents around the flight area, link them together over a small private mesh, and have them share the receive job. The drone keeps transmitting once. The mesh decides who heard what and combines fragments back into the clean stream.
+## When to deploy a mesh
 
-## When to deploy mesh
+A mesh helps when:
 
-You probably want mesh if:
+- Terrain, buildings or vegetation block line of sight from a single ground point.
+- You want a redundant receiver.
+- You need coverage along a long corridor (a road, a fence line, a runway).
+- Only one node has an internet uplink but every node should reach the cloud.
 
-- The flight area has terrain, buildings, or vegetation that blocks line-of-sight from a single ground point.
-- You want a redundant receiver in case the primary node fails or is occupied.
-- You want to extend coverage along a long corridor (a road, a fence line, a runway).
-- You have a 4G uplink only at one node but you want all nodes to feel like they have one.
-
-You probably do not need mesh if:
-
-- One Ground Agent at the takeoff point sees the whole flight envelope.
-- You are flying line-of-sight for short hops.
-- You have only one Ground Agent and adding more is not on the table.
+You do not need one when a single ground station at the takeoff point sees the whole flight.
 
 ## The shape
 
-Each Ground Agent picks one of three deployment roles:
-
 | Role | What it does |
 |---|---|
-| **direct** | Single-node behavior. Same as you would run today. No mesh. |
-| **relay** | Forwards WFB-ng fragments to a receiver over a local mesh. Drone-facing radio is the same RTL8812EU. |
-| **receiver** | Hub. Combines fragments from its own radio plus every paired relay. Publishes the clean stream to the same downstream pipeline a single-node setup uses. |
+| **direct** | Single-node receive. No mesh. The default. |
+| **relay** | Forwards what it hears from the drone to a receiver over the mesh. |
+| **receiver** | The hub. Combines its own reception with every paired relay's forwards and serves the stream to clients. |
 
-A deployment with mesh always has exactly one **receiver** and one or more **relays**. **direct** is the single-node case and never participates in a mesh.
-
-[Read the full role breakdown](/ground-agent/setup#pick-a-role)
+A mesh has exactly one receiver and one or more relays. A `direct` node never takes part in a mesh. [Pick a role](/ground-agent/setup#pick-a-role) compares the three.
 
 ## How the nodes find each other
 
-Each relay and receiver carries a **second RTL8812EU USB adapter** dedicated to the mesh carrier (the first adapter stays on WFB-ng monitor mode for the drone link). Same-chip on both is the default: one SKU per node, one driver, matched 29 dBm TX power on both radios, which triples practical node-to-node range versus 100 mW alternatives.
+Each relay and the receiver carry a **second RTL8812EU or RTL8812AU adapter** for the mesh; the first stays on the drone link. The mesh adapter runs batman-adv, a kernel mesh that handles routing, neighbour discovery and self-healing. The receiver advertises `_ados-receiver._tcp` over mDNS on `bat0`, and relays forward to the receiver that answers.
 
-The mesh adapter runs `batman-adv`, a kernel-level wireless mesh that handles routing, neighbor discovery, and self-healing automatically. Receivers advertise themselves on the mesh interface with mDNS (`_ados-receiver._tcp` on `bat0`). Relays resolve and forward to whichever receiver answers.
+Node-to-node range depends on the adapters, antennas, terrain and channel. Plan spacing from a site survey with your own hardware.
 
-### Hardware metrics
+See [Local mesh (batman-adv)](/ground-agent/batman-adv).
 
-Stock 6 dBi omni antennas, same antenna class on both radios. A 13 dBi panel antenna is a common next step for long-range deployments.
+## How nodes pair
 
-| Mesh carrier | TX power | Node-to-node range (stock omni) | With 13 dBi panel | Driver |
-|---|---|---|---|---|
-| RTL8812EU (default, same chip as primary) | 29 dBm / 800 mW | ~1.5-2.5 km LOS | ~5-8 km LOS | Vendored DKMS build |
-| MT7612U (alternative) | 20 dBm / 100 mW | ~500-800 m LOS | ~1.5-2.5 km LOS | Mainline `mt76` |
-| MT7921AU (alternative, WiFi 6) | 20-23 dBm / 100-200 mW | ~500-900 m LOS | ~1.5-3 km LOS | Mainline `mt7921u` |
+Pairing is local. No cloud service is involved.
 
-A three-node linear deployment (one receiver plus two relays along a corridor) covers roughly 22-25 km on same-chip 29 dBm mesh carriers versus 12-15 km on 100 mW alternatives. Corridor length is the decision driver when picking the adapter.
+- The receiver opens a 60-second accept window from Mission Control (**Mesh & RX**) or the REST API and shows a six-digit join code.
+- Each relay joins with that code.
+- The receiver approves the relay, and an encrypted invite (mesh id, shared key, drone receive key) goes back over the mesh. It opens only under the join code, so a node that overheard the request cannot answer it.
+- The relay stores the invite, then changes its role to `relay`.
 
-[Read the batman-adv setup details](/ground-agent/batman-adv)
+See [Build a mesh](/ground-agent/mesh-setup#mesh-pairing).
 
-## How nodes get paired
+## What you do not manage
 
-Pairing is **field-only**. There is no laptop, no QR code, no cloud service involved.
+- **Routing.** batman-adv handles hops, reroutes, new neighbours and dead-neighbour eviction.
+- **Cloud uplink.** If any node has Ethernet, a Wi-Fi client link or a cellular modem, the mesh can use it as the cloud gateway, and fails over to another when it drops.
+- **FEC combine.** The Reed-Solomon recovery runs at the receiver over fragments from every radio.
+- **Serving the stream.** Browsers, phones and the HDMI kiosk connect to the receiver exactly as they would to a single node.
 
-- The receiver operator presses a button on the OLED to open a 60 second Accept window. The receiver shows a six-digit join code.
-- Each relay operator enters that code and sends a join request over the mesh.
-- The receiver shows the request, the operator presses approve, and an encrypted invite bundle (mesh ID, shared key, drone WFB key) flies back over the same wire. The bundle only opens under the join code, so a node that overheard the request cannot answer it.
-- The relay writes the bundle to disk, brings up its mesh services, and starts forwarding.
+## What you do manage
 
-[Read the field tap-to-pair walkthrough](/ground-agent/setup#field-pairing-on-the-oled)
+- **Hardware.** Every relay and the receiver need the second WFB-class adapter.
+- **Channels.** The drone link runs on 5 GHz; the mesh runs on 2.4 GHz (channel 1 by default, `ground_station.mesh.channel`), so the two radios do not interfere. Pick the mesh channel for the site's 2.4 GHz conditions.
+- **Roles.** Decide which node is the receiver before you go out. It is also where Mission Control and the pilot connect.
 
-## What you do not have to manage
+## Next steps
 
-- **Routing.** batman-adv handles every hop, every reroute, every neighbor join, and every dead-neighbor eviction without manual config.
-- **Cloud uplink.** If any one node has 4G, Ethernet, or a WiFi client connection, the mesh elects it as the cloud gateway. If that node loses uplink, another node takes over.
-- **Per-relay FEC math.** WFB-ng's native Reed-Solomon FEC combine runs at the receiver. Fragments from any relay or the local radio all feed the same recovery loop.
-- **Stream republishing.** The combined output reaches the existing mediamtx pipeline at the receiver. Browsers, phones, and HDMI clients connect to the receiver exactly as they would on a single-node setup.
-
-## What you do have to manage
-
-- **Hardware:** every relay and receiver needs a second USB WiFi adapter in addition to the primary RTL8812EU. Default is a second RTL8812EU for inventory simplicity and matched TX power. MT7612U or MT7921AU work as alternatives when a mainline kernel driver is preferred on the mesh side.
-- **Channel planning:** the primary WFB-ng radio sits on 5 GHz UNII-3 (channel 149 or 153). The mesh carrier runs on 2.4 GHz (channel 1 by default, configurable across channels 1 to 13), a separate band from the primary so the two radios do not interfere. Pick the mesh channel at install time based on the 2.4 GHz interference picture at the deployment site.
-- **Role assignment:** decide which node is the receiver before you head out. The receiver is also the GCS connection target by default.
-
-## Where to next
-
-- [Three Deployment Roles](/ground-agent/setup#pick-a-role) - direct, relay, receiver in detail.
-- [Relay Mode](/ground-agent/setup#add-a-relay) - set up a relay node end-to-end.
-- [Receiver Mode](/ground-agent/setup#bring-up-a-receiver) - set up the hub.
-- [Local Mesh (batman-adv)](/ground-agent/batman-adv) - what runs under the hood.
-- [Field Tap-to-Pair](/ground-agent/setup#field-pairing-on-the-oled) - the OLED-only join flow.
-- [Mesh Troubleshooting](/ground-agent/mesh-troubleshooting) - symptoms and fixes.
+<CardGroup cols={2}>
+  <Card title="Build a mesh" icon="circle-nodes" href="/ground-agent/mesh-setup">
+    Receiver, pairing, relays, verification.
+  </Card>
+  <Card title="Local mesh (batman-adv)" icon="network-wired" href="/ground-agent/batman-adv">
+    What runs underneath.
+  </Card>
+</CardGroup>

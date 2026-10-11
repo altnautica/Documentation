@@ -1,12 +1,14 @@
 ---
 title: "Payload actuator driver"
-description: "Implement a PayloadActuatorDriver to control a sprayer, dropper, claw, or sampler."
-lastUpdated: "2026-06-23"
+description: "Implement a PayloadActuatorDriver to control a sprayer, dropper, claw or sampler."
 ---
 
-A `PayloadActuatorDriver` controls a non-imaging mission payload:
-sprayer, dropper, claw, sampler, winch, or any other actuator the
-operator triggers from a panel or a mission action.
+import DriverLayerStatus from "/snippets/driver-layer-status.mdx";
+import { DriverRustNote } from "/snippets/driver-rust-note.mdx";
+
+<DriverLayerStatus />
+
+A `PayloadActuatorDriver` controls a non-imaging payload: a sprayer, dropper, claw, sampler, winch, or any other actuator your plugin triggers.
 
 ## The interface
 
@@ -40,19 +42,9 @@ class MyPayloadDriver(PayloadActuatorDriver):
         ...
 ```
 
-<Note>
-A Rust trait of the same shape ships in the `ados-sdk` crate at
-`ados_sdk::drivers::PayloadActuatorDriver`. It mirrors the Python
-contract (`discover`, `open`, `close`, `capabilities`, `actuate`,
-`get_state`) with an associated `Session` type and returns
-`DriverResult`. `actuate` returns `DriverError::InvalidParam` when
-`command.action_id` is not in `PayloadCapabilities::actions`, so the
-host can reject the request before it reaches hardware.
-`PayloadCandidate`, `PayloadCapabilities`, `PayloadCommand`, and
-`PayloadState` carry the same fields (`args` and `metadata` are
-msgpack value maps on the Rust side). Pick the language that matches
-your plugin's `agent.runtime` (`python` or `rust`).
-</Note>
+<DriverRustNote trait="PayloadActuatorDriver" methods="discover, open, close, capabilities, actuate, get_state" />
+
+In Rust, `actuate` returns `DriverError::InvalidParam` when `command.action_id` is not in `PayloadCapabilities::actions`, and `args` and `metadata` are msgpack value maps.
 
 ## Capabilities
 
@@ -65,11 +57,7 @@ PayloadCapabilities(
 )
 ```
 
-`actions` is the tuple of `action_id` strings the driver accepts in
-`PayloadCommand`. The GCS panel discovers these and renders one
-button per action. `metadata` is the open-ended bag for
-driver-specific knobs (max payload mass, refill volume, vendor
-firmware version).
+`actions` is the tuple of `action_id` strings the driver accepts in `PayloadCommand`. `metadata` holds driver-specific values (maximum payload mass, refill volume, firmware version).
 
 ## Commands
 
@@ -80,8 +68,7 @@ PayloadCommand(
 )
 ```
 
-`action_id` is mandatory. `args` is a free-form dict that the
-driver validates. Unknown keys should raise `ValueError`.
+`action_id` is mandatory. `args` is a free-form dict the driver validates; raise `ValueError` on unknown keys.
 
 ## State
 
@@ -94,29 +81,26 @@ PayloadState(
 )
 ```
 
-`busy=True` while an action is in flight; the host serialises
-`actuate` calls per session to keep the contract simple. Drivers
-that report sustained errors should propagate them via
-`metadata["error"]` and raise `DriverError` on the next `actuate`
-call so the GCS sees the failure on the user-action path.
+`busy=True` while an action is in flight. Your plugin calls `actuate` itself; serialise calls per session in your plugin. A driver that sees a sustained fault reports it under `metadata["error"]` and raises `DriverError` on the next `actuate` call.
 
-## Manifest permissions
+## Opening the driver from your plugin
 
-```yaml
-agent:
-  permissions:
-    - id: sensor.payload.register   # required, gates registration
-    - id: hardware.uart             # if the driver speaks raw serial
-    - id: hardware.gpio             # if the actuator is driven from a GPIO line
-```
+Your plugin opens the driver in `on_start` and calls `actuate` when its GCS half or a mission action asks for it. The pattern is on [Driver layer](/developers/driver-layer#running-a-driver-from-your-plugin). A GPIO-driven actuator needs `hardware.gpio_out`; a serial one needs `hardware.uart`. Risk levels are on [Permissions](/developers/permissions).
 
-Registration gates on `sensor.payload.register`, which the operator
-approves when they install the plugin. Once registered, actuation
-flows through the driver's `actuate(...)` method, and the host
-serialises those calls per session.
+<Warning>
+A payload that moves or releases mass in flight is a flight-safety action. Read [Safety](/operations/safety) before you fly it.
+</Warning>
 
-## See also
+## Next steps
 
-- [Driver layer](/developers/driver-layer) for the contract.
-- [Permissions](/developers/permissions) for the capability model and
-  risk bands.
+<CardGroup cols={2}>
+  <Card title="Driver layer" href="/developers/driver-layer">
+    The shared contract and the manifest table.
+  </Card>
+  <Card title="Permissions" href="/developers/permissions">
+    The capability catalog and risk levels.
+  </Card>
+  <Card title="Hardware testing" href="/developers/hardware-testing">
+    Test with a mock backend before the bench.
+  </Card>
+</CardGroup>

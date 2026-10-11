@@ -2,10 +2,9 @@
 title: "Battery health"
 description: "Per-pack cell analysis, voltage sag and temperature alerts, and a time-to-reserve estimate computed on the drone."
 icon: "battery-half"
-lastUpdated: "2026-09-24"
 ---
 
-# Battery health
+import AgentConfigBattery from "/snippets/generated/agent-config-battery.mdx";
 
 The drone agent watches every battery pack the flight controller reports
 and turns the raw `BATTERY_STATUS` stream into a health view: per-cell
@@ -128,16 +127,17 @@ battery:
   reserve_percent: 25
 ```
 
-| Key | Default | Range | Unit | Meaning |
-|---|---|---|---|---|
-| `enabled` | `true` | | | Turns the engine on or off. Off returns an empty pack list. |
-| `low_cell_mv` | 3500 | 2500 to 4200 | mV | Lowest cell below this raises `cell_low`. |
-| `critical_cell_mv` | 3300 | 2500 to 4000 | mV | Lowest cell below this raises `cell_critical`. Must be below `low_cell_mv`. |
-| `cell_divergence_mv` | 50 | 10 to 500 | mV | Cell spread above this raises `cell_divergence`. |
-| `voltage_drop_mv_per_s` | 500 | 100 to 5000 | mV/s | Pack sag faster than this raises `voltage_drop`. |
-| `temp_spike_dc_per_s` | 50 | 5 to 200 | 0.1 °C/s | Temperature rise faster than this raises `temp_spike`. 50 means 5 °C/s. |
-| `predictive_window_s` | 30 | 5 to 300 | s | Look-back window for the time-to-reserve estimate. |
-| `reserve_percent` | 25 | 5 to 50 | % | The reserve the estimate counts down to. |
+<AgentConfigBattery />
+
+What each key does:
+
+- `enabled` turns the engine on or off. Off returns an empty pack list.
+- `low_cell_mv` and `critical_cell_mv` (mV): the lowest cell below these raises `cell_low` and `cell_critical`. `critical_cell_mv` must be below `low_cell_mv`.
+- `cell_divergence_mv` (mV): a cell spread above this raises `cell_divergence`.
+- `voltage_drop_mv_per_s` (mV/s): pack sag faster than this raises `voltage_drop`.
+- `temp_spike_dc_per_s` (0.1 °C/s): a temperature rise faster than this raises `temp_spike`. 50 means 5 °C/s.
+- `predictive_window_s` (s): the look-back window for the time-to-reserve estimate.
+- `reserve_percent` (%): the reserve the estimate counts down to.
 
 The engine checks the config file every tick and reloads the block when
 the file changes, so a threshold edit takes effect without a restart.
@@ -163,9 +163,13 @@ that drone it drops a marker on the recording timeline.
 ### On-box dashboard
 
 On the drone's own web dashboard, open **Settings** and pick
-**Battery** (listed under System and safety, drone profile only). It
+**Battery** (listed under **System & safety**, drone profile only). It
 shows the same live pack cards and the threshold fields, and saves to
 the same `battery:` block.
+
+<Frame caption="Battery settings on the drone dashboard, with one live pack and the threshold fields.">
+![Drone dashboard battery settings showing a live pack card and its time-to-reserve strip above the threshold fields](/images/drone-agent/battery-settings.png)
+</Frame>
 
 ## REST API
 
@@ -277,8 +281,19 @@ with:
 ados logs query --kind events --event-kind battery.anomaly --since -1h
 ```
 
-## See also
+## Next steps
 
-- [Configuration](/drone-agent/configuration)
-- [REST API](/drone-agent/rest-api)
-- [Black Box log store](/drone-agent/black-box)
+<CardGroup cols={2}>
+<Card title="Agent dashboard: Settings" icon="sliders" href="/drone-agent/dashboard-settings">
+Every settings page on the drone's own dashboard.
+</Card>
+<Card title="REST API" icon="code" href="/drone-agent/rest-api">
+Authentication and the full route reference.
+</Card>
+<Card title="Black Box" icon="box-archive" href="/drone-agent/black-box">
+Turn on the log store and query battery events.
+</Card>
+<Card title="Safety" icon="triangle-exclamation" href="/operations/safety">
+Battery checks to run before every flight.
+</Card>
+</CardGroup>

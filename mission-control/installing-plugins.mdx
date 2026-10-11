@@ -1,94 +1,92 @@
 ---
-title: "Installing extensions"
-description: "Install signed extensions per drone, review permissions, and manage what each drone runs."
+title: "Install extensions from Mission Control"
+sidebarTitle: "Install from Mission Control"
+description: "Install signed extensions on one node from its Extensions page, review permissions, and enable, configure, update or remove them."
 icon: "puzzle-piece"
-lastUpdated: "2026-06-18"
+keywords: ["ados", "mission control", "extensions", "install", "permissions"]
 ---
 
-# Installing extensions
+Extensions add behaviour to a node and panels to Mission Control. Each one is signed, reviewed at install time and installed on one node at a time. An extension on one drone stays off the others until you install it there too.
 
-Extensions extend Mission Control and the agent on the drones you select. Each extension is signed, reviewed at install time, and scoped to the specific drone you install it on. An extension you enable on one drone in your fleet stays off on the others until you install it there too.
-
-<Frame caption="The Extensions tab on the per-drone detail view, showing installed extensions and the registry browser.">
-  <img src="/images/dashboard/drone/plugins-tab.png" alt="Mission Control Extensions tab on a per-drone view" />
+<Frame caption="A drone's Extensions page with three installed extensions and their parameters.">
+  ![Drone Extensions page listing three running extensions with Disable and Configure, Install from file and extension parameters](/images/mission-control/extensions-tab.png)
 </Frame>
 
 ## Where to install
 
-Open a drone from the fleet, then switch to the **Extensions** tab in the per-drone detail panel. The tab has two regions:
+Open the node, go to **Agent**, and under **Software** click **Extensions**. The page, titled **Extensions on** and the node's name, has:
 
-- **Installed**: every plugin currently installed on this drone. Each row shows version, state (running / stopped / errored), and a quick toggle.
-- **Add a plugin**: install a signed `.adosplug` package. Click a plugin to see its manifest and requested permissions before installing.
+- **Installed on this drone**: every extension on this node, with its status (Running, Enabled, Disabled, Crashed or Installed) and its actions.
+- The list of available extensions from the registry, each with an **Install** button.
+- **Install extension on this drone** and **Install from file**, for a signed `.adosplug` on your computer.
 
-<Note>
-Today you install a plugin from a signed `.adosplug` file on your computer or from a direct URL. A hosted public registry that lists first-party and community plugins is planned but not yet available, so the two file and URL channels are the way to install for now.
-</Note>
+A node with nothing installed shows "No extensions installed on this drone yet."
 
-## Two-stage install dialog
+**Settings → Extensions** is a read-only overview of what is installed across your fleet, plus the registry list. It does not install by itself: **Install on a node…** asks which node, then opens that node's **Extensions** page with the extension selected.
 
-When you pick a plugin to install, Mission Control opens a two-stage dialog so you can review what you're about to grant.
+## Install sources and transport
 
-### Stage 1: Summary
+| Source | How it reaches the node |
+|---|---|
+| Registry list | The node downloads the signed archive from its release URL. Mission Control needs a LAN path to the node. |
+| `.adosplug` file | Sent over the LAN when Mission Control can reach the node; otherwise uploaded and delivered through the cloud relay. |
 
-The first stage shows the plugin's identity:
+You don't pick the transport; the dialog does, and names it while it installs ("LAN direct" or "cloud relay").
 
-- Plugin id (e.g. `com.altnautica.follow-me`)
-- Version + release date
-- Signer key id (first-party plugins are signed by `altnautica-2026-A`)
-- Risk badge (informational / low / medium / high)
-- One-line description
+## Review and install
 
-Confirm to move to permissions; cancel to back out without any state change on the drone.
+Mission Control opens one review page before anything reaches the node. It shows:
 
-### Stage 2: Permissions
+- the extension's name, id, version and description;
+- the publisher, the signer and the trust badge (Altnautica, Verified or Community);
+- compatibility with this node's agent version, board and profile;
+- the requested permissions, grouped, with a count;
+- the flight controller parameters the extension expects and what it contributes to Mission Control;
+- its resource impact.
 
-The second stage groups every capability the plugin requested by domain:
+Click **Install** to install and grant them; the button names how many permissions it grants. Progress then runs Uploading, Queued, Commanded, Downloading, Verifying, Installing, Enabling, Completed over the cloud relay, or Verifying, Installing, Enabling, Completed over the LAN. Verifying is where the node checks the signature; see [Signatures and trust](/drone-agent/plugins#signatures-and-trust).
 
-- **Hardware**: UART, I2C, USB, GPIO claims
-- **Vehicle**: MAVLink read, MAVLink write, mission read/write, command send
-- **Telemetry**: subscribe to a topic, extend the heartbeat
-- **UI**: Mission Control slot contributions (fc.tab, video.overlay, node.detail.tab, and more)
-- **Vendor binaries**: an extra disclosure block when the plugin spawns third-party binaries
+When the install finishes, the dialog tells you whether the extension is enabled. A cloud install is queued until the node next checks in.
 
-You can approve all, deny, or grant per-permission for fine-grained control. Approving sends the install command to the drone over the cloud relay (or directly when the agent is on your LAN), which downloads the `.adosplug` archive, verifies the Ed25519 signature against `/etc/ados/plugin-keys/`, and stages the plugin under the supervisor.
+If the vehicle is armed, Mission Control asks you to confirm ("Vehicle is armed") before it installs, enables, disables or removes an extension, because the action can drop the link or change flight behaviour.
 
-A successful install promotes the plugin to **Installed**; the toggle is off by default. Switch it on to start the plugin process. If the toggle stays grey, open the plugin row to see the error from the supervisor.
+## Enable, configure and remove
 
-## Per-drone scope
+Each installed extension's row has:
 
-Plugins are scoped per drone. Installing the same plugin across several drones means an install action per drone (or one fleet rollout from the fleet view). This is intentional: the operator decides per drone what hardware and capabilities are reasonable, and a plugin that needs a thermal camera should not appear on drones that don't have one.
+- **Enable** or **Disable**, to start or stop it on the node.
+- **Configure**, which opens the extension's detail page with its **Overview**, **Permissions** and **Events** tabs.
+- **View permissions**, which opens the **Permissions** tab, where you can revoke a grant. The extension gets `capability_denied` the next time it uses that capability.
+- **Uninstall**, in the row's menu. It asks "Uninstall this extension?" and clears the extension's data on that node.
 
-The Extensions tab badge counts installed + running plugins for this drone only. Switching to another drone re-renders the panel with that drone's set.
+Extensions that declare parameters get a card in the **Parameters** section of the same page. An extension's tabs and parameter group labels show in your Mission Control language when the extension ships a translation for it.
 
-## Updating a plugin
+When the node stops or refuses an extension (a failed signature or digest check, a revoked signer), the row shows "Stopped by the node:" followed by the node's reason, and the detail page shows it as **Failure reason**. Mission Control reads the reason over the LAN, so it appears only for a node it can reach directly.
 
-When a newer version is available, the row shows an **Update** button next to the version label. Click to open the same two-stage dialog with the new version's permissions; if the permission set has changed, the diff is highlighted. The supervisor stops the old version cleanly, swaps in the new one, and restarts.
+## Updates
 
-Updates do NOT auto-install. The operator approves every version bump so a compromised signing key plus a revoked release cannot silently change what is running on a drone.
+When a newer version is available, the row shows **Update available**. A major version bump, new permissions or a board mismatch needs your review before it installs. The update settings show the current and latest versions, whether auto-update is on and any version pin. Auto-update and pins are set on the node with `ados plugin auto-update` and `ados plugin pin`; see the [Plugin CLI reference](/developers/cli-reference).
 
-## Revoking permissions
+## Where an extension runs
 
-The plugin info panel shows every permission the plugin currently has. Click a permission to revoke it; the plugin gets `capability_denied` from the agent's IPC dispatcher the next time it tries to use the capability. Most plugins handle a revoke by going into degraded mode and surfacing a notification.
+- **Mission Control only:** the extension loads as an iframe in Mission Control and never touches the node.
+- **Agent and Mission Control:** the agent half runs as its own sandboxed unit on the node; the Mission Control half loads as an iframe and talks to it through the plugin host.
+- **Agent only:** the extension runs on the node and contributes no panels.
 
-## Removing a plugin
+## Install across a fleet
 
-The trash icon on a plugin row stops the process and unstages the archive. State the plugin wrote to disk is purged unless you choose **Keep state** at the confirmation prompt. The plugin row disappears from **Installed** after the supervisor confirms cleanup.
+There is no fleet-wide install. Install per node, from each node's **Extensions** page or through **Settings → Extensions** and **Install on a node…**.
 
-## Fleet-wide install
+## Next steps
 
-The fleet view has a separate **Extensions** column on each drone card. To install one extension across multiple drones at once, open the fleet drawer, multi-select the drones, then click **Install extension**. The two-stage dialog runs once and applies to every selected drone; the extension archive is fetched once per drone in parallel.
-
-Fleet rollouts are still per-drone under the hood: each drone independently fetches, verifies, and installs.
-
-## Where the plugin runs
-
-- **GCS-only plugins** (e.g. the `com.example.hello-panel` sample from [Your first plugin](/developers/your-first-plugin)) load as an `iframe` inside Mission Control. They never touch the drone's agent.
-- **Hybrid plugins** (e.g. ADOS Thermal Camera, ADOS MAVLink Gimbal v2, ADOS Vision Navigation) install both halves: the agent half runs as a subprocess of `ados-supervisor` under a systemd slice with CPU and memory limits; the GCS half loads as an `iframe` and talks to the agent over the standard plugin IPC.
-- **Agent-only plugins** install on the drone but contribute no UI. They surface via the plugin info panel and through any topics they publish.
-
-## See also
-
-- [Extensions catalog](/drone-agent/extensions-catalog): the four first-party extensions available today.
-- [Plugins](/drone-agent/plugins): the `ados plugin` CLI and built-in plugins on the agent.
-- [Your first plugin](/developers/your-first-plugin): write your own.
-- [Distribution](/developers/distribution-registry): how plugins are packaged, and the planned hosted registry.
+<CardGroup cols={2}>
+  <Card title="Extensions catalog" icon="boxes-stacked" href="/drone-agent/extensions-catalog">
+    The first-party extensions you can install.
+  </Card>
+  <Card title="Extensions on the agent" icon="puzzle-piece" href="/drone-agent/plugins">
+    The CLI, signatures, permissions and isolation on the node.
+  </Card>
+  <Card title="Your first plugin" icon="rocket" href="/developers/your-first-plugin">
+    Write your own extension.
+  </Card>
+</CardGroup>

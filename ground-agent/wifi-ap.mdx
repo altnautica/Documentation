@@ -1,13 +1,13 @@
 ---
-title: "WiFi AP Mode"
-description: "Connect your laptop or phone to the ground station over WiFi."
+title: "Ground station Wi-Fi access point"
+sidebarTitle: "Wi-Fi access point"
+description: "Join the ground station's Wi-Fi access point from a laptop or phone, and read or change its passphrase and settings."
 icon: "wifi"
-lastUpdated: "2026-06-18"
 ---
 
-# WiFi AP Mode
+import { GsEndpoints } from "/snippets/gs-endpoints.mdx";
 
-The ground station creates a WiFi hotspot on boot. Join it from your laptop or phone, open a browser, and you have video and telemetry. No software to install, no radio drivers, no internet required.
+The ground station runs a Wi-Fi access point on its onboard radio. Join it from a laptop or phone and open a browser for video and telemetry. No software to install, no radio drivers, no internet needed.
 
 ## How it works
 
@@ -16,153 +16,135 @@ The ground station creates a WiFi hotspot on boot. Join it from your laptop or p
 sequenceDiagram
     participant Drone as Drone (WFB-ng TX)
     participant GS as Ground Agent
-    participant Laptop as Laptop / Phone
+    participant Client as Laptop or phone
 
-    Drone->>GS: Long-range video + telemetry
-    GS->>GS: Decode and serve via MediaMTX
-    Note over GS: WiFi AP on 2.4 GHz<br/>SSID: ADOS-GS-XXXX
-    Laptop->>GS: Join WiFi AP
-    Laptop->>GS: HTTP GET 192.168.4.1:8080
-    GS-->>Laptop: Setup webapp or node dashboard
-    Laptop->>GS: WebRTC WHEP (video)
-    GS-->>Laptop: H.264 stream
-    Laptop->>GS: WebSocket (MAVLink telemetry)
-    GS-->>Laptop: Real-time telemetry
+    Drone->>GS: Video and telemetry over WFB-ng
+    Note over GS: Access point on 2.4 GHz<br/>SSID ADOS-GS-<id>
+    Client->>GS: Join the access point
+    Client->>GS: HTTP 192.168.4.1:8080
+    GS-->>Client: Dashboard, setup wizard or cockpit
+    Client->>GS: WebRTC WHEP (video)
+    Client->>GS: MAVLink WebSocket (telemetry)
 ```
 
-The onboard WiFi radio hosts the access point on 2.4 GHz. The dedicated video-link radio stays on the drone-facing receive job. These two radios do not interfere with each other.
+The onboard Wi-Fi radio hosts the access point on 2.4 GHz. The WFB-ng adapter stays on the drone link and is never used for the access point.
 
-## Connecting from a laptop
+## Connect from a laptop
 
 <Steps>
-  <Step title="Join the WiFi network">
-    Look for `ADOS-GS-XXXX` in your WiFi list. The `XXXX` suffix is derived from the ground station's device ID. The passphrase is generated for that unit on first boot. See [The AP passphrase](#the-ap-passphrase) below for where to read it.
+  <Step title="Join the network">
+    Look for `ADOS-GS-<id>` in your Wi-Fi list. The suffix comes from the node's device id. The passphrase is generated for that unit; see [The AP passphrase](#the-ap-passphrase).
   </Step>
   <Step title="Open the browser">
-    Navigate to `http://192.168.4.1:8080`. That is the node dashboard on a set-up node and the setup webapp on a fresh one. `http://setup.ados.local:8080/` reaches the same listener through the AP's own DNS. Mission Control is separate software you run on your laptop or a server; nothing on the ground station serves it.
+    Go to `http://192.168.4.1:8080`. A node that has not finished setup opens the setup wizard; a set-up node opens its dashboard. During first-time setup only, `http://setup.ados.local:8080/` reaches the same page. Mission Control is separate software that runs on your laptop or a server; the ground station does not serve it.
   </Step>
-  <Step title="Start flying">
-    Video and telemetry appear automatically. Fly from the on-box cockpit at `http://192.168.4.1:8080/cockpit/`, which reads a USB or Bluetooth gamepad through the Web Gamepad API. Press any button on the gamepad to register it.
+  <Step title="Fly">
+    Open the on-box cockpit at `http://192.168.4.1:8080/cockpit/`. It reads a USB or Bluetooth gamepad through the browser's Gamepad API; press any gamepad button to register it.
   </Step>
 </Steps>
 
-## Connecting from a phone
+## Connect from a phone
 
-The flow is the same. Join the WiFi, open a browser (Chrome on Android, Safari on iOS), and navigate to `http://192.168.4.1:8080` or `http://setup.ados.local:8080/`.
+The flow is the same: join the network, open a browser (Chrome on Android, Safari on iOS) and go to `http://192.168.4.1:8080`.
 
-For Android users, the ADOS Android app provides a better experience with auto-discovery and native video decoding. See [Android Client](/ground-agent/android-client) for details.
+Android users can also use the Android GCS app. See [Android client](/ground-agent/android-client).
 
 <Note>
-Android may show a "No internet" warning when you join the AP. This is expected. The ground station is a local network, not an internet gateway. Tap "Use without internet" or "Stay connected" to proceed.
+Android may show a "No internet" warning after you join. The ground station is a local network, not an internet gateway. Choose "Stay connected" to keep using it.
 </Note>
 
 ## Network details
 
 | Setting | Value |
-|---------|-------|
-| SSID | `ADOS-GS-{short_id}` |
+|---|---|
+| SSID | `ADOS-GS-<id>` |
 | Band | 2.4 GHz |
-| Security | WPA2 |
+| Default channel | 6 |
+| Security | WPA2-PSK |
 | Subnet | `192.168.4.0/24` |
-| Ground station IP | `192.168.4.1` |
+| Ground station address | `192.168.4.1` |
 | DHCP range | `192.168.4.10` to `192.168.4.100`, 12 h leases |
-| Client limit | ~3-4 video viewers comfortably on 2.4 GHz |
 
-## Endpoints available over WiFi
+## Endpoints over Wi-Fi
 
-Once connected to the AP, your browser can reach:
+<GsEndpoints host="192.168.4.1" />
 
-| Endpoint | URL | Purpose |
-|----------|-----|---------|
-| Node dashboard and setup webapp | `http://192.168.4.1:8080` | Status, config, logs, diagnostics |
-| Cockpit | `http://192.168.4.1:8080/cockpit/` | Fly from the browser |
-| WebRTC WHEP | `http://192.168.4.1:8889/main/whep` or the WHEP URL the agent reports | Direct video stream |
-| MAVLink WebSocket | `ws://192.168.4.1:8765/` | Raw MAVLink telemetry |
-| Agent REST API | `http://192.168.4.1:8080/api/` | Agent management |
+## Several clients
 
-## Multiple clients
+Each video client gets its own WebRTC session. A 2.4 GHz access point carries only a few video viewers before throughput suffers; telemetry over the WebSocket is light.
 
-Up to 3-4 devices can stream video simultaneously over the 2.4 GHz AP before throughput starts to degrade. Each client gets its own WebRTC session from MediaMTX. Telemetry over WebSocket is lightweight and supports many more clients.
+Only one client at a time holds pilot-in-command (PIC). A gamepad on the HDMI kiosk claims PIC automatically when no one holds it. Other clients claim or release it explicitly from Mission Control or the cockpit.
 
-Only one client at a time has pilot-in-command authority (the ability to send stick inputs to the drone). The first client with an active gamepad claims PIC. Other clients can request it through Mission Control.
+With **uplink sharing** on, access point and USB clients get NAT internet through the node's active uplink. It does not bridge the access point and USB subnets to each other. See [Uplink matrix](/ground-agent/uplink-matrix#uplink-sharing).
 
 ## The AP passphrase
 
-The access point is WPA2-PSK. There is no open mode and no passphrase printed in advance, because the agent generates one for that unit on first boot. Two units flashed from the same image get different passphrases.
+The access point is WPA2-PSK. There is no open mode and no passphrase printed in advance: the agent generates one for each unit the first time the access point starts, so two units flashed from the same image get different passphrases.
 
-The generated value is 12 characters drawn from `ABCDEFGHJKMNPQRSTUVWXYZ23456789`. The alphabet leaves out `0`, `O`, `1`, `I`, and `L` so that a passphrase read off a small display and typed into a phone does not fail on a character you cannot tell apart. It is stored at `/etc/ados/ap-passphrase`, readable only by root.
+The generated value is 12 characters from `ABCDEFGHJKMNPQRSTUVWXYZ23456789`. The alphabet leaves out `0`, `O`, `1`, `I` and `L`, so a passphrase read off a small display does not fail on a character you cannot tell apart. It is stored at `/etc/ados/ap-passphrase`, readable only by root.
 
 ### Where to read it
 
 | Surface | What to look for |
 |---|---|
-| Installer completion summary | A `Wi-Fi access point` section with the network name and passphrase. This is the moment to write it down. |
-| `ados` status page | The `wifi key` row. Run `ados` on the box or over SSH. |
-| On-box panel | The access-point page shows the name, the passphrase, and a join QR code your phone camera can scan. |
-| `ados network ap-passphrase` | The passphrase on its own line with nothing around it. Needs no TTY, so it composes into a script or a pipe: `ados network ap-passphrase \| pbcopy`. |
+| Installer completion summary | A `Wi-Fi access point` section with the network name and passphrase. Write it down here. |
+| Terminal status view | The `wifi key` row. Run `ados` on the box or over SSH. |
+| LCD | The access point detail page shows the name, the passphrase and a join QR code. |
+| `ados network ap-passphrase` | The passphrase on its own line, with no TTY needed, so it composes into a script or pipe. Run it as root. |
 
-The command is the one to reach for when something else has to consume the value. It resolves the file through the agent's platform paths rather than hardcoding the Linux location, and it only reads: on a unit whose access point has never started it reports that there is no passphrase instead of generating one hostapd never loaded. The file is mode 0600, so run it as root.
+The command only reads. On a unit whose access point has never started, it reports that there is no passphrase rather than generating one.
 
-The passphrase is deliberately not returned by the REST API and is not shown in the browser dashboard. Those surfaces answer anything that can already reach the ground station, which is the population the access point exists to admit on purpose.
+The passphrase is not returned by the REST API and not shown in the browser dashboard. Those surfaces answer anyone who can already reach the ground station, which is exactly the population the access point admits.
 
 ### If a passphrase is set in config
 
-`network.hotspot.password` takes precedence over the generated value. That is there so a fleet can deliberately run one shared credential, but it means every unit built from a config that carries the same value shares one passphrase. Check that key before you roll an image out to more than one box.
-
-To change the passphrase, use the ground-station network settings or `PUT /api/v1/ground-station/network/ap`. No `ados` command writes it; `ados network ap-passphrase` only reads.
+`network.hotspot.password` in `/etc/ados/config.yaml` is used when `/etc/ados/ap-passphrase` does not exist. It lets a fleet run one shared credential, which also means every unit built from that config shares one passphrase. Check that key before rolling an image out to several boxes.
 
 <Note>
-A factory reset deletes `/etc/ados/ap-passphrase` and clears a configured passphrase, so the unit generates a fresh one on the next boot. Anyone who wrote down the old one loses access, which is the point.
+A factory reset deletes `/etc/ados/ap-passphrase` and the config file, so the unit generates a fresh passphrase on its next start. Anyone holding the old one loses access.
 </Note>
 
-## WiFi AP configuration
+## Change the access point
 
-You can change the AP settings from three places:
+Change the access point from Mission Control (node panel, **Network**) or over REST:
 
-- **OLED menu:** Navigate to Network > WiFi AP
-- **Setup webapp:** Open the Network page
-- **Mission Control:** Open the ground-station panel > Network tab
+```bash
+curl -X PUT http://localhost:8080/api/v1/ground-station/network/ap \
+  -H "Content-Type: application/json" \
+  -d '{"ssid": "ADOS-GS-FIELD", "passphrase": "correct-horse-battery", "channel": 11, "enabled": true}'
+```
 
-Configurable settings:
+| Field | Rule |
+|---|---|
+| `ssid` | 1 to 32 bytes, no control characters |
+| `passphrase` | 8 to 63 printable ASCII characters |
+| `channel` | A 2.4 GHz channel, 1 to 13 |
+| `enabled` | `true` or `false` |
 
-- SSID name
-- Passphrase
-- Band (2.4 GHz only on Pi 4B, 2.4 or 5 GHz on boards with dual-band onboard radio)
-- Channel auto-selection or manual pick
-- Enable / disable toggle
+Omit a field to leave it unchanged. The SSID and channel are also stored as `network.hotspot.ssid` and `network.hotspot.channel` in the config.
 
 <Warning>
-If you disable the WiFi AP and have no other way to reach the ground station (no Ethernet, no USB tether), you will need to connect a monitor and keyboard to re-enable it. The OLED menu is the safest way to toggle the AP.
+If you disable the access point and the node has no other way in (no Ethernet, no USB tether), reconnect over Ethernet or USB tether, or re-enable it from the box with `PUT /api/v1/ground-station/network/ap` and `{"enabled": true}`.
 </Warning>
 
-## 5 GHz AP on some boards
+On a node with a single Wi-Fi radio, the access point stands down while that radio carries a working Wi-Fi client uplink, and comes back when the client link drops. See [Uplink matrix](/ground-agent/uplink-matrix#wi-fi-client-and-the-access-point-on-one-radio).
 
-On production boards with dual-band onboard WiFi (separate from the RTL8812EU), you can run the AP on 5 GHz for higher throughput. This requires the WFB-ng radio to use a different 5 GHz channel. The agent handles channel deconfliction automatically.
-
-The Pi 4B onboard WiFi supports 5 GHz but the driver is less reliable in AP mode at 5 GHz. Stick to 2.4 GHz on the Pi 4B.
+While the access point is enabled and not standing down, the uplink router (`ados-uplink-router`) checks it every 15 seconds and starts it again if it is not running, with no retry limit. A failed start at boot, or an onboard radio that appears late, recovers on its own within one check.
 
 ## HTTPS and mixed content
 
-If you load Mission Control from `https://command.altnautica.com` (the hosted version), your browser blocks HTTP connections to the local ground station. This is a browser security policy, not an ADOS limitation.
+A browser that loaded Mission Control over HTTPS (the hosted version) blocks plain HTTP connections to the ground station. This is browser policy.
 
-Two workarounds:
+1. **Use the on-box surfaces.** `http://192.168.4.1:8080` for the dashboard and `http://192.168.4.1:8080/cockpit/` to fly. Everything stays on the local network.
+2. **Run Mission Control locally.** The desktop app, or a local install served over HTTP, can talk to the ground station directly. See [Install Mission Control](/mission-control/installation).
 
-1. **Use the on-box surfaces.** Open `http://192.168.4.1:8080` for the node dashboard and `http://192.168.4.1:8080/cockpit/` to fly. All traffic stays HTTP on the local network.
-2. **Run Mission Control on your laptop.** Clone the repo, run `npm run dev`, and open `http://localhost:4000`. Dev mode uses HTTP, so it can talk to the ground station directly.
+## Next steps
 
-<Tip>
-For field use, the on-box cockpit is the recommended approach. No internet, no HTTPS issues, lowest latency.
-</Tip>
-
-## Power
-
-WiFi AP mode is usually powered from a wall adapter on the bench or a USB-C power bank in the field. Avoid relying on laptop back-power when multiple WiFi clients are streaming video.
-
-[Power and Runtime](/ground-agent/power-and-runtime) has field runtime estimates.
-
-## What is next
-
-- [USB Tether](/ground-agent/usb-tether) for a wired alternative
-- [Power and Runtime](/ground-agent/power-and-runtime) for field power sizing
-- [HDMI Kiosk](/ground-agent/hdmi-kiosk) to fly with no laptop at all
-- [Set Up a Ground Station](/ground-agent/setup) for the first-time walkthrough
+<CardGroup cols={2}>
+  <Card title="USB tether" icon="usb" href="/ground-agent/usb-tether">
+    The wired alternative.
+  </Card>
+  <Card title="HDMI kiosk" icon="display" href="/ground-agent/hdmi-kiosk">
+    Fly with no laptop at all.
+  </Card>
+</CardGroup>

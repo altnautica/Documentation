@@ -1,153 +1,101 @@
 ---
-title: "Calibration"
-description: "Step-by-step wizards for all 9 sensor calibration types."
+title: "Sensor calibration"
+sidebarTitle: "Calibration"
+description: "Calibrate the accelerometer, gyro, compass, level, airspeed, barometer, RC, ESCs and CompassMot from the Setup tab, per firmware."
 icon: "compass"
 ---
 
-Proper sensor calibration is essential for safe flight. Mission Control provides guided calibration wizards that walk you through each step, show progress in real time, and report success or failure with diagnostic details.
+Calibrate the sensors before the first flight and after any change to how the flight controller or compass is mounted. The guided wizards live in one panel: open the node, go to the **Setup** tab, and choose **SENSORS** → **Calibration**. The calibration tiles in the node's System view open the same panel.
 
-<Frame caption="Compass calibration wizard showing progress per compass">
-  <img src="/images/dashboard/calibration.png" alt="Calibration wizard with step indicators and compass progress bars" />
+<Frame caption="The Calibration panel (Setup tab, SENSORS) with a compass calibration running.">
+  ![Calibration panel with the compass wizard in progress and the calibration log on the right](/images/mission-control/setup-calibration.png)
 </Frame>
 
-## Calibration Types
+<Warning>
+Remove the propellers before ESC calibration and CompassMot: the motors spin. Every calibration's start button is disabled, with the reason shown, while the aircraft is armed or its arm state is unknown, and stays disabled until the flight controller reports it is disarmed. A calibration that is already running can still be cancelled.
+</Warning>
 
-Mission Control supports 9 calibration types for ArduPilot and PX4. Not all types apply to every vehicle or firmware.
+## What each firmware offers
 
-| Type | Description | When to do it |
-|------|-------------|---------------|
-| **Accelerometer** | Calibrates the 3-axis accelerometer for level and orientation | After first setup, after moving the FC to a new position on the frame |
-| **Gyroscope** | Calibrates gyro bias (zero-rate offset) | After first setup. Place the vehicle on a flat, still surface. |
-| **Compass** | Calibrates magnetometer offset and scale factors | After first setup, after changing electronics or wiring, if compass shows errors |
-| **Level** | Sets the vehicle's level orientation reference | After mounting changes that shift the FC angle |
-| **RC Calibration** | Maps RC stick endpoints and center positions | After binding a new transmitter or changing channel assignments |
-| **ESC Calibration** | Sets ESC throttle range (min/max PWM) | After installing new ESCs, or when motors do not spin evenly |
-| **Airspeed** | Calibrates the differential pressure airspeed sensor | Fixed-wing and VTOL vehicles with a pitot tube |
-| **Barometer** | Calibrates the barometric pressure sensor baseline | Rarely needed. Useful at high altitude or with known baro drift. |
-| **CompassMot** | Measures magnetic interference from motors/power | After any wiring change near the compass. Recommended for all builds. |
+| Calibration | ArduPilot | PX4 | Betaflight | iNav |
+|---|---|---|---|---|
+| Accelerometer | Six positions | Six positions | Single level capture | Six orientations |
+| Gyroscope | Yes | Yes | Runs at every boot | n/a |
+| Compass | Rotation, with pre-flight checks | Rotation | Use Betaflight Configurator or the CLI | Timed rotation |
+| Level | Yes | Yes, plus **Quick Level (PX4)** | n/a | n/a |
+| Airspeed | Yes | Yes | n/a | n/a |
+| Barometer | Yes | Yes | n/a | n/a |
+| RC | Yes | Yes | n/a | n/a |
+| ESC | Yes | Yes | n/a | n/a |
+| CompassMot | Yes | Yes | n/a | n/a |
+| Known-heading compass | n/a | Yes | n/a | n/a |
 
-## Calibration Wizard
-
-Each calibration type uses a step-by-step wizard:
+## Run a wizard
 
 <Steps>
-  <Step title="Select calibration type">
-    Open the Calibration panel from the Configure section. Choose the calibration you want to perform.
+  <Step title="Open the panel">
+    Open the node, then **Setup** → **SENSORS** → **Calibration**.
   </Step>
-  <Step title="Follow position instructions">
-    For multi-position calibrations (accelerometer, compass), the wizard tells you which orientation to hold. For example: level, left side down, right side down, nose down, nose up, on its back.
+  <Step title="Start a calibration">
+    Read the tips in the wizard card and click start.
   </Step>
-  <Step title="Wait for data collection">
-    Hold the vehicle still in the requested position. The progress bar fills as the FC collects samples.
+  <Step title="Follow the positions">
+    For multi-position calibrations the wizard shows which orientation to hold. The progress bar fills as the flight controller collects samples, and the wizard advances to the next position.
   </Step>
-  <Step title="Move to next position">
-    When the current position is complete, the wizard advances to the next step. Repeat until all positions are done.
-  </Step>
-  <Step title="Review results">
-    The wizard shows success or failure. For compass calibration, per-compass fitness values and orientation results are displayed.
+  <Step title="Review and save">
+    The wizard reports success or failure. A before-and-after table shows the values that changed. If the result needs a reboot, a banner offers **Reboot**.
   </Step>
 </Steps>
 
-## Accelerometer Calibration
+The calibration log on the right of the panel shows the flight controller's status text as it arrives, with warnings and errors highlighted. A failed calibration usually names its reason there.
 
-The accelerometer calibration uses 6 positions:
+## Accelerometer
 
-1. **Level** - Place the vehicle flat on a level surface
-2. **Left side** - Tilt so the left side faces down
-3. **Right side** - Tilt so the right side faces down
-4. **Nose down** - Tilt forward so the nose points down
-5. **Nose up** - Tilt back so the nose points up
-6. **On its back** - Flip the vehicle upside down
+ArduPilot and PX4 use six positions: level, left side down, right side down, nose down, nose up and on its back. Hold each still on a flat surface until the wizard moves on. iNav also uses six orientations and shows a tile per orientation. Betaflight captures a single level sample.
 
-At each position, hold the vehicle still for a few seconds while the FC collects accelerometer samples. The wizard tells you when to move to the next position.
+## Compass
 
-<Tip>
-Use a flat table or calibration jig for accurate results. The flatter and more stable the surface, the better the calibration.
-</Tip>
+Pick up the aircraft and rotate it slowly through every orientation until each compass reaches 100%. The wizard shows per-compass progress and the fitness of the result, and you accept the new offsets at the end.
 
-## Compass Calibration
+On ArduPilot, a **Compass Pre-flight Checks** block appears before you start. It reads `COMPASS_USE`, `COMPASS_ORIENT`, `COMPASS_AUTO_ROT`, `COMPASS_OFFS_MAX`, `COMPASS_LEARN` and `COMPASS_EXTERNAL`, and offers **Fix** buttons that write recommended values for `COMPASS_AUTO_ROT` and `COMPASS_OFFS_MAX`.
 
-Compass calibration is the most involved process. You rotate the vehicle in all orientations while the FC collects magnetic field readings.
-
-**What the wizard shows:**
-- Per-compass progress (% complete) for each magnetometer
-- Compass direction vectors in real time
-- Completion mask showing which orientation sectors have been sampled
-- Fitness score after calibration (lower is better)
-- Old vs new orientation if the compass orientation changed
-
-**How to do it:**
-1. Start the calibration from the wizard.
-2. Pick up the vehicle and slowly rotate it in all directions. Tilt, spin, and yaw to cover every orientation.
-3. Watch the progress bars. When all compasses reach 100%, the calibration completes automatically.
-4. Review the fitness scores. Fitness below 20 is good. Above 50 suggests magnetic interference.
+On iNav the compass calibration runs for the time set in `mag_calibration_time`.
 
 <Warning>
-Perform compass calibration outdoors, away from metal structures, cars, and power lines. Indoor calibration near steel or electronics produces poor results.
+Calibrate the compass outdoors, away from steel, cars and power lines.
 </Warning>
 
-## RC Calibration
+### Known-heading compass calibration (PX4)
 
-RC calibration maps your transmitter's stick ranges to the FC's expected input range.
+PX4 can calibrate the compass from the world magnetic model and a known heading, with no rotation. Go outdoors, wait for a GPS fix with more than six satellites, point the nose at a known true heading, enter it, and start. A wrong heading miscalibrates the compass by the same error.
 
-<Steps>
-  <Step title="Start RC calibration">
-    Select RC Calibration in the wizard. Make sure your transmitter is bound and connected.
-  </Step>
-  <Step title="Move all sticks to extremes">
-    Move each stick to its full range in all directions. The channel bars show the min, center, and max values for each channel.
-  </Step>
-  <Step title="Center all sticks">
-    Return all sticks to their center positions. The wizard records the center values.
-  </Step>
-  <Step title="Complete">
-    The wizard writes the calibrated values to the FC. Channel ranges are now set.
-  </Step>
-</Steps>
+## Level
 
-## ESC Calibration
+Level sets the reference attitude after the flight controller is mounted. Place the aircraft level and start. **Quick Level (PX4)** does the same on PX4 in one step.
 
-ESC calibration sets the throttle range so all ESCs respond identically to the same throttle command.
+## Airspeed and barometer
 
-<Warning>
-Remove propellers before ESC calibration. The motors will spin during the process.
-</Warning>
+Airspeed calibration zeroes a pitot-tube sensor on planes and VTOL aircraft. Barometer calibration resets the pressure baseline; the panel shows the current pressure.
 
-1. Start ESC calibration from the wizard.
-2. The FC sends the maximum throttle signal, then the minimum signal.
-3. ESCs learn the range and beep to confirm.
-4. The process completes in about 10 seconds.
+## RC
+
+Move every stick and switch to its full range, then centre the sticks. The wizard records each channel's minimum, centre and maximum and writes them to the flight controller.
+
+## ESC
+
+ESC calibration teaches all ESCs the same throttle range. Remove the propellers, start the wizard and follow its prompts. The ESCs beep to confirm.
 
 ## CompassMot
 
-CompassMot measures how much magnetic interference the motors and power wiring create at the compass location.
+CompassMot measures how much the motors and power wiring disturb the compass as throttle rises. A high interference figure means the compass should move farther from the power wiring.
 
-1. Start CompassMot from the wizard.
-2. The FC slowly ramps up throttle while recording compass readings.
-3. The result is a percentage: 0% means no interference, 100% means the compass is unusable at full throttle.
-4. Below 30% is acceptable. Above 30%, consider relocating the compass farther from power lines and motors.
+## Next steps
 
-## Calibration Log
-
-During calibration, a log panel shows real-time messages from the FC:
-
-- Status messages with progress updates
-- Warning messages for issues (e.g., "Sample not level enough")
-- Error messages for calibration failures
-- Keyword matching highlights important messages
-
-If a calibration fails, the log often contains the reason (e.g., "Insufficient rotation" for compass, "Timeout waiting for data" for accelerometer).
-
-## Reboot Banner
-
-Some calibrations require a flight controller reboot to apply the new values. When this is the case, a persistent banner appears at the top of the panel with a "Reboot" button. You can also reboot by power-cycling the FC.
-
-## Preflight Checks
-
-The Pre-Arm Checks section shows whether calibration is current:
-
-- **Green:** Sensors calibrated and healthy
-- **Yellow:** Calibration may be stale or marginal
-- **Red:** Calibration required before arming
-
-The FC will refuse to arm if required calibrations have not been performed.
+<CardGroup cols={2}>
+  <Card title="Flight controller setup" icon="sliders" href="/mission-control/fc-configuration">
+    Frame, outputs, flight modes and failsafes.
+  </Card>
+  <Card title="Parameters" icon="table" href="/mission-control/parameters">
+    Inspect and edit every parameter.
+  </Card>
+</CardGroup>

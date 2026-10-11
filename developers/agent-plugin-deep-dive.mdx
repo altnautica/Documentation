@@ -1,54 +1,100 @@
 ---
-title: "Agent plugin deep dive"
-description: "Subprocess model, IPC envelopes, capability tokens, cgroup limits, supervisor restart policy."
-lastUpdated: "2026-06-23"
+title: "Agent runtime and sandbox"
+sidebarTitle: "Agent runtime"
+description: "How the plugin host runs an agent half: unit and log names, environment, IPC frames, capability checks, sandbox and restart policy."
+keywords: ["plugin host", "systemd unit", "sandbox", "plugin logs", "ipc", "cgroup"]
 ---
 
-This page is for plugin authors writing non-trivial agent halves.
-It walks the runtime path top to bottom: how the host spawns your
-code, how IPC frames travel, how capabilities gate every privileged
-call, and how the supervisor decides when your plugin has misbehaved.
+This page is for authors writing non-trivial agent halves. It walks the
+runtime path top to bottom: how the plugin host starts your code, what the
+unit is called and where it logs, how IPC frames travel, how capabilities
+gate every privileged call, and how the sandbox and restart policy behave.
 
 ## Subprocess model
 
-Every third-party agent plugin runs as its own process, started by
-systemd as a generated unit inside the shared `ados-plugins.slice`
-cgroup slice. There is no in-process plugin tier for third parties;
-isolation is mandatory. (Built-in plugins that declare
-`isolation: inprocess` import into the supervisor and skip all of this.)
+Every third-party agent plugin runs as its own process, started by systemd
+from a generated unit inside the shared `ados-plugins.slice` cgroup slice.
+There is no in-process tier for third parties. Built-in plugins that declare
+`isolation: inprocess` run inside the agent and skip everything on this page.
 
-```
+```text
 ados-plugins.slice
-  ├── ados-plugin-com-example-battery.service   (subprocess #1)
-  ├── ados-plugin-com-example-thermal.service   (subprocess #2)
-  └── ados-plugin-com-example-gimbal.service     (subprocess #3)
+  ├── ados-plugin-com-example-battery-c2d87e2a.service
+  ├── ados-plugin-com-example-thermal-lepton-1b3dd913.service
+  └── ados-plugin-com-example-thermal-lepton-1b3dd913-<service>.service
 ```
 
-The unit name is derived from the plugin id with dots replaced by
-hyphens, so `com.example.battery` becomes
-`ados-plugin-com-example-battery.service`.
+The plugin host (`ados-plugin-host.service`) owns the plugin's Unix socket,
+renders the unit, and is a hard dependency of every plugin unit.
 
-Each subprocess receives a small fixed environment:
+## Unit name
 
-| Variable | Purpose |
-|----------|---------|
-| `ADOS_PLUGIN_SOCKET` | Unix domain socket path for IPC to the supervisor. |
-| `ADOS_PLUGIN_TOKEN` | Capability token minted per start, delivered through a `0600` environment file. |
-| `ADOS_PLUGIN_AGENT_ID` | The drone id this instance targets, for per-drone plugins (empty otherwise). |
+The unit name is `ados-plugin-<id with dots replaced by hyphens>-<8 hex>.service`.
+The 8 hex digits are the first 4 bytes of sha256 of the exact plugin id, so
+two ids that sanitize to the same string (`com.example.thermal` and
+`com.example-thermal`) never share a unit. `com.example.thermal-lepton`
+becomes `ados-plugin-com-example-thermal-lepton-1b3dd913.service`.
 
-The plugin id is passed as the runner's positional argument, not an
-env var. Paths the plugin writes to (`ctx.data_dir`, `ctx.config_dir`,
-`ctx.temp_dir`) are resolved by the runner and handed to the plugin on
-the `ctx` object, not through the environment.
+Find yours on the node:
+
+```bash
+systemctl list-units 'ados-plugin-*'
+```
+
+Each service a plugin declares under `agent.contributes.services` gets its
+own unit, `ados-plugin-<sanitized id>-<8 hex>-<service name>.service`, in the
+same slice and with the same sandbox as the main unit. Units are written to
+`/etc/systemd/system/`.
+
+## Logs
+
+The unit appends stdout and stderr to
+`/var/log/ados/plugins/<sanitized id>-<8 hex>.log`, for example
+`/var/log/ados/plugins/com-example-thermal-lepton-1b3dd913.log`. A declared
+service logs to `<sanitized id>-<8 hex>-<service name>.log` in the same
+directory. Plugin output does not go to the journal.
+
+`ados plugin logs` asks the agent for the plugin's log path, so you never
+build the name yourself:
+
+```bash
+ados plugin logs com.example.thermal-lepton --follow
+ados plugin logs com.example.thermal-lepton --service capture --lines 50
+```
+
+`--service` reads a declared service's log; an unknown service name exits
+with the list of declared services. The supervisor trims any plugin log
+past 32 MiB in place, keeping its tail.
+
+## Environment
+
+The unit sets a small, fixed environment:
+
+| Variable | Value |
+|----------|-------|
+| `ADOS_PLUGIN_SOCKET` | Host socket, `/run/ados/plugins/<id>/host.sock`. |
+| `ADOS_NODE_PROFILE` | `drone`, `ground-station`, `workstation` or `compute`. |
+| `ADOS_PLUGIN_HTTP_SOCKET` | Only with `agent.http: true`: the socket the plugin serves HTTP on, `/run/ados/plugin-http/<id>/http.sock`. |
+
+The capability token, agent id and data directory are not in the
+environment. The host writes them to a root-owned `0600` file and the unit
+loads it with `LoadCredential=`, so the process reads it as
+`$CREDENTIALS_DIRECTORY/ados-plugin-token`, visible to that plugin's user
+alone. The host rewrites it on every start and every token rotation. The
+Python runner reads it for you; a Rust plugin's SDK runner does the same.
+
+The plugin id is the runner's first positional argument. The paths the
+plugin writes to arrive on the `ctx` object (see
+[State and storage](/developers/state-and-storage)).
 
 ## IPC envelope
 
-The supervisor opens the Unix socket before spawning the plugin and
-listens on it. The plugin connects on startup and speaks
-length-prefixed msgpack frames: a 4-byte big-endian length, then the
-msgpack-encoded envelope.
+The plugin host listens on the socket before the plugin starts. The plugin
+connects on startup and speaks length-prefixed msgpack frames: a 4-byte
+big-endian length, then the msgpack-encoded envelope. Frames over 4 MiB are
+refused.
 
-```
+```text
 +----------------------+----------------------+
 | u32 length (big-end) | msgpack envelope     |
 +----------------------+----------------------+
@@ -71,17 +117,17 @@ fields):
 }
 ```
 
-The supervisor never trusts the `capability` field on the wire. It
-re-resolves the required capability from the method name on every
-request, then checks the granted set carried by the token. Forging the
-field fails with a capability-denied error.
+The host never trusts the `capability` field on the wire. It resolves the
+required capability from the method name on every request, then checks the
+granted set carried by the token. Forging the field fails with a
+capability-denied error.
 
 ## The plugin class and lifecycle hooks
 
 A plugin's agent half is a class named by the manifest `entrypoint`
-(`module:Class`, or a `Plugin` class in a file-path entrypoint). The
-runner imports it, constructs it, and calls async lifecycle hooks if
-they are defined. The hooks are duck-typed; implement the ones you need:
+(`module:Class`, or a `Plugin` class in a file-path entrypoint). The runner
+imports it, constructs it, and calls async lifecycle hooks if they are
+defined. The hooks are duck-typed; implement the ones you need:
 
 ```python
 class MyPlugin:
@@ -90,34 +136,31 @@ class MyPlugin:
     async def on_stop(self, ctx) -> None: ...
 ```
 
-`on_start` runs once after the IPC handshake. `on_configure` runs with
-the plugin's config. `on_stop` runs when the supervisor sends `SIGTERM`.
-`on_install`, `on_enable`, and `on_disable` are also called if present.
+At start the runner calls `on_install`, `on_enable`, `on_configure` (with
+the static config) and then `on_start`, each only if present. `on_stop` and
+`on_disable` run when the unit receives `SIGTERM`. See
+[Lifecycle](/developers/lifecycle) for the full order.
 
-The `ctx` is a `PluginContext` with capability-gated facades:
-`ctx.events`, `ctx.mavlink`, `ctx.peripheral_manager` (alias
-`ctx.peripherals`), `ctx.camera`, `ctx.video`, `ctx.vision`,
-`ctx.telemetry`, `ctx.config`, and `ctx.process`. These are the host
-surfaces; the IPC client underneath is an implementation detail.
-
-<Note>
-The author SDK package `ados.sdk` currently exports the typed driver
-base classes, the vision types, and the test harness. The
-`PluginContext` facade surface is host-side and not yet re-exported from
-`ados.sdk`; the reference plugins in `ADOSExtensions/extensions/` are
-the working examples to copy from.
-</Note>
+`ctx` is a `PluginContext` built by the runner. It exposes the
+capability-gated facades `ctx.events`, `ctx.mavlink`, `ctx.msp`,
+`ctx.peripheral_manager`, `ctx.camera`, `ctx.video`, `ctx.flight`,
+`ctx.buttons`, `ctx.vision`, `ctx.telemetry`, `ctx.config_kv` (live
+key-value config), `ctx.process`, `ctx.lifecycle` and `ctx.tools`, plus
+`ctx.config` (the static config dict), `ctx.plugin_id`, `ctx.agent_id`,
+`ctx.data_dir`, `ctx.config_dir`, `ctx.temp_dir` and `ctx.log`. You receive
+it as an argument and never construct it; the reference plugins in
+`ADOSExtensions/extensions/` are working examples.
 
 ## Capability enforcement
 
-Capabilities are enforced on the supervisor side, not in the plugin.
-Each method maps to a required capability; the supervisor checks the
-token's granted set before the handler runs and rejects an ungranted
-caller before any work happens. From the plugin's perspective, a call
-that needs a capability you were not granted raises a `CapabilityDenied`
-error:
+Capabilities are enforced in the plugin host, not in the plugin. Each method
+maps to a required capability; the host checks the token's granted set
+before the handler runs and rejects an ungranted caller before any work
+happens. In the plugin, the call raises `CapabilityDenied`:
 
 ```python
+from ados.plugins.errors import CapabilityDenied
+
 try:
     await ctx.mavlink.send(frame_bytes)
 except CapabilityDenied:
@@ -125,163 +168,169 @@ except CapabilityDenied:
     ...
 ```
 
-Operators can revoke a capability at any time from the GCS or with
-`ados plugin perms <id> --revoke <cap>`. The plugin loses access on the
-next token rotation, and matching calls then fail with the same denial.
+Operators can revoke a capability at any time from Mission Control or with
+`ados plugin perms <id> --revoke <cap>`. A grant or revoke re-renders the
+unit and restarts the plugin, so both the wire checks and the sandbox follow
+the new set. The capability list and risk levels live in
+[Permissions](/developers/permissions).
 
-## Configuring the video pipeline's sources
+## Sandbox and identity
 
-A camera or optical-pod driver can declare which video streams the
-agent's video pipeline should serve, so the operator never has to type
-an RTSP URL by hand. Call `ctx.video.set_source` with one leg per stream:
+Four mechanisms isolate a plugin beyond the wire checks.
 
-```python
-await ctx.video.set_source([
-    {"id": "main",    "source": "rtsp://192.168.144.25:8554/main", "role": "eo",  "codec": "h264"},
-    {"id": "eo_wide", "source": "rtsp://192.168.144.25:8554/sub",  "role": "eo_wide"},
-    {"id": "ir",      "source": "rtsp://192.168.144.25:8554/ir",   "role": "ir"},
-])
-```
-
-Each leg needs a non-empty `id` (the stream path; the primary leg is
-`main`) and a `source` (an RTSP or other URL the pipeline pulls, or
-`publisher` for a locally-encoded leg). `role` (`eo` / `eo_wide` / `ir`,
-advisory) and `codec` are optional. Applying a new list persists the
-`video.cameras` config and restarts the video pipeline, which then serves
-each leg on its own path. The cockpit shows a stream switcher when a node
-exposes more than one leg. The call requires the `video.source.set`
-capability and returns `{"ok": bool, "count": int, "restarted": bool}`.
-
-The same source list can be set statically in the agent config instead of
-from a plugin:
-
-```yaml
-video:
-  cameras:
-    - id: main
-      source: rtsp://192.168.144.25:8554/main
-      role: eo
-    - id: ir
-      source: rtsp://192.168.144.25:8554/ir
-      role: ir
-```
+- **Its own system user.** Every plugin runs as `ados-plg-<8 hex>` (the same
+  hash as the unit name) with primary group `ados-plugins`. Distinct users
+  stop one plugin from reading another's `/proc/<pid>/environ`, tracing it,
+  or reaching its socket. The user is created at install and removed with
+  the plugin.
+- **Grant-driven device policy.** With no hardware capability granted the
+  unit gets `PrivateDevices=yes`, a private `/dev` holding only
+  pseudo-devices. Each granted hardware capability (`hardware.uart`,
+  `hardware.i2c`, `hardware.spi`, `hardware.gpio`, `hardware.usb`,
+  `hardware.usb.uvc`, `hardware.camera.csi`) switches to
+  `DevicePolicy=closed` with exactly the `DeviceAllow=` lines it names.
+  A `hardware.uart` grant still cannot open the flight controller's
+  configured serial port.
+- **Network and filesystem.** Without `network.outbound` the unit allows
+  only `AF_UNIX` sockets and denies all IP addresses. No plugin binds an
+  inet port unless a declared service holds `network.listen`, and then only
+  its declared ports. `/run/ados` is an empty read-only tmpfs with only the
+  plugin's own socket directory and the log socket bound back in, and the
+  agent's credential files under `/etc/ados` are inaccessible.
+  `filesystem.host` opens `/srv`, `/mnt`, `/media` and `/boot`.
+- **Declared services and HTTP.** `agent.contributes.services` render extra
+  units that run as the plugin's user under the same sandbox.
+  `agent.http: true` gives the plugin an HTTP socket the agent proxies.
+  `shared_topics` and `payloads` are manifest-level declarations; see the
+  [Manifest reference](/developers/manifest) and
+  [Contribution points](/developers/contribution-points).
 
 ## cgroup limits
 
-Every plugin runs inside the `ados-plugins.slice` slice, and the
-generated unit carries resource caps drawn from the manifest's
-`agent.resources` block:
+The unit carries resource caps from the manifest's `agent.resources` block:
+`MemoryMax` from `max_ram_mb`, `CPUQuota` from `max_cpu_percent`, and
+`TasksMax` from `max_pids`. The kernel enforces them. A memory breach is
+OOM-killed, a CPU breach throttles, and a tasks breach refuses new threads
+or processes. The shared slice runs at `IOWeight=10`, so a plugin loses
+every contended disk block to the flight services. Budgets and how to read
+the live counters are on [Performance and budgets](/developers/performance-and-budgets).
 
-```ini
-[Service]
-Slice=ados-plugins.slice
-MemoryMax=64M
-CPUQuota=10%
-TasksMax=4
-```
+## Restart policy
 
-`MemoryMax` comes from `max_ram_mb`, `CPUQuota` from `max_cpu_percent`,
-and `TasksMax` from `max_pids`. The kernel enforces the caps. A memory
-breach is OOM-killed; a CPU breach throttles rather than kills; a tasks
-breach refuses new threads or processes.
-
-Read live numbers with:
-
-```sh
-systemctl status ados-plugin-<id>.service
-```
-
-## Supervisor restart policy
-
-The generated unit runs `Restart=on-failure` with a fixed `RestartSec`
-of 2 seconds and a start-rate limit:
-
-| Field | Value |
-|-------|-------|
+| Directive | Value |
+|-----------|-------|
 | `Restart` | `on-failure` |
 | `RestartSec` | `2s` |
-| `StartLimitInterval` | `60s` |
-| `StartLimitBurst` | `5` |
+| `StartLimitIntervalSec` (in `[Unit]`) | `0` |
 
-Five failed starts inside a 60-second window trip the limit: systemd
-stops trying and the supervisor records the plugin as failed. The
-operator sees the failure in the GCS event stream and decides whether to
-disable, remove, or investigate. A clean exit (return from `on_start`
-with no error) is treated as "the plugin is done" and is not restarted;
-if your plugin should run indefinitely, do not return from `on_start`
-until `on_stop` is called.
+There is no start-rate limit: a crashing plugin is retried every 2 s
+indefinitely and never latches `failed`, so a plugin whose host socket is
+not up yet recovers on its own. A clean exit (status 0) is not restarted;
+if your plugin should run indefinitely, do not return from `on_start` until
+`on_stop` is called. Plugin units carry no watchdog.
 
-## Service unit generation
+## Generated unit
 
-Service units are generated from the manifest at install time and
-written to `/etc/systemd/system/ados-plugin-<id>.service`. A typical
-Python-plugin unit:
+Units are generated at install and re-rendered on every grant and revoke.
+This is the pinned unit for a Rust plugin `com.example.rustplug`
+granted `hardware.i2c`, `network.outbound` and `filesystem.host`:
 
 ```ini
 [Unit]
-Description=ADOS plugin com.example.battery
-After=ados-supervisor.service
+Description=ADOS plugin com.example.rustplug
+After=ados-supervisor.service ados-plugin-host.service
+Requires=ados-plugin-host.service
 PartOf=ados-supervisor.service
+# No start rate limit: a plugin whose host socket is not up yet must keep
+# retrying rather than land in a failed state an operator has to clear by hand.
+StartLimitIntervalSec=0
 
 [Service]
 Slice=ados-plugins.slice
 Type=simple
-Environment=ADOS_PLUGIN_SOCKET=/run/ados/plugins/com.example.battery.sock
-EnvironmentFile=-/run/ados/plugins/com.example.battery.token.env
-ExecStart=/opt/ados/venv/bin/ados-plugin-runner com.example.battery
+Environment=ADOS_PLUGIN_SOCKET=/run/ados/plugins/com.example.rustplug/host.sock
+Environment=ADOS_NODE_PROFILE=drone
+LoadCredential=ados-plugin-token:/run/ados/plugins/com.example.rustplug.token
+BindReadOnlyPaths=/run/ados/plugins/com.example.rustplug
+BindPaths=/var/ados/plugin-data/com.example.rustplug
+ExecStartPre=+/opt/ados/bin/ados-plugin-host guard-load
+ExecStart=/var/ados/plugins/com.example.rustplug/agent/bin/com.example.rustplug com.example.rustplug --socket /run/ados/plugins/com.example.rustplug/host.sock
 Restart=on-failure
 RestartSec=2s
-StartLimitInterval=60s
-StartLimitBurst=5
-MemoryMax=64M
-CPUQuota=10%
-TasksMax=4
-StandardOutput=append:/var/log/ados/plugins/com-example-battery.log
-StandardError=append:/var/log/ados/plugins/com-example-battery.log
-User=ados
-Group=ados
+MemoryMax=96M
+CPUQuota=25%
+TasksMax=12
+StandardOutput=append:/var/log/ados/plugins/com-example-rustplug-3bb2d8d0.log
+StandardError=append:/var/log/ados/plugins/com-example-rustplug-3bb2d8d0.log
+User=ados-plg-3bb2d8d0
+Group=ados-plugins
 NoNewPrivileges=yes
 PrivateTmp=yes
 ProtectSystem=strict
-ProtectHome=yes
-ReadWritePaths=/var/ados/plugin-data /var/log/ados/plugins /run/ados/plugins
 LockPersonality=yes
 RestrictRealtime=yes
 RestrictSUIDSGID=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ProtectProc=invisible
+RestrictNamespaces=yes
+SystemCallArchitectures=native
+NoExecPaths=/
+ExecPaths=/var/ados/plugins/com.example.rustplug -/lib -/lib64 -/usr/lib -/usr/lib64
+# ---- capability sandbox (re-rendered on every grant/revoke) ----
+DevicePolicy=closed
+DeviceAllow=char-i2c rw
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+SocketBindDeny=any
+TemporaryFileSystem=/run/ados:ro
+BindReadOnlyPaths=-/run/ados/logd.sock
+ReadWritePaths=/var/log/ados/plugins /srv /mnt /media /boot
+ProtectHome=read-only
+InaccessiblePaths=-/etc/ados/secrets -/etc/ados/plugin-keys -/etc/ados/pairing.json -/etc/ados/config.yaml -/etc/ados/mcp-token.json -/etc/ados/dashboard-pin.json -/etc/ados/wfb -/etc/ados/mesh -/etc/ados/ap-passphrase -/etc/ados/hostapd-gs.conf -/etc/ados/model-registry-auth.json -/etc/ados/plugin-config.json
 
 [Install]
 WantedBy=ados-supervisor.service
 ```
 
-`ados-plugin-runner` is the SDK's process entrypoint. It loads the
-plugin's manifest, puts the unpacked plugin source on `sys.path`,
-imports the entrypoint class, opens the IPC socket, and dispatches into
-your lifecycle hooks. A plugin that declares `runtime: rust` ships its
-own compiled binary instead; the unit execs that binary directly and the
-Python runner is not involved.
+The block after `# ---- capability sandbox` is re-rendered on every grant
+or revoke. `ExecStartPre=+... guard-load` runs privileged before the plugin
+and fails the start if the guard cannot load. `NoExecPaths=/` with the
+`ExecPaths=` allowlist means the plugin can execute only its own install
+tree and the shared libraries, never `/bin/sh`.
 
-## Hot reload
+A Python plugin differs in two lines: `ExecStart=/opt/ados/venv/bin/ados-plugin-runner <id>`,
+and `ExecPaths=` also lists the runner's virtualenv. The runner loads the
+manifest, puts the plugin source on `sys.path`, imports the entrypoint
+class, connects to the socket, and dispatches into your hooks. A
+`runtime: rust` plugin's binary is executed directly.
 
-Plugins are not hot-reloaded across version bumps. Updating from v1.0 to
-v1.1 stops the old subprocess, regenerates the unit, and starts fresh.
-State on disk under the plugin's data dir survives.
+## Updates and restarts
+
+Plugins are not hot-reloaded. Installing a new version stops the old
+process, re-renders the unit, and starts fresh. The data directory
+survives; see [Versioning and updates](/developers/versioning-and-updates).
 
 ## Debugging tips
 
-- `ados plugin logs <id> --follow` tails the plugin's log file at
-  `/var/log/ados/plugins/<id>.log`.
-- `systemctl status ados-plugin-<id>.service` shows the live unit state.
-- `systemctl cat ados-plugin-<id>.service` shows the generated unit.
+- `ados plugin logs <id> --follow` tails the plugin's log.
+- `systemctl status 'ados-plugin-<sanitized id>-*'` shows the live unit
+  state of the main unit and its services.
+- `systemctl cat 'ados-plugin-<sanitized id>-*'` prints the generated units.
 - `ados plugin info <id>` prints granted permissions and install state.
 
 <Tip>
-For the full symptom-to-fix list (install failures, capability denials,
-a plugin stuck in `failed`, IPC handshake errors), see
-[Troubleshooting](/developers/troubleshooting).
+For the symptom-to-fix list (install failures, capability denials, IPC
+handshake errors), see [Troubleshooting](/developers/troubleshooting).
 </Tip>
 
-## See also
+## Next steps
 
-- [Manifest reference](/developers/manifest)
-- [Permissions](/developers/permissions)
-- [Performance and budgets](/developers/performance-and-budgets)
+<CardGroup cols={2}>
+  <Card title="GCS plugin deep dive" icon="window-maximize" href="/developers/gcs-plugin-deep-dive">
+    How the Mission Control half runs, talks to the host and renders.
+  </Card>
+  <Card title="Performance and budgets" icon="gauge" href="/developers/performance-and-budgets">
+    Resource caps, throttling, memory pressure and profiling.
+  </Card>
+</CardGroup>

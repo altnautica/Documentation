@@ -1,138 +1,138 @@
 ---
-title: iNav Guide
-description: Connecting, configuring, and flying iNav-powered drones in Mission Control.
-lastUpdated: "2026-05-09"
+title: "iNav guide"
+description: "Connect, configure, plan missions for and program iNav flight controllers in Mission Control."
+icon: "plane"
 ---
 
-iNav extends Betaflight with autonomous navigation, waypoint missions, safehomes, geozones, and a visual programming framework. Mission Control supports iNav 7.0 and later as a first-class firmware, with the same protocol-level polish it offers for ArduPilot, PX4, and Betaflight.
+iNav adds GPS navigation, waypoint missions, safehomes, geozones and a programming framework to a Betaflight-class flight controller. Mission Control speaks MSP to iNav 7.0 and later and shows the iNav panels when it detects iNav.
+
+Mission Control's iNav support is tested against the bundled demo protocol. It has not been verified against a physical iNav flight controller.
 
 ## When to use iNav
 
-iNav is the right choice when you want waypoint missions, GPS-assisted modes (position hold, return-to-home, cruise), or fixed-wing autolaunch and autoland on a Betaflight-class flight controller. For purely manual FPV racing or freestyle, Betaflight remains leaner. For long-range survey, mapping, or agriculture, iNav covers the full autonomous flight surface without moving to ArduPilot's heavier stack.
+Choose iNav for waypoint missions, GPS-assisted modes (position hold, return to home, cruise) or fixed-wing autolaunch and autoland on a small flight controller. For manual FPV racing or freestyle, Betaflight is leaner. See [Firmware comparison](/mission-control/firmware-comparison).
 
 ## Connect
 
-1. Power the flight controller.
-2. Plug it into your computer over USB.
-3. Open Mission Control at `http://localhost:4000`.
-4. Click **Connect** and pick the serial port from the browser picker.
-5. Mission Control auto-detects the firmware. iNav flight controllers return `INAV` in the MSP `FC_VARIANT` response.
-
-The top bar shows the firmware family, version, and link quality. Capability-gated panels appear in the Configure tab when iNav is detected.
+<Steps>
+  <Step title="Plug in the flight controller">
+    Power the flight controller and connect it to your computer over USB.
+  </Step>
+  <Step title="Open the Connect dialog">
+    Click **+** at the top of the Fleet sidebar, or press `Ctrl+K` (`⌘K` on macOS) and choose **Connect Drone**.
+  </Step>
+  <Step title="Pick the port">
+    Choose **USB Serial**, click **Request Port** and select the flight controller in the browser picker.
+  </Step>
+  <Step title="Let Mission Control detect iNav">
+    iNav answers the MSP `FC_VARIANT` request with `INAV`. The node opens with the iNav panels in its **Setup** tab.
+  </Step>
+</Steps>
 
 <Note>
-Mission Control requires WebSerial, which means Chromium-based browsers on desktop (Chrome, Edge, Brave) or the Electron desktop app. iOS Safari does not expose WebSerial.
+USB serial needs Web Serial: Chrome or Edge on desktop, or the [desktop app](/mission-control/desktop-app). Safari and Firefox do not support it. See [Connect a drone](/mission-control/connecting) for Bluetooth and other links.
 </Note>
 
 ## Flight modes
 
-iNav ships more autonomous modes than Betaflight:
-
-- **ACRO** direct stick-to-rate control.
-- **ANGLE / HORIZON** self-leveling stabilization.
-- **NAV ALTHOLD** barometric altitude hold.
-- **NAV POSHOLD** GPS position hold.
-- **NAV RTH** return to home. Climb-first or tail-first behavior configurable in the NavConfig panel.
-- **NAV WP** waypoint mission execution.
-- **NAV CRUISE** constant heading and speed cruise.
-- **NAV COURSE HOLD** hold course, user controls throttle.
-- **NAV LAUNCH** fixed-wing autolaunch.
-- **NAV LAND** fixed-wing autoland.
-
-The Flight Modes panel lists them all. Assign each mode to an RC AUX channel range and flip it in on the transmitter, same pattern as Betaflight.
+iNav modes include ACRO, ANGLE, HORIZON, NAV ALTHOLD, NAV POSHOLD, NAV RTH, NAV WP, NAV CRUISE, NAV COURSE HOLD, NAV LAUNCH and NAV LAND. Assign each to an AUX channel range in **Aux Modes** (Setup → **FLIGHT**) and switch it from the transmitter.
 
 ## Mission planning
 
-iNav supports eight waypoint action types:
+Plan iNav missions in the [Plan tab](/mission-control/mission-planning). Mission Control translates the plan into iNav waypoint actions and uploads it over MSP (`MSP_SET_WP`).
 
-| Action | Purpose |
+| iNav action | In the Plan tab |
 |---|---|
-| WAYPOINT | Navigate to the point. |
-| POSHOLD_UNLIM | Hold position indefinitely. |
-| POSHOLD_TIME | Hold for a configurable duration. |
-| RTH | Return to home from this point. |
-| LAND | Land at this point. |
-| SET_POI | Point the camera at a fixed ground target. |
-| JUMP | Conditional jump to another waypoint, with repeat count. |
-| SET_HEAD | Set the heading for the next leg. |
+| WAYPOINT | Waypoint |
+| POSHOLD_UNLIM | Loiter (unlimited) |
+| POSHOLD_TIME | Loiter (Time) |
+| RTH | Return to Launch |
+| LAND | Land |
+| SET_POI | `ROI` action |
+| JUMP | `DO_JUMP` action |
+| SET_HEAD | `CONDITION_YAW` action |
 
-Plan a mission in the Plan tab. The waypoint editor exposes iNav-specific actions when the connected firmware reports multi-mission support. Upload happens over MSP using `MSP_SET_WP` and multi-mission storage (`MSP_WP_MISSION_LOAD` / `MSP_WP_MISSION_SAVE`) on iNav 5.0 and later.
-
-Mission limit: 60 waypoints per mission, up to 9 missions stored on the flight controller.
+An iNav mission holds at most 60 waypoints. Upload refuses any other attached action. The **iNav Mission** panel (Setup → **FLIGHT**) shows the missions stored on the flight controller, which can hold several.
 
 ## Safehomes
 
-Safehomes are alternate return points. Useful when the launch point is inaccessible on return (forest, water, no-fly zone overhead). Mission Control's Safehome panel in the Configure tab edits all 16 slots.
-
-Each slot: enabled flag, latitude, longitude. iNav uses the nearest enabled safehome within `safehome_max_distance` when RTH triggers.
+Safehomes are alternate return points for when the launch point is not reachable. The **Safehome** panel (Setup → **SAFETY**) edits all 8 slots. Each slot has an enabled flag, latitude and longitude. iNav uses the nearest enabled safehome within `safehome_max_distance`.
 
 ## Geozones
 
-Polygon or circular fences. Up to 15 zones, up to 10 vertices per polygon. Each zone has:
+Geozones are iNav's fences. Edit them in the **Geozones** panel (Setup → **SAFETY**). Each zone has:
 
-- Type: EXCLUSIVE (keep out) or INCLUSIVE (stay inside).
-- Shape: CIRCULAR or POLYGON.
-- Altitude bounds: minimum and maximum.
-- Fence action: NONE (warn), AVOID, POSHOLD, RTH.
-- Sea-level reference flag.
+- **Type:** exclusive (keep out) or inclusive (stay inside)
+- **Shape:** circle or polygon, up to 10 vertices per polygon
+- **Altitude bounds:** minimum and maximum
+- **Fence action:** **None**, **Avoid**, **Position hold** or **RTH**
 
-The Geozones panel edits zones via a form. Vertex coordinates are entered numerically. Map-based polygon drawing for geozones is a planned refinement; the current flow uses direct lat/lon entry.
+Draw a polygon zone on the panel's map, or enter the coordinates.
 
 ## Navigation config
 
-The NavConfig panel exposes the navigation tuning settings iNav pilots care most about:
+**Navigation Config** (Setup → **FLIGHT**) edits these iNav settings:
 
-- `nav_max_speed` cruise speed for waypoint navigation (cm/s).
-- `nav_manual_speed` speed under manual-with-nav-assist modes.
-- `nav_rth_altitude` altitude for return to home.
-- `nav_rth_climb_first` climb before heading home (safer over obstacles).
-- `nav_rth_tail_first` fixed-wing tail-first return.
-- `nav_poshold_user_control_mode` how RC input blends into position hold.
-- `nav_wp_max_distance_between_points` enforces waypoint spacing.
-- Landing slowdown thresholds and emergency descent rate.
+| Field | Setting |
+|---|---|
+| Auto speed (cm/s) | `nav_auto_speed` |
+| Manual speed (cm/s) | `nav_manual_speed` |
+| Multirotor max bank angle (deg) | `nav_mc_bank_angle` |
+| Fixed-wing max bank angle (deg) | `nav_fw_bank_angle` |
+| User control mode (ATTI or CRUISE) | `nav_user_control_mode` |
+| Position timeout (s) | `nav_position_timeout` |
 
-All fields use iNav's name-based settings system (`MSP2_COMMON_SETTING` / `MSP2_COMMON_SET_SETTING`). Mission Control's `SettingsClient` marshals values to the correct type automatically.
+**Nav PID** (Setup → **TUNING**) edits the navigation PID gains. All iNav settings use iNav's name-based settings protocol, and Mission Control converts each value to its declared type.
 
 ## Profiles
 
-iNav supports multiple profiles in three independent groups. Each profile switcher is in the Configure tab:
+iNav keeps several profile sets. Each has its own panel, and switching a profile takes effect on the flight controller at once.
 
-- **Control profiles (3):** PIDs, RC tuning, rates. Switch via `current_control_rate_profile`.
-- **Battery profiles (4):** capacity, cell count, voltage thresholds, current scale. Switch via `MSP2_INAV_SELECT_BATTERY_PROFILE`.
-- **Mixer profiles (3):** platform type, motor / servo count, custom mixer rules. Switch via `MSP2_INAV_SELECT_MIXER_PROFILE`.
+- **Control Profiles** (Setup → **TUNING**): three profiles of PIDs, rates and RC tuning.
+- **Battery Profiles** (Setup → **SENSORS**): capacity, cell count, voltage thresholds and current scale.
+- **Mixer Profiles** (Setup → **FLIGHT**): platform type, motor and servo counts, and mixer rules.
 
-Switching a profile takes effect immediately on the flight controller.
+## Programming
 
-## Programming framework
+The **PROGRAMMING** section holds iNav's programming framework.
 
-iNav's Logic Conditions, Global Variables, and Programming PIDs provide visual scripting without writing imperative code.
+- **Logic Conditions:** up to 64 rules. Each has an operation, two operands (for example an RC channel, flight mode, global variable or constant) and an activator. The panel shows each condition's live state.
+- **Global Variables:** live values of the 8 global variables, set by logic conditions or overridden in the panel.
+- **Programming PIDs:** up to 4 PID controllers that run outside the main flight loop.
 
-- **Logic Conditions** up to 16 conditional rules. Each rule has an operator (AND, OR, XOR, NAND, NOR, NOT, GT, LT, EQ), two operands (RC channel, flight mode, global variable, constant, sensor value), and an activator output.
-- **Global Variables** up to 16 int16 values. Read live via `MSP2_INAV_GVAR_STATUS`. Assignable by Logic Conditions or directly through the settings system.
-- **Programming PIDs** up to 4 PID controllers outside the main flight loop. Useful for gimbal control, payload deployment, or custom tracking.
+### Programming (JS)
 
-The Logic Conditions panel shows live condition evaluation (on / off) alongside the editor rows. Polling runs at 2 Hz while the panel is open.
+**Programming (JS)** compiles a small JavaScript-like language into logic conditions.
+
+1. Write one statement per line: assign a global variable or write a bare boolean. Operands are numbers, `gvar[N]` and `rc[N]`. Operators are `+ - * / %`, `> < >= <= ==`, `&& ||` and `!`.
+2. Preview the generated logic condition slots.
+3. Load them into **Logic Conditions**, review them there, then write to the flight controller.
 
 ## EZ Tune
 
-The EZ Tune panel provides simplified auto-tuning for pilots who do not want to hand-tune PIDs. Sliders cover response, damping, stability, aggressiveness, snappiness, axis ratio, rate, and expo. Writes go to `MSP2_INAV_EZ_TUNE_SET`.
+**EZ Tune** (Setup → **TUNING**) sets PIDs from a few sliders: response, damping, stability, aggressiveness, snappiness, axis ratio, rate and expo.
 
 ## Fixed-wing approach
 
-Airplane and tricopter platforms pick up FW Approach profiles. Each of 4 approach slots holds landing coordinates, approach altitude, land altitude, approach direction, two landing headings, and a sea-level reference flag. The FW Approach panel is hidden on multirotor platforms.
+**FW Approach** (Setup → **FLIGHT**) edits the landing approach slots the flight controller reports: landing coordinates, approach and land altitudes, approach direction, two landing headings and a sea-level reference flag. It appears on airplane and tricopter platforms.
 
-## Known limitations
+## OSD
 
-- **JavaScript Programming transpiler.** iNav Configurator's Programming tab also exposes a JavaScript-to-bytecode transpiler for imperative scripting. Mission Control does not ship that transpiler in v1. The Logic Conditions panel covers the same underlying primitives via direct rule editing. Users with an existing JavaScript-based workflow can keep iNav Configurator open for that one tab while doing everything else in Mission Control.
-- **Telemetry bridging (LTM, MAVLink emulation over iNav).** Mission Control connects directly over USB WebSerial or TCP (SITL bridge) and speaks MSP natively. Telemetry-over-RC-link (SmartPort, CRSF, LTM on a serial pin feeding a radio receiver) is a different transport from what Mission Control ingests. Pilots who fly out of laptop range use their RC radio's on-screen telemetry or an FPV OSD overlay for in-flight data. Once they land and plug in, Mission Control covers the full configuration, blackbox, and mission-review surface.
-- **DJI and HD VTX DisplayPort OSD preview.** iNav supports `MSP_DISPLAYPORT` for DJI O3 / Avata / Goggles 2 and Walksnail Avatar. Mission Control configures OSD elements via the OSD panel, but does not render the DisplayPort frames as a live canvas preview. The goggle or HD VTX chip renders them on the drone at runtime.
-- **MSP over-the-air firmware update.** `MSP2_INAV_FWUPDT_*` flashing is not implemented. Use the existing WebUSB DFU flasher in the Firmware panel for iNav binaries. iNav flashes the same way as Betaflight.
-- **Mobile and phone viewports.** Mission Control is a desktop and laptop GCS. iNav panels follow the existing responsive posture: tablet landscape works, phone viewports are not specifically designed for. Native Android coverage lives in a separate track.
-- **Real iNav hardware verification.** The iNav path is exercised against the bundled demo protocol. A real iNav 7.x flight controller round-trip is the final gate before this page's status flips from "preview" to "verified on hardware."
-- **Older iNav versions.** Mission Control targets iNav 7.0 and later. Older versions degrade gracefully: unsupported panels hide themselves based on `MSP2_COMMON_PG_LIST` feature detection.
+**iNav OSD** and **Custom OSD** configure the OSD elements and custom text. **OSD Preview** shows a live view of the character grid the flight controller sends over MSP DisplayPort, so you can check an HD goggle layout without goggles.
 
-## Cross-references
+## What Mission Control does not do on iNav
 
-- [Firmware comparison](./firmware-comparison) side-by-side matrix of ArduPilot, PX4, Betaflight, and iNav.
-- [Connecting](./connecting) general connection flow.
-- [Mission planning](./mission-planning) if a dedicated mission page exists.
+- **Firmware flashing.** Mission Control does not flash iNav. Use iNav Configurator.
+- **Telemetry over the RC link** (SmartPort, CRSF, LTM). Mission Control talks MSP over USB, Bluetooth or a network bridge. Use the transmitter's telemetry screen or the OSD in flight.
+- **Phones.** For a phone, use the [Android GCS](/android/overview).
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Firmware comparison" icon="table-columns" href="/mission-control/firmware-comparison">
+    iNav next to ArduPilot, PX4 and Betaflight.
+  </Card>
+  <Card title="Mission planning" icon="route" href="/mission-control/mission-planning">
+    Plan and upload a mission.
+  </Card>
+</CardGroup>

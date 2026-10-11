@@ -1,68 +1,41 @@
 ---
 title: "Vendor binaries"
-description: "Ship a closed-source .so or vendor SDK alongside an open plugin."
-lastUpdated: "2026-06-23"
+description: "Ship a closed-source library, a spawned helper or per-architecture binaries inside a plugin archive."
 ---
 
-Hardware drivers sometimes need a closed-source shared library to talk to
-the device: a camera SDK, a LiDAR decompressor, a mount-control library.
-ADOS plugins can include these binaries, but the manifest must declare
-the inclusion so operators see the trust signal in the install dialog.
+Hardware drivers sometimes need a closed-source library to talk to the device: a camera SDK, a LiDAR decompressor, a mount-control library. A plugin can include these binaries, but the manifest must declare the inclusion so operators see it in the install review.
 
 ## Declare the vendor binary
 
-The agent half sets `contains_vendor_binary: true` and provides
-`vendor_attribution`. The two go together: the schema rejects one without
-the other (set the flag with no attribution and the manifest fails to
-load; set attribution with the flag false and it also fails). Both fields
-are schema version 2, so the manifest must set `schema_version: 2`.
+The agent half sets `contains_vendor_binary: true` and provides `vendor_attribution`. The two go together: the schema rejects one without the other. Both fields arrived in schema version 2; set `schema_version: 2` or later to mark the manifest generation.
 
-`vendor_attribution` is a list, so a plugin can attribute more than one
-upstream. The `vision-nav` extension ships two VIO backends and declares
-both:
+`vendor_attribution` is a list, so a plugin can attribute more than one upstream:
 
 ```yaml
 schema_version: 2
 agent:
-  runtime: rust
-  entrypoint: "bin/vision-nav"
-  isolation: subprocess
+  runtime: python
+  entrypoint: "agent/src/example_plugin/plugin.py"
   contains_vendor_binary: true
   vendor_attribution:
-    - name: "OpenVINS"
+    - name: "ExampleVIO"
       license: "GPL-3.0-only"
-      source_url: "https://github.com/rpng/open_vins"
-      upstream_version: "v2.7"
-      notice: "VIO mode vio_openvins uses the OpenVINS estimator."
-    - name: "VINS-Fusion"
-      license: "GPL-3.0-only"
-      source_url: "https://github.com/HKUST-Aerial-Robotics/VINS-Fusion"
-      upstream_version: "be55a937a57436548ddfb1bd324bc1e9a9e828e0"
-      notice: "VIO mode vio_vins_fusion uses the VINS-Fusion estimator."
+      source_url: "https://example.com/examplevio"
+      upstream_version: "v1.0"
+      notice: "The VIO mode uses the ExampleVIO estimator."
 ```
 
-There is no per-binary `path` or `sha256` field in the manifest. The
-archive's single `SIGNATURE` file covers every entry's hash, so the
-vendor binary is protected by the same signature as the rest of the
-archive. `license` is the only required attribution field (it must be a
-non-empty string); the rest are optional provenance (`name`,
-`source_url`, `source_offer_url`, `upstream_repo`, `upstream_version`,
-`commit_sha`, `notice`). For a GPL-compatible upstream, set at least one
-of `source_url` or `source_offer_url` plus a version pin
-(`upstream_version` or `commit_sha`) so the install dialog can render a
-real source offer.
+There is no per-binary `path` or `sha256` field. The archive's `SIGNATURE` covers every entry's hash, so the vendor binary is protected by the same signature as the rest of the archive. `license` is the only required attribution field; the rest are optional provenance (`name`, `source_url`, `source_offer_url`, `upstream_repo`, `upstream_version`, `commit_sha`, `notice`). For a GPL-compatible upstream, set at least one of `source_url` or `source_offer_url` plus a version pin (`upstream_version` or `commit_sha`) so the install review can show a real source offer.
 
-## Trust signal in the install dialog
+`ados plugin lint` reports `VND001` when `contains_vendor_binary` is set, as a reminder to check the attribution. See [Linting](/developers/linting).
 
-When `contains_vendor_binary` is true the install dialog shows the vendor
-attribution and labels the plugin as carrying a vendor binary rather than
-pure open source. The operator can still install, but the signal is loud.
+## Trust signal in the install review
 
-## Loading the binary at runtime
+When `contains_vendor_binary` is true, the install review in Mission Control shows the vendor attribution and labels the plugin as carrying a vendor binary. The operator can still install.
 
-The agent unpacks the archive under the plugin's install directory at
-`/var/ados/plugins/<plugin-id>/`. Resolve the binary relative to your
-plugin module and load it with `ctypes`:
+## Loading a library in-process
+
+The agent unpacks the archive under `/var/ados/plugins/<plugin-id>/`. Resolve the library relative to your plugin module and load it with `ctypes`:
 
 ```python
 import ctypes
@@ -74,59 +47,17 @@ class FooDriver:
         self._lib = ctypes.CDLL(str(sdk_path))
 ```
 
-The plugin runs inside its sandbox, so the binary cannot escape the
-plugin's permission set. A vendor `.so` that opens a USB camera still
-requires the plugin to declare the matching capability (here
-`hardware.usb.uvc`).
+The library runs inside the plugin's sandbox and cannot exceed the plugin's permissions. A vendor library that opens a USB camera still needs the plugin to declare `hardware.usb.uvc`.
 
-### Running the vendor code as a separate process
+Nothing checks that an in-process `.so` matches the board's architecture. If your plugin runs on more than one, ship one subfolder per architecture and pick at runtime:
 
-If the vendor code must run as its own process rather than load
-in-process, the plugin needs the `process.spawn` capability plus a
-`subprocess_spawn` allowlist. Entries are binary basenames, not paths.
-The plugin host rejects any `ctx.process.spawn(...)` whose basename is
-not on the list, and the manifest validator refuses to load if
-`subprocess_spawn` is set but `process.spawn` is missing from
-`permissions`.
-
-```yaml
-agent:
-  permissions:
-    - id: process.spawn
-  subprocess_spawn:
-    - ados_openvins_shim
-    - ados_vins_fusion_shim
-```
-
-Each basename resolves to `<install_dir>/vendor/<basename>`, so ship the
-binaries under `agent/vendor/` in your archive and the extractor lays
-them out at `/var/ados/plugins/<plugin-id>/vendor/<basename>` after
-install. The host rejects shell metacharacters and any path-traversal
-attempt in a basename.
-
-## License note
-
-Altnautica's own open hardware files and developer docs are dedicated to
-the public domain under CC0 1.0; the agent and the GCS are GPL-3.0. A
-plugin that wraps a closed-source vendor `.so` is still under its own
-declared license in its own source files; the install dialog flags the
-vendor-binary inclusion separately so operators see it.
-
-## Architecture support
-
-Nothing validates that the `.so` matches the target SBC architecture.
-Ship architecture-specific subfolders if your plugin runs on more than
-one:
-
-```
-agent/vendor/
+```text
+agent/src/example_plugin/vendor/
 ├── aarch64/
 │   └── libfoo.so
-└── armv7l/
+└── x86_64/
     └── libfoo.so
 ```
-
-And resolve at runtime:
 
 ```python
 import platform
@@ -136,16 +67,50 @@ arch = platform.machine()
 sdk_path = Path(__file__).parent / "vendor" / arch / "libfoo.so"
 ```
 
-<Note>
-Arch subfolders work for an in-process `.so` you load yourself with
-`ctypes`. A `subprocess_spawn` binary is different: the host resolves it
-at the flat path `<install_dir>/vendor/<basename>`, so per-arch spawned
-binaries need a wrapper script on the allowlist that picks the right
-arch, not a subfolder.
-</Note>
+## Running vendor code as a separate process
 
-## See also
+If the vendor code must run as its own process, the plugin needs the `process.spawn` capability (risk high) plus a `subprocess_spawn` allowlist. Entries are binary basenames, not paths. Any `ctx.process.spawn(...)` whose basename is not on the list is refused, and the manifest fails validation if `subprocess_spawn` is set without `process.spawn` in `permissions`.
 
-- [Manifest reference](/developers/manifest) for the full `agent` block.
-- [Distribution and local install](/developers/distribution-local-install)
-  for the pack and sign flow.
+```yaml
+agent:
+  permissions:
+    - id: process.spawn
+  subprocess_spawn:
+    - example_vendor_shim
+```
+
+Each basename resolves to `<install_dir>/vendor/<basename>`. The archive is extracted verbatim, so ship spawned binaries at top-level `vendor/<basename>` in the archive; they land at `/var/ados/plugins/<plugin-id>/vendor/<basename>`. Shell metacharacters and path traversal in a basename are refused.
+
+## Per-architecture binaries
+
+A Rust agent half declares its compiled binaries per architecture in `agent.binaries`, a map of `{<name>: {<arch>-<os>: <path in the archive>}}`. The supported keys are `aarch64-linux`, `x86_64-linux` and `aarch64-macos`. `bin:<name>` in `agent.entrypoint` or a service command resolves through the table on the installing host.
+
+```yaml
+agent:
+  runtime: rust
+  entrypoint: "bin:example-link"
+  binaries:
+    example-link:
+      aarch64-linux: bin/aarch64-linux/example-link
+      x86_64-linux: bin/x86_64-linux/example-link
+```
+
+A `bin:` entrypoint requires `agent.runtime: rust` and a matching `binaries` entry. When the table has no entry for the node's `<arch>-<os>`, install is refused with `incompatible: no binary for <arch-os>`. Every manifest field is in the [manifest reference](/developers/manifest).
+
+## License note
+
+A plugin that wraps a closed-source vendor library stays under the license it declares for its own source files. The install review flags the vendor binary separately. See [Legal and licensing](/developers/legal-and-licensing) for how the SDK licences interact with your own.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Manifest reference" href="/developers/manifest">
+    The full `agent` block.
+  </Card>
+  <Card title="Local install" href="/developers/distribution-local-install">
+    Pack, sign and install the archive.
+  </Card>
+  <Card title="Legal and licensing" href="/developers/legal-and-licensing">
+    Licences and vendor binaries.
+  </Card>
+</CardGroup>

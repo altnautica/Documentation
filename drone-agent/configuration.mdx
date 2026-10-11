@@ -1,201 +1,101 @@
 ---
-title: "Configuration"
-description: "Structure and key settings of the /etc/ados/config.yaml file."
+title: "Agent configuration"
+sidebarTitle: "Configuration"
+description: "How /etc/ados/config.yaml is loaded and written, the settings that need care, and every key by section from the config schema."
 icon: "gear"
-lastUpdated: "2026-06-23"
+keywords: ["ados", "configuration", "config.yaml", "drone agent", "schema", "settings"]
 ---
 
-# Configuration
+import AgentConfigAgent from "/snippets/generated/agent-config-agent.mdx";
+import AgentConfigApi from "/snippets/generated/agent-config-api.mdx";
+import AgentConfigBattery from "/snippets/generated/agent-config-battery.mdx";
+import AgentConfigDiscovery from "/snippets/generated/agent-config-discovery.mdx";
+import AgentConfigGroundStation from "/snippets/generated/agent-config-ground-station.mdx";
+import AgentConfigLogging from "/snippets/generated/agent-config-logging.mdx";
+import AgentConfigMavlink from "/snippets/generated/agent-config-mavlink.mdx";
+import AgentConfigNetwork from "/snippets/generated/agent-config-network.mdx";
+import AgentConfigPairing from "/snippets/generated/agent-config-pairing.mdx";
+import AgentConfigRadio from "/snippets/generated/agent-config-radio.mdx";
+import AgentConfigRemoteAccess from "/snippets/generated/agent-config-remote-access.mdx";
+import AgentConfigSecurity from "/snippets/generated/agent-config-security.mdx";
+import AgentConfigServer from "/snippets/generated/agent-config-server.mdx";
+import AgentConfigSwarm from "/snippets/generated/agent-config-swarm.mdx";
+import AgentConfigUi from "/snippets/generated/agent-config-ui.mdx";
+import AgentConfigVideo from "/snippets/generated/agent-config-video.mdx";
+import AgentConfigVision from "/snippets/generated/agent-config-vision.mdx";
 
-The agent's configuration lives at `/etc/ados/config.yaml`. It is a single YAML file validated by Pydantic models at load time. Every field has a sensible default, so a minimal config (or no config file at all) produces a working agent.
+The agent's configuration lives in one YAML file, `/etc/ados/config.yaml`. Its shape is defined by `schemas/agent-config.schema.json` in the agent repository, and every key has a default, so a short file (or none) gives a working agent.
 
-## Config search order
+The browser dashboard and Mission Control cover the settings most operators change. Edit the file, or use the REST API, for everything else. Extensions keep their settings in their own plugin config, not in this file; see [Plugins](/drone-agent/plugins).
 
-When the agent starts, it looks for config in this order:
+## How the file is loaded
 
-1. Path passed as argument or environment variable (`ADOS_CONFIG`)
-2. `/etc/ados/config.yaml`
-3. `./config.yaml` (current directory)
-4. Pure defaults (no file needed)
+Services read `/etc/ados/config.yaml` through the `ADOS_CONFIG` path their systemd unit sets, which points there. Keys missing from the file fall back to the packaged defaults, merged under the file. Keys the running schema does not recognise are kept on write rather than dropped, so a config from a newer or older build survives a round trip.
 
-## Full config structure
+`ados config status` shows pending migrations, and `ados config migrate` brings the file to the current shape. See [Agent CLI reference](/drone-agent/cli-reference#ados-config).
 
-The excerpt below covers the sections operators touch. The full model also
-carries `radio:`, documented with the radio link. Keys the running schema does
-not recognise are preserved on write rather than dropped, so a config from a
-newer or older build survives a round trip.
+## What the installer writes
 
-Extensions keep their settings in their own plugin config, not in this file.
-The World Engine's capture, offload and serving keys, for example, live under
-`/api/plugins/com.altnautica.world-engine/config`. See the
-[World Engine](/drone-agent/extensions/world-engine) page.
+The installer writes the node's identity, profile and the flight-controller port it detected at install (empty if none was attached), with the default baud. Your edits take priority over the defaults.
+
+## Read and write the config
+
+### From the REST API
+
+```bash
+# Read
+curl http://localhost:8080/api/config \
+  -H "X-ADOS-Key: $KEY"
+
+# Write one dot-separated key; a JSON scalar (true, 25) or a string ("25") is accepted
+curl -X PUT http://localhost:8080/api/config \
+  -H "X-ADOS-Key: $KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"key": "video.camera.fps", "value": 25}'
+```
+
+The response carries `persisted`. A write that changed the running model but could not reach `/etc/ados/config.yaml` answers `"persisted": false` with a `persist_error` naming the reason:
+
+```json
+{ "status": "ok", "key": "video.camera.fps", "value": 25, "persisted": true }
+```
+
+Reading a secret path returns `***`. Writing that placeholder back is rejected with a `400`, so a read-edit-write round trip cannot overwrite a real secret.
+
+`PUT /api/config` of a profile, role, radio or regulatory key is refused while the vehicle is armed. `GET /api/config/schema` returns the embedded schema; build a settings UI against it. See [REST API](/drone-agent/rest-api).
+
+### Edit the file
+
+Edit `/etc/ados/config.yaml` with any text editor, then restart the affected service, for example:
+
+```bash
+sudo systemctl restart ados-mavlink
+```
+
+The unit for each subsystem is on [Systemd services](/drone-agent/systemd-services). The terminal dashboard is read-only and does not edit config.
+
+## Settings that need care
+
+### MAVLink proxy authentication
 
 ```yaml
-agent:
-  device_id: ""           # Auto-generated on first boot
-  name: "my-drone"        # Human-readable name
-  tier: "auto"            # auto | 1 | 2 | 3 | 4
-  profile: "auto"         # auto | drone | ground_station | workstation | compute
-
 mavlink:
-  serial_port: ""         # Autodetected if empty
-  baud_rate: 57600        # Applies only when serial_port is set
-  system_id: 1
-  component_id: 191
-  # MAVLink v2 message signing is managed from the GCS. The key lives in
-  # the browser; the agent holds no key material. See /drone-agent/mavlink-signing.
-  endpoints:
-    - type: websocket
-      host: "0.0.0.0"
-      port: 8765
-      enabled: true
-  ws_proxy_enforce_auth: true    # Paired node refuses an unauthorized WebSocket
-  raw_proxy_enforce_auth: false  # TCP 5760, UDP 14550/14551: no credential channel
-  raw_proxy_lan_access: false    # Paired node serves the raw ports off-box only when true
-  aux_uplink_enforce_origin: false  # Refuse an unidentified caller the radio uplink
-
-video:
-  mode: "auto"            # auto | wfb | cloud | disabled
-  wfb:
-    interface: ""          # RTL8812EU interface, auto-detected
-    channel: 149           # 5 GHz channel
-    tx_power: 25           # dBm
-    fec_k: 8              # FEC data blocks
-    fec_n: 12             # FEC total blocks (data + parity)
-  camera:
-    source: "csi"         # csi | usb | ip, or a device path (/dev/video0) or RTSP URL
-    codec: "h264"         # h264 | h265
-    width: 1280
-    height: 720
-    fps: 30
-    bitrate_kbps: 4000
-  recording:
-    enabled: false
-    path: "/var/ados/recordings"
-    retention: "24h"      # how long segments are kept before mediamtx deletes them
-  cloud_relay_url: ""
-
-network:
-  wifi_client:
-    enabled: false
-    ssid: ""
-    password: ""
-  cellular:
-    enabled: false
-    apn: ""
-  hotspot:
-    enabled: false
-    ssid: "ADOS-{device_id}"
-    password: ""          # empty = per-unit passphrase generated on first use, stored 0600 at /etc/ados/ap-passphrase
-    channel: 6
-
-server:
-  mode: "local"           # cloud | self_hosted | local
-  cloud:
-    url: "https://your-convex.example.com:3211"   # Convex site origin (HTTP actions)
-    mqtt_broker: "your-mqtt.example.com"
-    mqtt_port: 443
-  self_hosted:
-    url: "https://your-convex.example.com:3211"   # Convex site origin (HTTP actions)
-    mqtt_broker: "your-mqtt.example.com"
-    mqtt_port: 8883
-    api_key: ""
-  telemetry_rate: 2       # Hz, MQTT publish rate
-  heartbeat_interval: 5   # Seconds
-  mqtt_transport: "websockets"  # websockets | tcp
-  mqtt_username: ""       # Empty authenticates as the device id
-  mqtt_password: ""
-  mqtt_plaintext_dev: false  # Dev brokers only: connect without TLS
-
-remote_access:
-  provider: "none"        # none | cloudflare
-  public_urls: []
-  cloudflare: {}          # Cloudflare Tunnel quick-install settings
-
-security:
-  api:
-    api_key: ""
-    cors_enabled: true
-    cors_origins: []          # Built-in localhost defaults always apply
-    cors_origins_extra: []    # Extra origins added on top of the defaults
-  hmac_enabled: false
-  hmac_secret: ""
-
-api:
-  rest:
-    enabled: true
-    host: "0.0.0.0"
-    port: 8080
-  mission_control_url: ""
-
-logging:
-  level: "info"           # debug | info | warning | error
-  max_size_mb: 50
-  keep_count: 5
-  flight_log_dir: "/var/ados/logs/flights"
-
-pairing:
-  state_path: "/etc/ados/pairing.json"
-  convex_url: "https://convex-site.altnautica.com"
-  beacon_interval: 30
-  heartbeat_interval: 60
-
-discovery:
-  mdns_enabled: true
-  service_type: "_ados._tcp.local."
-
-vision:
-  enabled: false
-  backend: "auto"         # auto | rknn | tensorrt | opencv_dnn | tflite
-  confidence_threshold: 0.5
-  models_dir: "/opt/ados/models/vision"
-  models_cache_max_mb: 500
-
-swarm:
-  enabled: false
-  lora:
-    interface: ""
-    frequency: 915000000
-    bandwidth: 125000
-    spreading_factor: 7
-  wifi_direct:
-    enabled: false
-    interface: ""
-  role: "auto"
-  default_formation: "line"
-  default_spacing: 10
-
-ground_station:
-  share_uplink: false
-  paired_drone_id: null
-  paired_at: null
-  ui:
-    oled: {}
-    buttons: {}
-    screens: {}
-
-ui:
-  theme: "dark"             # dark | light
+  source: "auto"                   # auto | serial | udp | tcp
+  serial_port: ""                  # autodetected when empty
+  baud_rate: 57600                 # applies only when serial_port is set
+  legacy_stream_request: false
+  ws_proxy_enforce_auth: true      # a paired node refuses an unauthorised WebSocket
+  raw_proxy_enforce_auth: true     # refuse off-box raw peers (TCP 5760, UDP 14550/14551) except on-box and first-boot lifelines
+  raw_proxy_lan_access: false      # true serves off-box raw peers regardless of raw_proxy_enforce_auth
 ```
 
-## Key settings explained
+Leave `raw_proxy_enforce_auth` at `true` and `raw_proxy_lan_access` at `false`. Setting `raw_proxy_enforce_auth: false` lets any host on the LAN write to the flight controller of an unpaired drone, and `raw_proxy_lan_access: true` serves every off-box peer on the raw ports whatever `raw_proxy_enforce_auth` says, because the raw ports carry no credential.
 
-### Agent profile
+With `serial_port` empty the agent ignores `baud_rate` and sweeps common rates for a heartbeat, so a default-config drone often runs at 115200 even though the file says 57600. To pin a rate, set both keys. Check what the link settled on with `ados status`. See [MAVLink proxy](/drone-agent/mavlink-proxy).
 
-```yaml
-agent:
-  profile: "auto"  # auto | drone | ground_station | workstation | compute
-```
+### Profile
 
-When set to `auto`, the agent fingerprints the hardware at boot. If it finds an OLED on I2C, GPIO buttons, an RTL8812EU in receive mode, and no flight controller, it picks `ground_station`. Otherwise it picks `drone`.
-
-`workstation` and `compute` are never auto-detected. They are chosen at install
-time with `--profile`, and the macOS installer defaults to `workstation`.
-`ados profile set` persists only `drone` and `ground_station`. `workstation`
-and `compute` are core shells, and the installer adds the World Engine
-extension on them by default. See [Node profiles](/getting-started/node-profiles).
-
-Force a specific profile by setting it explicitly.
+`agent.profile: "auto"` lets the agent detect the profile at boot. `workstation` and `compute` are never auto-detected; they are chosen at install time with `--profile`. `ados profile set` persists only `drone` and `ground_station`. Detection rules are on [Node profiles](/getting-started/node-profiles).
 
 ### Hotspot passphrase
 
@@ -205,165 +105,167 @@ network:
     password: ""
 ```
 
-Empty is the shipped default and it means "generate a per-unit passphrase on
-first use". The generated value is written mode 0600 to
-`/etc/ados/ap-passphrase` and shown on the OLED access-point page, in the on-box
-console, and on the installer's completion card. Read it with
-`ados network ap-passphrase`.
+Empty is the default and means "generate a per-unit passphrase on first use". The generated value is written mode 0600 to `/etc/ados/ap-passphrase` and shown on the OLED access-point page, in the terminal dashboard and on the installer's completion card. Read it with `ados network ap-passphrase`.
 
 <Warning>
-A configured value takes precedence over the generated one, so naming a
-passphrase here gives every unit in your fleet the same key. Set it only to pin
-a deliberate shared passphrase.
+A configured value takes precedence over the generated one, so naming a passphrase here gives every unit in your fleet the same key. Set it only to pin a deliberate shared passphrase.
 </Warning>
-
-### LAN transport
-
-The agent's HTTP API on port 8080 is plain HTTP on the LAN, with the pairing
-key at the auth edge. There is no device TLS or WireGuard setting: keep the node
-on a network you trust, or reach it through the cloud relay or a tunnel. See
-[Hardening](/operations/hardening).
-
-### MQTT broker TLS
-
-The telemetry gateway always connects to the broker over TLS, verified against
-the system trust store, and authenticates as the device id unless
-`server.mqtt_username` names another user. `server.mqtt_plaintext_dev: true`
-turns TLS off for a development broker; the password then crosses the network in
-clear text.
-
-### Pairing backend URL
-
-```yaml
-pairing:
-  convex_url: "https://convex-site.altnautica.com"
-```
-
-This ships populated with the hosted backend origin. A self-hosted deployment
-MUST overwrite it: setting `server.mode: self_hosted` and filling
-`server.self_hosted` is not enough, because the beacon and heartbeat read
-`pairing.convex_url` and will keep talking to the hosted origin. See
-[Self-hosting the agent](/developers/self-hosting/agent).
-
-### MAVLink serial port
-
-```yaml
-mavlink:
-  serial_port: ""
-  baud_rate: 57600
-```
-
-Leave `serial_port` empty for autodetection. The agent scans `/dev/ttyACM*`, `/dev/ttyAMA*`, `/dev/ttyUSB*`, and `/dev/ttyS*`, plus any USB serial device regardless of its node name.
-
-`baud_rate` applies only when `serial_port` also names a port. With the port empty, the configured baud is skipped entirely and the agent sweeps `115200, 921600, 57600, 230400, 1500000, 38400, 19200`, listening 1.5 seconds at each for a heartbeat. A default-config drone therefore usually runs at 115200 even though the file says 57600.
-
-To pin a rate, set both keys:
-
-```yaml
-mavlink:
-  serial_port: "/dev/ttyS0"
-  baud_rate: 921600
-```
-
-Check what the link settled on with `ados status`, not by reading the config file. See [MAVLink Proxy](/drone-agent/mavlink-proxy#what-baud-your-drone-is-actually-running).
-
-### Video codec
-
-```yaml
-video:
-  camera:
-    codec: "h264"
-    bitrate_kbps: 4000
-```
-
-Use `h264` for maximum compatibility. Browser-based players (MSE, WebRTC) expect `avc1.640029` (H.264 High Profile Level 4.1). H.265 saves bandwidth but browser support is inconsistent for WebRTC.
 
 ### Cloud server mode
 
 ```yaml
 server:
-  mode: "local"  # cloud | self_hosted | local
+  mode: "local"              # local | cloud | self_hosted
+  cloud:
+    url: "https://convex-site.altnautica.com"
+    mqtt_broker: "mqtt.altnautica.com"
+    mqtt_port: 443
+  self_hosted:
+    url: "https://cloud.example.com:3211"    # Convex site origin (HTTP actions)
+    mqtt_broker: "mqtt.example.com"
+    mqtt_port: 8883
+    api_key: ""
 ```
 
-- **cloud**: connects to the ADOS cloud backend.
-- **self_hosted**: connects to your own MQTT broker and Convex instance.
-- **local**: no cloud connectivity; Mission Control reaches the agent over the LAN. Default.
+- **local** (default): no cloud connectivity; Mission Control reaches the node over the LAN.
+- **cloud**: connects to the hosted backend shown under `cloud:`.
+- **self_hosted**: connects to your own broker and Convex deployment.
+
+The heartbeat runs every 5 seconds and is fixed; there is no setting for it or for the telemetry publish rate.
 
 <Warning>
-For both `cloud` and `self_hosted` modes, the `url` must point at the Convex **site** origin on port `:3211` (HTTP actions: pairing register, heartbeat, command poll), not the client API on `:3210`. If you paste the `:3210` URL, the register call lands on the wrong origin and returns a 404. The agent normalizes a known `:3210` URL to `:3211` as a safety net, but set `:3211` explicitly. See [Self-hosting the agent](/developers/self-hosting/agent).
+For `self_hosted`, `url` must point at the Convex **site** origin on `:3211` (HTTP actions: pairing register, heartbeat, command poll), not the client API on `:3210`. A `:3210` URL sends the register call to the wrong origin and returns 404. See [Self-hosting: Agent](/developers/self-hosting/agent).
 </Warning>
+
+### Pairing backend URL
+
+`pairing.convex_url` is the origin the pairing beacon and heartbeat call. A self-hosted deployment must set it to its own site origin: setting `server.mode: self_hosted` and filling `server.self_hosted` is not enough on its own. See [Self-hosting: Agent](/developers/self-hosting/agent).
+
+### MQTT broker TLS
+
+The telemetry gateway always connects to the broker over TLS, verified against the system trust store, and authenticates as the device id unless `server.mqtt_username` names another user. `server.mqtt_plaintext_dev: true` turns TLS off for a development broker; the password then crosses the network in clear text.
+
+### LAN transport
+
+The HTTP API on port 8080 is plain HTTP on the LAN, with the pairing key at the auth edge. There is no device TLS or WireGuard setting: keep the node on a network you trust, or reach it through the cloud relay or a tunnel. See [Hardening](/operations/hardening).
+
+### Video mode and codec
+
+```yaml
+video:
+  mode: "wfb"      # wfb (radio; boots the thumbnail profile until a hero is chosen) | disabled | other values run LAN/cloud-only at full rate
+  camera:
+    codec: "h264"
+```
+
+The schema default is `wfb`; the installer writes `auto`. Only `disabled` (video exits) and `wfb` (thumbnail at boot) change behaviour. Use `h264` for browser playback: WebRTC and MSE players expect H.264 High Profile. See [Video pipeline](/drone-agent/video-pipeline).
+
+### Radio link
+
+The `video.wfb` keys (channel, TX power and its ceiling, FEC, fleet slot, regulatory domain, link presets, adaptive bitrate and auto-hop) are documented on [WFB-ng](/drone-agent/wfb-ng). The full list is in the video table below.
 
 ### Vision backend
 
 ```yaml
 vision:
   enabled: false
-  backend: "auto"
+  backend: "auto"  # auto | rknn | hailo | onnx | mock
 ```
 
-When `auto`, the agent probes for available inference backends in order: RKNN (Rockchip NPU), TensorRT (NVIDIA), OpenCV DNN, TFLite. It picks the first one that initializes successfully.
+`auto` selects `rknn` on a Rockchip SoC, otherwise the ONNX CPU backend when the build includes it, otherwise `mock` (no detections). Set `hailo` explicitly for a Raspberry Pi 5 AI HAT.
 
-## Reading and writing config
+### Swarm
 
-Use the setup webapp for common MAVLink, video, network, and remote-access
-settings. Advanced users can edit `/etc/ados/config.yaml` directly or use the
-REST API.
+The `swarm:` block (`enabled`, `wifi_direct`, `role`, `default_formation`, `default_spacing`, `mode`, `flock`, `separation`, `tasks`) is documented on [Swarm bus](/drone-agent/swarm-bus).
 
-### From the REST API
+## All keys by section
 
-```bash
-# Read config
-curl http://localhost:8080/api/config \
-  -H "X-ADOS-Key: your_key"
+Each table is generated from the config schema. Secret keys show "Secret, not shown".
 
-# Write a value. The body is one dot-separated key path plus its value;
-# a native JSON scalar (true, 25) and a string ("25") are both accepted.
-curl -X PUT http://localhost:8080/api/config \
-  -H "X-ADOS-Key: your_key" \
-  -H "Content-Type: application/json" \
-  -d '{"key": "video.camera.fps", "value": 25}'
-```
+| Section | Covered on |
+|---|---|
+| `agent` | [Node profiles](/getting-started/node-profiles) |
+| `api`, `security` | [REST API](/drone-agent/rest-api) |
+| `battery` | [Battery health](/drone-agent/battery-health) |
+| `discovery`, `pairing` | [Pairing](/drone-agent/pairing) |
+| `ground_station` | [Ground Agent setup](/ground-agent/setup) |
+| `logging` | [Black Box](/drone-agent/black-box) |
+| `mavlink` | [MAVLink proxy](/drone-agent/mavlink-proxy) |
+| `network` | [Wi-Fi access point](/ground-agent/wifi-ap) |
+| `radio` | [ELRS and CRSF control lane](/ground-agent/elrs-crsf-control-lane) |
+| `remote_access`, `server` | [Cloud relay](/drone-agent/cloud-relay) |
+| `swarm` | [Swarm bus](/drone-agent/swarm-bus) |
+| `ui` | [Agent dashboard: Settings](/drone-agent/dashboard-settings) |
+| `video` | [Video pipeline](/drone-agent/video-pipeline), [WFB-ng](/drone-agent/wfb-ng) |
+| `vision` | [Vision backend](#vision-backend) |
 
-The response carries `persisted`. A write that mutated the running model but
-could not reach `/etc/ados/config.yaml` answers `"persisted": false` with a
-`persist_error` string naming the reason, so a change that will not survive a
-restart is visible instead of silently reported as saved:
+<AccordionGroup>
+  <Accordion title="agent">
+    <AgentConfigAgent />
+  </Accordion>
+  <Accordion title="api">
+    <AgentConfigApi />
+  </Accordion>
+  <Accordion title="battery">
+    <AgentConfigBattery />
+  </Accordion>
+  <Accordion title="discovery">
+    <AgentConfigDiscovery />
+  </Accordion>
+  <Accordion title="ground_station">
+    <AgentConfigGroundStation />
+  </Accordion>
+  <Accordion title="logging">
+    <AgentConfigLogging />
+  </Accordion>
+  <Accordion title="mavlink">
+    <AgentConfigMavlink />
+  </Accordion>
+  <Accordion title="network">
+    <AgentConfigNetwork />
+  </Accordion>
+  <Accordion title="pairing">
+    <AgentConfigPairing />
+  </Accordion>
+  <Accordion title="radio">
+    <AgentConfigRadio />
+  </Accordion>
+  <Accordion title="remote_access">
+    <AgentConfigRemoteAccess />
+  </Accordion>
+  <Accordion title="security">
+    <AgentConfigSecurity />
+  </Accordion>
+  <Accordion title="server">
+    <AgentConfigServer />
+  </Accordion>
+  <Accordion title="swarm">
+    <AgentConfigSwarm />
+  </Accordion>
+  <Accordion title="ui">
+    <AgentConfigUi />
+  </Accordion>
+  <Accordion title="video">
+    <AgentConfigVideo />
+  </Accordion>
+  <Accordion title="vision">
+    <AgentConfigVision />
+  </Accordion>
+</AccordionGroup>
 
-```json
-{ "status": "ok", "key": "video.camera.fps", "value": 25, "persisted": true }
-```
+## Next steps
 
-Reading a secret path returns `***`. Writing that sentinel back is rejected with
-a 400, so a read-display-edit-write round trip cannot overwrite a real secret
-with the placeholder.
-
-`GET /api/config/schema` returns the build-time-embedded shape of the whole
-config surface. Build a settings UI against that rather than against a
-hand-written form.
-
-### Editing the file
-
-You can edit `/etc/ados/config.yaml` directly with any text editor, then restart the affected service (see the tip at the end of this page). The terminal status page (`ados`) is read-only and does not edit config.
-
-## Per-board overrides
-
-The install script writes board-specific overrides into `/etc/ados/config.yaml` during installation. For example, a Raspberry Pi 4B gets:
-
-```yaml
-mavlink:
-  serial_port: "/dev/ttyAMA0"
-```
-
-While a Radxa ROCK 5C Lite gets:
-
-```yaml
-mavlink:
-  serial_port: "/dev/ttyS0"
-  baud_rate: 921600
-```
-
-These overrides are merged on top of the built-in defaults. Your manual edits always take priority.
-
-<Tip>
-After editing the config file manually, restart the affected service for changes to take effect. For example, `sudo systemctl restart ados-mavlink` after changing the baud rate.
-</Tip>
+<CardGroup cols={2}>
+  <Card title="Terminal dashboard" icon="table-layout" href="/drone-agent/tui-dashboard">
+    Watch the node's links, autopilot and video live.
+  </Card>
+  <Card title="MAVLink proxy" icon="route" href="/drone-agent/mavlink-proxy">
+    How the agent connects to the flight controller.
+  </Card>
+  <Card title="WFB-ng" icon="tower-broadcast" href="/drone-agent/wfb-ng">
+    Radio link settings and automation.
+  </Card>
+  <Card title="Agent CLI reference" icon="terminal" href="/drone-agent/cli-reference">
+    `ados config` and the other commands.
+  </Card>
+</CardGroup>

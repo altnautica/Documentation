@@ -1,151 +1,130 @@
 ---
-title: "Troubleshooting"
-description: "Map plugin failures to exit codes and wire errors, then diagnose them with ados plugin logs, systemctl, and journalctl."
-lastUpdated: "2026-06-23"
+title: "Plugin troubleshooting"
+sidebarTitle: "Troubleshooting"
+description: "Map plugin failures to CLI exit codes and wire errors, then diagnose them with ados plugin logs, systemctl and journalctl."
 ---
 
-Most plugin failures fall into a handful of categories: a bad signature,
-a missing or denied capability, an invalid manifest, the cgroup killing
-the process, the IPC socket not coming up, or the GCS iframe being
-blocked from a fetch it needs. This page maps each failure to the exit
-code and wire error you will actually see, and lists the commands that
-tell you which one you hit.
+Most plugin failures fall into a handful of categories: a signature the
+node does not trust, an invalid manifest, an install the agent refuses,
+a capability that was not granted, the cgroup killing the process, the
+IPC socket not coming up, or the GCS iframe trying to reach the network.
+This page maps each one to what you see and the commands that tell you
+which one you hit.
 
-## Exit codes
+Every `ados plugin` command exits with a code from the
+[exit-code table](/developers/cli-reference#exit-codes). Pass `--json` in
+CI and branch on `.code`, not on the human text.
 
-Every `ados plugin` subcommand returns one of these codes. With `--json`
-the same code rides in the envelope as `{"ok": false, "code": N, "kind":
-"...", "detail": "..."}`.
+## Signature and trust failures (exit 3)
 
-| Code | Kind | Meaning |
-|------|------|---------|
-| 0 | `ok` | Success. |
-| 1 | `generic_failure` | An error that does not map to a specific code (archive read error, state write, pytest non-zero). |
-| 2 | `manifest_invalid` | The manifest failed schema validation. |
-| 3 | `signature_invalid` | The Ed25519 signature did not verify, the signer is unknown, or the signer is revoked. |
-| 4 | `permission_denied` | A permission change was refused, or `--yes` refused a high or critical-risk plugin. |
-| 5 | `plugin_not_found` | No plugin with that id is installed (or no log file exists yet). |
-| 6 | `wrong_state` | The plugin is in a state the action cannot apply to. |
-| 7 | `resource_limit` | A declared resource bound was exceeded. |
-| 8 | `compatibility_failed` | The host version, board, or compute tier fell outside the manifest's compatibility range. |
+`ados plugin install` checks the signature before anything is written
+to disk. The detail text names the cause:
 
-<Tip>
-Pass `--json` to any subcommand in a CI step. Branch on `.code`, not on
-parsing the human text, which is meant for a terminal.
-</Tip>
-
-## Signature and trust-list failures (exit 3)
-
-`ados plugin install` raises a signature error before anything is
-written to disk. The detail text names which of the three causes you
-hit:
-
-- The signer id in the archive is not on the agent. The detail reads
-  `signer <id> not in /etc/ados/plugin-keys/`. Install the publisher's
-  public PEM at `/etc/ados/plugin-keys/<signer-id>.pem` (the filename
-  must equal the signer id), or re-sign with a key the agent already
-  trusts.
-- The signer id is on the agent's revocation list at
-  `/etc/ados/plugin-revocations.json`. A revoked signer never loads,
-  even with a valid signature. Re-sign with a fresh, non-revoked key.
-- The signature does not verify under the key on file. The detail reads
-  `signature does not verify under key <id>`. The archive was tampered
-  with after signing, the wrong key is installed for that signer id, or
-  the payload hash changed. Re-pack and re-sign:
+- **The archive is unsigned.** A default agent refuses it with
+  `archive is unsigned`. Sign it with `ados plugin sign` or
+  `scripts/sign.sh`.
+- **The signer is not enrolled.** The node has no
+  `/etc/ados/plugin-keys/<signer-id>.pem` for the signer id in the
+  archive. Install the publisher's public PEM there (the file name must
+  equal the signer id), or re-sign with a key the node already trusts.
+- **The signer, the archive or the release is revoked.** It is listed in
+  `/etc/ados/plugin-revocations.json` (a release as `<plugin_id>@<version>`).
+  A revoked signer, archive or release is refused in every mode. Re-sign
+  with a fresh key, or install a release that is not revoked.
+- **The signature does not verify under the enrolled key.** The archive
+  changed after signing, the wrong key is enrolled for that signer id,
+  or the archive was signed with a different id than you think. Re-pack
+  and re-sign:
 
 ```bash
 ados plugin sign ./my-plugin \
-  --key ./my-2026-A.priv.pem \
+  --key ./keys/my-2026-A.priv.pem \
   --signer-id my-2026-A \
-  --output ./my-plugin.adosplug
+  --output ./dist/my-plugin.adosplug
 ```
 
-<Note>
-For local development only, `ados plugin install --allow-unsigned` skips
-verification. The agent still records the install as unsigned. Never use
-`--allow-unsigned` for anything you distribute.
-</Note>
-
-The first-party Altnautica signer ids are `altnautica-2026-A` and
-`altnautica-2026-B`. A community plugin uses your own signer id and your
-own public key on the agent.
+Signature enforcement can only be relaxed on the agent itself, by
+running its services with `ADOS_PLUGIN_REQUIRE_SIGNED=0` on a bench node.
+The agent then logs a warning, installs unsigned or unverifiable
+archives with no signer, and never grants them first-party status. The
+procedure is in
+[Bench install and signing](/developers/signing-keys#bench-install-and-signing).
 
 ## Manifest validation errors (exit 2)
 
-`ados plugin install`, `ados plugin lint`, `ados plugin sign`, and
-`ados plugin test` all validate `manifest.yaml` first and exit 2 if it
-fails. Common causes:
+`ados plugin lint`, `sign` and `test` validate `manifest.yaml` against
+the strict schema and exit 2 on failure; the agent rejects a malformed
+manifest at install the same way. Common causes:
 
-- A `permissions[].id` that is not in the capability catalog. The id
-  must match a real capability exactly (`telemetry.read`, not
-  `telemetry`). See the [Permissions reference](/developers/permissions).
 - Neither an `agent:` nor a `gcs:` block. At least one half is required.
 - A resource bound out of range. `agent.resources.max_ram_mb` must be
-  between 8 and 4096 (default 96).
-- `isolation: inprocess` (agent) or `isolation: inline` (gcs) on a
-  third-party plugin. Those values are reserved for first-party
-  built-ins; third-party plugins must use `subprocess` and `iframe`.
-- A missing required field (`id`, `version`, `name`, `risk`, an
-  `entrypoint` on whichever half is present).
+  between 8 and 4096 for the `standard` class (default 96).
+- A missing required field: `id`, `version`, `name`,
+  `compatibility.ados_version`, `agent.entrypoint`, or `gcs.entrypoint`
+  when the GCS half renders `panels`, `tabs`, `agent_pages` or
+  `node_surfaces`.
+- A camelCase `contributes` key (`missionTemplates`, `mapOverlays`). Use
+  `mission_templates` and `map_overlays`.
 
-Run the linter before you package to catch these without an install:
+An unknown permission id is a warning, not an error: the manifest loads,
+but the permission grants nothing. Check the spelling against
+[Permissions](/developers/permissions).
+
+Run the linter before you install:
 
 ```bash
 ados plugin lint ./my-plugin.adosplug
 ```
 
-`lint` exits 0 when the report passes and 1 when it does not. The report
-prints each finding with its location in the manifest.
+`lint` exits 0 when the report passes and 1 when it carries an error or
+critical finding.
 
-## Capability denied (exit 4 on the CLI, wire error at runtime)
+## Install refusals (exit 4 and exit 8)
 
-There are two distinct moments a capability can be refused.
+These manifests parse, but the agent refuses to install them:
 
-**At install or update.** `ados plugin install --yes` refuses any plugin
-whose top-level `risk` is `high` or `critical` and exits 4 with the
-detail `--yes refuses <risk>-risk plugins`. Re-run interactively, review
-the permission grid, and approve:
+- `agent.isolation: inprocess` is refused for every plugin (exit 8).
+  Use `subprocess`.
+- `gcs.isolation: inline` and `agent.resources.class: heavy` are refused
+  unless the archive verifies against a first-party key (exit 4,
+  `refused: ..._first_party_only`).
+- A board, tier, target profile or architecture the manifest does not
+  cover (exit 8, `incompatible: ...`). `supported_boards` takes board
+  ids or SoCs from
+  [Supported hardware](/drone-agent/supported-hardware), or `"*"`.
+- `ados plugin install --yes` on a plugin whose `risk` is `high` or
+  `critical` (exit 4, `--yes refuses <risk>-risk plugins`). Re-run
+  without `--yes` and approve after review.
 
-```bash
-ados plugin install ./my-plugin.adosplug   # interactive prompt
-```
+## Capability denied at runtime
 
-**At runtime.** The agent IPC server re-resolves the required capability
-from the method on every request and rejects an ungranted call with a
-`capability_denied: <cap>` envelope. The handler never runs. This
-happens when the plugin calls a host method whose capability the
-operator did not grant (an optional permission left off, or a permission
-revoked while the plugin was running). Check and fix the grant:
+The agent re-resolves the required capability from the method on every
+request and rejects an ungranted call with `capability_denied: <cap>`;
+the handler never runs. On the GCS half the bridge answers
+`permission_denied`. This happens when the plugin calls a method whose
+capability was not granted (an optional permission left off, or one
+revoked while the plugin ran). Check and fix the grant:
 
 ```bash
 ados plugin perms com.example.my-plugin
+ados plugin perms com.example.my-plugin --grant mavlink.read
 ```
 
-A revoked permission takes effect on the next token rotation, so a
-running plugin can start seeing `capability_denied` mid-session after an
-operator runs `ados plugin perms <id> --revoke <cap>`. Re-grant by
-re-running the install dialog for that version, or remove and reinstall.
+A revoke takes effect at once, so a running plugin can start seeing
+`capability_denied` mid-session after an operator revokes a permission.
 
-### Capability token expiry on the GCS side
+### Token expiry
 
-The GCS half runs in an iframe and signs each RPC envelope with a
-capability token the host mints with a short TTL. The host bridge
-verifies expiry, plugin id, agent id, capability membership, and the
-signature on every dispatch. **The bridge does not auto-retry.** When a
-token has aged past `expiresAt`, the bridge returns an error with
-`reason: "token_expired"`, and the iframe (through the TypeScript SDK)
-must refresh its token cache and re-send. If your GCS panel goes inert
-after a few minutes, this is the cause: confirm the SDK is re-minting
-on `token_expired` rather than treating it as a hard failure. The same
-contract holds on the agent: a session outlives a single token, so the
-IPC server re-checks freshness per request and replies `token_expired`,
-prompting the runner to request a fresh token from the supervisor.
+Tokens rotate without plugin action: the agent re-mints a token ahead of
+expiry and on expiry within a live session, and Mission Control pushes a
+fresh token into the iframe, which the SDK caches. A persistent
+`capability_denied:token_expired` on the GCS half means the host stopped
+pushing tokens; reload the panel.
 
-## cgroup OOM and CPU throttle (exit 7 territory)
+## The agent half crashes or restarts
 
-Each third-party plugin runs as `ados-plugin-<id>.service` inside the
-shared `ados-plugins.slice` cgroup. The unit carries the manifest's
-declared bounds:
+Each agent half runs as `ados-plugin-<id>-<hash8>.service` inside the
+shared `ados-plugins.slice`, with the manifest's bounds:
 
 ```ini
 MemoryMax=<agent.resources.max_ram_mb>M
@@ -153,167 +132,159 @@ CPUQuota=<agent.resources.max_cpu_percent>%
 TasksMax=<agent.resources.max_pids>
 ```
 
-If the plugin's resident set crosses `MemoryMax`, the kernel OOM-kills
-the process. systemd restarts it (`Restart=on-failure`, `RestartSec=2s`)
-up to five times in sixty seconds; past that the unit lands in `failed`
-and the plugin status becomes `failed`. CPU is not killed, it is
-throttled: crossing `CPUQuota` slows the process rather than ending it,
-so a CPU-starved plugin looks like latency, not a crash.
-
-Read the cgroup accounting directly to confirm an OOM versus a throttle.
-Find the unit's cgroup path, then:
+Find the exact unit name first; the `<hash8>` suffix comes from the id:
 
 ```bash
-# OOM count (oom_kill increments on each kill)
-systemctl show ados-plugin-com-example-my-plugin.service -p ControlGroup
-cat /sys/fs/cgroup/<that-path>/memory.events    # look at oom and oom_kill
-cat /sys/fs/cgroup/<that-path>/memory.peak       # high-water mark
-cat /sys/fs/cgroup/<that-path>/cpu.stat          # nr_throttled, throttled_usec
+systemctl list-units 'ados-plugin-*' --all
 ```
 
-A rising `oom_kill` in `memory.events` means raise `max_ram_mb` in the
-manifest (it is `agent.resources.max_ram_mb`, 8 to 4096) or shrink the
-plugin's working set. A rising `nr_throttled` in `cpu.stat` means raise
-`max_cpu_percent` or do less work per tick.
+If the plugin's memory crosses `MemoryMax`, the kernel OOM-kills it and
+systemd restarts it after 2 s. There is no start limit
+(`StartLimitIntervalSec=0`), so a crash-looping plugin keeps restarting
+and stays `running` in the plugin record. CPU is throttled, not killed:
+crossing `CPUQuota` slows the process, so a CPU-starved plugin looks
+like latency, not a crash.
 
-<Note>
-The plugin id maps to the unit name by replacing each `.` with a `-`:
-`com.example.my-plugin` becomes
-`ados-plugin-com-example-my-plugin.service`.
-</Note>
+Read the cgroup accounting to tell an OOM from a throttle:
+
+```bash
+systemctl show ados-plugin-com-example-my-plugin-<hash>.service -p ControlGroup
+cat /sys/fs/cgroup/<that-path>/memory.events    # oom and oom_kill
+cat /sys/fs/cgroup/<that-path>/memory.peak      # high-water mark
+cat /sys/fs/cgroup/<that-path>/cpu.stat         # nr_throttled, throttled_usec
+```
+
+A rising `oom_kill` means raise `agent.resources.max_ram_mb` or shrink
+the working set. A rising `nr_throttled` means raise `max_cpu_percent`
+or do less work per tick.
 
 ## IPC connect and timeout failures
 
-The supervisor binds one Unix socket per plugin at
-`/run/ados/plugins/<id>.sock` and passes its path and the capability
-token to the runner through the environment. The runner connects, sends
-a `hello` handshake, presents the token, and only then can issue
-requests. Failure modes:
+The plugin host (`ados-plugin-host`) binds one Unix socket per plugin at
+`/run/ados/plugins/<id>/host.sock`. The unit passes the path in
+`ADOS_PLUGIN_SOCKET` and delivers the token as a systemd credential at
+`$CREDENTIALS_DIRECTORY/ados-plugin-token`, never in the environment.
+The runner connects, sends a `hello` handshake with the token, and only
+then issues requests. The unit has
+`Requires=ados-plugin-host.service` and
+`PartOf=ados-supervisor.service`.
 
-- **Socket missing or connection refused.** The supervisor has not
-  started the server for that plugin, or the plugin's unit started
-  before the supervisor. The unit declares `After=ados-supervisor.service`
-  and `PartOf=ados-supervisor.service`, so a supervisor restart should
-  cycle it. Confirm the supervisor is up first:
+- **Socket missing or connection refused.** The plugin host is not
+  serving that plugin yet. The runner keeps retrying, and systemd
+  restarts it with no start limit. Check the host and the socket dir:
 
 ```bash
-systemctl status ados-supervisor.service
-ls -l /run/ados/plugins/
+systemctl status ados-plugin-host.service
+ls -l /run/ados/plugins/com.example.my-plugin/
 ```
 
-- **Handshake rejected.** If the token does not verify, the server
-  closes the connection with `capability token invalid: <reason>`. If
-  the token's `plugin_id` does not match the socket it connected on, the
-  server rejects it. Both usually mean a stale token after a restart;
-  the runner requests a fresh one and reconnects.
-- **Host method not wired yet.** A request for a host service that has
-  not initialized (for example, the FC link before MAVLink comes up)
-  returns a not-ready error rather than data. Retry once the agent
-  reports the underlying subsystem ready.
+- **Handshake rejected.** The server closes the connection with
+  `capability token invalid: <reason>` when the token does not verify or
+  names another plugin. The host rewrites the credential on every start,
+  so a restart of the unit picks up a fresh one.
+- **Host method not ready.** A request for a subsystem that has not come
+  up yet (for example the flight controller link) returns a not-ready
+  error rather than data. Retry once the subsystem reports ready.
 
-## GCS iframe blocked from a fetch (CSP and connect-src)
+## GCS iframe blocked from the network
 
-The GCS half loads in `sandbox="allow-scripts"` with no
-`allow-same-origin`. The iframe is a unique opaque origin: it cannot
-reach the parent document, cannot read the GCS cookies or storage, and
-all host access goes through the postMessage bridge, never a direct
-DOM reach. Two consequences for plugin authors:
+The GCS half runs in `sandbox="allow-scripts"` with no
+`allow-same-origin`, on a document whose CSP has `connect-src 'none'`.
+WebRTC and nested frames are removed. So:
 
-- **The plugin iframe has no network egress.** Its document carries
-  `connect-src 'none'`, and WebRTC and nested frames are removed, so a
-  `fetch()`, WebSocket or peer connection from the panel fails with a
-  CSP violation or a missing constructor. Route the work through a host
-  capability (`command.send`, `mission.write`, `cloud.read`) or through
-  your plugin's agent half instead.
-- **No same-origin tricks.** Because `allow-same-origin` is absent, the
-  iframe cannot read `window.parent`, `localStorage`, or the host's
-  `document`. Anything you need from the GCS comes over the bridge under
-  a granted capability. A panel that tries to touch the parent fails
-  silently in the sandbox, not with a clear error.
+- A `fetch()`, WebSocket or peer connection from the panel fails with a
+  CSP violation or a missing constructor. Route the work through a
+  bridge method (`command.send`, `mission.write`, `cloud.read`,
+  `records.*`) or through your plugin's agent half.
+- The iframe cannot read `window.parent`, `localStorage` or the host
+  `document`. Anything you need from Mission Control comes over the
+  bridge under a granted capability.
 
-When a GCS panel renders blank, open the browser devtools console for
-that iframe: a CSP `connect-src` block, a `token_expired` the SDK did
-not refresh, or a `capability_denied` from the bridge are the three
-things to rule out, in that order.
+When a GCS panel renders blank, open the devtools console for that
+iframe and rule out, in order: a CSP block, a `capability_denied` or
+`permission_denied` from the bridge, and a throw in `mount` (the SDK
+does not report it to the host, so render your own error state).
 
 ## Diagnostic commands
 
 <Steps>
-<Step title="Tail the plugin's own log">
-The agent half writes stdout and stderr to a per-plugin file. `ados
-plugin logs` reads it without touching journald:
+<Step title="Read the plugin's own log">
+The agent half writes stdout and stderr to
+`/var/log/ados/plugins/<id with dots as hyphens>-<hash8>.log`.
+`ados plugin logs` asks the agent for that path and reads it:
 
 ```bash
 ados plugin logs com.example.my-plugin            # last 100 lines
 ados plugin logs com.example.my-plugin --lines 500
 ados plugin logs com.example.my-plugin --follow   # like tail -f
+ados plugin logs com.example.my-plugin --service worker
 ```
 
-If the command exits 5 with `no log file at ...`, the plugin never
-started, or its logs rotated out. Move to the unit status next.
+An exit 5 with `no log file at ...` means the plugin never started, or
+its log was rotated out. Move to the unit status next.
 </Step>
 
 <Step title="Inspect install state and grants">
-`ados plugin info` prints the recorded version, status, signer, source,
-and the per-permission grant state:
-
 ```bash
 ados plugin info com.example.my-plugin
 ados plugin perms com.example.my-plugin
-ados plugin list --all       # include built-ins
+ados plugin list --all
 ```
 
-A `status` of `failed` points at the unit; `incompatible` points at the
-manifest's compatibility range; a `DENIED` permission explains a runtime
-`capability_denied`.
+A `DENIED` permission explains a runtime `capability_denied`. A
+`disabled` plugin with a recorded reason was disabled by a revocation.
 </Step>
 
 <Step title="Read the systemd unit">
-The agent half is a generated service. Check whether it is up, why it
-failed, and what bounds it carries:
-
 ```bash
-systemctl status ados-plugin-com-example-my-plugin.service
-systemctl cat   ados-plugin-com-example-my-plugin.service   # the generated unit
+systemctl list-units 'ados-plugin-*' --all
+systemctl status ados-plugin-com-example-my-plugin-<hash>.service
+systemctl cat    ados-plugin-com-example-my-plugin-<hash>.service
 ```
 
-`status` shows the last exit reason and whether the start limit tripped.
-`cat` shows the `MemoryMax`, `CPUQuota`, and `TasksMax` the manifest
-asked for.
+`status` shows the last exit reason and the restart count. `cat` shows
+the generated unit with its bounds and sandbox.
 </Step>
 
-<Step title="Pull the full journal for the unit">
-For crashes that happen before the plugin can log, or for the
-supervisor's view of the start, go to journald:
+<Step title="Pull the journal">
+For crashes before the plugin can log, or the plugin host's view of the
+start:
 
 ```bash
-journalctl -u ados-plugin-com-example-my-plugin.service -n 200 --no-pager
-journalctl -u ados-supervisor.service -n 200 --no-pager
+journalctl -u ados-plugin-com-example-my-plugin-<hash>.service -n 200 --no-pager
+journalctl -u ados-plugin-host.service -n 200 --no-pager
 ```
 
-A `Killed process ... (oom)` line confirms an OOM. A
-`start-limit-hit` line confirms the unit gave up after five restarts.
+A `Killed process ... (oom)` line confirms an OOM.
 </Step>
 
-<Step title="Query the durable log store">
-The agent's logging daemon keeps logs, events, and hardware samples in a
-local store that survives restart and is reachable when the network is
-down. Filter by source or kind across the whole agent, not just one
-plugin:
+<Step title="Query the Black Box store">
+When the Black Box store (`ados-logd`) is enabled, query across the
+whole agent to correlate a plugin failure with the rest of the node:
 
 ```bash
-ados logs query --source plugin --since 10m
-ados logs query --kind service.transition --since 1h
+ados logs query --since -10m --text com.example.my-plugin
+ados logs query --kind events --since -1h
 ```
 
-This is the place to correlate a plugin failure with what the rest of
-the agent was doing at the same moment.
+The store is off by default; without it, use `journalctl -o json`. See
+[Black Box](/drone-agent/black-box).
 </Step>
 </Steps>
 
-## See also
+## Next steps
 
-- [Permissions](/developers/permissions) - the capability catalog and the install dialog.
-- [Lifecycle](/developers/lifecycle) - the states a plugin moves through.
-- [Performance and budgets](/developers/performance-and-budgets) - sizing `max_ram_mb` and `max_cpu_percent`.
-- [Signing keys](/developers/signing-keys) - generating and installing publisher keys.
+<CardGroup cols={2}>
+  <Card title="Plugin CLI reference" href="/developers/cli-reference">
+    Every command and the exit-code table.
+  </Card>
+  <Card title="Performance and budgets" href="/developers/performance-and-budgets">
+    Sizing `max_ram_mb` and `max_cpu_percent`.
+  </Card>
+  <Card title="Signing keys" href="/developers/signing-keys">
+    Generate, enrol and rotate publisher keys.
+  </Card>
+  <Card title="Troubleshooting by area" href="/operations/troubleshooting">
+    Every troubleshooting page across ADOS.
+  </Card>
+</CardGroup>

@@ -1,67 +1,80 @@
 ---
-title: "MAVLink Proxy"
-description: "How the agent connects to your flight controller and distributes MAVLink data."
+title: "MAVLink proxy"
+description: "How the Drone Agent finds the flight controller and shares its MAVLink stream with every client and service."
 icon: "satellite-dish"
-lastUpdated: "2026-06-18"
 ---
 
-# MAVLink Proxy
+import AgentConfigMavlink from "/snippets/generated/agent-config-mavlink.mdx";
 
-The MAVLink proxy is the agent's core service, a native Rust router (`ados-mavlink-router`). It connects to the flight controller over serial UART, parses MAVLink frames, and distributes them to every other part of the system: the GCS over WebSocket, other services via the IPC socket, the cloud relay, and the terminal status page.
+The MAVLink proxy is the agent's core service, a native Rust router (`ados-mavlink-router`) that runs as the `ados-mavlink` systemd service. It opens the flight controller link, parses MAVLink frames and distributes them to the rest of the system: Mission Control over WebSocket, other services over IPC sockets, the cloud relay and the terminal status page.
 
-The proxy runs as the `ados-mavlink` systemd service.
+<Warning>
+Anything that reaches the proxy can command the flight controller, including arming and mode changes. Read [Safety](/operations/safety) before you open the proxy to a LAN or fly with it.
+</Warning>
 
 ## Flight controller auto-detection
 
-When `mavlink.serial_port` is empty in config (the default), the proxy scans serial ports in this order:
+`mavlink.source` picks the transport: `auto` (the default), `serial`, `udp` or `tcp`. With `source: auto` and `mavlink.serial_port` empty, the proxy scans serial ports:
 
-1. Ports listed in the board profile's `uart_paths` (e.g., `/dev/ttyS0`, `/dev/ttyAMA0`)
+1. Ports listed in the board profile's `uart_paths` (for example `/dev/ttyS0`, `/dev/ttyAMA0`)
 2. USB serial devices at `/dev/ttyACM*` and `/dev/ttyUSB*`
 
-For each candidate port it sweeps a list of baud rates, listening 1.5 seconds at each one for a MAVLink heartbeat. The first port and baud that produces a heartbeat wins. If the port is emitting MSP instead of MAVLink, the sweep stops there as well, because no baud will ever yield a heartbeat from an MSP flight controller.
+For each candidate port it sweeps a list of baud rates, listening 1.5 seconds at each one for a MAVLink heartbeat. The first port and baud that produce a heartbeat win. If the port is emitting MSP instead of MAVLink, the sweep stops there as well, because no baud will ever yield a heartbeat from an MSP flight controller.
 
-If no FC is found, the proxy backs off and retries, starting at 1 second and doubling to a 30 second ceiling. This handles cases where the FC boots slower than the companion computer or gets power-cycled mid-flight.
+If no flight controller is found, the proxy retries every 3 seconds, indefinitely. This covers a flight controller that boots slower than the companion computer or is power-cycled.
 
-## Serial connection
+### Network flight controllers
 
-| Setting | Config key | Default |
-|---------|-----------|---------|
-| Port | `mavlink.serial_port` | Empty, which means autodetect |
-| Baud rate | `mavlink.baud_rate` | 57600, used only when `serial_port` is also set |
-| System ID | `mavlink.system_id` | 1 |
-| Component ID | `mavlink.component_id` | 191 |
+A flight controller or simulator reachable over the network uses a `udp:` or `tcp:` form in `mavlink.serial_port`. Set `mavlink.source` to match, or leave it at `auto` and the prefix decides.
+
+```yaml
+mavlink:
+  source: "udp"
+  serial_port: "udp:0.0.0.0:14550"
+```
+
+```yaml
+mavlink:
+  source: "tcp"
+  serial_port: "tcp:192.168.1.50:5760"
+```
+
+## Configuration keys
+
+<AgentConfigMavlink />
 
 ### What baud your drone is actually running
 
 `mavlink.baud_rate` is only honoured when `mavlink.serial_port` names a port. With the port left empty, the configured baud is not used at all and the proxy sweeps this list in order:
 
-```
+```text
 115200, 921600, 57600, 230400, 1500000, 38400, 19200
 ```
 
 So a drone left on the default config most likely settles at 115200, not at the 57600 the config file shows. 57600 is third in the sweep, and it is also the last-ditch baud the proxy opens at when no candidate produced a heartbeat, which is a silent port rather than a working link.
 
-Two things follow. Setting `mavlink.baud_rate` on its own changes nothing, so pin `mavlink.serial_port` alongside it if you want a specific rate. And a fresh install behaves differently depending on what was plugged in at the time: the installer writes the detected port into the config when an FC is attached, which pins the link and skips the sweep, while a unit installed with no FC attached ships with an empty port and probes on every connect.
+Two things follow. Setting `mavlink.baud_rate` on its own changes nothing, so pin `mavlink.serial_port` alongside it if you want a specific rate. And a fresh install behaves differently depending on what was plugged in at the time: the installer writes the detected port into the config when a flight controller is attached, which pins the link and skips the sweep, while a unit installed with no flight controller attached ships with an empty port and probes on every connect.
 
 Read back what the link actually settled on with `ados status`, rather than reading it off the config file.
 
 <Tip>
-A USB-CDC flight controller ignores the requested baud entirely, since bytes flow at the native USB rate. The sweep matters for FCs on a real UART. For those, 921600 carries high-rate attitude data and parameter downloads far better than 57600.
+A USB-CDC flight controller ignores the requested baud entirely, since bytes flow at the native USB rate. The sweep matters for flight controllers on a real UART. For those, 921600 carries high-rate attitude data and parameter downloads far better than 57600.
 </Tip>
 
 ## Multi-client distribution
 
-The proxy is a one-to-many bridge. A single serial connection feeds multiple consumers:
+The proxy is a one-to-many bridge. A single flight controller link feeds every consumer:
 
-```
-Flight Controller (UART)
+```text
+Flight controller (UART, USB, UDP or TCP)
        │
   ados-mavlink (proxy)
        │
        ├── /run/ados/mavlink.sock    (IPC, binary MAVLink)
-       ├── /run/ados/state.sock      (IPC, JSON telemetry 10Hz)
-       ├── WebSocket :8765            (GCS, browser clients)
-       └── ados-cloud                 (MQTT relay to cloud)
+       ├── /run/ados/state.sock      (IPC, msgpack vehicle state, about 10 Hz)
+       ├── WebSocket :8765           (Mission Control, browser clients)
+       ├── TCP 5760, UDP 14550/14551 (raw MAVLink for desktop ground stations)
+       └── ados-cloud                (MQTT relay, when the cloud relay is on)
 ```
 
 ### IPC sockets
@@ -70,16 +83,16 @@ Two Unix domain sockets carry data between services:
 
 **`/run/ados/mavlink.sock`** (binary): raw MAVLink frames with a 4-byte big-endian length prefix before each frame. Any service or script can connect and receive the full MAVLink stream.
 
-**`/run/ados/state.sock`** (JSON): a parsed telemetry summary published at 10 Hz. Contains attitude, position, speed, battery, GPS, and armed state as JSON. Used by the health service, cloud relay, and TUI.
+**`/run/ados/state.sock`** (msgpack): the vehicle state as length-prefixed msgpack (contract `state.v2`), a 4-byte big-endian length followed by a body `{v, s}`, published at about 10 Hz. `s` holds attitude, position, speed, battery, GPS and armed state. The health service, cloud relay and TUI read it. The frame format is documented in [Agent services](/architecture/agent-services).
 
 ### WebSocket endpoint
 
-The proxy exposes a WebSocket endpoint at port 8765 (configurable via `mavlink.endpoints`). This is the primary way ADOS Mission Control and other browser-based GCS tools connect to the drone.
+The proxy exposes a WebSocket endpoint on port 8765 (set in `mavlink.endpoints`). This is how Mission Control and other browser ground stations connect to the drone.
 
 The credential for that endpoint is a short-lived HMAC ticket. A client asks the agent for one with `POST /api/_ws/ticket`, which is itself gated by the pairing key, and presents it on connect as a WebSocket subprotocol:
 
-```js
-new WebSocket("ws://drone.local:8765/", ["ados-ws-ticket", token])
+```typescript
+new WebSocket("ws://ados-9f2c1a.local:8765/", ["ados-ws-ticket", token]);
 ```
 
 The ticket is signed with a key derived from the agent's pairing key, carries a scope, and expires after 30 seconds by default (120 seconds maximum). Because it is derived rather than stored, re-pairing or a factory reset invalidates every ticket already issued. A non-browser client can present the pairing key directly in an `X-ADOS-Key` header instead.
@@ -89,13 +102,13 @@ A **paired** node refuses a WebSocket connection that presents neither the pairi
 
 The raw MAVLink endpoints on TCP 5760 and UDP 14550 and 14551 have nowhere to carry a credential: MAVLink over a raw socket has no handshake and no headers, so the only thing the agent knows about a caller is its address. Their posture follows the pairing state:
 
-- **Unpaired**, any caller is admitted by default so a desktop GCS can attach to a fresh unit. Setting `mavlink.raw_proxy_enforce_auth` to `true` narrows that to the box itself and the first-boot lifelines above.
-- **Paired**, the raw ports serve only the box itself. An off-box desktop GCS, on the LAN, the access point or the USB link, is refused, because a paired node wants the pairing key and the raw ports cannot carry it. To attach one, set `mavlink.raw_proxy_lan_access: true` (default `false`); off-box peers are then served again, unless `mavlink.raw_proxy_enforce_auth` is also `true`, which keeps them refused.
+- **Unpaired**: the raw ports serve the box itself and the first-boot lifelines (loopback, link-local, the node's access point, the USB gadget link). Other LAN hosts are refused unless `mavlink.raw_proxy_lan_access: true`. Setting `mavlink.raw_proxy_enforce_auth: false` (default `true`) returns to serving and logging unauthorized peers.
+- **Paired**: the raw ports serve only the box itself. An off-box desktop ground station, on the LAN, the access point or the USB link, is refused, because a paired node wants the pairing key and the raw ports cannot carry it. To attach one, set `mavlink.raw_proxy_lan_access: true` (default `false`); off-box peers are then served.
 
 The current posture is reported as `mavlink_proxy_posture` in the agent's telemetry. Opening the raw ports to the LAN means anything that can reach 5760 can command the flight controller: keep the agent on a link you control, do not port-forward 8765, 5760, 14550 or 14551 to the internet, and do not join an untrusted WiFi network with a drone powered up.
 </Warning>
 
-The WebSocket carries raw binary MAVLink frames, wire-compatible with the SITL bridge tool. No encoding changes, no JSON wrapping. The GCS decodes MAVLink in the browser using the same CRC and payload tables as pymavlink.
+The WebSocket carries raw binary MAVLink frames, with no encoding changes and no JSON wrapping. Mission Control decodes MAVLink in the browser using the same CRC and payload tables as pymavlink.
 
 ```yaml
 mavlink:
@@ -108,64 +121,51 @@ mavlink:
 
 ## Companion heartbeat
 
-The proxy sends a 1 Hz companion heartbeat to the flight controller with `MAV_TYPE_ONBOARD_CONTROLLER`. This prevents ArduPilot's GCS failsafe from triggering when the companion computer is the only MAVLink endpoint.
+The proxy sends a 1 Hz companion heartbeat to the flight controller with `MAV_TYPE_ONBOARD_CONTROLLER`. This keeps ArduPilot's GCS failsafe from triggering when the companion computer is the only MAVLink endpoint.
 
 Without this heartbeat, ArduPilot assumes the GCS has disconnected after 5 seconds and can trigger RTL or land depending on failsafe settings.
 
 ## Stream requests
 
-On connection, the proxy requests data streams from the FC:
+On connection, the proxy asks the flight controller for these messages with `SET_MESSAGE_INTERVAL`:
 
-- `SYS_STATUS` (battery, health)
-- `ATTITUDE` (roll, pitch, yaw)
-- `GLOBAL_POSITION_INT` (GPS lat/lon/alt)
-- `GPS_RAW_INT` (fix type, satellites, HDOP)
-- `VFR_HUD` (airspeed, groundspeed, heading)
-- `RC_CHANNELS` (RC input values)
-- `HEARTBEAT` (armed state, flight mode)
+| Message | Rate |
+|---|---|
+| `HEARTBEAT` | 1 Hz |
+| `ATTITUDE` | 10 Hz |
+| `GLOBAL_POSITION_INT` | 5 Hz |
+| `SYS_STATUS` | 2 Hz |
+| `GPS_RAW_INT` | 2 Hz |
+| `VFR_HUD` | 4 Hz |
+| `BATTERY_STATUS` | 1 Hz |
+| `RC_CHANNELS` | 4 Hz |
 
-Stream requests are re-sent every 30 seconds to handle FC reboots and MAVLink buffer stalls. The initial request fires immediately on connection.
+The first request fires immediately on connection. The proxy then re-sends the requests on an adaptive cadence between 10 and 60 seconds (30 seconds by default), shortening it when the stream stalls, to cover flight controller reboots and buffer stalls.
+
+<Note>
+iNav, Betaflight's MAVLink telemetry and ArduPilot before 4.1 ignore `SET_MESSAGE_INTERVAL` and honour only the legacy `REQUEST_DATA_STREAM`. For those, set `mavlink.legacy_stream_request: true`. It is off by default because firmware that honours both mechanisms streams roughly twice the requested telemetry.
+</Note>
 
 ## Reconnection
 
-If the serial connection drops (FC power cycle, USB disconnect, cable fault), the proxy:
+If the flight controller link drops (power cycle, USB disconnect, cable fault), the proxy:
 
-1. Closes the old connection cleanly (prevents file descriptor leaks)
-2. Waits 2 seconds
-3. Restarts auto-detection from the beginning
-4. Re-requests all data streams once reconnected
+1. Closes the old connection cleanly
+2. Retries every 3 seconds, indefinitely
+3. Runs auto-detection again when the source is `auto`
+4. Re-requests all message streams once reconnected
 
 The IPC sockets and WebSocket stay open during reconnection. Clients see a gap in telemetry but do not need to reconnect themselves.
 
 ## MAVLink signing
 
-The agent is a transparent pipe for signed frames. The 32-byte signing key lives in the GCS browser as a non-extractable Web Crypto key. The agent exposes `/api/mavlink/signing/capability`, `/api/mavlink/signing/enroll-fc`, and a few related endpoints so the GCS can push the key to the flight controller once via `SETUP_SIGNING`. The agent never persists the key.
+The agent is a transparent pipe for signed frames. The 32-byte key lives in the Mission Control browser as raw bytes in IndexedDB; the agent never persists it. The agent exposes `/api/mavlink/signing/capability`, `/api/mavlink/signing/enroll-fc` and related routes so Mission Control can push the key to the flight controller once via `SETUP_SIGNING`.
 
-See [MAVLink Signing](/drone-agent/mavlink-signing) for the full guide, enable steps, and troubleshooting.
+See [MAVLink signing](/drone-agent/mavlink-signing) for the full guide.
 
 <Info>
 The agent config file does not carry a signing key. Any legacy `mavlink.signing` block in an old config is ignored with a deprecation warning on agent start.
 </Info>
-
-## State IPC format
-
-The JSON telemetry on `/run/ados/state.sock` looks like this (published at 10 Hz):
-
-```json
-{
-  "timestamp": 1713264000.123,
-  "fc_connected": true,
-  "fc_port": "/dev/ttyS0",
-  "fc_baud": 921600,
-  "armed": false,
-  "mode": "STABILIZE",
-  "attitude": {"roll": 0.02, "pitch": -0.01, "yaw": 178.5},
-  "position": {"lat": 12.9716, "lon": 77.5946, "alt_msl": 920.0, "alt_agl": 0.0},
-  "speed": {"groundspeed": 0.0, "airspeed": 0.0},
-  "battery": {"voltage": 22.8, "current": 0.5, "remaining": 98},
-  "gps": {"fix": 3, "satellites": 14, "hdop": 0.9}
-}
-```
 
 ## Checking MAVLink status
 
@@ -182,4 +182,19 @@ curl http://localhost:8080/api/status \
   -H "X-ADOS-Key: your_key"
 ```
 
-For setup, open the local setup webapp and use the MAVLink page.
+## Next steps
+
+<CardGroup cols={2}>
+<Card title="MAVLink signing" icon="lock" href="/drone-agent/mavlink-signing">
+Sign every command so only your browser can control the flight controller.
+</Card>
+<Card title="Video pipeline" icon="video" href="/drone-agent/video-pipeline">
+How the camera feed is encoded and served.
+</Card>
+<Card title="Configuration" icon="gear" href="/drone-agent/configuration">
+Where `mavlink.*` lives in the agent config.
+</Card>
+<Card title="Drone Agent troubleshooting" icon="life-ring" href="/drone-agent/troubleshooting">
+Fix a flight controller that does not connect.
+</Card>
+</CardGroup>

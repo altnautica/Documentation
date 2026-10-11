@@ -47,15 +47,18 @@ do not claim full validation success.
 
 ## Documentation Map
 
-- Navigation: `docs.json`
+- Navigation and redirects: `docs.json` (eight tabs: Get started, Mission Control, Drone Agent, Ground Agent, Extensions, Operations, Platform, Developers)
 - Getting started: `getting-started/`
-- Mission Control docs: `mission-control/`
+- Mission Control docs: `mission-control/`; Android GCS: `android/`
 - Drone Agent docs: `drone-agent/`
 - Ground Agent docs: `ground-agent/`
-- Architecture docs: `architecture/`
-- Developer guides: `developers/`
-- Extension docs: plugin and extension authoring pages under the relevant
-  developer sections.
+- Extensions tab: `drone-agent/extensions-catalog.mdx`, `drone-agent/plugins.mdx`, `drone-agent/vision-nav-*.mdx`, `drone-agent/extensions/`, and `mission-control/installing-plugins.mdx`
+- Operations: `operations/`
+- Platform tab: `architecture/`, `developers/self-hosting/`, `developers/mcp-server.mdx`
+- Developer guides (plugin SDK and distribution): `developers/`
+- Shared snippets: `snippets/`; generated reference tables: `snippets/generated/` (written by `scripts/gen-reference.mjs` from `reference-sources.json`; never edit by hand)
+- Images: `images/<product>/` (`mission-control/`, `drone-agent/`, `ground-agent/`, `extensions/`, `developers/`)
+- Scripts: `scripts/` (reference generator, dashboard screenshot capture)
 
 When adding a page, add the MDX file and the matching `docs.json` navigation
 entry in the same change.

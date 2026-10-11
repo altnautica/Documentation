@@ -1,0 +1,27 @@
+name: Reference drift
+
+# The tables under snippets/generated/ are rendered from the reference JSON
+# each source repo commits, at the revisions pinned in reference-sources.json.
+# This fails when a committed snippet differs from what those revisions render.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  drift:
+    name: Generated snippets are current
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Check
+        run: node scripts/gen-reference.mjs --check

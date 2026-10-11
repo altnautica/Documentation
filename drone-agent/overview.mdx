@@ -1,109 +1,100 @@
 ---
-title: "Overview"
-description: "What the ADOS Drone Agent is and what it does on your companion computer."
+title: "Drone Agent overview"
+sidebarTitle: "Overview"
+description: "What the ADOS Drone Agent is, what it runs on your companion computer, and how you reach it."
 icon: "microchip"
-lastUpdated: "2026-06-18"
+keywords: ["ados", "drone agent", "companion computer", "mavlink", "overview"]
 ---
 
-# ADOS Drone Agent
+The ADOS Drone Agent is the software that runs on the companion computer inside your drone. It sits between the flight controller (ArduPilot, PX4, Betaflight or iNav) and everything else: your ground station, your phone and the cloud.
 
-The ADOS Drone Agent is the software that runs on the companion computer inside your drone. It sits between the flight controller (ArduPilot, PX4, Betaflight, or iNav) and everything else: your ground station, your phone, and the cloud.
+It is a hybrid system. The long-running services (the supervisor, MAVLink router, HTTP front, cloud relay, logging store, swarm bus, radio and video pipeline) are native Rust binaries. Python handles vision inference, hardware detection and first-boot bootstrap, and the residual API behind the Rust front. The agent is licensed under GPLv3 and runs on single-board computers from Raspberry Pi to Rockchip to NVIDIA Jetson, plus x86_64 PCs.
 
-It is a hybrid system. The core long-running services (the supervisor, MAVLink router, HTTP front, cloud relay, logging daemon, and video pipeline) are native Rust binaries. Python handles AI and vision inference, hardware detection and first-boot bootstrap, the plugin runtime, and the setup and update webapp, all served behind the Rust front. It is licensed under GPLv3 and runs on ARM single-board computers from Raspberry Pi to Rockchip to NVIDIA Jetson.
-
-<Frame caption="The drone node dashboard: status, reach addresses, and the surfaces below it">
-  <img src="/images/dashboard/drone/home-full.png" alt="ADOS drone node dashboard showing status and access URLs" />
+<Frame caption="The drone node dashboard home: status tiles, video, flight controller, hardware and services.">
+  ![Drone Agent dashboard Home page on a drone-profile node with the flight controller connected and video live](/images/drone-agent/dashboard/home.png)
 </Frame>
 
 ## What it does
 
-The agent handles four core jobs:
+1. **MAVLink proxy.** Connects to your flight controller over serial and forwards MAVLink to WebSocket and TCP clients, so your ground control station and the cloud share one serial link. See [MAVLink proxy](/drone-agent/mavlink-proxy).
+2. **Video pipeline.** Detects your camera (CSI, USB or a network source), encodes H.264 or H.265 in hardware where the board has an encoder, serves it through a local MediaMTX server, and can transmit it over WFB-ng for long-range HD video. See [Video pipeline](/drone-agent/video-pipeline).
+3. **Cloud relay.** Opt-in and off by default. It posts a 5 s heartbeat and polls commands over Convex HTTP, relays raw MAVLink over MQTT (WSS 443), and relays WebRTC signaling so a remote browser can reach the drone. On the same LAN, Mission Control connects directly. See [Cloud relay](/drone-agent/cloud-relay).
+4. **Service supervisor.** Runs each job as its own systemd unit with automatic restart and memory limits, and starts only the units your node profile needs. See [Systemd services](/drone-agent/systemd-services).
 
-1. **MAVLink proxy** connects to your flight controller over serial UART, then forwards telemetry to WebSocket and TCP clients. Your GCS and the cloud all get MAVLink data without fighting for the serial port.
+## At a glance
 
-2. **Video pipeline** detects your camera (CSI or USB), encodes H.264 via hardware or software, pushes it to a local RTSP server (MediaMTX), and optionally transmits over WFB-ng for long-range HD video.
-
-3. **Cloud relay** sends telemetry and receives commands through three layers (Convex HTTP polling, MQTT at 2 Hz, and WebRTC peer-to-peer signaling) so your drone is reachable from anywhere.
-
-4. **Service supervisor** manages all of the above as individual systemd services with automatic restart, resource limits, and health monitoring.
-
-## Key numbers
-
-| Metric | Value |
-|--------|-------|
-| Current version | 0.89+ |
-| Language | Rust + Python 3.11+ |
+| Item | Value |
+|---|---|
+| Languages | Rust and Python 3.11+ |
 | License | GPLv3 |
-| Supported boards | 17 board profiles |
-| Systemd services | Air + ground (the active set varies by profile) |
-| REST API port | 8080 (native Rust front) |
-| IPC sockets | `/run/ados/mavlink.sock`, `/run/ados/state.sock` |
+| Supported boards | 21 board profiles. See [Supported hardware](/drone-agent/supported-hardware). |
+| Dashboard and REST API | Port 8080, served by the native Rust front (`ados-control`) |
+| MAVLink WebSocket | Port 8765 |
 | Config file | `/etc/ados/config.yaml` |
-| Install method | Mission Control [Flash Tool](/mission-control/flash-tool) install command (`curl \| bash`) |
+| Installed version | Run `ados version` |
 
 ## Architecture at a glance
 
-The agent uses a multi-process architecture managed by systemd. Each service runs in its own process with its own cgroup resource limits. The supervisor service (`ados-supervisor`) is a Rust orchestrator that starts and monitors child services through `systemctl`. Most units now run a native Rust binary; a few stay Python by design (see the table below).
+The agent is a set of processes managed by systemd. `ados-supervisor` is a Rust orchestrator that starts and monitors the other units. The main ones on a drone:
 
+```text
+ados-supervisor        # Rust: orchestrator (drives systemd)
+  ├── ados-mavlink     # Rust: FC serial <-> MAVLink router (WebSocket :8765)
+  ├── ados-swarmbus    # Rust: swarm state bus
+  ├── ados-control     # Rust: HTTP front on :8080 (dashboard and REST API)
+  ├── ados-api         # Python: residual API behind the front
+  ├── ados-cloud       # Rust: MQTT and Convex cloud relay (opt-in)
+  ├── ados-logd        # Rust: Black Box logging store (off by default)
+  ├── ados-video       # Rust: camera, encoder and MediaMTX
+  ├── ados-wfb         # Rust: WFB-ng transmitter
+  ├── ados-vision      # Rust: vision engine
+  └── ados-plugin-host # Rust: extension host
 ```
-ados-supervisor             # Rust: orchestrator (drives systemd)
-  ├── ados-mavlink          # Rust: FC serial <-> MAVLink router (WS :8765)
-  ├── ados-control          # Rust: HTTP front on :8080 (proxies the residual API)
-  ├── ados-api              # Python: residual FastAPI on an internal socket
-  ├── ados-cloud            # Rust: MQTT + Convex cloud relay
-  ├── ados-logd             # Rust: black-box logging (WAL SQLite)
-  ├── ados-health           # Python: CPU, RAM, temp, disk monitoring
-  ├── ados-video            # Rust: camera + encoder + MediaMTX
-  ├── ados-wfb              # Rust: WFB-ng video transmitter
-  ├── ados-vision           # Rust: vision host
-  ├── ados-plugin-host      # Rust: plugin subprocess supervisor
-  └── ados-discovery        # mDNS advertisement
-```
 
-Services communicate through two Unix domain sockets:
+The full unit list per profile is on [Systemd services](/drone-agent/systemd-services).
 
-- `/run/ados/mavlink.sock` carries raw binary MAVLink frames (4-byte length prefix + payload)
-- `/run/ados/state.sock` carries JSON telemetry at 10 Hz
+Services share vehicle data through two Unix domain sockets:
 
-## Hardware auto-detection
+- `/run/ados/mavlink.sock` carries raw binary MAVLink frames (4-byte length prefix plus payload).
+- `/run/ados/state.sock` carries the vehicle state as length-prefixed msgpack (`state.v2`, 4-byte big-endian length, body `{v, s}`), about 10 Hz.
 
-On first boot, the agent reads `/proc/device-tree/model` and matches it against 17 board profiles stored as YAML files. Each profile defines the SoC, available buses (UART, I2C, SPI, USB), video encoding capabilities, GPIO pins, and a default tier.
+## Hardware detection
 
-The tier determines which features are enabled:
+At install and at boot the agent identifies the board from an optional `/etc/ados/board_override`, the device-tree compatible string and model, then `/proc/cpuinfo`, and loads the matching profile from 21 YAML board profiles. Each profile describes the SoC, buses, video encoders, GPIO and attached hardware. A board with no profile falls back to `generic-arm64` or `generic-x86_64`.
 
-| Tier | RAM | Features |
-|------|-----|----------|
-| 1 | 64-128 MB | MAVLink proxy only |
-| 2 | 256-512 MB | + REST API, basic telemetry |
-| 3 | 1-2 GB | + video pipeline, cloud relay |
-| 4 | 4 GB+ | Full autonomy, vision engine, plugin sandbox |
+Which services run is decided by the node profile, not by the board. Each board profile also declares a default compute tier, which only matters for extensions that set a minimum tier. See [HAL and tiers](/drone-agent/hal-and-tiers).
 
-<Tip>
-You do not need to configure the tier manually. The agent detects your board and picks the right tier automatically. You can override it in `/etc/ados/config.yaml` if needed.
-</Tip>
+## One codebase, four profiles
 
-## Two profiles, one codebase
+The same agent installs as one of four profiles:
 
-The same agent binary supports two profiles:
+- **`drone`**: the companion computer on the aircraft. Runs the flight controller link, camera, video transmit and cloud relay.
+- **`ground_station`**: a ground-side board that receives WFB-ng video, runs a Wi-Fi hotspot, serves video to a laptop or phone, and can drive an HDMI display and a status screen. See [Ground Agent overview](/ground-agent/overview).
+- **`workstation`**: a desktop or laptop node for local compute and the World Engine extension. It has no flight controller link.
+- **`compute`**: a headless compute node for offloaded work, also without a flight controller link.
 
-- **Drone profile** (default): runs on the companion computer mounted on the drone. Manages FC, camera, video TX, and cloud telemetry.
-- **Ground station profile**: runs on a ground-side SBC (typically a Raspberry Pi 4B). Receives WFB-ng video, creates a WiFi hotspot, serves video to your laptop or phone via WebRTC, and optionally drives an HDMI display and OLED screen.
-
-The profile is detected automatically at boot based on hardware fingerprinting. If the SBC has an OLED on I2C, four GPIO buttons, an RTL8812EU WiFi adapter, and no flight controller on UART, it picks the ground station profile.
+At first boot the agent scores hardware probes (OLED on I2C, an RTL8812 radio, a flight controller on serial, GPS, uplink) and picks `drone` or `ground_station`; ties fall back to the last recorded profile. You can also set the profile at install time with `--profile`. See [Node profiles](/getting-started/node-profiles) for what each profile runs.
 
 ## Interfaces
 
-You can interact with the agent in four ways:
+1. **Web dashboard** (port 8080): status, telemetry, video, pairing, extensions, logs, diagnostics and settings; first-run setup steps appear until complete. See [Dashboard](/drone-agent/dashboard-overview).
+2. **CLI** (`ados`): a terminal status page, scriptable status, update and uninstall, plus subcommands for hardware, logs, network, plugins, profile, radio and diagnostics. Works over SSH. See [Agent CLI reference](/drone-agent/cli-reference).
+3. **REST API** (port 8080): served by the native Rust front, which forwards the remaining routes to the residual Python API. Authenticated routes use `X-ADOS-Key`. See [REST API](/drone-agent/rest-api).
+4. **Mission Control**: the ground control station for maps, video, mission planning, hardware management and fleet operations. See [Mission Control overview](/mission-control/overview).
 
-1. **Setup webapp** (port 8080): first-run identity, MAVLink, video, network, remote access, ground-station setup, logs, and advanced recovery.
-2. **CLI** (`ados` command): terminal status page, scriptable status, update, uninstall, plus subcommands for hardware, logs, network, plugins, profile, radio, and runtime mode. Works over SSH.
-3. **REST API** (port 8080): the native Rust front (`ados-control`) serves the REST API and reverse-proxies un-migrated routes to an internal FastAPI. Setup, telemetry, video, MAVLink, and command endpoints are available. Authenticated endpoints use `X-ADOS-Key`.
-4. **ADOS Mission Control** (GCS): the companion web app for maps, video, mission planning, hardware management, and fleet operations.
+## Next steps
 
-## What's next
-
-- [Supported Hardware](/drone-agent/supported-hardware) to see which boards work
-- [Installation](/drone-agent/installation) to get the agent running
-- [Setup Webapp](/drone-agent/setup-webapp) to finish local onboarding
-- [CLI Reference](/drone-agent/cli-reference) for the everyday terminal commands
-- [Terminal Status Page](/drone-agent/tui-dashboard) for SSH status and setup URLs
+<CardGroup cols={2}>
+  <Card title="Supported hardware" icon="circuit-board" href="/drone-agent/supported-hardware">
+    Check which boards and radios the agent supports.
+  </Card>
+  <Card title="Install Drone Agent" icon="download" href="/drone-agent/installation">
+    Install the agent on your companion computer.
+  </Card>
+  <Card title="Node profiles" icon="sitemap" href="/getting-started/node-profiles">
+    See what each of the four profiles runs.
+  </Card>
+  <Card title="Systemd services" icon="server" href="/drone-agent/systemd-services">
+    The full unit list and how the supervisor runs it.
+  </Card>
+</CardGroup>

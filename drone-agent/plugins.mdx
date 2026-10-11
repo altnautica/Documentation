@@ -1,145 +1,108 @@
 ---
-title: "Plugins"
-description: "How the agent runs signed plugins, the ados plugin CLI, the permission model, and the three built-ins."
+title: "Extensions on the agent"
+description: "How the agent installs, verifies and runs extensions: the ados plugin CLI, signatures and trust, permissions, built-ins and isolation."
 icon: "puzzle-piece"
-lastUpdated: "2026-06-18"
 ---
 
-# Plugins
+An extension is a signed package (`.adosplug`) that adds behaviour to a node: a driver, a flight behaviour, a Mission Control panel. The SDK and the CLI call these packages plugins. This page covers how the agent installs and runs them. To write one, start with [Your first plugin](/developers/your-first-plugin).
 
-The agent ships with a plugin host (`ados-plugin-host`) that runs signed plugins in their own subprocesses with capability-gated access to agent state. Most plugins are Python modules run through the plugin runtime; a plugin can also ship a compiled binary entrypoint (the Vision Navigation extension is a Rust binary). This page is for operators and OEMs who install and manage plugins on a fleet. If you want to write a plugin, head to [Your first plugin](/developers/your-first-plugin) and the [Agent plugin deep dive](/developers/agent-plugin-deep-dive).
-
-<Note>
-Plugins are an opt-in surface. A fresh install runs without any plugins. The host service is dormant until at least one plugin is installed.
-</Note>
-
-## What plugins do
-
-A plugin extends the agent with new behavior without forking the codebase. Common shapes:
-
-- React to a topic on the agent event bus (vehicle armed, geofence breach, mode change) and emit a structured log, send a webhook, or trigger a peripheral.
-- Subscribe to MAVLink and republish a derived state under a plugin namespace.
-- Attach to a hardware peripheral the core agent does not handle (an exotic camera, a custom gimbal, a payload servo) and expose it as a first-class capability.
-- Add a small REST surface that Mission Control or other clients can call.
-
-Each plugin runs as its own service unit: a systemd unit under the `ados-plugins.slice` on Linux, a per-user LaunchAgent on macOS. The plugin host (`ados-plugin-host`) runs on every node profile, and the agent's native control surface serves the install and lifecycle routes, so a workstation or compute node takes extensions the same way a drone does.
+The plugin host, `ados-plugin-host`, runs on every node profile whether or not an extension is installed; with none installed it idles. Each extension's agent half runs as its own service unit: a systemd unit in `ados-plugins.slice` on Linux, a per-user LaunchAgent on macOS. The agent never loads extension code into its own processes.
 
 ## The `ados plugin` CLI
 
 | Command | What it does |
 |---|---|
-| `ados plugin list` | Show every installed plugin with state, version, and risk level. |
-| `ados plugin install <source>` | Install from a local `.adosplug`, an HTTPS archive URL, a built-in plugin id, or a first-party catalog id. |
-| `ados plugin enable <id>` | Start a previously installed plugin and add it to the supervisor's restart set. |
-| `ados plugin disable <id>` | Stop the plugin and remove it from the restart set. The plugin stays installed. |
-| `ados plugin remove <id>` | Stop and uninstall the plugin. State on disk is purged. |
-| `ados plugin info <id>` | Print the manifest, declared permissions, signer, and last-known status. |
-| `ados plugin perms <id>` | Show the permission grants on a plugin. Add `--revoke <perm>` to drop one (interactive confirm by default). |
-| `ados plugin logs <id>` | Tail the plugin's structured logs (journald-formatted). |
-| `ados plugin lint <archive>` | Static-analyze an archive: signature, manifest schema, banned imports, permission shape. |
-| `ados plugin test <plugin_dir>` | Run the plugin's test suite against the test harness. Useful for OEMs verifying a build before signing. |
-| `ados plugin pin <id> <version>` / `ados plugin unpin <id>` | Pin a plugin to a version (or release the pin) so updates do not move it. |
-| `ados plugin auto-update <id> <on\|off>` | Toggle per-plugin auto-update. |
-| `ados plugin sign <archive>` / `ados plugin keygen` | Sign an archive with a local Ed25519 key, or generate a signing keypair. For OEMs shipping their own plugins. |
+| `ados plugin list` | Show installed extensions with version, status and signer. `--all` adds built-ins that are not installed. |
+| `ados plugin install <source>` | Install a local `.adosplug`, an HTTPS release URL, a built-in id or a first-party catalog id. |
+| `ados plugin enable <id>` / `disable <id>` | Start or stop an installed extension. `disable` keeps it installed. |
+| `ados plugin remove <id>` | Stop and uninstall it, deleting its data directory unless you pass `--keep-data`. |
+| `ados plugin logs <id>` | Print the extension's log file (`--lines N`, `--follow`; `--service <name>` for a declared service). |
 
-`install`, `enable`, `disable`, `remove`, and `perms --revoke` prompt for confirmation by default. Pass `--yes` to skip prompts in scripts.
+The full command set (`info`, `perms`, `lint`, `test`, `pin`, `auto-update`, `sign`, `keygen` and more) with flags and exit codes is in the [Plugin CLI reference](/developers/cli-reference).
 
-## Installing a signed plugin
-
-Plugins ship as `.adosplug` archives signed with an Ed25519 key.
+## Install an extension
 
 ```bash
-# from a local file
-ados plugin install ./geofence-1.4.2.adosplug
+# a downloaded archive
+ados plugin install ./com.example.thing-1.2.0.adosplug
+
+# a release URL
+ados plugin install https://github.com/altnautica/ADOSExtensions/releases/download/<tag>/<file>.adosplug
+
+# a built-in, or a first-party catalog id
+ados plugin install io.altnautica.geofence
+ados plugin install com.altnautica.world-engine
 ```
 
-`ados plugin install` takes a path that already exists on the node. It does not
-fetch a URL. To install from a release asset, download it first:
+A URL must be HTTPS on GitHub (`github.com` or its release asset hosts); every redirect is checked against the same list. The agent pins the archive's SHA-256 between the preview and the install, so it installs the bytes you reviewed.
 
-```bash
-curl -LO https://example.com/plugins/geofence-1.4.2.adosplug
-ados plugin install ./geofence-1.4.2.adosplug
-```
+A catalog id installs the version pinned in the agent's bundled catalog. To install a specific release, use its URL.
 
-The URL path runs through Mission Control instead. See
-[Distribution: install from a URL](/developers/distribution-url-install).
+The CLI prints the plugin id, version, risk and the requested permissions, then asks once: `Approve permissions?`. Approving installs the extension and grants every requested permission; declining installs nothing. Change single grants afterwards with `ados plugin perms <id> --grant <perm>` or `--revoke <perm>`.
 
-The CLI verifies the signature against the agent's trusted-key list, parses `manifest.yaml`, and shows two prompts:
+`--yes` skips the question for scripts, but refuses a high- or critical-risk extension. Approve those interactively.
 
-1. **Summary**: plugin id, version, signer key id, risk badge, and a one-line description from the manifest.
-2. **Permissions**: every capability the plugin requests, grouped by domain. The operator can approve all, deny, or fine-grain (skip per-permission for advanced cases).
+Mission Control installs the same way from a node's **Extensions** page; see [Install extensions from Mission Control](/mission-control/installing-plugins).
 
-Only after both prompts pass does the agent unpack and stage the plugin.
+## Signatures and trust
 
-The same flow runs from Mission Control's plugin install dialog. Both surfaces share the trust list at `/etc/ados/plugin-keys/`.
+Every `.adosplug` contains a `SIGNATURE` entry: a signer id and a base64 Ed25519 signature over the archive's canonical payload hash (a SHA-256 over every entry except `SIGNATURE`).
+
+- The agent loads `/etc/ados/plugin-keys/<signer-id>.pem` and verifies the signature against it.
+- It refuses an archive that is unsigned or does not verify, whose signer is listed in `/etc/ados/plugin-revocations.json`, or whose archive digest is listed there.
+- Trust follows the key that verifies the signature. Nothing in `manifest.yaml` names or vouches for a signer.
+- First-party privileges (an inline Mission Control module, `resources.class: heavy`, an agent half on the unsandboxed macOS backend) go only to a verified signer on the agent's built-in first-party list, `altnautica-2026-A` and `altnautica-2026-B`. Those key bytes are pinned in the agent, so a key file dropped in under a first-party name verifies only as a third party.
+- With `ADOS_PLUGIN_REQUIRE_SIGNED=0` (developer mode) an unsigned or unverifiable archive installs as unsigned and gets no first-party privileges.
+
+Enrolling your own keys, rotation and revocation are covered in [Signing keys](/developers/signing-keys) and [Revocation and incidents](/developers/revocation-and-incidents).
 
 ## Permissions
 
-Every plugin declares the capabilities it needs in `manifest.yaml`:
+Every extension declares the capabilities it needs in `manifest.yaml`:
 
 ```yaml
 agent:
   permissions:
-    - telemetry.read
-    - vehicle.command
-    - sensor.camera.register
+    - id: telemetry.read
+    - id: mavlink.read
+    - id: mavlink.write
 ```
 
-The agent's IPC dispatcher gates each capability at request time. A plugin that calls a `vehicle.command` operation without the matching grant gets `capability_denied` back from the dispatcher and never reaches the handler.
+The agent checks each call against the grants. An extension that sends MAVLink without a `mavlink.write` grant gets `capability_denied` back and the call never runs.
 
-There are more than 40 named agent capabilities in the catalog. They cover telemetry reads and extension, MAVLink read and write plus the component IDs (`mavlink.component.*`), mission read and write, sensor registration, hardware bus access (`hardware.uart` / `i2c` / `spi` / `gpio` / `usb`), recording, vision frames and detections, estimator pose injection, and process spawn. The GCS half has its own UI slot capabilities on the Mission Control side. The full table lives next to the SDK in the [agent plugin deep dive](/developers/agent-plugin-deep-dive#capability-catalog).
+Each manifest also declares a risk level, one of four: `low`, `medium`, `high` or `critical`. The full capability list and what each one allows are in [Agent capabilities](/developers/permissions#agent-capabilities).
 
-Risk badges roll up the requested capabilities into one of four levels (informational, low, medium, high) so operators can decide at a glance whether a plugin matches their threat tolerance.
+## Built-in extensions
 
-## Built-in plugins
+Three extensions ship inside the agent package. They are not installed by default; list them with `ados plugin list --all` and install one by id, for example `ados plugin install io.altnautica.geofence`. A built-in has no archive signature (it is recorded as `builtin:<id>`) and runs as a sandboxed subprocess unit like any other extension. All three are low risk.
 
-Three plugins ship with the agent as worked examples and as useful surfaces in their own right. They are first-party built-ins: their manifest ships in code (not as a packed `.adosplug` archive), they are trusted through the first-party signer allowlist rather than a signed archive, and they run in-process under the supervisor instead of as separate subprocesses. The subprocess and no-in-process-load behavior described in [Resource isolation](#resource-isolation) applies to installed third-party plugins.
+- **`io.altnautica.geofence`** subscribes to `vehicle.geofence_breach` and republishes a structured alert under `plugin.io.altnautica.geofence.alert`. A template for turning a vehicle event into a notification.
+- **`io.altnautica.telemetry-logger`** subscribes to seven lifecycle topics (armed, disarmed, mode change, battery low, geofence breach, agent ready, agent shutdown) and writes one structured line per event to its log.
+- **`io.altnautica.mavlink-inspector`** folds vehicle state (mode, armed state, battery and the last event time) into a snapshot and republishes it under `plugin.io.altnautica.mavlink-inspector.snapshot`.
 
-### geofence
+## Isolation and restarts
 
-Subscribes to the public host topic `vehicle.geofence_breach` and republishes a structured alert under `plugin.io.altnautica.geofence.alert`. Low risk, minimal permissions. The shape of the alert is documented in the example manifest. Use it as a template for any plugin that turns a vehicle event into a downstream notification.
+On Linux each extension's unit runs in `ados-plugins.slice` with cgroup CPU, memory and process limits from the manifest's `agent.resources` block, or the agent's defaults when the manifest sets none. Its stdout and stderr go to a log file under `/var/log/ados/plugins/`, which `ados plugin logs` reads. On macOS each extension is a per-user LaunchAgent; launchd enforces neither the sandbox nor the limits, so the agent installs only first-party agent halves there.
 
-### telemetry-logger
+A unit that exits with an error is restarted by systemd every 2 seconds with no retry limit. Stop a crash-looping extension with `ados plugin disable <id>`.
 
-Subscribes to ten lifecycle topics (vehicle armed, disarmed, mode change, battery, geofence breach, mission start, complete, abort, plus agent ready and shutdown) and emits structured events to journald. Event-only, no MAVLink writes. Useful by itself for compliance-grade logging, and a good reference for building log shippers.
+## Install across a fleet
 
-### mavlink-inspector
+Install per node. In Mission Control, open each node's **Extensions** page, or pick a node from **Settings → Extensions**. From your own tooling, run `ados plugin install` over SSH on each node. There is no fleet-wide install.
 
-Subscribes to vehicle state, folds it into an in-memory snapshot, and republishes the rolled-up view under a plugin namespace. Demonstrates how to aggregate state without writing to the FC. Mission Control consumes the snapshot to render diagnostics panels.
-
-## Resource isolation
-
-On Linux each plugin runs as its own systemd unit under a slice, with cgroup-enforced CPU, memory and PID limits taken from the manifest's `agent.resources` block (or the agent's defaults if the manifest does not set them). On macOS each plugin is a per-user LaunchAgent; launchd enforces neither the sandbox nor those limits, so the agent installs only first-party agent halves there.
-
-A plugin that crashes is restarted by the supervisor up to a circuit-breaker threshold. Once the threshold trips, the supervisor disables the plugin until an operator re-enables it. The trip count and last-trip reason are visible in `ados plugin info <id>`.
-
-The supervisor also rejects plugins that try to dlopen a vendor library at runtime and fail. The agent's runtime never loads plugin code into its own process; a misbehaving plugin can crash itself but cannot take the rest of the agent down.
-
-## Where to install
-
-Install the plugin once on each agent that needs it. There is no fleet-wide push from the agent side. To roll out a plugin to a fleet, use Mission Control's fleet view to install across selected drones, or run `ados plugin install` over SSH from your deployment tooling.
-
-For OEMs shipping a pre-installed plugin set, the install path is the same `.adosplug` archive copied into `/var/lib/ados/plugins/preinstalled/` during image build. The agent picks it up on first boot.
-
-## Hosted registry
-
-Browsing plugins by id and pulling them automatically from a catalog is documented under [The hosted registry](/developers/distribution-registry). Local file install and URL install are the two channels the agent supports today.
-
-## Authoring a plugin
-
-If you want to write a plugin, the SDK and templates live in the developers tab:
+## Next steps
 
 <CardGroup cols={2}>
+  <Card title="Extensions catalog" icon="boxes-stacked" href="/drone-agent/extensions-catalog">
+    The first-party extensions and their permissions.
+  </Card>
+  <Card title="Install from Mission Control" icon="display" href="/mission-control/installing-plugins">
+    The per-node Extensions page and the install review.
+  </Card>
+  <Card title="Plugin CLI reference" icon="terminal" href="/developers/cli-reference">
+    Every `ados plugin` command and exit code.
+  </Card>
   <Card title="Your first plugin" icon="rocket" href="/developers/your-first-plugin">
-    Quickstart: scaffolding, manifest, capabilities, signing, and install.
-  </Card>
-  <Card title="Agent plugin deep dive" icon="microscope" href="/developers/agent-plugin-deep-dive">
-    Subprocess lifecycle, IPC dispatcher, the capability catalog, the test harness.
-  </Card>
-  <Card title="Signing keys" icon="key" href="/developers/signing-keys">
-    Ed25519 key generation, trust lists, and rotation.
-  </Card>
-  <Card title="Hosted registry" icon="globe" href="/developers/distribution-registry">
-    Catalog, search, and the revocation feed.
+    Write and sign your own.
   </Card>
 </CardGroup>

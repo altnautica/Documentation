@@ -1,22 +1,22 @@
 ---
 title: "Your first plugin"
-description: "Build a GCS-only node-detail tab that reads battery telemetry and prints the pack voltage, from scaffold to signed archive."
-lastUpdated: "2026-09-24"
+description: "Scaffold, test, sign and install a GCS-only node-detail tab that prints a drone's battery pack voltage."
+keywords: ["ados", "plugin", "tutorial", "quickstart", "scaffold"]
 ---
 
 This walkthrough builds `com.example.hello-panel`, the smallest useful
 plugin: a GCS-only tab on a drone's node-detail panel that subscribes to
-the host's normalized battery telemetry and prints the pack voltage.
-There is no agent half. The plugin runs entirely inside Mission Control,
-in a sandboxed iframe, and reads telemetry the drone already publishes.
+the host's battery telemetry and prints the pack voltage. There is no
+agent half. The plugin runs inside Mission Control in a sandboxed
+iframe, and the drone's agent stores and serves it.
 
 By the end you have a manifest the host accepts, a bundle that mounts, a
 unit test that runs without Mission Control, and a signed `.adosplug`
-archive.
+installed on a drone.
 
 <Note>
 Battery health (per-cell analysis, sag detection, time-to-reserve and
-anomaly alerts) is built into the drone agent. See
+alerts) is built into the Drone Agent. See
 [Battery health](/drone-agent/battery-health). This tutorial uses the
 battery topic only because every drone publishes it.
 </Note>
@@ -24,41 +24,74 @@ battery topic only because every drone publishes it.
 ## Prerequisites
 
 - Node.js 20+ and pnpm 9+.
-- A Mission Control install with a paired drone (or demo mode) to see
-  the tab.
+- bash with `rsync` and `zip` for `scripts/pack.sh` (Linux or macOS; on
+  Windows use WSL).
+- Python 3.11+ with the `cryptography` package, for signing.
+- Mission Control connected to a drone that runs the ADOS Drone Agent,
+  and root access on that drone to enrol your signing key. Demo mode
+  does not install extensions.
 
-## 1. Scaffold
+## 1. Clone and scaffold
 
 The SDK and the `create-ados-plugin` scaffolder live in the
 [`altnautica/ADOSExtensions`](https://github.com/altnautica/ADOSExtensions)
-monorepo. Develop the plugin as a workspace member there:
+monorepo. Neither is published to npm, so develop the plugin as a
+workspace member there:
 
-```sh
+```bash
 git clone https://github.com/altnautica/ADOSExtensions.git
 cd ADOSExtensions
 pnpm install
+pnpm --filter @altnautica/plugin-sdk build
 
 node packages/create-ados-plugin/bin/cli.mjs \
   --target extensions/hello-panel \
   --id com.example.hello-panel \
   --half gcs-only \
-  --author "Your Name"
+  --author "Your Name" \
+  --signer my-publisher-2026-A
+pnpm install
 ```
 
-The GCS-only template lays out:
+Inside the workspace the scaffolder pins `@altnautica/plugin-sdk` to
+`workspace:^`, so the plugin builds against the SDK in the tree. The
+GCS-only template lays out:
 
-```
+```text
 extensions/hello-panel/
 ├── manifest.yaml
 ├── package.json
 ├── README.md
 ├── CHANGELOG.md
+├── .gitignore
 ├── locales/en.json
 └── gcs/
     ├── package.json
     ├── tsconfig.json
     └── src/plugin.ts
 ```
+
+The generated `gcs/src/plugin.ts` mounts a one-line greeting from the
+locale bundle:
+
+```typescript
+import { definePlugin } from "@altnautica/plugin-sdk";
+
+definePlugin({
+  id: "com.example.hello-panel",
+  version: "0.1.0",
+  async mount(ctx) {
+    const root = document.body;
+    root.style.background = "var(--bg, #0c0c0c)";
+    root.style.color = "var(--fg, #e6e6e6)";
+    root.style.font = "12px system-ui, sans-serif";
+    root.style.padding = "12px";
+    root.textContent = ctx.i18n.t("hello.title");
+  },
+});
+```
+
+The next steps replace it with a battery tab.
 
 ## 2. Manifest
 
@@ -100,30 +133,31 @@ gcs:
 What each part does:
 
 - **No `agent` block.** A manifest needs at least one half; this one
-  ships only the GCS half, so nothing installs on the drone.
+  ships only the GCS half, so no process runs on the drone. The agent
+  still checks `compatibility` and stores the bundle.
 - **`tabs`** mounts the bundle as a tab on the node-detail panel. A tab
   always lives in the `node.detail.tab` slot. `profile: ["drone"]`
   offers it on drones only; leave `profile` out to offer it on every
   node profile.
-- **`ui.slot.node-detail-tab`** is the permission that lets the tab
-  mount. Every visual contribution needs its matching `ui.slot.*`
-  permission, or the host drops it.
+- **`ui.slot.node-detail-tab`** lets the tab mount. Every visual
+  contribution needs its matching `ui.slot.*` permission, or the slot
+  skips it.
 - **`telemetry.subscribe.battery`** is the topic-scoped telemetry grant.
-  The host checks it on every `telemetry.subscribe` call for the
-  `battery` topic, so a plugin cannot read a topic it did not declare.
-- **`risk: low`**: the plugin reads telemetry and draws a tab. It
-  sends no commands, opens no network connections and touches no files.
+  The bridge checks it on every subscribe to the `battery` topic; the
+  bare `telemetry.subscribe` grants no stream.
+- **`risk: low`**: the plugin reads telemetry and draws a tab. It sends
+  no commands and stores nothing.
 
-See [contribution points](/developers/contribution-points) for every
-contribution kind and [permissions](/developers/permissions) for the
-full capability list.
+See [Contribution points](/developers/contribution-points) for every
+contribution kind and [Permissions](/developers/permissions) for the
+capability catalog.
 
 ## 3. The panel
 
 Keep the logic in its own module so it can be tested without a browser.
 Create `gcs/src/panel.ts`:
 
-```ts
+```typescript
 import type { BatterySample, PluginContext } from "@altnautica/plugin-sdk";
 
 export function formatPack(sample: BatterySample): string {
@@ -141,11 +175,10 @@ export async function mountPanel(
 }
 ```
 
-`ctx.telemetry.subscribe` asks the host to open the `battery` stream
-for the drone the tab is mounted on. It resolves once the host accepts
-the subscription, and the value it resolves with is an unsubscribe
-function. If the grant is missing, the promise rejects and no handler
-is left behind.
+`ctx.telemetry.subscribe` asks the host to open the `battery` stream for
+the drone the tab is mounted on. It resolves with an unsubscribe
+function once the host accepts the subscription. If the grant is
+missing, the promise rejects and no handler is left behind.
 
 Every frame on the `battery` topic is a `BatterySample`:
 
@@ -167,11 +200,9 @@ Values the flight controller does not report arrive as `null`.
 
 Replace `gcs/src/plugin.ts` with:
 
-```ts
+```typescript
 import { definePlugin } from "@altnautica/plugin-sdk";
 import { mountPanel } from "./panel";
-
-let stop: (() => void) | null = null;
 
 definePlugin({
   id: "com.example.hello-panel",
@@ -181,30 +212,25 @@ definePlugin({
     el.style.font = "14px system-ui, sans-serif";
     el.style.padding = "12px";
     document.body.appendChild(el);
-    stop = await mountPanel(ctx, el);
-  },
-  unmount() {
-    stop?.();
-    stop = null;
+    await mountPanel(ctx, el);
   },
 });
 ```
 
 `definePlugin` is the only call a plugin module must make. The host
 loads the bundle inside the tab's iframe, and the SDK calls `mount` with
-a `PluginContext` wired to the host bridge. `unmount` runs when the tab
-closes or the operator switches node, and releases the telemetry
-stream.
+a `PluginContext` wired to the host bridge. When the tab closes or the
+operator switches node, Mission Control destroys the iframe, which ends
+the subscription with it. See [Lifecycle](/developers/lifecycle) for the
+teardown rules.
 
 ## 5. Test without a host
 
-The SDK ships a synthetic host harness at
-`@altnautica/plugin-sdk/harness`. It runs the plugin against an
-in-memory transport, applies the same capability gate as the real host,
-and lets you push telemetry frames by hand. Create
-`gcs/src/panel.test.ts`:
+The SDK ships a synthetic host at `@altnautica/plugin-sdk/harness`. It
+runs the plugin against an in-memory transport and lets you push
+telemetry frames by hand. Create `gcs/src/panel.test.ts`:
 
-```ts
+```typescript
 import { describe, expect, it } from "vitest";
 import { createPluginHarness } from "@altnautica/plugin-sdk/harness";
 import { mountPanel } from "./panel";
@@ -240,55 +266,92 @@ describe("hello panel", () => {
 
 Run it from the GCS package:
 
-```sh
+```bash
 cd extensions/hello-panel/gcs
 pnpm test
 ```
 
-`harness.calls` records every request the plugin made, including the
-capability it claimed, so you can also assert that the plugin asked for
-`telemetry.subscribe.battery` and nothing more.
+The harness gates most calls by capability like the host, but it does
+not gate telemetry subscriptions, so this test passes even without the
+grant. To check the capability your plugin claimed, assert on
+`harness.calls`: each entry records the method and the capability.
 
-## 6. Pack and sign
+## 6. Pack
 
 From the monorepo root:
 
-```sh
+```bash
 scripts/pack.sh hello-panel
 ```
 
 `pack.sh` builds the GCS bundle (esbuild into `gcs/plugin.bundle.js`),
 checks that every entrypoint the manifest declares is present, and zips
-the result into `extensions/hello-panel/dist/com.example.hello-panel-0.1.0.adosplug`.
+the result into
+`extensions/hello-panel/dist/com.example.hello-panel-0.1.0.adosplug`.
 The name comes from the manifest `id` and `version`.
 
-Signing is a separate step. With your publisher Ed25519 key in
-`ADOS_SIGNING_KEY` and its id in `ADOS_SIGNING_KEY_ID`:
+## 7. Sign and enrol your key
 
-```sh
-ADOS_SIGNING_KEY=/path/to/key.priv.pem \
+A default agent installs only archives signed by a key it trusts. Create
+a key once, sign the archive, and enrol the public key on the drone:
+
+```bash
+ados plugin keygen my-publisher-2026-A --output-dir keys
+ADOS_SIGNING_KEY=keys/my-publisher-2026-A.priv.pem \
 ADOS_SIGNING_KEY_ID=my-publisher-2026-A \
   scripts/sign.sh extensions/hello-panel/dist/com.example.hello-panel-0.1.0.adosplug
 ```
 
-That writes a `*.signed.adosplug` carrying a `SIGNATURE` file: the
-signer id, then the base64 Ed25519 signature over the canonical payload
-hash. See [distribution and local install](/developers/distribution-local-install)
-for key generation and how a node comes to trust your signer.
+`sign.sh` writes `com.example.hello-panel-0.1.0.signed.adosplug` next to
+the input, with a `SIGNATURE` entry: the signer id, then the base64
+Ed25519 signature over the canonical payload hash. Copy
+`keys/my-publisher-2026-A.pem` to `/etc/ados/plugin-keys/` on the drone
+(root). Keep the `.priv.pem` out of git.
 
-## 7. Install
+Where to run `keygen`, how to enrol the key on a node, and the bench-only
+unsigned mode are covered in
+[Bench install and signing](/developers/signing-keys#bench-install-and-signing).
 
-Open the drone from the fleet, switch to its **Extensions** tab, and
-choose **Install from file**. Drop in the archive, review the two
-permissions, and approve. The **Hello** tab appears on the drone's
+## 8. Install
+
+In Mission Control, open the drone from the fleet, switch to its
+**Extensions** tab, and choose **Install from file**. Drop in
+`com.example.hello-panel-0.1.0.signed.adosplug`. The review shows the
+signer, the board compatibility and the two permissions; choose
+**Install**, which reads grants 2 permissions. The **Hello** tab appears on the drone's
 node-detail panel and updates with every battery frame.
 
-## What is next
+On the drone itself, `ados plugin install` does the same from a shell:
 
-- [Permissions](/developers/permissions): plan the smallest surface a
-  real plugin needs.
-- [Scaffolder walkthrough](/developers/scaffolder-walkthrough): a
-  hybrid plugin with a flight skill, parameters and a vision model.
-- [Event hooks](/developers/event-hooks): the host RPC catalog.
-- [Distribution and local install](/developers/distribution-local-install):
-  publish a signed release on GitHub.
+```bash
+ados plugin install ./com.example.hello-panel-0.1.0.signed.adosplug
+```
+
+## What just happened
+
+1. The agent parsed the archive in memory, verified the signature
+   against your enrolled key, checked `compatibility`, and returned a
+   preview. Nothing was written yet.
+2. After you approved, the agent unpacked the archive, recorded the
+   install, and granted the two permissions.
+3. Mission Control fetched the bundle from the agent, mounted an
+   `<iframe sandbox="allow-scripts">` on the **Hello** tab, and wired the
+   `postMessage` bridge, which checks `telemetry.subscribe.battery` on
+   every subscribe.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Scaffolder walkthrough" href="/developers/scaffolder-walkthrough">
+    A hybrid plugin with an agent half, a flight skill and parameters.
+  </Card>
+  <Card title="Permissions" href="/developers/permissions">
+    Plan the smallest capability set a real plugin needs.
+  </Card>
+  <Card title="TypeScript SDK" href="/developers/sdk-typescript">
+    Everything on the GCS `PluginContext`.
+  </Card>
+  <Card title="Distribution" href="/developers/distribution-local-install">
+    Ship a signed release.
+  </Card>
+</CardGroup>

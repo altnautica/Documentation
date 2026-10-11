@@ -1,26 +1,28 @@
 ---
-title: "Terminal dashboard"
-description: "Run ados over SSH for a live dashboard of links, autopilot, video, link and services, with quick actions."
+title: "Agent terminal dashboard"
+sidebarTitle: "Terminal dashboard"
+description: "Run ados over SSH for a live view of links, autopilot, video, link and services, with quick actions."
 icon: "table-layout"
-lastUpdated: "2026-10-09"
 ---
-
-# Terminal dashboard
 
 Run `ados` on the node, or over SSH, to open the terminal dashboard:
 
 ```bash
-ssh user@<node-name>.local
+ssh user@ados-9f2c1a.local
 ados
 ```
 
-In an interactive terminal, `ados` hands off to the native `ados-tui` dashboard. It polls the local agent every 2 seconds on a background thread, so a slow or hung agent never freezes the screen or the keys. Without a TTY (a pipe, a script, or a missing dashboard binary), `ados` prints the same one-shot summary as `ados status` instead.
+In an interactive terminal, `ados` hands off to the native `ados-tui` dashboard. It polls the local agent every 2 seconds on a background thread, so a slow or hung agent never freezes the screen or the keys. Without a TTY (a pipe, a script, or a missing dashboard binary), `ados` prints the same one-shot summary as `ados status`.
 
 For scripts or support collection, use JSON:
 
 ```bash
 ados status --json
 ```
+
+<Frame caption="The terminal dashboard on a drone node.">
+  ![ados terminal dashboard with the verdict line, Links, Autopilot, Video, Link and Services panels, and footer key hints](/images/drone-agent/tui-status.png)
+</Frame>
 
 ## Layout
 
@@ -46,7 +48,7 @@ The footer lists the key hints on the left and the installed version on the righ
 | `u` | Update the agent. Shown only when a newer version is available. Asks for confirmation, and is refused while the vehicle reports armed. |
 | `d` | Install the RTL8812EU radio driver if it is missing (asks for confirmation). |
 | `p` | Show Mission Control pairing info. |
-| `l` | Follow the agent logs. Press Ctrl-C to stop following and return. |
+| `l` | Run `ados logs tail`. With the Black Box store off (the default), this prints how to use `journalctl -u ados-supervisor -f` instead. Press Ctrl-C to stop following and return. |
 | `q` | Quit. Ctrl-C quits from any screen. |
 
 ## Quick actions
@@ -57,7 +59,7 @@ The actions overlay (`a`) lists 8 actions. Each one runs an existing `ados` (or 
 |---|---|---|
 | Install RTL driver | `ados radio install-driver` | Yes |
 | Pair | `ados pair` | No |
-| Logs | `ados logs tail` | No |
+| Logs | `ados logs tail` (prints the `journalctl` command while the Black Box store is off, the default) | No |
 | Radio status | `ados radio status` | No |
 | Update agent | `ados update` | Yes |
 | Restart radio | Restarts this node's WFB radio service (the transmit unit on a drone, the receive unit on a ground station) | Yes |
@@ -75,8 +77,15 @@ On launch, the dashboard checks for a newer agent release in the background. If 
 
 ## Stale data
 
-If no poll has succeeded for 6 seconds, the header shows `stale`, the verdict line changes to `STALE` (or `UNREACHABLE` when the last poll returned an error) and says it is showing the last snapshot. The Autopilot panel hides its flight readings, so a frozen mode, arm state or battery level never reads as live.
+If no poll has succeeded for 6 seconds, the header shows `stale` and the verdict line changes to `STALE` (or `UNREACHABLE` when the last poll returned an error) and says it is showing the last snapshot. The Autopilot panel hides its flight readings, so a frozen mode, arm state or battery level never reads as live.
 
-## Next step
+## Next steps
 
-Open the setup URL from the Links panel. The setup webapp handles first-run device identity, MAVLink, video, network, remote access, Mission Control handoff, ground-station setup, logs, and advanced actions.
+<CardGroup cols={2}>
+  <Card title="Browser dashboard" icon="browser" href="/drone-agent/dashboard-overview">
+    Open the setup URL from the Links panel for first-run setup and settings.
+  </Card>
+  <Card title="Agent CLI reference" icon="terminal" href="/drone-agent/cli-reference">
+    Every `ados` command behind the quick actions.
+  </Card>
+</CardGroup>

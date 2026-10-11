@@ -1,142 +1,142 @@
 ---
-title: "Pairing"
-description: "Pair your drone with ADOS Mission Control: local-first over the LAN, with cloud relay as the secondary path."
+title: "Pair a node with Mission Control"
+sidebarTitle: "Pairing"
+description: "Pair a Drone Agent or Ground Agent node with Mission Control over the LAN, or across networks with a pairing code."
 icon: "link"
-lastUpdated: "2026-06-18"
 ---
 
-# Pairing
+import PairingKinds from "/snippets/pairing-kinds.mdx";
 
-Pairing connects your drone agent to ADOS Mission Control so the drone appears in your GCS, telemetry flows, and you can send commands.
+<PairingKinds />
 
-ADOS is local-first. The primary path is direct, over the LAN. The cloud pairing code is the secondary, opt-in path for reaching a drone on a different network. The agent also works fully unpaired (local MAVLink, local video, local REST API).
+Mission Control pairing gives one Mission Control owner an API key for the node, so the node appears in your GCS, telemetry flows, and you can send commands.
 
-## Local pairing over the LAN (default)
+ADOS is local-first. The primary path is direct, over the LAN. The cloud path is opt-in, for reaching a node on a different network. An unpaired node still runs local MAVLink, local video and the local REST API.
 
-When Mission Control and the agent are on the same network, the GCS reaches the agent directly. In the Add-a-Node card, enter the agent's hostname, IP address, or `.local` mDNS name. The GCS calls the agent's `/api/pairing/info` (probe) and `/api/pairing/claim` (claim) over the LAN and stores the returned API key locally in the browser. No cloud account or internet connection is required.
-
-Claiming works only while the agent is unpaired, so being on the same LAN is the authorization boundary. An agent in local mode (cloud relay off) is the default and is correct, not a misconfiguration.
-
-## Cloud pairing for remote access
-
-For a drone on a different network, use the cloud pairing code. This path requires the agent to be reachable through the cloud relay.
+## Pair over the LAN
 
 <Steps>
-  <Step title="Agent generates a pairing code">
-    On first boot (or after unpairing), the agent generates a 6-character alphanumeric pairing code. The code has a 15-minute TTL and regenerates after expiry.
+  <Step title="Open the pairing dialog">
+    In Mission Control, click **Pair New Node** and stay on the **Add a drone** tab.
   </Step>
-
-  <Step title="You enter the code in Mission Control">
-    Open ADOS Mission Control, go to the Hardware tab, and click "Pair New Device." Enter the 6-character code displayed by the agent.
+  <Step title="Enter the node">
+    Type the node's hostname, IP address or `.local` name (for example `ados-9f2c1a.local` or `192.168.1.50`), or the 6-character code that `ados status` shows on the node. A code is matched against the nodes advertising on this LAN.
   </Step>
-
-  <Step title="Cloud exchange">
-    Mission Control sends the pairing code to the Convex backend. The backend validates it, associates the device with your account, and generates an API key.
+  <Step title="Pair">
+    Mission Control probes `/api/pairing/info`, claims the node with `/api/pairing/claim`, and stores the returned API key in the browser. No account or internet connection is needed.
   </Step>
+</Steps>
 
-  <Step title="Agent receives the API key">
-    The agent polls the Convex pairing endpoint every 30 seconds (configurable via `pairing.beacon_interval`). When the backend confirms the pairing, the agent stores the API key at `/etc/ados/pairing.json` and begins sending telemetry to the cloud.
+Claiming works only while the node is unpaired, and an unpaired node answers the claim only for callers on its own networks, never for a remote caller arriving through a tunnel. A node in local mode (cloud relay off) is the default and is correct, not a misconfiguration.
+
+If the node answers that it will not pair until its dashboard PIN is set, open its browser dashboard on the same network, set the PIN, and press **Pair** again. See [Agent dashboard: Pairing](/drone-agent/dashboard-pairing).
+
+## Pair across networks
+
+For a node on a different network, sign in to Mission Control. The node must beacon its code to the cloud backend (`pairing.beacon_enabled`). See [Cloud relay](/drone-agent/cloud-relay).
+
+<Steps>
+  <Step title="The node holds a pairing code">
+    On first boot, or after unpairing, the agent generates a 6-character code (uppercase letters and digits, without `0`, `O`, `1`, `I` or `L`) and keeps it for 24 hours, regenerating it after that or on unpair. `ados status` and the browser dashboard show it.
   </Step>
-
-  <Step title="Drone appears in your dashboard">
-    The drone shows up in Mission Control with its name, board type, and live telemetry. You can rename it, send commands, and view video.
+  <Step title="Enter the code in Mission Control">
+    Click **Pair New Node** and type the code on the **Add a drone** tab. When no node on your LAN advertises the code, Mission Control looks it up through the cloud backend. The backend may apply its own, shorter claim window.
+  </Step>
+  <Step title="The node appears">
+    The node shows up in Mission Control with its name, board and live telemetry.
   </Step>
 </Steps>
 
 ## Pair during install
 
-The fastest way to pair is during installation:
+The **Generate a code** tab in **Pair New Node** creates a code in Mission Control and copies an install command that carries it. Run that command on the node, or pass the code yourself:
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/altnautica/ADOSDroneAgent/main/scripts/install.sh | sudo bash -s -- --pair YOUR_CODE
 ```
 
-This skips the beacon polling step. The install script writes the API key directly.
+`--pair <code>` seeds this node's pairing code (and a pending key) so the code you already hold in Mission Control matches the node. Pairing completes when the node checks in. The other installer flags are on [Install the Drone Agent](/drone-agent/installation).
 
-## Pair an existing agent
+## Pair an existing node
 
-Run `ados`, open the setup URL shown in the terminal, and use the setup webapp
-pairing page. If the agent is running a hotspot, connect to it and open
-`http://192.168.4.1`.
+Run `ados` on the node and open the setup URL from the Links panel, or open the browser dashboard at `http://<node>:8080`. If the node is running its hotspot, join it and open `http://192.168.4.1:8080`. The dashboard's pairing page shows the code and the pairing state.
 
-Mission Control can also open the setup webapp from Hardware surfaces when the
-agent advertises a setup URL.
+## mDNS discovery
+
+The control front advertises `_ados._tcp` at boot on every profile. While the node is unpaired, the advertisement carries the current pairing code, which is how Mission Control matches a typed code on the LAN and lists the node under **Discovered on your network**.
 
 ## Pairing state file
 
-After pairing, the agent stores credentials at `/etc/ados/pairing.json`:
+The agent stores pairing state at `/etc/ados/pairing.json`, mode `0600`:
 
 ```json
 {
   "paired": true,
-  "device_id": "a1b2c3d4",
+  "api_key": "ados_...",
   "owner_id": "user_abc123",
-  "api_key": "sk_live_...",
   "paired_at": 1713264000
 }
 ```
 
+An unpaired file carries `pairing_code` and `code_created_at` instead. The key is `ados_` followed by 43 base64url characters.
+
 <Warning>
-The `api_key` authenticates the agent to the cloud backend and the local REST API. Protect this file. The install script sets permissions to `0600` (owner read/write only). Do not share this key.
+The `api_key` authenticates callers to the node's REST API and the node to the cloud backend. Protect this file and do not share the key.
 </Warning>
+
+## API key
+
+Once paired, the REST API requires the `X-ADOS-Key` header on most routes. The CLI reads the key from `/etc/ados/pairing.json` itself. Header format, exempt routes and the dashboard PIN session are on [REST API](/drone-agent/rest-api#authentication).
+
+```bash
+curl http://localhost:8080/api/status \
+  -H "X-ADOS-Key: ados_..."
+```
 
 ## Unpairing
 
-Unpairing disconnects the agent from your cloud account. The drone disappears from Mission Control and stops sending telemetry.
+Unpair from Mission Control, from the browser dashboard, or on the node:
 
-Use Mission Control or the setup webapp to unpair a device.
+```bash
+ados unpair
+```
 
 From the REST API:
 
 ```bash
 curl -X POST http://localhost:8080/api/pairing/unpair \
-  -H "X-ADOS-Key: sk_live_..."
+  -H "X-ADOS-Key: ados_..."
 ```
 
 After unpairing:
-- A new pairing code is generated immediately
-- The old API key is invalidated
-- `/etc/ados/pairing.json` is updated
-- Cloud relay services stop sending data
-- Local functionality (MAVLink, video, REST API) continues working
 
-## API key authentication
+- The old API key stops working.
+- A new pairing code is generated.
+- `/etc/ados/pairing.json` is rewritten.
+- The node stops sending data through the cloud relay.
+- Local MAVLink, video and the REST API keep working.
 
-Once paired, the REST API requires the `X-ADOS-Key` header on most endpoints. A few endpoints are exempt (like `/api/pairing/info`) so local setup and status surfaces can check pairing state without a key.
-
-The CLI reads the key from `/etc/ados/pairing.json` automatically. If you are calling the API from your own code, include the header:
-
-```bash
-curl http://localhost:8080/api/status \
-  -H "X-ADOS-Key: sk_live_your_key_here"
-```
+`ados unpair --radio` also wipes the WFB air-link bind; `--all` releases both.
 
 ## Configuration
-
-Pairing behavior is controlled in `/etc/ados/config.yaml`:
 
 ```yaml
 pairing:
   state_path: "/etc/ados/pairing.json"
-  beacon_interval: 30    # Seconds between cloud poll attempts
-  heartbeat_interval: 60  # Seconds between heartbeat pings
+  beacon_enabled: true
+  beacon_interval: 30     # seconds between cloud beacon attempts
+  heartbeat_interval: 60  # seconds between heartbeats
 ```
 
-A pairing code is valid for 15 minutes. That window belongs to the backend that
-issues the code, not to the agent, so there is no agent-side setting for it.
+The full `pairing:` key list is on [Configuration](/drone-agent/configuration).
 
-## mDNS discovery
+## Next steps
 
-The agent advertises itself via mDNS as `_ados._tcp.local.` when discovery is enabled (default). This allows Mission Control to find drones on the local network without knowing their IP addresses.
-
-```yaml
-discovery:
-  mdns_enabled: true
-  service_type: "_ados._tcp.local."
-```
-
-When you open Mission Control on the same network as the drone, it discovers the agent automatically and shows it in the connection list.
-
-<Tip>
-mDNS discovery works without pairing. You can connect to an unpaired drone on your local network and use all features except cloud relay.
-</Tip>
+<CardGroup cols={2}>
+  <Card title="Configuration" icon="gear" href="/drone-agent/configuration">
+    Tune the node's config file after pairing.
+  </Card>
+  <Card title="WFB-ng pairing" icon="tower-broadcast" href="/drone-agent/wfb-pairing">
+    Bind the radio link between a drone and a ground station.
+  </Card>
+</CardGroup>

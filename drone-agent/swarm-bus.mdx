@@ -1,11 +1,10 @@
 ---
-title: "Swarm Bus"
-description: "A 20-byte beacon twice a second, every node hearing every node, no ground station in the path. The neighbour table, the config block, and the separation layer."
+title: "Swarm bus"
+description: "A 20-byte beacon twice a second, every node hearing every node, no ground station in the path: the neighbour table, config and separation layer."
 icon: "share-nodes"
-lastUpdated: "2026-09-15"
 ---
 
-# Swarm Bus
+import AgentConfigSwarm from "/snippets/generated/agent-config-swarm.mdx";
 
 Every drone in a fleet broadcasts a 20-byte position and velocity beacon twice a
 second, and every node, drone and ground station alike, hears every other node.
@@ -182,6 +181,8 @@ One symmetric key for the whole fleet is the point: every drone must be able to
 decrypt every *other* drone's beacon, which is what makes the neighbour table
 work with the ground station off. A fleet is one trust domain.
 
+The key changes whenever a bind rewrites `/etc/drone.key`, so the supervisor restarts `ados-swarmbus` after every bind. See [WFB-ng pairing](/drone-agent/wfb-pairing) for the bind and [Key model](/drone-agent/wfb-ng#key-model) for the radio key files.
+
 ## The autonomy layer
 
 The `swarm:` config block drives the onboard autonomy that consumes the
@@ -210,18 +211,19 @@ swarm:
     enabled: false
 ```
 
-| Key | Default | Meaning |
-|---|---|---|
-| `enabled` | `false` | The operator switch. With it false the setpoint loop returns immediately. |
-| `mode` | `hold` | The operator-commandable behaviour mode. Hard separation and operator direct command are precedence *levels* the runtime arbitrates into, not modes anyone commands, so neither is a value here. |
-| `default_formation` | `line` | A closed set matching the built-in generators. An unknown name is rejected at config load rather than silently producing no formation. |
-| `default_spacing` | `10` | Metres between slots. |
-| `flock.cohesion` / `.alignment` / `.separation_gain` | `40` / `60` / `150` | Olfati-Saber alpha-lattice weights, as integer **percentages** of the underlying float weight (`40` means 0.40). Expressed as bounded integers because the Mission Control config primitives carry no float field. |
-| `flock.radius_m` | `30` | Neighbours beyond this contribute nothing to the flocking terms. |
-| `flock.neighbors` | `7` | Caps how many of the nearest neighbours are weighted, so a dense cluster cannot dominate the solution. |
-| `separation.radius_m` | `8` | Where repulsion starts. |
-| `separation.hard_m` | `4` | Where the horizontal solution is abandoned for a deterministic climb and hold. Must stay below `radius_m` or repulsion never engages before the hard floor does; the config model rejects it otherwise. |
-| `tasks.enabled` | `false` | Consensus-based task allocation participation. `assigned_task_id` and `bundle_position` in the same block are agent-written status mirrors and stay null until a runtime writes them. |
+Every key, with its type and default, is in the generated reference:
+
+<AgentConfigSwarm />
+
+What the keys mean:
+
+- `enabled` is the operator switch. With it false the setpoint loop returns immediately.
+- `mode` is the operator-commandable behaviour mode. Hard separation and operator direct command are precedence *levels* the runtime arbitrates into, not modes anyone commands, so neither is a value here.
+- `default_formation` is a closed set matching the built-in generators. An unknown name is rejected at config load rather than silently producing no formation. `default_spacing` is metres between slots.
+- `flock.cohesion`, `flock.alignment` and `flock.separation_gain` are Olfati-Saber alpha-lattice weights, as integer **percentages** of the underlying float weight (`40` means 0.40), because the Mission Control config primitives carry no float field.
+- `flock.radius_m` is the range beyond which neighbours contribute nothing to the flocking terms. `flock.neighbors` caps how many of the nearest neighbours are weighted, so a dense cluster cannot dominate the solution.
+- `separation.radius_m` is where repulsion starts. `separation.hard_m` is where the horizontal solution is abandoned for a deterministic climb and hold. It must stay below `radius_m`; the config model rejects it otherwise.
+- `tasks.enabled` joins consensus-based task allocation. `assigned_task_id` and `bundle_position` in the same block are agent-written status mirrors and stay null until a runtime writes them.
 
 ### The setpoint loop
 
@@ -276,10 +278,19 @@ not a behaviour, and `separation.hard_m` is the distance at which the horizontal
 solution is abandoned.
 </Warning>
 
-## Related
+## Next steps
 
-- [World Engine extension](/drone-agent/extensions/world-engine)
-- [WFB-ng long-range link](/drone-agent/wfb-ng)
-- [Safety](/operations/safety)
-- [Node profiles](/getting-started/node-profiles)
-- [Systemd services](/drone-agent/systemd-services)
+<CardGroup cols={2}>
+  <Card title="WFB-ng" icon="wifi" href="/drone-agent/wfb-ng">
+    The radio link the beacon rides, and its fleet addressing.
+  </Card>
+  <Card title="WFB-ng pairing" icon="link" href="/drone-agent/wfb-pairing">
+    The bind that creates the fleet key.
+  </Card>
+  <Card title="World Engine" icon="globe" href="/drone-agent/extensions/world-engine">
+    The extension that consumes the shared fleet picture.
+  </Card>
+  <Card title="Safety" icon="shield-halved" href="/operations/safety">
+    Read before flying more than one aircraft.
+  </Card>
+</CardGroup>

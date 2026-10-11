@@ -1,0 +1,71 @@
+---
+title: "Android GCS"
+description: "The ADOS Android GCS: a native Kotlin and Jetpack Compose ground control station for Android 10 and later phones, tablets and handheld controllers."
+icon: "android"
+keywords: ["android", "android gcs", "ground control station", "phone", "tablet", "whep"]
+---
+
+The ADOS Android GCS is a native ground control station for Android, written in Kotlin with Jetpack Compose. It runs on phones, tablets and handheld controllers with Android 10 (API 29) or later, in portrait or landscape. This page describes version 0.2.0. The source is in the [ADOSAndroidGCS repository](https://github.com/altnautica/ADOSAndroidGCS) under GPL-3.0.
+
+Use it when you want a ground station in your hand at the field. For desktop and laptop flying, planning and full flight controller setup, use [Mission Control](/mission-control/overview).
+
+## Link families
+
+The app reaches nodes over every ADOS link family. Pick one on the **Connect** screen.
+
+| Link | How it connects | On the Connect screen |
+|---|---|---|
+| Agent on the LAN | REST on port 8080, MAVLink over WebSocket on port 8765, WHEP video, ground-station event streams, and the ground station's relay to the drones it carries | **On this network** (discovered nodes), **Enter pairing code**, **Manual host**, **Ground station Wi-Fi** |
+| Direct flight controller | USB serial, UDP and TCP | **USB flight controller**, **UDP / TCP** |
+| Cloud (opt-in) | Account sign-in, MQTT v5 control, WebRTC over MQTT and the cloud video relay | **Cloud sign-in** |
+| Phone radio | A receive-only WFB link through a USB radio plugged into the phone | **Phone radio** |
+
+**Demo** adds a simulated drone so you can try the app without hardware.
+
+## Features
+
+| Area | What it does |
+|---|---|
+| Connect | Discovers ADOS nodes on the network, pairs with a code, adds a host with its API key, joins a ground station's Wi-Fi, opens USB, UDP, TCP, cloud and phone radio links |
+| Fleet | Every drone, ground station and flight controller you have connected, with battery, mode, arm state, the drones a ground station carries, and a video still |
+| Node | Status and settings of a node, including the ground station tabs |
+| Cockpit | Video with flight controls and the Skills you bind to buttons; warns before you leave while armed |
+| Plan | Waypoint missions, survey areas, polygon and circle fences, and rally points on a MapLibre map |
+| Configure | Flight controller setup such as motor test, refused while armed or when the link is stale |
+| Logs | Flight history recorded automatically from arm to disarm, with telemetry logs and downloaded flight controller logs |
+| Settings | Theme (**Dark**, **Light**, **Night vision**), **Glove mode** for larger touch targets, and language |
+
+<Warning>
+The cockpit and stick control fly a real aircraft. Read [Safety](/operations/safety) before you arm from the app.
+</Warning>
+
+## Video
+
+Agent video plays through a native WebRTC (WHEP) client with hardware decoding. Streams from the phone radio and the relay paths decode with Android's MediaCodec H.264 decoder.
+
+## Gamepad control
+
+With a gamepad connected, the app streams `MANUAL_CONTROL` to the flight controller at 25 Hz while stick control is on. There are no on-screen virtual sticks.
+
+## Phone as a receiver
+
+With a supported USB radio (RTL8812EU or RTL8812AU on a USB OTG adapter) the phone can receive a drone's video and telemetry directly over WFB. It is receive-only: commands still go through the ground station or the network.
+
+The phone needs the fleet's radio keys from a ground station:
+
+1. Pair a ground station on the same network.
+2. Open **Phone radio**, choose the ground station and tap **Request keys**.
+3. Approve the request whose code matches the one on the phone: in Mission Control on the ground station's **Radio** tab (**Phone receivers** card, see [Ground station node panel](/mission-control/ground-station-panel)), or on the ground station's own dashboard **Pairing** page.
+
+The ground station serves these requests through its `/api/v1/ground-station/wfb/invite` routes. Use **Forget radio keys** to remove them from the phone.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Install the Android GCS" icon="download" href="/android/install">
+    Build the APK and make the first connection.
+  </Card>
+  <Card title="Android client on a ground station" icon="tower-broadcast" href="/ground-agent/android-client">
+    Connect a phone to a ground station.
+  </Card>
+</CardGroup>

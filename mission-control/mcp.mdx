@@ -1,0 +1,74 @@
+---
+title: "MCP tab"
+description: "The Mission Control MCP tab: connect an AI client to your drones over the LAN with the setup wizard, or mint scoped credentials for cloud reach."
+icon: "robot"
+keywords: ["ados", "mission control", "mcp", "ai", "claude", "credentials"]
+---
+
+The **MCP** tab (`/mcp`) sets up ADOS MCP, a Model Context Protocol connector you run on your own machine. With it, an AI client such as Claude Code, Cursor or Claude Desktop can read your drones and, within the scopes you grant, operate them. No model runs on the drone. The connector itself, its tools and the agent-side token settings are documented on [MCP server and AI control](/developers/mcp-server).
+
+<Frame caption="The MCP setup wizard.">
+  ![Mission Control MCP setup wizard showing step 1 of 5, Before you start](/images/mission-control/mcp-wizard.png)
+</Frame>
+
+## What it does
+
+Without any MCP credential, the tab shows the landing page: **Control your drones from your AI assistant**. It explains the three things the connector gives an AI client (**Read everything**, **Operate the fleet**, **Safe by design**) and offers two ways in:
+
+- **Connect a LAN drone**: the local setup wizard. No sign-in needed.
+- **Set up cloud access**: mint a credential for reach through the cloud relay. Needs sign-in.
+
+After you mint a credential, the tab becomes the MCP console.
+
+<Warning>
+An AI client with flight scope can command a real aircraft. Grant the narrowest access that does the job, and read [Safety](/operations/safety) before you allow flight actions.
+</Warning>
+
+## Setup wizard
+
+**Connect a LAN drone** opens **Set up ADOS MCP**, five steps:
+
+1. **Before you start**: Node.js 20 or newer, git, pnpm (`npm install -g pnpm`), and an MCP client.
+2. **Get the server**: clone the connector and run its setup script, which checks for Node.js 20 and pnpm, installs, builds, and prints your connect command with the local path filled in:
+
+   ```bash
+   git clone https://github.com/altnautica/ADOS-MCP.git
+   cd ADOS-MCP
+   ./scripts/setup.sh
+   ```
+
+3. **Pick your drones**: **Control all my drones** (the default) or **Choose specific drones instead**, plus **Also auto-adopt new drones on my LAN** (off unless you turn it on). Only drones paired over the LAN are listed; each connection uses that drone's own pairing key, so nothing routes through the cloud.
+4. **Add it to your client**: one drone gives a `claude mcp add` command for `--target agent <host>` with the pairing key in `ADOS_MCP_AGENT_KEY`. Several drones give one command for `--target local-fleet` with every drone's address and key in `ADOS_MCP_FLEET`, or a downloadable `ados-fleet.json` instead. Each has a `.mcp.json` alternative that reads the secret from your environment, so the file is safe to commit.
+5. **Check the connection**: probes each drone over the LAN and reports **Reachable** or **Unreachable**, with **Check again**. The command it shows runs the connector with `--verify`, which checks auth and reachability, prints the result and exits.
+
+## Credentials console
+
+Signed in with at least one credential, the tab shows the console. Its sidebar has:
+
+- **Overview**: credential count, active count and last activity.
+- **Connect**: the LAN recipe again, and **Manage from anywhere** with the Claude Code command and a `.mcp.json` snippet for cloud reach.
+- **Credentials**: every credential with created and last-used dates, status (**Active**, **Revoked** or **Expired**), **Details** and **Revoke**.
+- **Scopes & roles**: what each scope group allows: read, safe_write, admin, flight, destructive and secret_read.
+- **Built-in tools** and **Extensions**: the tools the connector exposes, including tools from installed extensions.
+- **Audit log**: every call with its outcome (**Allowed**, **Confirmed**, **Denied** or **No operator**).
+
+**Generate a credential** asks for a name, the access level (**Read only**, **Operate** or **Full control**), the nodes it may reach, and an expiry (**Never**, **In 24 hours**, **In 7 days** or **In 30 days**). The credential is shown once under **Copy your credential now**; copy it then, because only a hash is stored. The connector uses it in `ADOS_MCP_TOKEN` with `--target fleet --gcs prod`.
+
+## Activity rail
+
+The **MCP** button on the right rail opens **MCP Activity**: live tool calls as they happen, filterable by Drone, Mission, Config or Query. Expand a call to see the tool, node, arguments, result and latency, then **Jump to surface** to open the part of Mission Control it touched. Turn on **Follow** to jump automatically. On the hosted site the rail reads **MCP activity is local**, because it streams from the connector on your own machine.
+
+## Remote reach
+
+A credential minted here reaches your fleet through the cloud relay, so the AI client works when you are off the drone's network. Each request is checked against the credential's scope and allowed nodes, and recorded in the audit log. Revoking a credential cuts it off immediately. Tools that need a direct connection to the agent are not available through a cloud credential.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="MCP server and AI control" icon="robot" href="/developers/mcp-server">
+    The connector, its tools and the agent's token settings.
+  </Card>
+  <Card title="Cloud features" icon="cloud" href="/mission-control/cloud-features">
+    Sign-in, roles and the cloud relay.
+  </Card>
+</CardGroup>

@@ -1,26 +1,26 @@
 ---
-title: "Installation"
-description: "Install and run ADOS Mission Control on your machine."
+title: "Install Mission Control"
+sidebarTitle: "Installation"
+description: "Run ADOS Mission Control from source, start the demo fleet, and set the optional environment variables."
 icon: "download"
-lastUpdated: "2026-06-18"
+keywords: ["ados", "mission control", "install", "npm", "environment variables", "demo mode"]
 ---
 
-Mission Control is a Next.js 16 application. You can run it in your browser during development, or build a standalone Electron desktop app.
+Mission Control is a Next.js application. You can use the hosted version at [command.altnautica.com](https://command.altnautica.com), install the [desktop app](/mission-control/desktop-app), or run it from source as described here.
 
-## System Requirements
+## Requirements
 
-| Requirement | Minimum | Recommended |
-|-------------|---------|-------------|
-| Node.js | 20.x | 22.x (LTS) |
-| Browser | Chrome 89+ / Edge 89+ | Latest Chrome |
-| RAM | 4 GB | 8 GB |
-| OS | macOS, Windows 10+, Linux | Any |
+| Requirement | Value |
+|---|---|
+| Node.js | 20 or newer |
+| Browser | Chrome or Edge for USB Serial and Bluetooth. Other browsers can use the network methods only. |
+| Shell | macOS or Linux shell, or Git Bash or WSL on Windows |
 
 <Note>
-WebSerial (USB connections) only works in Chromium-based browsers. Safari and Firefox do not support it.
+The npm scripts use POSIX shell syntax (`rm -rf`, `cp -R` and inline `VAR=value`). On Windows, run them from Git Bash or WSL; they fail in cmd and PowerShell.
 </Note>
 
-## Quick Start
+## Run from source
 
 <Steps>
   <Step title="Clone the repository">
@@ -38,55 +38,48 @@ WebSerial (USB connections) only works in Chromium-based browsers. Safari and Fi
     ```bash
     npm run dev
     ```
-    This starts the development server on port 4000 with Turbopack.
+    The server listens on port 4000.
   </Step>
-  <Step title="Open in your browser">
-    Navigate to [http://localhost:4000](http://localhost:4000). You will see the dashboard.
+  <Step title="Open it">
+    Go to [http://localhost:4000](http://localhost:4000). The Dashboard opens. On first run a setup wizard asks for language, accepts the operator disclaimer, and sets units, region and theme.
   </Step>
 </Steps>
 
-## Available Scripts
+## Demo mode
 
-| Command | Description |
-|---------|-------------|
-| `npm run dev` | Development server on port 4000 (Turbopack). No demo data. |
-| `npm run demo` | Development server with the simulated demo fleet. Great for exploring the UI. |
-| `npm run build` | Production build. |
-| `npm run start` | Start the production server on port 4000. |
-| `npm run lint` | Run ESLint. |
-| `npm run typecheck` | Type-check the app, Convex functions, Electron main process and the bundled tools. |
-| `npm run test` | Run the Vitest suite. |
-| `npm run test:node` | Run the `*.node-test.ts` files under the Node test runner. |
-| `npm run test:coverage` | Vitest with a coverage report. |
-| `npm run convex:dev` | Start the Convex dev backend and codegen. |
-| `npm run convex:deploy` | Deploy Convex functions. |
-| `npm run deploy` | Run `ados-deploy`, the Rust deployment tool at `tools/deploy/`. See [Deploy tool](/developers/self-hosting/deploy-tool). |
-| `npm run desktop:dev` | Electron app against the dev server. |
-| `npm run desktop:build` | Package the desktop app for the current platform. |
-
-There is no Playwright harness in the repo, so there is no `test:e2e` script.
-
-## Demo Mode
-
-Demo mode is the fastest way to explore Mission Control without hardware.
+Demo mode replaces real links with a simulated fleet, so every panel has something to show.
 
 ```bash
 npm run demo
 ```
 
-This sets `NEXT_PUBLIC_DEMO_MODE=true` and starts the dev server. Fourteen simulated aircraft appear on the dashboard alongside a workstation node and a ground-station node, with telemetry, GPS tracks and flight modes. The fixture spans ArduPilot (copter, plane, VTOL, tailsitter, tiltrotor, rover, boat, sub, heli), PX4 (copter and VTOL), Betaflight and iNav, so the firmware-specific panels all have something to render. All configuration panels work with mock parameters.
+`npm run demo` sets `NEXT_PUBLIC_DEMO_MODE=true` and starts the dev server on port 4000. You can also add `?demo=true` to any Mission Control URL, or turn **Demo Mode** on in **Settings → General**. The simulated nodes are listed on [Dashboard and fleet](/mission-control/dashboard#demo-fleet).
 
-You can also activate demo mode by adding `?demo=true` to any URL:
+## npm scripts
 
-```
-http://localhost:4000?demo=true
-```
+| Command | What it does |
+|---|---|
+| `npm run dev` | Dev server on port 4000 with Turbopack. No demo data. |
+| `npm run demo` | Dev server on port 4000 with the demo fleet. |
+| `npm run build` | Production build. |
+| `npm run start` | Serve the production build on port 4000. |
+| `npm run copy:cesium` | Copy the Cesium assets into `public/cesium`. Runs before `dev`, `demo` and `build`. |
+| `npm run lint` | ESLint. |
+| `npm run typecheck` | Type-check the app, the Convex functions, the Electron main process and the bundled tools. |
+| `npm test` | The Vitest suite. |
+| `npm run test:node` | The `*.node-test.ts` files under the Node test runner. |
+| `npm run convex:dev` | Start the Convex dev backend and code generation. |
+| `npm run convex:deploy` | Deploy the Convex functions. |
+| `npm run deploy` | Run the self-host deploy tool. See [Deploy tool](/developers/self-hosting/deploy-tool). |
+| `npm run desktop:dev` | Run the desktop app against the dev server. Build commands are on [Desktop app](/mission-control/desktop-app#build-from-source). |
 
-## Environment Variables
+There is no browser end-to-end test harness in the repository.
 
-Every variable is optional. Mission Control runs standalone with none of them
-set. A `.env.example` in the repo is the source of truth; the split below matters
-because the two halves are read by different runtimes.
+Cesium assets are self-hosted from `/cesium/`, copied from `node_modules` by `npm run copy:cesium` before dev, demo and build, so the 3D mission preview works offline.
+
+## Environment variables
+
+Every variable is optional. Mission Control runs standalone with none of them set. `.env.example` in the repository is the reference. The variables split in two because two different runtimes read them.
 
 ### Next.js variables
 
@@ -95,18 +88,15 @@ Set these in `.env.local` in the project root.
 | Variable | Effect |
 |---|---|
 | `NEXT_PUBLIC_DEMO_MODE` | `true` starts in demo mode. `npm run demo` sets it for you. |
-| `NEXT_PUBLIC_CONVEX_URL` | Your Convex deployment URL. Setting it enables cloud fleet, auth and community features. |
-| `GITHUB_TOKEN` | Raises the PX4 releases API budget from 60 to 5000 requests an hour. No scopes needed for public repos. |
+| `NEXT_PUBLIC_CONVEX_URL` | Your Convex deployment URL. Enables sign-in, cloud fleet and community features. |
+| `GITHUB_TOKEN` | Raises the PX4 releases API budget from 60 to 5000 requests an hour. Read server-side only; no scopes are needed. Prefer exporting it in your shell over writing it to a file. |
 | `GROQ_API_KEY` | Enables AI PID tuning suggestions. |
-| `CESIUM_BASE_URL` | Where the Cesium JS build lives. Unset falls back to the CDN. Only needed when self-hosting the library. |
-| `NEXT_PUBLIC_ANALYTICS_SCRIPT_URL` | Script URL for any cookieless script-tag analytics. |
+| `NEXT_PUBLIC_ANALYTICS_SCRIPT_URL` | Script URL for any cookieless script-tag analytics. Off by default. |
 | `NEXT_PUBLIC_ANALYTICS_WEBSITE_ID` | Site id for the same. Both analytics variables must be set or the script does not load. |
 
 ### Convex server variables
 
-These run **inside Convex functions**, not in Next.js, so a `.env` entry does
-nothing for them. Set them from the Convex dashboard under Settings then
-Environment Variables, or from the CLI:
+These run inside Convex functions, not in Next.js, so a `.env` entry does nothing for them. Set them in the Convex dashboard under Settings, Environment Variables, or from the CLI:
 
 ```bash
 npx convex env set KEY value
@@ -114,74 +104,30 @@ npx convex env set KEY value
 
 | Variable | Effect |
 |---|---|
-| `JWT_PRIVATE_KEY` | RSA private key for signing JWTs. `npx @convex-dev/auth` sets it. |
+| `JWT_PRIVATE_KEY` | RSA private key for signing session tokens. `npx @convex-dev/auth` sets it. |
 | `JWKS` | JSON Web Key Set for token verification. Same setter. |
-| `SITE_URL` | Your app's public origin, for example `https://command.altnautica.com`. |
-| `CESIUM_ION_TOKEN` | 3D terrain for simulation. This is the Cesium token, and it is a Convex variable, not a `NEXT_PUBLIC_` one. |
+| `SITE_URL` | The public origin you serve Mission Control from, for example `https://mc.example.com`. |
+| `ADOS_BOOTSTRAP_ADMIN_EMAILS` | Comma-separated emails. When the first profile is created and its email is on this list, it becomes admin. |
+| `ADOS_ALLOW_FIRST_USER_ADMIN` | `1` makes the first profile admin when `ADOS_BOOTSTRAP_ADMIN_EMAILS` is empty. Ignored when the list is set. |
+| `CESIUM_ION_TOKEN` | Cesium ion token for 3D terrain in the mission preview. |
 | `GROQ_API_KEY` | AI changelog summaries and PID tuning. |
-| `GITHUB_TOKEN` | GitHub API auth for changelog sync. |
+| `GITHUB_TOKEN` | GitHub API access for changelog sync. |
 | `AI_PID_WEEKLY_LIMIT` | Maximum AI PID analyses per user per week. Default 3. |
 | `MQTT_BROKER_URL` | MQTT WebSocket URL for cloud telemetry, for example `wss://mqtt.example.com/mqtt`. |
 | `VIDEO_RELAY_URL` | Video relay WebSocket URL, for example `wss://video.example.com`. |
+| `VIDEO_RELAY_SECRET` | Shared secret the video relay also holds. Used to mint its short-lived viewer tokens. |
 
-<Tip>
-Cloud features are entirely optional. Mission Control works fully offline for direct USB and WebSocket connections. The Convex backend adds fleet sync, authentication, and community features.
-</Tip>
+Without either admin variable, every new profile stays `pending` until an existing admin approves it. Role details are on [Cloud features](/mission-control/cloud-features#sign-in-and-roles).
 
-## Electron Desktop App
+## Run your own backend
 
-Build a standalone desktop application for macOS, Windows, or Linux.
+Cloud features need a Convex backend. Running your own (Convex, MQTT broker, video relay) is covered in the self-hosting guide, which starts with a one-command deploy tool.
 
-<Steps>
-  <Step title="Build the Next.js app and compile Electron">
-    ```bash
-    # macOS
-    npm run desktop:build:mac
+<Card title="Self-hosting" icon="server" href="/developers/self-hosting/overview">
+  Deploy Convex, the MQTT broker and the video relay on your own machine.
+</Card>
 
-    # Windows
-    npm run desktop:build:win
-
-    # Linux
-    npm run desktop:build:linux
-    ```
-  </Step>
-  <Step title="Find the output">
-    The built application is in the `release/` directory. On macOS, look for the `.dmg` file. On Windows, the `.exe` installer. On Linux, the x64 `.AppImage`. See [Desktop app](/mission-control/desktop-app) for details.
-  </Step>
-</Steps>
-
-For development, you can run the Electron app without building a distributable:
-
-```bash
-# Standard dev mode
-npm run desktop:dev
-
-# Demo mode in Electron
-npm run desktop:demo
-```
-
-### Electron Architecture
-
-The Electron app wraps the same Next.js standalone server. No proxy layer is needed. The main process starts the Node.js server and opens a BrowserWindow pointed at `http://127.0.0.1:4000`.
-
-<Warning>
-The Electron app always uses `127.0.0.1` instead of `localhost`. On macOS, `localhost` can resolve to `::1` (IPv6), causing connection failures when the server only listens on IPv4.
-</Warning>
-
-## Convex Backend (Optional)
-
-If you want cloud features (authentication, fleet sync, community changelog, cloud relay), deploy a Convex backend.
-
-```bash
-# Start the Convex dev server
-npx convex dev
-```
-
-The `convex/` directory in the repo contains the standalone backend with around 30 custom tables plus the auth tables. Community users can deploy their own instance without depending on any external service.
-
-## Updating
-
-Pull the latest changes and reinstall dependencies:
+## Update a source checkout
 
 ```bash
 git pull origin main
@@ -193,22 +139,35 @@ npm run dev
 
 <AccordionGroup>
   <Accordion title="Port 4000 is already in use">
-    Another process is using port 4000. Kill it or change the port:
+    The npm scripts pin port 4000, so `PORT` is ignored. Free the port, or start Next.js on another port directly:
     ```bash
-    # Find the process
-    lsof -i :4000
-
-    # Or use a different port
-    PORT=4001 npm run dev
+    npm run copy:cesium && npx next dev --turbo --port 4001
     ```
   </Accordion>
-  <Accordion title="WebSerial not available">
-    WebSerial requires a Chromium-based browser (Chrome 89+, Edge 89+). It is not available in Firefox or Safari. Make sure you are not running in an incognito window with restricted permissions.
+  <Accordion title="USB Serial shows Chrome or Edge">
+    Web Serial and Web Bluetooth exist only in Chromium browsers. Use Chrome or Edge, or the desktop app.
   </Accordion>
-  <Accordion title="Convex connection fails">
-    Check that your `NEXT_PUBLIC_CONVEX_URL` is correct and the Convex backend is running. Cloud features are optional. The GCS works fine without Convex for local connections.
+  <Accordion title="Sign-in shows Cloud Not Available">
+    `NEXT_PUBLIC_CONVEX_URL` is not set in this build. Set it and restart the dev server, or choose **Continue in local mode**. Everything except the cloud features works without it.
   </Accordion>
-  <Accordion title="Electron build fails on macOS">
-    Make sure Xcode command line tools are installed: `xcode-select --install`. Electron Builder needs native compilation tools for the packaging step.
+  <Accordion title="npm run dev fails on Windows">
+    Run it from Git Bash or WSL. The scripts use POSIX shell commands.
   </Accordion>
 </AccordionGroup>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Connect to a drone" icon="plug" href="/mission-control/connecting">
+    Reach a flight controller directly or through the Drone Agent.
+  </Card>
+  <Card title="Dashboard and fleet" icon="grid-2" href="/mission-control/dashboard">
+    Find your way around the main screen and the demo fleet.
+  </Card>
+  <Card title="Desktop app" icon="desktop" href="/mission-control/desktop-app">
+    Native UDP and TCP sockets and packaged installers.
+  </Card>
+  <Card title="Test with SITL" icon="flask" href="/mission-control/sitl-testing">
+    Fly a simulated ArduPilot vehicle with no hardware.
+  </Card>
+</CardGroup>

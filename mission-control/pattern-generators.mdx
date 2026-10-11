@@ -1,158 +1,185 @@
 ---
-title: "Pattern Generators"
-description: "Automated flight patterns for survey, orbit, corridor, SAR, structure scan, and landings."
+title: "Pattern generators"
+description: "Generate survey, orbit, corridor, perimeter, search, structure scan and landing waypoints in the Plan tab's Flight Patterns section."
 icon: "vector-polygon"
 ---
 
-Pattern generators create waypoint sequences automatically from a boundary polygon and configuration parameters. Draw a shape on the map, pick a pattern type, adjust the settings, and apply the generated waypoints to your mission.
+Pattern generators turn a shape on the map and a few settings into a waypoint sequence. They live in the **Flight Patterns** section of the Plan tab's right panel. Nothing changes in your mission until you apply the result.
 
-<Frame caption="Survey pattern generated from a polygon boundary with GSD calculator">
-  <img src="/images/dashboard/pattern-generators.png" alt="Survey pattern showing parallel lines inside a polygon boundary" />
+<Frame caption="Flight Patterns with a Survey Grid configured from a camera profile, ready to apply.">
+  ![Plan tab Flight Patterns section with a Survey Grid over a polygon and the Apply button visible](/images/mission-control/plan-survey-pattern.png)
 </Frame>
 
-## How It Works
+## Generate a pattern
 
 <Steps>
-  <Step title="Draw a boundary">
-    Use the polygon or circle tool from the map toolbar to draw the area you want to cover.
+  <Step title="Open a plan">
+    Open or create a plan in the **Plan** tab. See [Mission planning](/mission-control/mission-planning).
   </Step>
-  <Step title="Open the Pattern Editor">
-    With the boundary selected, click "Generate Pattern" in the toolbar. The Pattern Editor panel opens on the right.
+  <Step title="Open Flight Patterns">
+    Expand **Flight Patterns** in the right panel, or press `G`.
   </Step>
-  <Step title="Choose a pattern type">
-    Select from the available patterns: Survey, Orbit, Corridor, Structure Scan, Expanding Square, Sector Search, or Parallel Track.
+  <Step title="Pick a pattern type">
+    Choose a **Pattern Type**. The section tells you what it needs on the map: a polygon (Survey Grid, Structure Scan, Perimeter), a circle (Orbit), path points (Corridor), a start point (Parallel Track), a datum point (Expanding Square, Sector Search) or a landing point (landings).
   </Step>
-  <Step title="Configure parameters">
-    Each pattern has specific settings (spacing, altitude, overlap, angle, etc.). Adjust them and see the preview update on the map in real time.
+  <Step title="Draw and configure">
+    Draw the shape with the Polygon (`P`) or Circle (`C`) tool, or place the point, then set the parameters below.
   </Step>
-  <Step title="Apply to mission">
-    Click "Apply" to add the generated waypoints to your mission. The pattern becomes part of your waypoint list.
+  <Step title="Generate and apply">
+    Click **Generate Pattern**. The preview and its statistics (distance, estimated time, waypoints, and for area patterns photos, area and transects) appear. Click **Apply (N waypoints)** to add the waypoints to the mission.
   </Step>
 </Steps>
 
-## Available Patterns
+Generated waypoints use the `relative` altitude frame (altitude above home) unless a parameter says otherwise.
 
-### Survey
+## Generation limits
 
-Generates parallel flight lines (lawn-mower pattern) to cover an area. This is the standard pattern for photogrammetry, mapping, and crop monitoring.
+Every generator rejects a configuration that would produce an unbounded amount of work and shows the reason in the section instead of a preview:
 
-**Configuration:**
-| Parameter | Description |
-|-----------|-------------|
-| Line spacing | Distance between parallel lines (meters) |
-| Altitude | Flight altitude (meters AGL) |
-| Angle | Direction of the survey lines (degrees) |
-| Overshoot | Extra distance past the boundary before turning |
-| Front overlap | Percentage of image overlap along the flight line |
-| Side overlap | Percentage of overlap between adjacent lines |
-| Camera | Select a camera profile for GSD calculation |
+| Limit | Value | Fix |
+|---|---|---|
+| Smallest line, leg or track spacing and trigger distance | 0.5 m | A smaller value typed into a spacing field is raised to 0.5 m |
+| Transects, legs or tracks per pattern | 2000 | Increase the spacing |
+| Estimated camera triggers per pattern | 100,000 | Increase the trigger distance |
 
-<Tip>
-The GSD calculator automatically computes Ground Sample Distance based on your camera, altitude, and overlap settings. See the GSD section below.
-</Tip>
+## Pattern types
+
+### Survey Grid
+
+Parallel transects (a lawnmower pattern) over a polygon, for mapping and photogrammetry.
+
+| Parameter | Meaning |
+|---|---|
+| Grid angle | Rotation of the transects in degrees (0 is east-west, 90 is north-south) |
+| Line spacing | Distance between transects, in metres |
+| Turnaround distance | Overshoot past the boundary at each transect end, in metres |
+| Entry location | Start corner: **Top Left**, **Top Right**, **Bottom Left** or **Bottom Right** |
+| Fly alternate transects | Skip every other transect |
+| Camera trigger distance | Metres between camera triggers (0 disables triggering) |
+| Crosshatch | Fly the grid twice, at the grid angle and 90 degrees to it |
+| Tie lines | Add a second pass at its own angle (default 90 degrees offset) and spacing |
+| Altitude | Altitude above home, in metres |
+| Speed | Cruise speed, in m/s |
+
+Pick a camera profile (or **Manual**) to size the line spacing and trigger distance from overlap. **Deliverable presets** set the overlap in one click: **Orthomosaic** (70/70), **3D model** (80/80) and **Fast / low detail** (60/60). Survey presets such as **Photogrammetry Standard**, **High Detail**, **Quick Overview**, **Inspection** and **Magnetic Survey** (tie lines on) also set altitude and speed.
 
 ### Orbit
 
-Generates a circular flight path around a center point. Use this for inspection, videography, or point-of-interest observation.
+A circle around a point of interest.
 
-**Configuration:**
-| Parameter | Description |
-|-----------|-------------|
-| Radius | Distance from center (meters) |
-| Altitude | Flight altitude (meters AGL) |
-| Points | Number of waypoints around the circle |
-| Direction | Clockwise or counter-clockwise |
-| Start angle | Where on the circle to begin (degrees) |
+| Parameter | Meaning |
+|---|---|
+| Centre | Circle centre |
+| Radius | Circle radius, in metres |
+| Direction | **Clockwise** or **Counter-clockwise** |
+| Turns | Number of full orbits |
+| Start angle | Degrees from north where the orbit starts |
+| Altitude | Altitude above home, in metres |
+| Speed | Cruise speed, in m/s |
+| Target height | Height of the point the camera aims at (default 0) |
 
 ### Corridor
 
-Generates a path that follows a corridor (road, pipeline, power line) with parallel lines on either side for coverage.
+Perpendicular transects along a path, for roads, pipelines and power lines.
 
-**Configuration:**
-| Parameter | Description |
-|-----------|-------------|
-| Width | Corridor width to cover (meters) |
-| Altitude | Flight altitude (meters AGL) |
-| Spacing | Distance between parallel passes |
-| Overshoot | Extension beyond corridor endpoints |
+| Parameter | Meaning |
+|---|---|
+| Path points | The corridor centre line |
+| Corridor width | Total width in metres, half on each side |
+| Line spacing | Distance between transects, in metres |
+| Altitude | Altitude above home, in metres |
+| Speed | Cruise speed, in m/s |
+
+### Perimeter
+
+One closed loop around a boundary polygon, for fence lines and site edges.
+
+| Parameter | Meaning |
+|---|---|
+| Boundary polygon | The area to fly around |
+| Inset offset | Distance to pull the loop inside the boundary, in metres (0 flies the boundary itself) |
+| Altitude | Altitude above home, in metres (default 50) |
+| Speed | Cruise speed, in m/s (default 5) |
 
 ### Structure Scan
 
-Generates a multi-altitude orbit for scanning a vertical structure (building, tower, cliff). The drone circles at several altitudes to capture the entire surface.
+Stacked orbits around a building, tower or similar structure.
 
-**Configuration:**
-| Parameter | Description |
-|-----------|-------------|
-| Radius | Distance from the structure (meters) |
-| Bottom altitude | Lowest orbit altitude |
-| Top altitude | Highest orbit altitude |
-| Layers | Number of vertical orbits |
-| Points per layer | Waypoints per orbit |
-| Camera angle | Gimbal pitch toward the structure |
+| Parameter | Meaning |
+|---|---|
+| Structure polygon | Footprint of the structure |
+| Bottom altitude / Top altitude | Lowest and highest layer, metres above home |
+| Layer spacing | Vertical distance between layers, in metres |
+| Scan distance | Minimum horizontal distance from the structure on every leg, in metres |
+| Gimbal pitch | Camera pitch toward the structure (negative is down) |
+| Points per layer | Waypoints per orbit layer |
+| Camera trigger distance | Metres between triggers (0 disables triggering) |
+| Speed | Flight speed, in m/s |
+| Direction | **Bottom Up** or **Top Down** |
 
-### SAR Patterns
-
-Three search-and-rescue patterns for covering an area systematically:
+### Search and rescue
 
 <Tabs>
-  <Tab title="Expanding Square">
-    Starts at the center (last known position) and spirals outward in an expanding square. Best when the target's probable position is well known.
+  <Tab title="SAR: Expanding Square">
+    Legs that spiral outward from a datum (the last known position).
 
-    **Parameters:** Start point, leg length, spacing, altitude, expansion factor.
+    **Parameters:** centre, leg spacing, maximum legs, altitude, speed, start bearing.
   </Tab>
-  <Tab title="Sector Search">
-    Divides the area into pie-slice sectors searched one at a time. Good for coastal or river bank searches.
+  <Tab title="SAR: Sector Search">
+    Pie-slice sweeps radiating from a datum point.
 
-    **Parameters:** Center point, radius, number of sectors, altitude, sweep angle.
+    **Parameters:** centre, radius, sweeps, altitude, speed, start bearing.
   </Tab>
-  <Tab title="Parallel Track">
-    Covers a rectangular area with parallel lines, similar to survey but optimized for visual search. Lines are closer together for thorough coverage.
+  <Tab title="SAR: Parallel Track">
+    Parallel tracks across a search area from a start point.
 
-    **Parameters:** Area boundary, track spacing, altitude, search direction.
+    **Parameters:** start point, track length, track spacing, track count, bearing, altitude, speed.
   </Tab>
 </Tabs>
 
-### Landing Generators
+### Fixed-Wing Landing
 
-Two specialized patterns for approach and landing:
+A straight-in approach and landing.
 
-- **Fixed-Wing Landing:** Generates a landing approach with configurable glide slope, final approach altitude, and runway alignment.
-- **VTOL Landing:** Generates a VTOL transition and descent pattern with configurable transition altitude and descent point.
+| Parameter | Meaning |
+|---|---|
+| Landing point | Touchdown point |
+| Approach heading | Final-approach heading in degrees true. Required |
+| Glide slope angle | 2 to 15 degrees. The approach distance is the approach altitude divided by the tangent of this angle |
+| Loiter altitude | Approach altitude, in the mission altitude frame |
+| Speed | Approach speed, in m/s |
 
-## GSD Calculator
+### VTOL Landing
 
-The Ground Sample Distance (GSD) calculator helps you determine the right altitude and line spacing for photogrammetry missions.
+A cruise approach, transition and vertical landing.
 
-**Inputs:**
-- Camera sensor dimensions (width and height in mm)
-- Focal length (mm)
-- Image resolution (width and height in pixels)
-- Flight altitude (meters AGL)
+| Parameter | Meaning |
+|---|---|
+| Landing point | Touchdown point |
+| Approach heading | Final-approach heading in degrees true. Required |
+| Transition distance | Distance from the landing point to the start of the transition, in metres |
+| Approach altitude | In the mission altitude frame |
+| Descent speed | Vertical descent speed, used only for the time estimate |
+| Speed | Cruise approach speed, in m/s |
 
-**Outputs:**
-- GSD (cm/pixel)
-- Image footprint on the ground (width and height in meters)
-- Required line spacing for desired overlap
-- Estimated photo count for the survey area
+## GSD calculator
 
-Several camera profiles are built in (common drone cameras), or you can enter custom sensor specs.
+For camera patterns, the calculator works from the camera's sensor width and height (mm), focal length (mm) and image size (pixels), plus the flight altitude. It returns:
 
-## Pattern Preview
+- Ground sample distance (cm per pixel)
+- Image footprint on the ground
+- Line spacing for the chosen side overlap
+- Trigger distance for the chosen front overlap
 
-As you adjust parameters, the map shows a live preview of the generated pattern:
+Choose a built-in camera profile or **Manual** to enter your own sensor values.
 
-- Waypoints are displayed as numbered markers
-- Flight lines connect the waypoints
-- The boundary polygon remains visible
-- Statistics (total distance, number of waypoints, estimated time) update in real time
+## Next steps
 
-The preview is non-destructive. Nothing changes in your mission until you click "Apply."
-
-## Pure Functions
-
-All pattern generators are implemented as pure functions. They take a configuration object and return a list of waypoints with statistics. No side effects, no store access. This makes them easy to test and compose.
-
-```
-Input: { boundary, altitude, spacing, angle, ... }
-Output: { waypoints: [...], stats: { distance, time, photos, ... } }
-```
+<CardGroup cols={2}>
+  <Card title="Geofences and rally points" icon="shield" href="/mission-control/geofences-rally">
+    Fence the survey area and add rally points.
+  </Card>
+  <Card title="3D mission preview" icon="cube" href="/mission-control/simulation">
+    Check the generated path in 3D before upload.
+  </Card>
+</CardGroup>

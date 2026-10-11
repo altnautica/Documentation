@@ -1,16 +1,16 @@
 ---
 title: "ESC driver"
-description: "Implement an EscDriver to read motor telemetry."
-lastUpdated: "2026-06-23"
+description: "Implement an EscDriver that reads per-motor telemetry from electronic speed controllers."
 ---
 
-An `EscDriver` reads per-motor telemetry from electronic speed
-controllers and surfaces it as a stream of `EscTelemetry` samples.
-DShot-telemetry, KISS, and BLHeli32 protocols all share this
-interface.
+import DriverLayerStatus from "/snippets/driver-layer-status.mdx";
+import { DriverRustNote } from "/snippets/driver-rust-note.mdx";
 
-ESC drivers are read-only by design. Setpoint commands flow
-through the FC over MAVLink, not through the agent.
+<DriverLayerStatus />
+
+An `EscDriver` reads per-motor telemetry from electronic speed controllers as a stream of `EscTelemetry` samples. DShot telemetry, KISS and BLHeli32 protocols share this interface.
+
+ESC drivers are read-only by design. Motor setpoints flow through the flight controller, not through the agent.
 
 ## The interface
 
@@ -41,17 +41,21 @@ class MyEscDriver(EscDriver):
         ...
 ```
 
-<Note>
-  Writing the agent half in Rust? The trait equivalent is
-  `ados_sdk::drivers::EscDriver` (re-exported from the `drivers`
-  module of the `ados-sdk` crate). It carries the same five methods
-  (`discover`, `open`, `close`, `capabilities`, `telemetry_iterator`)
-  over an `async-trait`, with `EscCandidate`, `EscCapabilities`, and
-  `EscTelemetry` as the matching types. The Python `EscSession` base
-  class becomes a `Session` associated type the host treats as an
-  opaque token. Set `runtime: rust` in the manifest and the host
-  treats the driver the same way it treats the Python one.
-</Note>
+<DriverRustNote trait="EscDriver" methods="discover, open, close, capabilities, telemetry_iterator" />
+
+## Candidates
+
+Unlike the other kinds, `EscCandidate` has a required `motor_count` field:
+
+```python
+EscCandidate(
+    driver_id="com.example.my-esc",
+    device_id="serial-ttyS2",
+    label="4-in-1 ESC telemetry on ttyS2",
+    bus="uart",
+    motor_count=4,
+)
+```
 
 ## Capabilities
 
@@ -81,20 +85,22 @@ EscTelemetry(
 )
 ```
 
-`current_a` is `0.0` when the protocol does not carry it. For a bank
-with no thermistor, report `temp_c=0.0` and set `has_temperature=False`
-in `EscCapabilities` so the GCS hides the column.
+Report `0.0` for a value the protocol does not carry, and set the matching `has_*` flag to `False` in `EscCapabilities` so your GCS half knows to hide it.
 
-## Manifest permissions
+## Opening the driver from your plugin
 
-```yaml
-agent:
-  permissions:
-    - id: sensor.payload.register   # ESC drivers register under the payload cap (no dedicated ESC cap in the current catalog)
-    - id: mavlink.read              # for ESC telemetry carried in the MAVLink stream
-    - id: hardware.uart             # for a direct serial telemetry line
-```
+Your plugin calls `discover()`, `open()` and consumes `telemetry_iterator` itself, then publishes the samples with `ctx.telemetry.extend`. The pattern is on [Driver layer](/developers/driver-layer#running-a-driver-from-your-plugin). A direct telemetry wire needs `hardware.uart`; telemetry carried in the MAVLink stream needs `mavlink.read`.
 
-## See also
+## Next steps
 
-- [Driver layer](/developers/driver-layer) for the contract.
+<CardGroup cols={2}>
+  <Card title="Driver layer" href="/developers/driver-layer">
+    The shared contract and the manifest table.
+  </Card>
+  <Card title="Hardware testing" href="/developers/hardware-testing">
+    Test with a mock serial backend.
+  </Card>
+  <Card title="Payload actuator driver" href="/developers/payload-actuator-driver">
+    The next driver kind.
+  </Card>
+</CardGroup>

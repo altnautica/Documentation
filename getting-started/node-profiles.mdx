@@ -1,146 +1,72 @@
 ---
-title: "Node Profiles"
-description: "One install script, four profiles. What a drone, ground station, workstation and compute node each run, and how the profile is chosen."
+title: "Node profiles"
+description: "One installer, four profiles. What a drone, ground station, workstation and compute node each run, and how the profile is chosen."
 icon: "layer-group"
-lastUpdated: "2026-09-24"
+keywords: ["ados", "profile", "ground_station", "workstation", "compute", "node"]
 ---
 
-# Node Profiles
+import InstallGroundAgent from "/snippets/install-ground-agent.mdx";
 
-Every box running the ADOS Drone Agent is a **node**, and every node has a
-**profile**. The profile is not a separate build: one install script, one
-upgrade path, one binary set. It decides which services start and which surfaces
-the agent serves.
+Every box running the ADOS agent is a **node**, and every node has a **profile**. The profile is not a separate build: one installer, one upgrade path, one binary set. It decides which services start and which surfaces the agent serves.
 
-The profile is chosen at install time and persisted to `/etc/ados/profile.conf`.
+The profile is chosen at install time and saved to `/etc/ados/profile.conf`. The agent does not detect it from the hardware.
 
 ## The four profiles
 
 | Profile | Runs on | What it is for |
 |---|---|---|
-| `drone` | The companion computer bolted to an airframe | Flight controller link, camera encode, radio TX, onboard vision. |
-| `ground_station` | The operator's ground box | Radio RX, video republish, physical UI, Wi-Fi AP, HDMI cockpit, mesh relay or receiver roles. |
-| `workstation` | The operator's laptop, desktop or GPU box | A core shell: pairing, status, logs and the plugin host, plus whatever UI you run locally. The macOS default. |
-| `compute` | A headless worker, a spare box or a cluster worker | The same shell with no UI and no flight controller. |
+| `drone` | The companion computer on an airframe | Flight controller link, camera encode, radio transmit, onboard vision. |
+| `ground_station` | The operator's ground box | Radio receive, video serving, physical controls, Wi-Fi access point, HDMI cockpit, mesh relay or receiver roles. |
+| `workstation` | A laptop, desktop or GPU box | A core shell: pairing, status, logs and the plugin host. The macOS default. |
+| `compute` | A headless worker | The same shell with no UI and no flight controller. |
 
-Reconstruction and perception offload are not core services on any profile.
-They come with the [World Engine extension](/drone-agent/extensions/world-engine),
-which the installer turns on by default for `workstation` and `compute` and
-leaves off for the other two.
+Reconstruction and perception offload are not core services on any profile. They come with the [World Engine extension](/drone-agent/extensions/world-engine), which the installer turns on by default for `workstation` and `compute` and leaves off for the other two.
 
-The installer accepts `ground-station` and `ground_station` as the same value
-and normalizes to the underscore form; every other value passes through
-unchanged.
+The installer accepts `ground-station` and `ground_station` as the same value and saves the underscore form. Use `ground_station` in commands and config.
 
 ## What each profile starts
 
-The supervisor holds one service registry with a profile gate per entry. A
-service with no gate runs everywhere; a gated one runs only on the profiles it
-names.
+The supervisor keeps one service registry with a profile gate on each entry. A service with no gate runs on every profile; a gated one runs only on the profiles it names.
 
-### Cross-profile
+- **Every profile** runs the core shell: the native HTTP front on port 8080, the cloud relay, the plugin host and the extensions installed on it. The Black Box log store is available everywhere but ships off.
+- **`drone` and `ground_station`** add the MAVLink router, the swarm state bus, and the optional CRSF control lane and config-over-radio service when they are enabled. `workstation` and `compute` have no flight controller, so they never install or start the MAVLink router.
+- **`drone`** adds the camera encode pipeline, the WFB-ng transmitter and the onboard vision services.
+- **`ground_station`** adds WFB-ng receive and video serving, the OLED and display, the Wi-Fi access point, the HDMI kiosk and input stack with the pilot-in-command arbiter, the uplink router and, by role, the mesh services.
+- **`workstation` and `compute`** run only the core shell. With the World Engine extension installed, its node service runs here and never on a drone or ground station.
 
-| Service | Category | Notes |
-|---|---|---|
-| `ados-api` | Core | The residual Python surface behind the front's proxy. |
-| `ados-cloud` | Core | Cloud relay and heartbeat. |
-| `ados-health` | Core | Health reporting. |
-| `ados-logd` | Core | The Black Box store. Additionally gated on `logging.store.enabled`, which ships off. |
-| `ados-control` | On-demand | The native HTTP front. Owns `:8080` by default on a fresh install. |
-| `ados-discovery` | On-demand | mDNS advertisement. |
-| `ados-plugin-host` | Universal unit | The extension host. Enabled on every profile and started with the supervisor; it runs each installed extension as its own unit. |
-| `ados-peripherals` | Hardware | Peripheral registry. |
-| `ados-gpio` | Hardware | Status buzzer and LED. Ships disabled. |
-
-### `drone` and `ground_station`
-
-| Service | Notes |
-|---|---|
-| `ados-mavlink` | The single command-and-control path to the flight controller. The FC-less `workstation` and `compute` profiles never fetch the router binary, so they do not start it: an unconditional start would crash-loop. |
-| `ados-swarmbus` | The swarm state bus. Core on both flight-capable profiles so a receive-only ground station still gets a local-first fleet view. |
-| `ados-crsf` | The CRSF / ExpressLRS RC control lane. Gated on `/etc/ados/crsf-enabled`. |
-| `ados-tunnel-config` | Config-over-radio. Gated on `/etc/ados/tunnel-enabled`. |
-
-### `drone` only
-
-| Service | Notes |
-|---|---|
-| `ados-video` | The camera encode pipeline. |
-| `ados-wfb` | WFB-ng TX manager. |
-| `ados-vision` | The onboard vision engine. Self-gates on `vision.enabled`, off by default. |
-| `ados-vision-rknn` | NPU inference sidecar. Self-gates on the NPU runtime library. |
-
-### `ground_station` only
-
-| Service | Notes |
-|---|---|
-| `ados-wfb-rx` | Single-node RX. Gated to the `direct` role. |
-| `ados-mediamtx-gs` | Republishes the received stream. |
-| `ados-oled`, `ados-oled-i2c` | Front-panel and I2C status panels. |
-| `ados-hostapd`, `ados-dnsmasq-gs` | The Wi-Fi AP. |
-| `ados-setup-captive` | First-boot captive portal. On-demand. |
-| `ados-kiosk`, `ados-input`, `ados-pic` | The standalone flight stack. |
-| `ados-uplink-router` | The uplink matrix. |
-| `ados-batman` | Mesh carrier. Roles `relay` and `receiver`. |
-| `ados-wfb-relay` | Fragment forwarder. Role `relay`. |
-| `ados-wfb-receiver` | Aggregator. Role `receiver`. |
-
-### `workstation` and `compute`
-
-No core service is specific to these two profiles. They run the
-cross-profile set, and the installer skips the flight controller router, the
-radio and the camera pipeline.
-
-With the World Engine extension installed, its `node` service runs here (the
-job store, the scheduler, reconstruction and offload serving on `:8092`). It
-never runs on a drone or a ground station.
-
-## The lean headless set
-
-A node that boots headless runs only the Rust core. That set is exactly:
-`ados-mavlink`, `ados-swarmbus`, `ados-logd`, `ados-video`, `ados-wfb`,
-`ados-control`. Everything else, including the Python surface, the cloud service,
-health and every ground-station unit, is blocked by the headless gate.
+For the unit names, their gates and what each unit does, see [Systemd services](/drone-agent/systemd-services).
 
 ## How the profile is chosen
 
-Resolution order, identical on both the Python and the Rust halves:
+The agent resolves the profile in this order:
 
-1. `agent.profile` in `/etc/ados/config.yaml`, when it is an explicit value.
-2. `/etc/ados/profile.conf`, when the config field is `auto`, empty or absent.
-   The installer writes this file, and `ados profile set` flips it.
+1. `agent.profile` in `/etc/ados/config.yaml`, when it holds an explicit value.
+2. `/etc/ados/profile.conf`, when the config field is `auto`, empty or absent. The installer always writes this file, and `ados profile set` changes it.
 3. `drone` as the final fallback.
+
+The installer itself uses `--profile` when you pass it, then an existing `/etc/ados/profile.conf` (so an upgrade keeps the profile), then `drone`. In the interactive installer, the **What is this device?** screen sets it; pick **This receives on the ground (Ground station)** for a ground station. A non-interactive install with no `--profile` on a fresh box installs a drone.
 
 Pin the profile at install time:
 
-```bash
-curl -sSL https://raw.githubusercontent.com/altnautica/ADOSDroneAgent/main/scripts/install.sh \
-  | sudo bash -s -- --profile ground-station
-```
+<InstallGroundAgent />
 
-<Note>
-There is no `--board` flag. The board auto-detects.
-</Note>
+The board is detected automatically; there is no `--board` flag. For every installer flag, see [Install the Drone Agent](/drone-agent/installation).
 
-### macOS defaults to `workstation`
+### macOS installs a workstation
 
-On macOS the bootstrap runs the installer from source and passes
-`--profile workstation` unless you pinned a profile yourself. It refuses to run
-under `sudo`: a Mac node installs as per-user LaunchAgents under `$HOME/.ados`,
-not into `/opt` and `/etc`.
+On macOS the install script builds the installer from source and passes `--profile workstation` unless you pinned a profile yourself. It needs the Rust toolchain (install it with [rustup](https://rustup.rs)) and the Xcode Command Line Tools (`xcode-select --install`), and the first install compiles from source. It refuses to run under `sudo`: a Mac node installs per-user LaunchAgents under `$HOME/.ados`, not into `/opt` and `/etc`.
 
 ```bash
-# On macOS, no sudo.
 curl -sSL https://raw.githubusercontent.com/altnautica/ADOSDroneAgent/main/scripts/install.sh | bash
 ```
 
-### Inspect and change it
+### Inspect and change the profile
 
 ```bash
 ados profile show
 ```
 
-```
+```text
 config.yaml agent.profile: auto
 /etc/ados/profile.conf:    ground_station
 resolved profile (wire):   ground-station
@@ -148,78 +74,57 @@ resolved role:             direct
 ```
 
 ```bash
-sudo ados profile set ground-station --role receiver
+sudo ados profile set ground_station --role receiver
 ```
 
-`ados profile set` accepts `drone`, `ground_station` and `ground-station` only.
-It writes both `/etc/ados/profile.conf` and `agent.profile` in
-`/etc/ados/config.yaml`, then restarts `ados-wfb`, `ados-wfb-rx` and
-`ados-supervisor` so the new gate takes effect. Pass `--no-restart` to skip that
-and restart yourself:
+`ados profile set` accepts `drone` and `ground_station` (and the `ground-station` spelling). It writes both `/etc/ados/profile.conf` and `agent.profile` in `/etc/ados/config.yaml`, then restarts `ados-wfb`, `ados-wfb-rx` and `ados-supervisor` so the new gates take effect. Pass `--no-restart` to skip that and restart yourself:
 
 ```bash
 sudo systemctl restart ados-supervisor
 ```
 
 <Warning>
-`workstation` and `compute` are install-time values. `ados profile set` will not
-set them; re-run the installer with `--profile` to move a node onto one of those
-two.
+`workstation` and `compute` are install-time values. `ados profile set` does not set them; run the installer again with `--profile` to move a node onto one of those two.
 </Warning>
 
 ## What a workstation node does not have
 
-A macOS workstation node is rootless and Rust-only. The control surface serves
-the native routes (`/api/status`, `/api/pairing/*`) but **not** the proxied setup
-facade, because there is no Python upstream there: `/api/v1/setup/status` has
-nothing to answer it. The `ados` CLI reads the native routes on macOS for exactly
-that reason.
+A macOS workstation node is rootless and runs only the native services. Its HTTP front serves the native routes (such as `/api/status` and `/api/pairing/*`) but not the routes served by the Python service, which does not run there. The `ados` CLI reads the native routes on macOS for that reason.
 
-So on a workstation node there is no setup wizard, no captive portal, no
-Wi-Fi AP, no radio and no flight controller link. What you get is the pairing
-surface, the status surface, the logs and the plugin host, which runs
-extensions such as the World Engine as per-user LaunchAgents.
+So a workstation node has no setup wizard, no captive portal, no Wi-Fi access point, no radio and no flight controller link. It has the pairing surface, the status surface, the logs and the plugin host, which runs extensions such as the World Engine as per-user LaunchAgents. A `compute` node is the same shell with no UI.
 
-A `compute` node is the same shell with no UI.
+## Profiles on the wire and in Mission Control
 
-## Profiles on the wire, and in Mission Control
+The agent reports its profile in the hyphenated form: `ground_station` is reported as `ground-station`, `workstation` and `compute` pass through, and anything unrecognised reports `drone`.
 
-The agent reports its profile on the wire in the hyphenated form. The Rust
-resolver passes `workstation` and `compute` through unchanged and maps
-`ground_station` to `ground-station`; anything unrecognised reports `drone`.
+Mission Control has built-in node surfaces for `drone`, `ground-station` and `workstation`. A `compute` node shows the workstation surfaces. An installed extension can add surfaces for the profiles it names; the World Engine's compute and jobs tabs on a workstation or compute node come from there.
 
-Mission Control has built-in node surfaces for `drone`, `ground-station` and
-`workstation`. A `compute` node shows the workstation's surfaces. A node
-reporting any other profile resolves to the Agent page alone: it appears in the
-fleet and you can administer it, but no profile-specific surfaces are
-registered for it.
-
-An installed extension can add top-level surfaces and Agent sidebar pages for
-the profiles it names. The World Engine's Compute and Jobs & outputs tabs on a
-workstation or compute node come from there.
-
-Ground-station role (`direct`, `relay`, `receiver`) is read from
-`/etc/ados/mesh/role` and defaults to `direct`. It is null on every other
-profile.
+The ground-station role (`direct`, `relay` or `receiver`) is read from `/etc/ados/mesh/role` and defaults to `direct`. Other profiles report no role.
 
 ## Profiles in an extension manifest
 
-An extension declares which node kinds it installs on:
+An extension declares which node profiles it installs on:
 
 ```yaml
 agent:
   target_profiles: ["drone", "workstation", "compute"]
 ```
 
-The validator accepts `drone`, `ground-station`, `workstation` and `compute`
-(`ground_station` reads as `ground-station`), and requires at least one. The
-agent refuses to install an extension whose list excludes the node's own
-profile. See the [manifest reference](/developers/manifest).
+The list needs at least one entry and defaults to `["drone"]`. The agent refuses to install an extension whose list excludes the node's own profile. See the [manifest reference](/developers/manifest).
 
-## Related
+## Next steps
 
-- [Install paths](/getting-started/install-paths)
-- [Drone Agent installation](/drone-agent/installation)
-- [Set up a ground station](/ground-agent/setup)
-- [Systemd services](/drone-agent/systemd-services)
-- [Configuration reference](/drone-agent/configuration)
+<CardGroup cols={2}>
+  <Card title="Choose what to install" icon="route" href="/getting-started/install-paths">
+    Match the software to your hardware.
+  </Card>
+  <Card title="Install the Drone Agent" icon="download" href="/drone-agent/installation">
+    Every installer flag and the install flow.
+  </Card>
+  <Card title="Install the Ground Agent" icon="tower-broadcast" href="/ground-agent/installation">
+    Set up a ground station.
+  </Card>
+  <Card title="Systemd services" icon="list-check" href="/drone-agent/systemd-services">
+    Every unit and the profile that starts it.
+  </Card>
+</CardGroup>

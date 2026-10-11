@@ -1,24 +1,20 @@
 ---
 title: "Linting"
-description: "Run static analysis on a packed plugin before submission."
-lastUpdated: "2026-06-23"
+description: "Run the local static analyzer on a packed plugin and the manifest-versus-code check before you release."
 ---
 
-`ados plugin lint` runs a static-analysis rule set over a packed
-archive. It is the same rule set the planned registry will apply at
-submission time, so running it locally before you push a tag catches
-findings early.
+`ados plugin lint` is a local, advisory analyzer. It unpacks a packed archive and checks every entry against a fixed rule set. The registry runs its own, narrower scan at submission, and every submission is reviewed before it is published (see [Catalog and registry](/developers/distribution-registry#submit-a-plugin)).
 
 ## Quickstart
 
-```sh
-ados plugin lint dist/com.example.thermal-1.0.0.signed.adosplug
+```bash
+ados plugin lint extensions/my-plugin/dist/com.example.my-plugin-1.0.0.signed.adosplug
 ```
 
 Output:
 
-```
-plugin com.example.thermal 1.0.0
+```text
+plugin com.example.my-plugin 1.0.0
 archive size: 18432 bytes
 score: 100/100
 verdict: pass
@@ -28,40 +24,38 @@ no findings.
 
 JSON form for CI:
 
-```sh
-ados plugin lint --json dist/com.example.thermal-1.0.0.signed.adosplug \
+```bash
+ados plugin lint --json extensions/my-plugin/dist/com.example.my-plugin-1.0.0.signed.adosplug \
   | jq '.data.score, .data.passed'
 ```
 
-Exit code 0 means pass. Non-zero means at least one finding at
-severity `error` or `critical`.
+Exit code 0 means pass. Exit code 1 means at least one finding at severity `error` or `critical`. The other exit codes are on the [Plugin CLI reference](/developers/cli-reference).
 
 ## What it checks
 
-The linter unpacks the archive and walks every entry. Findings are
-keyed by rule id with severity and the source location.
+Findings are keyed by rule id, with a severity and the source location.
 
 ### Python rules
 
 | Rule | Severity | What it flags |
-|------|----------|--------------|
+|------|----------|---------------|
 | PY001-os-system | error | `os.system()` call |
 | PY002-os-popen | error | `os.popen()` call |
 | PY003-eval | error | `eval()` call |
 | PY004-exec | error | `exec()` call |
-| PY005-subprocess-shell | error | `subprocess.Popen(..., shell=True)` |
+| PY005-subprocess-shell | error | `subprocess` call with `shell=True` |
 | PY006-raw-socket | error | `socket.socket(...)` |
-| PY007-pickle-load | error | `pickle.loads()` on untrusted input |
-| PY008-marshal-loads | error | `marshal.loads()` |
-| PY009-ctypes-load | error | Native library load via `ctypes.CDLL` |
-| PY020-requests | warn | Network library imported without `network.outbound` |
-| FS001-open-write | info | File opened for writing (verify the path is under `ctx.data_dir`, `config_dir`, or `temp_dir`) |
-| FS002-shutil-rmtree | info | `shutil.rmtree()` (verify scope is the plugin's own directory) |
+| PY007-pickle-load | error | `pickle.load()` or `pickle.loads()` |
+| PY008-marshal-loads | error | `marshal.load()` or `marshal.loads()` |
+| PY009-ctypes-load | error | Native library load via `ctypes.CDLL` and friends |
+| PY020-requests | warn | `requests`, `httpx`, `aiohttp`, `urllib3` or `urllib.request` used without `network.outbound` |
+| FS001-open-write | info | File opened for writing (check the path is under the plugin's data, config or temp dir) |
+| FS002-shutil-rmtree | info | `shutil.rmtree()` (check the scope is the plugin's own directory) |
 
 ### GCS bundle rules
 
 | Rule | Severity | What it flags |
-|------|----------|--------------|
+|------|----------|---------------|
 | GCS001-top-location | warn | Reads `top.location` or `parent.location` |
 | GCS002-document-cookie | warn | Reads `document.cookie` |
 | GCS003-localstorage | warn | Reads `localStorage` or `sessionStorage` |
@@ -74,20 +68,19 @@ keyed by rule id with severity and the source location.
 ### Manifest and archive rules
 
 | Rule | Severity | What it flags |
-|------|----------|--------------|
+|------|----------|---------------|
 | ARC001-archive-size | error | Archive exceeds the 50 MB archive cap |
 | ARC002-entry-size | error | A single entry exceeds the 25 MB per-entry cap |
 | ARC003-read-fail | error | An archive entry could not be read |
-| SIG001-unsigned | warn | Archive does not carry a SIGNATURE file |
-| VND001-vendor-binary | info | Manifest declares `contains_vendor_binary` |
-| PERM001-high-risk | info | Manifest declares a high-risk capability (`vehicle.command`, `vehicle.payload.actuate`, `filesystem.host`, `mavlink.command.send`) |
+| SIG001-unsigned | warn | Archive carries no `SIGNATURE` file |
+| VND001-vendor-binary | info | The manifest sets `agent.contains_vendor_binary` (see [Vendor binaries](/developers/vendor-binaries)) |
+| PERM001-high-risk | info | The manifest declares any capability rated high or critical, for example `mavlink.write`, `process.spawn`, `estimator.pose.inject`, `flight.rate_setpoint` |
 
-`info` findings are advisory and do not affect the verdict. `warn`
-findings show in the report but still pass. `error` findings fail.
+`info` findings are advisory. `warn` findings show in the report but still pass. `error` and `critical` findings fail. Risk ratings come from the capability catalog on [Permissions](/developers/permissions).
 
 ## Score
 
-Each finding deducts points:
+Each finding deducts points, with a floor of 0:
 
 | Severity | Penalty |
 |----------|---------|
@@ -96,40 +89,58 @@ Each finding deducts points:
 | error | 10 |
 | critical | 25 |
 
-Floor at 0. The planned registry will use the same score, with an
-auto-publish gate at 90 or above plus zero `error` findings.
+The score is for your own tracking. The verdict, not the score, sets the exit code.
 
-## Network imports versus permissions
+## Network imports and permissions
 
-If your plugin imports `requests`, `httpx`, or `aiohttp`, the linter
-warns unless the manifest declares `network.outbound`. The host
-enforces this at runtime regardless. Declare the permission and the
-warning disappears.
+If your plugin uses `requests`, `httpx`, `aiohttp`, `urllib3` or `urllib.request`, the linter warns unless the manifest declares `network.outbound`. The host enforces the capability at runtime either way.
 
 ## False positives
 
-The linter is conservative. If a finding is wrong for your case (the
-SDK wraps a syscall the rule did not learn yet, your `eval` is in a
-data file the linter mistakes for code), open an issue with the
-archive and the finding so the rule can be tightened.
+The rules are plain pattern matches. A finding can fire on a comment or a data file. If a finding is wrong for your case, open an issue on the agent repo with the archive and the finding.
 
-## Running before every release
+## Manifest-versus-code check (monorepo)
 
-Recommended pre-tag check:
+Inside the ADOSExtensions monorepo, each extension's GCS package has a `lint:manifest` script that checks the manifest against the code it describes:
 
-```sh
+```bash
+pnpm -C extensions/my-plugin/gcs lint:manifest
+```
+
+It runs `node scripts/lint-manifest.mjs ../manifest.yaml` and exits 1 with one `FAIL` line per disagreement:
+
+1. A `telemetry.subscribe.<topic>` permission with no matching `ctx.telemetry.subscribe("<topic>")` call, or a subscribe call with no matching permission.
+2. A host-surface permission with no call site, on either half. On the agent half this includes every `hardware.*` permission.
+3. A `contributes` slot with no implementation.
+4. A version that disagrees across `manifest.yaml`, the extension `package.json`, `gcs/package.json`, the `definePlugin({ version })` literal, and the agent half's `pyproject.toml` or `Cargo.toml`.
+5. A permission id that is neither in the capability catalog nor scoped to the plugin as `plugin.<leaf>.<...>`, where `<leaf>` is the last segment of the manifest id.
+6. A `documentation_url` on the docs site whose page does not exist in a sibling `Documentation` checkout. The check is skipped with a note when no checkout is present; `ADOS_DOCS_ROOT` overrides the path.
+7. An agent config read of a key that is in neither `config-schema.json`, a manifest `config_key:`, nor an agent write of that key.
+
+`node scripts/lint-manifest.mjs --self-test` runs every case under `scripts/lint-fixtures/`. The repo's `extensions.yml` workflow runs the manifest lint for each extension, together with a manifest schema check against the agent's schema and the extension's tests.
+
+## Run before every release
+
+```bash
 ./scripts/pack.sh my-plugin
-ADOS_SIGNING_KEY=keys/altnautica-2026-A.pem ./scripts/sign.sh \
-  extensions/my-plugin/dist/com.example.my-plugin-1.0.0.adosplug
+ADOS_SIGNING_KEY=keys/acme-2026-A.priv.pem ADOS_SIGNING_KEY_ID=acme-2026-A \
+  ./scripts/sign.sh extensions/my-plugin/dist/com.example.my-plugin-1.0.0.adosplug
 ados plugin lint \
   extensions/my-plugin/dist/com.example.my-plugin-1.0.0.signed.adosplug
 ```
 
-Wire this into your release workflow as a CI step before the GitHub
-Release upload. A failing lint should block the release.
+Run the same steps in your release workflow before the GitHub Release upload, and let a failing lint block the release.
 
-## See also
+## Next steps
 
-- [Submitting to the registry](/developers/submitting-to-the-registry)
-- [Distribution and local install](/developers/distribution-local-install)
-- [Permissions](/developers/permissions)
+<CardGroup cols={2}>
+  <Card title="Local install" href="/developers/distribution-local-install">
+    Pack, sign and install the archive.
+  </Card>
+  <Card title="Signing keys" href="/developers/signing-keys">
+    Generate and enrol your publisher key.
+  </Card>
+  <Card title="Permissions" href="/developers/permissions">
+    Capability risk levels.
+  </Card>
+</CardGroup>

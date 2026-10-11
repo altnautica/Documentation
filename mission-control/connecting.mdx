@@ -1,157 +1,168 @@
 ---
-title: "Connecting to Your Drone"
-description: "Connect to a flight controller over USB, WebSocket, or the cloud."
+title: "Connect Mission Control to a drone"
+sidebarTitle: "Connecting"
+description: "Open the Connect to Drone dialog and link a flight controller directly, or add a Drone Agent or Ground Agent node by hostname, IP or pairing code."
 icon: "plug"
-lastUpdated: "2026-06-18"
 ---
 
-Mission Control supports three connection methods. Choose the one that fits your setup.
+import PairingKinds from "/snippets/pairing-kinds.mdx";
 
-<Frame caption="Connect dialog with serial, WebSocket, and Bluetooth tabs">
-  <img src="/images/dashboard/connect-dialog.png" alt="Connect dialog showing connection options" />
+Every connection starts in the **Connect to Drone** dialog. Open it with **+** at the top of the Fleet sidebar (tooltip **Add drone**), or press Ctrl+K (⌘K on macOS) and choose **Connect Drone**.
+
+<Frame caption="The Connect to Drone dialog with USB Serial selected.">
+  ![Connect to Drone dialog with Flight Controller and Companion Computer columns, USB Serial and Request Port visible](/images/mission-control/connect-dialog.png)
 </Frame>
 
-## Connection Methods
+The dialog has two columns:
+
+- **Flight Controller**: direct MAVLink (or MSP) to a flight controller over USB Serial, WebSocket, UDP, TCP or Bluetooth.
+- **Companion Computer**: add a node running the ADOS Drone Agent or Ground Agent. This path gives the full feature set: agent status, video, node configuration and extensions.
+
+## Direct to a flight controller
+
+Pick a method card. Each card carries an availability chip:
+
+| Method | Use it for | Availability |
+|---|---|---|
+| **USB Serial** | A flight controller plugged in over USB | **Available** in Chrome and Edge, otherwise **Chrome or Edge** |
+| **WebSocket** | A WebSocket MAVLink endpoint, the SITL bridge, or a MAVLink router | **Available** everywhere |
+| **UDP** | Classic MAVLink over UDP | **Available** in the desktop app, otherwise **Desktop or bridge** |
+| **TCP** | MAVLink over a TCP stream, such as SITL or a router | **Available** in the desktop app, otherwise **Desktop or bridge** |
+| **Bluetooth** | A Bluetooth module exposing the Nordic UART Service (NUS) | **Available** in Chrome and Edge, otherwise **Chrome or Edge** |
+
+### USB Serial
+
+<Steps>
+  <Step title="Plug in the flight controller">
+    Use a data-capable USB cable and power the flight controller.
+  </Step>
+  <Step title="Choose the port">
+    Select **USB Serial**, then click **Request Port**. The browser lists serial devices; pick your flight controller. Ports you granted before appear in the **Port** list.
+  </Step>
+  <Step title="Set the baud rate">
+    **Baud Rate** defaults to 115200. The options are 57600, 115200, 230400, 460800 and 921600.
+  </Step>
+  <Step title="Connect">
+    Click **Connect**. Mission Control detects the firmware and loads the matching protocol, parameters and panels.
+  </Step>
+</Steps>
+
+If the board is in DFU bootloader mode, the panel shows a **DFU device detected** banner (bootloader mode, flash only) with a link to the [Flash Tool](/mission-control/flash-tool).
+
+### WebSocket
+
+Enter a `ws://` URL and click **Connect**. The default is `ws://localhost:14550`. Quick presets fill in a local mavlink-router and SITL instances `SITL #1` to `SITL #5` (`ws://[::1]:5760`, 5770, 5780, 5790 and 5800).
+
+The bundled SITL bridge binds `::1` and requires a per-run token. Paste the whole `ws://[::1]:5760/?token=…` URL it prints at startup; **Connect** stays disabled while a SITL URL has no token. See [SITL testing](/mission-control/sitl-testing).
+
+When a SITL URL is detected, a **SITL Build Preset** picker appears. A preset only names the simulated vehicle in the fleet (FPV, Long Range, Heavy Lift and others). It writes no parameters; the simulator keeps its own frame, battery and sensor settings.
+
+<Note>
+The Drone Agent also serves MAVLink over WebSocket on port 8765. For a paired agent, use the Companion Computer column instead: the raw `:8765` socket can refuse off-box clients that do not present a pairing ticket.
+</Note>
+
+### UDP and TCP
+
+UDP defaults to **Listen** on `0.0.0.0:14550` (the other mode is **Target**). TCP defaults to `127.0.0.1:5760`.
+
+- **Desktop app:** the panel reads **Native socket ready (desktop app).** and connects directly. Native sockets reach local addresses only. See [Desktop app](/mission-control/desktop-app).
+- **Browser:** a web page cannot open a raw socket, so run the local bridge from a clone of the Mission Control repository (Node.js 20 or newer). It is not published to npm.
+
+```bash
+cd tools/mavlink-bridge
+npm ci
+npm run build
+node dist/cli.js --in udp:0.0.0.0:14550 --ws 14551
+```
+
+The bridge prints `Point the GCS at:  ws://127.0.0.1:14551/?token=…` with a fresh token on every run. Paste that whole URL into **Bridge URL** and click **Check**; **Bridge reachable.** means it is ready. Other inputs are `tcp:127.0.0.1:5760`, `udpin:` and `udpout:`. If you serve Mission Control from an address other than loopback, add `--allow-origin <origin>` so the bridge accepts the page.
+
+### Bluetooth
+
+Select **Bluetooth** and click **Scan & Connect**. The flight controller or its module must expose the Nordic UART Service; this works with Betaflight, iNav and most BLE-enabled flight controllers. Web Bluetooth needs a Chromium browser in a secure context (HTTPS or localhost).
+
+### Firmware detection
+
+| Firmware | Detected from |
+|---|---|
+| ArduPilot | MAVLink `HEARTBEAT` with `autopilot = MAV_AUTOPILOT_ARDUPILOTMEGA` |
+| PX4 | MAVLink `HEARTBEAT` with `autopilot = MAV_AUTOPILOT_PX4` |
+| Betaflight | MSP `FC_VARIANT` returns `BTFL` |
+| iNav | MSP `FC_VARIANT` returns `INAV` |
+
+### Presets and recent connections
+
+Click **Save Preset** to store the current method and settings under a name (not available for Bluetooth). **Saved Presets** and **Recent Connections** sit under the method cards.
+
+### Redundant links
+
+When a drone is already connected, choose **Add link to existing drone** instead of **Connect new drone**, then pick the drone under **Target drone (sysid match required)**. The new transport must reach the same MAVLink system id as that drone, otherwise it is rejected. Mission Control then holds two links to one vehicle.
+
+The drone's **Overview** tab lists them in a **Links** panel: each link's type and label, how long ago it last delivered data (or **No data yet**), and a **Primary** badge on the link that carries commands. The **×** on a row removes that link; removing the last one disconnects the drone.
+
+### Automatic reconnect
+
+With **Auto-reconnect on disconnect** on (the default, in [Settings](/mission-control/settings#general)), a direct link over USB Serial, WebSocket, UDP or TCP that drops unexpectedly is re-dialled every 3 seconds, with no attempt limit, until the vehicle answers again. A toast says the drone disconnected and is reconnecting, and the Fleet sidebar shows a row reading **{name}: reconnecting (attempt {attempts})** with a **Stop reconnecting** button. The toast also carries **Stop reconnecting**. A reconnect only reattaches the same vehicle: a different aircraft answering on the same port or address is not adopted.
+
+A Bluetooth link cannot be re-dialled in the background, because the browser opens a Bluetooth device only from a click; reconnect it from the Connect dialog. A flight controller reached through a paired agent is reconnected by that agent's link, not by this cycle.
+
+## Through the ADOS Agent
+
+The **Companion Computer** column adds a node running the Drone Agent or Ground Agent.
 
 <Tabs>
-  <Tab title="USB (WebSerial)">
-    The most common method. Plug your flight controller into your computer with a USB cable and connect directly in the browser.
-
-    **Requirements:**
-    - Chrome 89+, Edge 89+, or another Chromium-based browser
-    - USB cable connected to the FC's USB port
-    - Flight controller powered on
-
-    <Steps>
-      <Step title="Click the Connect button">
-        Find the connect button in the top navigation bar. It opens the connection dialog.
-      </Step>
-      <Step title="Select the Serial tab">
-        The Serial tab shows WebSerial options. Click "Select Port" to open the browser's port picker.
-      </Step>
-      <Step title="Choose your device">
-        The browser lists available serial devices. Select your flight controller. Common names include "CP2102" or "STM32 Virtual COM Port".
-      </Step>
-      <Step title="Set baud rate">
-        The default baud rate is 115200, which works for most ArduPilot and PX4 boards. Betaflight boards typically use 115200 as well. Adjust if needed.
-      </Step>
-      <Step title="Click Connect">
-        The GCS establishes a MAVLink or MSP connection. You will see telemetry data within a few seconds.
-      </Step>
-    </Steps>
-
-    <Note>
-    WebSerial is not available in Firefox or Safari. If you need cross-browser support, use the WebSocket method with a MAVLink router.
-    </Note>
+  <Tab title="Add a drone">
+    On the same network as the node, type its hostname or IP (for example `ados-9f2c1a.local` or `192.168.1.50`) and click **Pair**. A new agent also shows a 6-character code in `ados status`; you can type that code instead. No account is needed and nothing is stored in the cloud. Agents found by the LAN scan are listed below the field.
   </Tab>
-  <Tab title="WebSocket">
-    Connect to a flight controller over the network. This works with MAVLink routers, the SITL simulator, or the ADOS Drone Agent.
-
-    **Common scenarios:**
-    - Drone Agent running on a companion computer (connects over Wi-Fi or LAN)
-    - ArduPilot SITL running on your machine or a remote server
-    - MAVLink router forwarding telemetry over TCP/WebSocket
-
-    <Steps>
-      <Step title="Open the Connect dialog">
-        Click the connect button in the top bar.
-      </Step>
-      <Step title="Select the WebSocket tab">
-        Enter the WebSocket URL. Common formats:
-        - SITL bridge: `ws://localhost:5760`
-        - Drone Agent: `ws://drone-ip:8765` (the agent's MAVLink WebSocket router)
-        - MAVLink router: `ws://router-ip:port`
-      </Step>
-      <Step title="Click Connect">
-        The GCS opens a WebSocket connection and begins parsing MAVLink frames.
-      </Step>
-    </Steps>
-
-    <Tip>
-    The bundled SITL tool at `tools/sitl/` launches ArduPilot SITL and bridges TCP to WebSocket automatically. See the [SITL Testing](/mission-control/sitl-testing) page for setup.
-    </Tip>
-
-    <Note>
-    The WebSocket path needs no HTTPS. Serve the GCS over plain HTTP (`http://localhost:4000` or `http://<lan-ip>:4000`) and connect to an agent or router on the LAN directly. HTTPS is only required for the USB/serial/Bluetooth browser features (which need a secure context) and for the cloud relay path.
-    </Note>
-  </Tab>
-  <Tab title="Cloud Relay">
-    Connect to a remote drone through the cloud. The drone agent publishes status to a Convex backend, and the GCS subscribes to reactive updates.
-
-    **How it works:**
-    1. The ADOS Drone Agent on the drone posts telemetry to the Convex HTTP relay.
-    2. The GCS subscribes to real-time updates via Convex reactive queries.
-    3. Commands flow from GCS to agent through a command queue table.
-
-    **Requirements:**
-    - ADOS Drone Agent running on the drone's companion computer
-    - Agent paired with your Convex backend
-    - GCS running on HTTPS (cloud mode auto-activates on HTTPS)
-
-    Cloud relay supports three layers with increasing real-time capability:
-    - **Convex HTTP:** Baseline polling at 5-second intervals. Works immediately with zero extra infrastructure.
-    - **MQTT:** Real-time telemetry at 2+ Hz via Mosquitto with WebSocket transport.
-    - **WebRTC:** Peer-to-peer video with MQTT-relayed SDP signaling.
-
-    <Note>
-    Cloud relay is the secondary path, not the default. When the agent is on the same network as Mission Control, pair it locally by hostname or IP using the Add-a-Node card. That talks to the agent directly over the LAN, stores nothing in the cloud, and needs no Convex account. Reach for cloud relay only when the drone is on a different network or a cellular link.
-    </Note>
+  <Tab title="Generate a code">
+    Needs sign-in and a cloud backend. Mission Control shows a pairing code that expires after 15 minutes, plus an install command for the node. Run the command on the node; it installs the agent if needed and pairs it with this code. The node appears when it connects.
   </Tab>
 </Tabs>
 
-## Connection Presets
+<PairingKinds />
 
-Save frequently used connections as presets. The Connect dialog remembers your recent connections and lets you create named presets with pre-filled settings (URL, baud rate, options).
+A ground station on its own access point is reached at `192.168.4.1`, or `192.168.7.1` over USB tether.
 
-Build presets are also available. These bundle a connection method with a specific board profile, making it easy to switch between different drones in your fleet.
+### Cloud relay
 
-## Auto-Detection
+When the node is on a different network (for example a cellular uplink), sign in and pair it to your account. Mission Control then reaches it through the cloud relay: status and commands go through Convex, live telemetry through MQTT, and video through WebRTC with MQTT signalling. See [Cloud features](/mission-control/cloud-features).
 
-When you connect over serial, Mission Control auto-detects the firmware type:
+Prefer the LAN path whenever you can. A page served over HTTPS (including the hosted version) cannot fetch a plain-HTTP agent, because browsers block mixed content. To work with a LAN agent, serve Mission Control over plain HTTP (`http://localhost:4000` or `http://<lan-ip>:4000`) or use the desktop app.
 
-| Firmware | Detection Method |
-|----------|-----------------|
-| ArduPilot | MAVLink `HEARTBEAT` message with `autopilot = MAV_AUTOPILOT_ARDUPILOTMEGA` |
-| PX4 | MAVLink `HEARTBEAT` message with `autopilot = MAV_AUTOPILOT_PX4` |
-| Betaflight | MSP `FC_VARIANT` returns `BTFL` |
-| iNav | MSP `FC_VARIANT` returns `INAV`. iNav 7.0 or later recommended. Older versions degrade gracefully via `MSP2_COMMON_PG_LIST` feature detection. |
+## Connection health
 
-The GCS automatically loads the correct protocol adapter, parameter set, and UI panels for the detected firmware.
-
-## Multi-Drone
-
-You can connect to multiple drones simultaneously. Each drone gets its own entry in the fleet sidebar. Select a drone to view its telemetry, send commands, or configure its parameters.
-
-In demo mode the whole simulated fleet appears automatically. In real use, each additional connection requires its own serial port or WebSocket URL.
-
-## Bluetooth
-
-The Connect dialog also includes a Bluetooth tab. Bluetooth connections use the Web Bluetooth API available in Chromium browsers. This is useful for short-range connections to Bluetooth-enabled flight controllers or companion boards.
-
-## Connection Quality
-
-Once connected, the top bar shows connection health:
-
-- **Link quality meter** showing signal strength and packet loss
-- **Telemetry freshness indicator** that marks data as stale after 10 seconds and offline after 30 seconds
-- **RSSI values** from the radio link (if available)
+After connecting, the node header shows a connection quality meter. Telemetry is treated as fresh for 2 seconds; after 2 seconds it is stale, and after 5 seconds it is lost and readouts show `--`.
 
 ## Troubleshooting
 
 <AccordionGroup>
-  <Accordion title="No serial ports appear in the browser picker">
-    Check that your USB cable supports data (not charge-only). Try a different USB port. On Linux, your user may need to be in the `dialout` group: `sudo usermod -aG dialout $USER` and log out/in.
+  <Accordion title="No serial ports appear in the picker">
+    Check that the USB cable carries data. Try another port. On Linux, add your user to the `dialout` group (`sudo usermod -aG dialout $USER`) and log out and back in.
   </Accordion>
   <Accordion title="Connected but no telemetry">
-    Verify the baud rate matches your FC configuration. For ArduPilot, the default is 115200 on the USB port. Check that no other ground station application is holding the serial port (only one app can own a serial port at a time).
+    Check the baud rate, and that no other ground station holds the serial port. Only one application can own a serial port at a time.
   </Accordion>
-  <Accordion title="WebSocket connection refused">
-    Confirm the target service is running and the URL is correct. For SITL, make sure the bridge is started (see [SITL Testing](/mission-control/sitl-testing)). Firewalls may block WebSocket connections on non-standard ports.
+  <Accordion title="SITL WebSocket is refused">
+    Paste the full URL with `?token=` that the SITL tool printed for this run. The token changes every time the tool starts.
   </Accordion>
-  <Accordion title="Cloud mode not activating">
-    Cloud mode auto-activates when the page is served over HTTPS. On plain HTTP (`http://localhost:4000` or `http://<lan-ip>:4000`), the GCS uses direct LAN connections instead, which is the right path for self-hosting against an agent on your own network. To exercise cloud mode locally, use a tunneling service or deploy to a domain with TLS.
+  <Accordion title="Bridge not reachable">
+    Check that `mavlink-bridge` is running and that the Bridge URL includes the `?token=` it printed.
   </Accordion>
-  <Accordion title="GCS reaches for the cloud instead of my LAN agent">
-    The browser blocks an HTTPS page from fetching a plain-HTTP agent (mixed content), so a GCS served over HTTPS cannot talk to a LAN agent directly and falls back to the cloud relay. For LAN self-hosting, serve the GCS over plain HTTP (`http://localhost:4000` or `http://<lan-ip>:4000`) and pair the agent by IP via the Add-a-Node card. No cloud account or HTTPS is needed.
+  <Accordion title="Mission Control uses the cloud instead of my LAN agent">
+    The page is served over HTTPS, so it cannot reach a plain-HTTP agent. Serve Mission Control over plain HTTP on the LAN, or use the desktop app, and pair the agent by hostname or IP.
   </Accordion>
 </AccordionGroup>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Dashboard and fleet" icon="grid-2" href="/mission-control/dashboard">
+    Find the node you just added and open its detail panel.
+  </Card>
+  <Card title="Cockpit and Skills" icon="gamepad" href="/mission-control/cockpit">
+    Fly with video, a HUD and bound Skills.
+  </Card>
+  <Card title="Drone Agent pairing" icon="link" href="/drone-agent/pairing">
+    How pairing works on the agent side.
+  </Card>
+</CardGroup>

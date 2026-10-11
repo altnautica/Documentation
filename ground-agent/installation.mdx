@@ -1,175 +1,158 @@
 ---
-title: "Installation"
-description: "Install the Ground Agent on your SBC with a single command."
+title: "Install the Ground Agent"
+sidebarTitle: "Installation"
+description: "Install the ADOS agent on a single-board computer with the ground_station profile, verify it, and upgrade it later."
 icon: "download"
-lastUpdated: "2026-06-18"
+keywords: ["ados", "ground agent", "install", "ground_station", "installer"]
 ---
 
-import InstallAgent from "/snippets/install-agent.mdx";
+import InstallGroundAgent from "/snippets/install-ground-agent.mdx";
 
-# Installation
-
-The Ground Agent uses the same install script as the Drone Agent. One command, one SD card image, one codebase. The hardware fingerprint at first boot picks the right profile automatically.
+The Ground Agent uses the same installer as the Drone Agent. The `--profile ground_station` flag is what makes the node a ground station.
 
 <Note>
-Mission Control's Flash Tool surfaces this install command automatically. See [Install paths](/getting-started/install-paths) for the recommended flow per board class.
+Mission Control's Flash Tool shows this install command for a companion board. See [Choose what to install](/getting-started/install-paths) for the recommended flow per board class.
 </Note>
 
 ## Prerequisites
 
-- A Raspberry Pi 4B (or supported SBC) with a fresh Raspberry Pi OS Bookworm 64-bit image
-- An RTL8812EU USB WiFi adapter plugged in
-- Internet access during installation (WiFi or Ethernet)
-- An SD card with at least 16 GB (32 GB recommended)
-- A USB-C wall adapter or USB-C power bank that can sustain the board under radio load
+- A supported board with a fresh 64-bit Linux image. See [Ground Agent supported hardware](/ground-agent/supported-hardware).
+- An RTL8812EU (or RTL8812AU) USB Wi-Fi adapter plugged in for the drone link.
+- Internet access during installation (Ethernet or Wi-Fi).
+- A storage card of at least 16 GB (32 GB recommended).
+- A USB-C power source that can sustain the board under radio load. See [Power and runtime](/ground-agent/power-and-runtime).
 
-<Warning>
-The install script requires internet to download packages and the DKMS driver for the RTL8812EU. After installation completes, the ground station works fully offline.
-</Warning>
+After the install finishes, the ground station works without internet.
 
-## One-line install
+## Install
 
-SSH into your SBC and run:
+SSH into the board and run:
 
-<InstallAgent />
+<InstallGroundAgent />
 
-To pair with a drone at install time, add the pairing key:
+Run without `--profile` and with a terminal attached, the installer opens an interactive wizard that asks what the node is for. Pick "This receives on the ground (Ground station)". With no flag and no wizard, the installer keeps the profile already recorded in `/etc/ados/profile.conf`, and falls back to `drone` on a fresh board. It does not guess the profile from attached hardware.
 
-```bash
-curl -sSL https://raw.githubusercontent.com/altnautica/ADOSDroneAgent/main/scripts/install.sh | sudo bash -s -- --pair YOUR_PAIRING_KEY
-```
+Useful flags for a ground station:
 
-The install takes 5-10 minutes depending on your internet speed and SD card class.
+| Flag | Use |
+|---|---|
+| `--name <hostname>` | Set the mDNS hostname, so the node answers at `<hostname>.local`. |
+| `--pair <code>` | Pair with Mission Control during the install. |
+| `--display <auto\|none\|id>` | Display selection. `auto` is the ground-station default and detects a supported panel. |
+| `--no-reboot` | Skip the single automatic reboot when provisioning needs one. |
 
-## What the install script does
+Every installer flag is listed on [Install the Drone Agent](/drone-agent/installation).
+
+## What the installer does
 
 <Steps>
-  <Step title="System update">
-    Runs `apt update` and installs required packages: Python 3.11+, pip, systemd units, dnsmasq, hostapd, and build tools for the DKMS driver.
+  <Step title="Preflight and packages">
+    Resolves the profile, then installs the system packages. A ground station also gets `hostapd`, `dnsmasq`, `bluetooth`, `bluez`, `cage`, `wlr-randr`, `batctl` and `wpasupplicant`, plus a Chromium package for the HDMI kiosk. `avahi-daemon` comes with the common set on every profile.
   </Step>
-  <Step title="DKMS driver build">
-    Clones the RTL8812EU kernel module source and builds it via DKMS. This is the longest step. If kernel headers are missing, the script installs them first.
+  <Step title="Agent and native services">
+    Clones the agent into its own Python virtual environment and downloads the prebuilt native service binaries for the board.
   </Step>
-  <Step title="Agent install">
-    Installs the `ados` Python package from the GitHub release. Creates the `ados` system user, config directory at `/etc/ados/`, and runtime directory at `/run/ados/`.
+  <Step title="Radio driver">
+    Builds the RTL8812EU kernel module with DKMS. If the kernel headers are missing, this step reports the failure and the install continues without the driver.
   </Step>
-  <Step title="Systemd units">
-    Deploys all systemd service units. They are not enabled yet because the profile has not been determined.
+  <Step title="Identity and configuration">
+    Writes the device identity, `/etc/ados/config.yaml` and `/etc/ados/profile.conf`.
   </Step>
-  <Step title="Profile detection">
-    Runs `ados.bootstrap.profile_detect` as the final step. The fingerprint checks for:
-    - I2C device at `0x3C` or `0x3D` (OLED present)
-    - Four GPIO pins with pull-ups (buttons wired)
-    - RTL8812EU USB device
-    - No flight controller on any serial port
-
-    If the score points to ground station, the script writes `profile: ground_station` to `/etc/ados/profile.conf` and enables the ground-station systemd units. The `ados status` command displays this as `ground-station` for readability, but the on-disk value uses the underscore form.
+  <Step title="Board provisioning">
+    On a Raspberry Pi ground station, enables the I2C bus so an optional status OLED is found. With a supported LCD attached, provisions the display overlay.
   </Step>
-  <Step title="Reboot">
-    The SBC reboots once. On the second boot, the ground station is live. The WiFi AP starts, the OLED lights up, and the WFB-ng receiver begins listening.
+  <Step title="Services">
+    Installs and enables the systemd units for the resolved profile, starts them and runs a health check. The node advertises itself once as `_ados._tcp` on every interface, the access point included, from the native control service. An install removes the older static record `/etc/avahi/services/ados-gs-ap.service` if an earlier version left one, so the node is not listed twice.
+  </Step>
+  <Step title="Reboot when needed">
+    When a step staged a change that needs a reboot (an I2C or display overlay), the installer reboots once after its summary. `--no-reboot` skips it and reports what is still staged.
   </Step>
 </Steps>
 
-## First boot after install
+The unit list per profile is on [Systemd services](/drone-agent/systemd-services).
 
-After the reboot, you should see:
+## First boot
 
-1. **OLED** shows the Link screen with "No drone" (if not yet paired) or signal strength (if paired during install)
-2. **WiFi AP** broadcasts `ADOS-GS-XXXX`, where `XXXX` is derived from the device ID
-3. **Setup webapp** is reachable at `http://192.168.4.1:8080` from any device on the AP, or at `http://setup.ados.local:8080/` through the AP's own DNS
+After the install (and the reboot, if one was needed):
 
-<Note>
-The AP passphrase is generated for that unit on first boot, so it differs from unit to unit and is not printed anywhere in advance. The installer prints it on its completion summary. Write it down there, or read it back later from the `ados` status page or the on-box panel. See [WiFi AP Mode](/ground-agent/wifi-ap#the-ap-passphrase).
-</Note>
+1. The optional OLED shows the hostname, the LAN IP and `link: idle` until a drone is paired.
+2. The Wi-Fi access point broadcasts `ADOS-GS-<id>`. The installer prints its passphrase in the completion summary, so write it down there. See [The AP passphrase](/ground-agent/wifi-ap#the-ap-passphrase).
+3. The dashboard answers at `http://192.168.4.1:8080` from a device on the access point.
 
-## Verifying the install
+## Verify the install
 
-SSH back into the SBC and run:
+SSH back into the board and run:
 
 ```bash
 ados status
 ```
 
-You should see output like:
+The first line reads `ADOS  <device> · <profile>` followed by the version. Below it are the setup progress and pairing state, the addresses that reach this node, and rows for the MAVLink flight controller, Video, Cloud relay and Cloudflare, ending with a `Next:` hint. On a ground station with no flight controller attached, `MAVLink FC` reads `not connected`.
 
-```
-ADOS Drone Agent v0.102.5
-Profile: ground-station
-Board: pi4b (Raspberry Pi 4B)
+To see the running services:
 
-Services:
-  ados-supervisor    active (running)
-  ados-api           active (running)
-  ados-wfb-rx        active (running)
-  ados-hostapd       active (running)
-  ados-oled          active (running)
-  ados-uplink-router active (running)
-  ados-health        active (running)
-  ados-mediamtx-gs   active (running)
+```bash
+systemctl list-units 'ados-*'
 ```
 
-Open the setup webapp URL shown by `ados` to check WiFi AP, WFB-ng reception,
-pairing, and network status.
+Run bare `ados` on a terminal for the full-screen status view.
 
-## Upgrading
-
-To upgrade an existing ground station:
+## Upgrade
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/altnautica/ADOSDroneAgent/main/scripts/install.sh | sudo bash -s -- --upgrade
 ```
 
-The upgrade preserves your config, pairing keys, and profile. Services restart automatically after the upgrade completes.
+The upgrade keeps the configuration, pairing keys and recorded profile, and restarts the services when it finishes.
 
-## Installing a specific branch
-
-For testing pre-release features:
+Because an upgrade restarts the MAVLink, radio and video services, the installer refuses it unless the agent reports a fresh `armed: false` vehicle state. A ground station with no flight controller attached has no vehicle state, so its upgrade (or a reinstall over an existing install) is refused with `refusing to upgrade: the vehicle is armed or its arm state is unknown`. Confirm the drone is on the ground and disarmed, then add `--force-armed`:
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/altnautica/ADOSDroneAgent/main/scripts/install.sh | sudo bash -s -- --branch ground-station-test
+curl -sSL https://raw.githubusercontent.com/altnautica/ADOSDroneAgent/main/scripts/install.sh | sudo bash -s -- --upgrade --force-armed
 ```
 
-## Mesh support
+To install from a development branch, add `--branch <branch-name>` with the name of a branch that exists in the repository.
 
-Every ground-station install already pulls the mesh dependencies. There is no flag to set. On a fresh image or on `--upgrade`, the installer runs these steps:
+## Change the profile
 
-1. apt-installs `batctl`, `avahi-daemon`, `wpasupplicant` (and tries `wpasupplicant-mesh-sae` or `wpad-mesh-wolfssl` for the 802.11s SAE backend; falls back to IBSS carrier if neither is available).
-2. Creates `/etc/ados/mesh/` (mode 0755) so role-transition flows have somewhere to land mesh identity files.
-3. Installs the three role-gated systemd units (`ados-batman.service`, `ados-wfb-relay.service`, `ados-wfb-receiver.service`). They stay masked until a role transition starts them. The node stays in `direct` mode by default.
-4. `profile_detect` scans for a second USB-attached WiFi adapter at boot and sets `mesh_capable: true` in `/etc/ados/profile.conf` when one is present. That flag unlocks the OLED Mesh submenu, the GCS Distributed RX and Mesh tabs, and the `/api/v1/ground-station/role` REST PUT for relay/receiver targets.
-
-To act as a `relay` or `receiver`, plug a **second RTL8812EU USB adapter** into the node (default). This matches the primary adapter one-for-one so inventory stays simple and both radios run at the same 29 dBm for matched mesh range. Any 802.11s-capable USB WiFi adapter also works; MediaTek MT7612U (mainline `mt76`) and MT7921AU (mainline `mt7921u`) are the common alternatives when an operator prefers a mainline kernel driver for the mesh carrier.
-
-[Read the Mesh & Distributed Receive overview](/ground-agent/mesh-overview) for the full picture.
-
-## Profile override
-
-If auto-detection picks the wrong profile (rare, usually means ambiguous hardware), you can force it:
+If the node was installed with the wrong profile:
 
 ```bash
-sudo ados profile set ground-station
-sudo reboot
+sudo ados profile set ground_station --role direct
 ```
 
-Or edit `/etc/ados/config.yaml` directly. The on-disk value must use the underscore form. The config validator rejects the hyphenated `ground-station`:
+The command sets `profile` in `/etc/ados/profile.conf` (keeping its other keys, such as the install channel and version) and `agent.profile` in `/etc/ados/config.yaml`, then restarts `ados-wfb`, `ados-wfb-rx` and `ados-supervisor` itself; no reboot is needed. `--no-restart` skips the restarts. `--role` (`direct`, `relay` or `receiver`, default `direct`) records the starting mesh role only when the config does not already hold one, and it skips the mesh checks. To change the role of a running node, use [the role switch](/ground-agent/mesh-setup#add-a-relay). To check what the node resolved, run `ados profile show`.
+
+Editing `/etc/ados/config.yaml` also works:
 
 ```yaml
 agent:
   profile: ground_station
 ```
 
-## Troubleshooting install issues
+## Mesh support
+
+Every ground-station install already carries the mesh dependencies (`batctl` and `wpasupplicant`), so there is no flag to set. The three role units, `ados-batman`, `ados-wfb-relay` and `ados-wfb-receiver`, stay inactive until the node changes role.
+
+A node can take the `relay` or `receiver` role only while it carries two or more WFB-class radios (RTL8812EU or RTL8812AU). The agent checks the attached radios live each time, so plugging in the second adapter is enough. See [Build a mesh](/ground-agent/mesh-setup#mesh-capability).
+
+## Install problems
 
 | Problem | Cause | Fix |
-|---------|-------|-----|
-| DKMS build fails | Missing kernel headers | Run `sudo apt install raspberrypi-kernel-headers` and re-run the install |
-| No WiFi AP after reboot | hostapd not started | Check `systemctl status ados-hostapd` |
-| OLED blank | I2C not enabled | Run `sudo raspi-config`, enable I2C under Interface Options, reboot |
-| Profile detected as "air" | Flight controller on USB | Unplug the FC, run `sudo ados profile set ground-station`, then reboot (or re-run the installer to trigger a fresh profile detect) |
+|---|---|---|
+| DKMS build fails | No kernel headers for the running kernel | Install the headers package for your running kernel (`linux-headers-$(uname -r)`, or the Raspberry Pi `linux-headers-rpi-*` package), then re-run the installer with `--upgrade`. |
+| No Wi-Fi access point after the reboot | `ados-hostapd` not running | `systemctl status ados-hostapd` and `journalctl -u ados-hostapd -n 50`. |
+| OLED stays dark | I2C is enabled at install but the bus appears only after a reboot | Reboot once after the install. If it stays dark, see [Ground Agent troubleshooting](/ground-agent/troubleshooting#oled-stays-dark). |
+| Node came up as a drone | Installed without `--profile ground_station` | `sudo ados profile set ground_station`. |
+| Upgrade refused: arm state unknown | No flight controller attached, so there is no `armed: false` state | Re-run with `--force-armed` once the drone is disarmed. See [Upgrade](#upgrade). |
 
-## What is next
+## Next steps
 
-- [Set Up a Ground Station](/ground-agent/setup) for the first-time walkthrough
-- [WiFi AP](/ground-agent/wifi-ap) to connect your laptop
-- [USB Tether](/ground-agent/usb-tether) for a wired connection
-- [Power and Runtime](/ground-agent/power-and-runtime) to size field power
+<CardGroup cols={2}>
+  <Card title="Set up a ground station" icon="list-check" href="/ground-agent/setup">
+    Reach the node, pick a role, run the wizard and pair.
+  </Card>
+  <Card title="Wi-Fi access point" icon="wifi" href="/ground-agent/wifi-ap">
+    Connect a laptop or phone.
+  </Card>
+</CardGroup>
