@@ -20,14 +20,14 @@ graph LR
     C --> H[LL-HLS via :8080/hls]
     C --> F[Cloud relay]
 
-    style A fill:#1a1a2e,stroke:#3A82FF
-    style B fill:#1a1a2e,stroke:#3A82FF
-    style C fill:#1a1a2e,stroke:#DFF140
-    style R fill:#1a1a2e,stroke:#DFF140
-    style D fill:#1a1a2e,stroke:#3A82FF
-    style E fill:#1a1a2e,stroke:#3A82FF
-    style H fill:#1a1a2e,stroke:#3A82FF
-    style F fill:#1a1a2e,stroke:#3A82FF
+    style A fill:#0A0A0A,stroke:#3A82FF
+    style B fill:#0A0A0A,stroke:#3A82FF
+    style C fill:#0A0A0A,stroke:#3A82FF
+    style R fill:#0A0A0A,stroke:#3A82FF
+    style D fill:#0A0A0A,stroke:#3A82FF
+    style E fill:#0A0A0A,stroke:#3A82FF
+    style H fill:#0A0A0A,stroke:#3A82FF
+    style F fill:#0A0A0A,stroke:#3A82FF
 ```
 
 **Camera** (V4L2 or CSI) feeds the encoder, which encodes H.264 once and writes it to two muxers through a `tee`. Branch A is the RTSP publish into the local **MediaMTX**, which serves WebRTC and HLS through the agent's port 8080 and feeds the cloud relay. Branch B is an **RTP** copy on UDP 5600, which is what `wfb_tx` reads for the radio.
