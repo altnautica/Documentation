@@ -2,6 +2,10 @@
 
 | Key | Type | Default | Allowed | Description |
 | --- | --- | --- | --- | --- |
+| `storage.capture_budget_pct` | integer | `85` | 1 to 100 | Capture Budget Pct |
+| `storage.capture_evict_unuploaded` | boolean | `false` | n/a | Capture Evict Unuploaded |
+| `storage.capture_floor_free_gib` | integer | `5` | 0 to 1000000 | Capture Floor Free Gib |
+| `storage.capture_root` | string | `"auto"` | n/a | Capture Root |
 | `storage.janitor.audit_keep_mb` | integer | `4` | 0 to 9223372036854776000 | Audit Keep Mb |
 | `storage.janitor.audit_max_mb` | integer | `16` | 0 to 9223372036854776000 | Audit Max Mb |
 | `storage.janitor.budget_mb` | integer | `5120` | 0 to 9223372036854776000 | Budget Mb |

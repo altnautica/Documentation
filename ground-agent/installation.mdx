@@ -139,7 +139,7 @@ A node can take the `relay` or `receiver` role only while it carries two or more
 
 ## Field tile packs
 
-A ground station can serve vector map tiles to Mission Control over the LAN, so the planner and flight maps render with no internet uplink. A pack is a vector (MVT) [PMTiles](https://docs.protomaps.com/pmtiles/) archive named `<name>.pmtiles` in the tiles directory, `/var/ados/tiles` by default (override with `ADOS_TILES_DIR`).
+A ground station can serve vector map tiles to Mission Control over the LAN, so the planner and flight maps render with no internet uplink. A pack is a vector (MVT) [PMTiles](https://docs.protomaps.com/pmtiles/) archive named `<name>.pmtiles` in the tiles directory, `/var/ados/tiles`.
 
 Place a pack at install time with `--tile-pack`, from a URL or a local file:
 
@@ -147,14 +147,14 @@ Place a pack at install time with `--tile-pack`, from a URL or a local file:
 curl -sSL https://raw.githubusercontent.com/altnautica/ADOSDroneAgent/main/scripts/install.sh | sudo bash -s -- --profile ground_station --tile-pack https://example.com/maps/field.pmtiles
 ```
 
-The installer writes the file next to its destination and renames it into place. Without the flag it does nothing, and it never removes an existing pack. You can also copy a pack into the directory yourself; write it under a temporary name and rename it over the old one, because the agent memory-maps open packs.
+The installer writes the file next to its destination, checks that it is a PMTiles v3 archive, and renames it into place; a file that is not a PMTiles v3 archive is refused and the existing pack is left as it was. Without the flag it does nothing, and it never removes an existing pack. You can also copy a pack into the directory yourself; write it under a temporary name and rename it over the old one, because the agent memory-maps open packs.
 
 The agent advertises the `tiles.pack` capability and serves two routes, both ground-station only and both behind the normal `X-ADOS-Key` auth:
 
 | Route | Returns |
 |---|---|
 | `GET /api/v1/ground-station/tiles` | `{"packs": [...]}` with `name`, `bounds`, `minzoom`, `maxzoom`, `tile_type`, `usable`, `size_bytes` and `etag` for each pack |
-| `GET /api/v1/ground-station/tiles/{name}/{z}/{x}/{y}.mvt` | One tile. `204` when the pack does not hold it, `404 E_TILE_PACK_NOT_FOUND` for an unknown pack, `409 E_TILE_PACK_UNUSABLE` for a pack that cannot be served |
+| `GET /api/v1/ground-station/tiles/{name}/{z}/{x}/{y}.mvt` | One tile. `304` when `If-None-Match` matches the tile's `ETag`, `204` when the pack does not hold it, `400 E_INVALID_TILE` for a coordinate outside the tile pyramid or a path without `.mvt`, `404 E_TILE_PACK_NOT_FOUND` for an unknown pack, `409 E_TILE_PACK_UNUSABLE` for a pack that cannot be served |
 
 A pack is `usable` when it holds vector tiles that are gzip-compressed or uncompressed. Raster packs and brotli or zstd packs are listed but not served.
 

@@ -2,7 +2,7 @@
 
 | Flag | Value | Description |
 | --- | --- | --- |
-| `--profile` | `<<drone\|ground_station\|workstation\|compute>>` | Agent profile to install |
+| `--profile` | `<<drone\|ground_station\|workstation\|compute\|visor>>` | Agent profile to install |
 | `--name` | `<<hostname>>` | mDNS hostname to set |
 | `--no-rtl-driver` | n/a | Skip the RTL8812EU WFB radio driver build |
 | `--world-engine` | n/a | Install the World Engine extension (3D world model + compute offload). Default: on for workstation and compute, off for drone and ground station. An installed extension is left alone; plugin auto-update keeps it current. The last of --world-engine and --no-world-engine wins. |
@@ -22,6 +22,7 @@
 | `--wifi-ssid` | `<<ssid>>` | Join this Wi-Fi network during a headless install (so the wired cable can be unplugged) |
 | `--wifi-pass-file` | `<<path>>` | File holding the --wifi-ssid password (omit if open; keeps it off the command line) |
 | `--plugin-key`, `-k` | `<<path>>` | Plugin trust key (PEM) to copy into /etc/ados/plugin-keys/ on install. Repeatable. |
+| `--tile-pack` | `<<url\|path>>` | Place this PMTiles field tile pack (&lt;name>.pmtiles) in the ground station's tiles directory, downloaded from a URL or copied from a local path, so the GCS can render maps from it with no internet. Linux only. |
 | `--uninstall` | n/a | Remove the agent |
 | `--status` | n/a | Print install status and exit |
 | `--plain` | n/a | Plain line output (no animation/color) |

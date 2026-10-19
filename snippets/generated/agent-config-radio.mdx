@@ -2,6 +2,11 @@
 
 | Key | Type | Default | Allowed | Description |
 | --- | --- | --- | --- | --- |
+| `radio.adapters` | array | `[]` | n/a | Adapters |
+| `radio.adapters[].antenna` | string\|null | n/a | n/a | Antenna |
+| `radio.adapters[].match.mac` | string\|null | n/a | n/a | Mac |
+| `radio.adapters[].match.usb_path` | string\|null | n/a | n/a | Usb Path |
+| `radio.adapters[].role` | string | n/a | `"rxtx"`, `"rx"`, `"tx"`, `"mesh"` | Role |
 | `radio.crsf.band` | string | `"dual"` | `"dual"`, `"900"`, `"2p4"` | Band |
 | `radio.crsf.channel_source` | string | `"hid"` | `"hid"`, `"inject"`, `"hybrid"` | Channel Source |
 | `radio.crsf.device` | string\|null | n/a | n/a | Device |
@@ -9,6 +14,11 @@
 | `radio.crsf.mavlink_command_enabled` | boolean | `false` | n/a | Mavlink Command Enabled |
 | `radio.crsf.mavlink_transport` | string | `"serial"` | `"serial"`, `"backpack_wifi"` | Mavlink Transport |
 | `radio.crsf.mode` | string | `"crsf_rc"` | `"crsf_rc"`, `"mavlink"`, `"airport"` | Mode |
+| `radio.crsf.modules` | array | `[]` | n/a | Modules |
+| `radio.crsf.modules[].id` | string | n/a | n/a | Id |
+| `radio.crsf.modules[].link` | string\|null | n/a | n/a | Link |
+| `radio.crsf.modules[].port` | string | n/a | n/a | Port |
+| `radio.crsf.modules[].role` | string | `"pilot"` | `"pilot"`, `"autonomy"` | Role |
 | `radio.crsf.packet_rate_hz` | integer | `150` | 0 to 65535 | Packet Rate Hz |
 | `radio.crsf.relay_role` | string | `"none"` | `"none"`, `"repeater"`, `"agent_last_mile"` | Relay Role |
 | `radio.crsf.tx_power_dbm` | integer\|null | n/a | -128 to 127 | Tx Power Dbm |

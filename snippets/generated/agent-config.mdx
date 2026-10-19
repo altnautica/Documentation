@@ -5,7 +5,7 @@
 | `agent.device_id` | string | `""` | n/a | Device Id |
 | `agent.headless` | boolean | `false` | n/a | Headless |
 | `agent.name` | string | `"my-drone"` | n/a | Name |
-| `agent.profile` | string | `"auto"` | `"auto"`, `"drone"`, `"ground_station"`, `"workstation"`, `"compute"` | Profile |
+| `agent.profile` | string | `"auto"` | `"auto"`, `"drone"`, `"ground_station"`, `"workstation"`, `"compute"`, `"visor"` | Profile |
 | `agent.tier` | string | `"auto"` | n/a | Tier |
 | `api.mission_control_url` | string | `""` | n/a | Mission Control Url |
 | `api.rest.enabled` | boolean | `true` | n/a | Enabled |
@@ -21,6 +21,19 @@
 | `battery.voltage_drop_mv_per_s` | integer | `500` | 100 to 5000 | Voltage Drop Mv Per S |
 | `discovery.mdns_enabled` | boolean | `true` | n/a | Mdns Enabled |
 | `discovery.service_type` | string | `"_ados._tcp.local."` | n/a | Service Type |
+| `gnss.base.accuracy_m` | number | `2` | >= 0 | Accuracy M |
+| `gnss.base.h_ellipsoid_m` | number\|null | n/a | n/a | H Ellipsoid M |
+| `gnss.base.lat_deg` | number\|null | n/a | -90 to 90 | Lat Deg |
+| `gnss.base.lon_deg` | number\|null | n/a | -180 to 180 | Lon Deg |
+| `gnss.base.min_dur_s` | integer | `300` | >= 1 | Min Dur S |
+| `gnss.base.mode` | string | `"off"` | `"off"`, `"survey"`, `"fixed"` | Mode |
+| `gnss.heading.enabled` | boolean | `false` | n/a | Enabled |
+| `gnss.pps_device` | string\|null | n/a | n/a | Pps Device |
+| `gnss.receivers` | array | `[]` | n/a | Receivers |
+| `gnss.receivers[].id` | string | `"gnss0"` | n/a | Id |
+| `gnss.receivers[].model` | string\|null | n/a | n/a | Model |
+| `gnss.receivers[].port` | string | `"uart1"` | `"uart1"`, `"usb"` | Port |
+| `gnss.receivers[].source` | string | `"hub"` | n/a | Source |
 | `ground_station.cloud_uplink` | string | `"auto"` | `"auto"`, `"force_on"`, `"force_off"` | Cloud Uplink |
 | `ground_station.display.type` | string | `"auto"` | `"auto"`, `"hdmi"`, `"lcd"`, `"none"` | Type |
 | `ground_station.kiosk.enabled` | boolean | `true` | n/a | Enabled |
@@ -50,6 +63,32 @@
 | `logging.level` | string | `"info"` | n/a | Level |
 | `logging.max_size_mb` | integer | `50` | 0 to 4294967295 | Max Size Mb |
 | `logging.store.enabled` | boolean | `false` | n/a | Enabled |
+| `lora.air_rate` | string | `"2.4k"` | n/a | Air Rate |
+| `lora.antenna_gain_dbi` | number | `2.15` | -10 to 20 | Antenna Gain Dbi |
+| `lora.beacon_interval_s` | integer | `30` | 1 to 3600 | Beacon Interval S |
+| `lora.bw_khz` | integer | `125` | 7 to 500 | Bw Khz |
+| `lora.cable_loss_db` | number | `0` | 0 to 30 | Cable Loss Db |
+| `lora.cr` | integer | `1` | 1 to 4 | Cr |
+| `lora.e22.baud` | integer | `9600` | 1200 to 115200 | Baud |
+| `lora.e22.gpio_chip` | string | `"gpiochip0"` | n/a | Gpio Chip |
+| `lora.e22.m0_gpio` | integer\|null | n/a | 0 to 1023 | M0 Gpio |
+| `lora.e22.m1_gpio` | integer\|null | n/a | 0 to 1023 | M1 Gpio |
+| `lora.e22.module_band` | string | `"850-930"` | `"850-930"`, `"410-493"` | Module Band |
+| `lora.e22.port` | string | `"/dev/ttyUSB0"` | n/a | Port |
+| `lora.enabled` | boolean | `false` | n/a | Enabled |
+| `lora.erp_mw` | number\|null | n/a | 0 to 4000 | Erp Mw |
+| `lora.freq_mhz` | number\|null | n/a | 0 to 6000 | Freq Mhz |
+| `lora.ledger_path` | string | `"/var/ados/lora/airtime.jsonl"` | n/a | Ledger Path |
+| `lora.loopback.bind` | string | `"0.0.0.0:7810"` | n/a | Bind |
+| `lora.loopback.module_band` | string | `"any"` | `"any"`, `"850-930"`, `"410-493"`, `"863-928"` | Module Band |
+| `lora.loopback.peer` | string | `"127.0.0.1:7811"` | n/a | Peer |
+| `lora.meshtastic.enabled` | boolean | `false` | n/a | Enabled |
+| `lora.meshtastic.port` | string\|null | n/a | n/a | Port |
+| `lora.node_id` | integer | `1` | 0 to 65535 | Node Id |
+| `lora.preamble` | integer | `8` | 6 to 65535 | Preamble |
+| `lora.region` | string\|null | n/a | n/a | Region |
+| `lora.sf` | integer | `9` | 7 to 12 | Sf |
+| `lora.transport` | string | `"e22"` | `"e22"`, `"meshtastic"`, `"loopback"` | Transport |
 | `mavlink.adopt_slot_system_id` | boolean | `false` | n/a | Adopt Slot System Id |
 | `mavlink.agent_signing` | boolean | `false` | n/a | Agent Signing |
 | `mavlink.aux_uplink_enforce_origin` | boolean | `false` | n/a | Aux Uplink Enforce Origin |
@@ -121,6 +160,11 @@
 | `pairing.convex_url` | string | `""` | n/a | Convex Url |
 | `pairing.heartbeat_interval` | integer | `60` | 0 to 4294967295 | Heartbeat Interval |
 | `pairing.state_path` | string | `"/etc/ados/pairing.json"` | n/a | State Path |
+| `radio.adapters` | array | `[]` | n/a | Adapters |
+| `radio.adapters[].antenna` | string\|null | n/a | n/a | Antenna |
+| `radio.adapters[].match.mac` | string\|null | n/a | n/a | Mac |
+| `radio.adapters[].match.usb_path` | string\|null | n/a | n/a | Usb Path |
+| `radio.adapters[].role` | string | n/a | `"rxtx"`, `"rx"`, `"tx"`, `"mesh"` | Role |
 | `radio.crsf.band` | string | `"dual"` | `"dual"`, `"900"`, `"2p4"` | Band |
 | `radio.crsf.channel_source` | string | `"hid"` | `"hid"`, `"inject"`, `"hybrid"` | Channel Source |
 | `radio.crsf.device` | string\|null | n/a | n/a | Device |
@@ -128,6 +172,11 @@
 | `radio.crsf.mavlink_command_enabled` | boolean | `false` | n/a | Mavlink Command Enabled |
 | `radio.crsf.mavlink_transport` | string | `"serial"` | `"serial"`, `"backpack_wifi"` | Mavlink Transport |
 | `radio.crsf.mode` | string | `"crsf_rc"` | `"crsf_rc"`, `"mavlink"`, `"airport"` | Mode |
+| `radio.crsf.modules` | array | `[]` | n/a | Modules |
+| `radio.crsf.modules[].id` | string | n/a | n/a | Id |
+| `radio.crsf.modules[].link` | string\|null | n/a | n/a | Link |
+| `radio.crsf.modules[].port` | string | n/a | n/a | Port |
+| `radio.crsf.modules[].role` | string | `"pilot"` | `"pilot"`, `"autonomy"` | Role |
 | `radio.crsf.packet_rate_hz` | integer | `150` | 0 to 65535 | Packet Rate Hz |
 | `radio.crsf.relay_role` | string | `"none"` | `"none"`, `"repeater"`, `"agent_last_mile"` | Relay Role |
 | `radio.crsf.tx_power_dbm` | integer\|null | n/a | -128 to 127 | Tx Power Dbm |
@@ -150,6 +199,12 @@
 | `security.hmac_enabled` | boolean | `false` | n/a | Hmac Enabled |
 | `security.hmac_secret` | string | Secret, not shown | n/a | Hmac Secret |
 | `security.setup_token_required` | boolean | `false` | n/a | Setup Token Required |
+| `sensors.hub.exposure_us` | integer | `4000` | 0 to 1000000 | Exposure Us |
+| `sensors.hub.gnss_forward` | boolean | `true` | n/a | Gnss Forward |
+| `sensors.hub.imu_odr_hz` | integer | `1000` | `500`, `1000`, `2000` | Imu Odr Hz |
+| `sensors.hub.rtcm_origins` | array | `["gnss","host"]` | n/a | Rtcm Origins |
+| `sensors.hub.transport` | string | `"auto"` | n/a | Transport |
+| `sensors.hub.trigger_hz` | integer | `20` | 0 to 1000 | Trigger Hz |
 | `server.cloud.mqtt_broker` | string | `"mqtt.altnautica.com"` | n/a | Mqtt Broker |
 | `server.cloud.mqtt_port` | integer | `443` | 0 to 65535 | Mqtt Port |
 | `server.cloud.url` | string | `"https://convex-site.altnautica.com"` | n/a | Url |
@@ -160,6 +215,11 @@
 | `server.self_hosted.mqtt_broker` | string | `""` | n/a | Mqtt Broker |
 | `server.self_hosted.mqtt_port` | integer | `8883` | 0 to 65535 | Mqtt Port |
 | `server.self_hosted.url` | string | `""` | n/a | Url |
+| `simulation.enabled` | boolean | `false` | n/a | Enabled |
+| `storage.capture_budget_pct` | integer | `85` | 1 to 100 | Capture Budget Pct |
+| `storage.capture_evict_unuploaded` | boolean | `false` | n/a | Capture Evict Unuploaded |
+| `storage.capture_floor_free_gib` | integer | `5` | 0 to 1000000 | Capture Floor Free Gib |
+| `storage.capture_root` | string | `"auto"` | n/a | Capture Root |
 | `storage.janitor.audit_keep_mb` | integer | `4` | 0 to 9223372036854776000 | Audit Keep Mb |
 | `storage.janitor.audit_max_mb` | integer | `16` | 0 to 9223372036854776000 | Audit Max Mb |
 | `storage.janitor.budget_mb` | integer | `5120` | 0 to 9223372036854776000 | Budget Mb |

@@ -82,6 +82,7 @@
 | `GET` | `/api/telemetry` | native | Required | No |
 | `GET` | `/api/time` | native | Required | No |
 | `GET` | `/api/v1/battery` | native | Required | No |
+| `GET` | `/api/v1/clock` | native | Required | No |
 | `GET` | `/api/v1/dashboard/snapshot` | native | Required | No |
 | `GET` | `/api/v1/diagnostics` | native | Required | No |
 | `POST` | `/api/v1/display/calibrate/start` | residual | Required | No |
@@ -89,6 +90,9 @@
 | `GET` | `/api/v1/display/page` | residual | Required | No |
 | `POST` | `/api/v1/display/page` | residual | Required | No |
 | `GET` | `/api/v1/display/snapshot` | residual | Required | No |
+| `GET` | `/api/v1/gnss` | native | Required | No |
+| `PUT` | `/api/v1/gnss/base` | native | Required | No |
+| `POST` | `/api/v1/gnss/rtcm` | native | Required | No |
 | `POST` | `/api/v1/ground-station/bluetooth/pair` | native | Required | No |
 | `GET` | `/api/v1/ground-station/bluetooth/paired` | native | Required | No |
 | `POST` | `/api/v1/ground-station/bluetooth/scan` | native | Required | No |
@@ -152,6 +156,8 @@
 | `GET` | `/api/v1/ground-station/role` | native | Required | No |
 | `PUT` | `/api/v1/ground-station/role` | native | Required | No |
 | `GET` | `/api/v1/ground-station/status` | native | Required | No |
+| `GET` | `/api/v1/ground-station/tiles` | native | Required | No |
+| `GET` | `/api/v1/ground-station/tiles/{name}/{z}/{x}/{tile}` | native | Required | No |
 | `GET` | `/api/v1/ground-station/ui` | native | Required | No |
 | `PUT` | `/api/v1/ground-station/ui/buttons` | native | Required | No |
 | `PUT` | `/api/v1/ground-station/ui/oled` | native | Required | No |
@@ -172,6 +178,10 @@
 | `WS` | `/api/v1/ground-station/ws/buttons` | native | Public | Yes |
 | `WS` | `/api/v1/ground-station/ws/mesh` | native | Public | Yes |
 | `WS` | `/api/v1/ground-station/ws/uplink` | native | Public | Yes |
+| `GET` | `/api/v1/lora` | native | Required | No |
+| `PUT` | `/api/v1/lora` | native | Required | No |
+| `GET` | `/api/v1/lora/beacons` | native | Required | No |
+| `GET` | `/api/v1/lora/regions` | native | Required | No |
 | `DELETE` | `/api/v1/network/client` | native | Required | No |
 | `GET` | `/api/v1/network/client/configured` | native | Required | No |
 | `DELETE` | `/api/v1/network/client/configured/{name}` | native | Required | No |
@@ -187,6 +197,9 @@
 | `POST` | `/api/v1/peripherals/{peripheral_id}/action` | residual | Required | No |
 | `POST` | `/api/v1/peripherals/{peripheral_id}/config` | residual | Required | No |
 | `GET` | `/api/v1/plugins/catalog` | native | Required | No |
+| `GET` | `/api/v1/radio/adapters` | native | Required | No |
+| `GET` | `/api/v1/sensors` | native | Required | No |
+| `PUT` | `/api/v1/sensors/rig` | native | Required | No |
 | `POST` | `/api/v1/setup/apply` | residual | Required | No |
 | `POST` | `/api/v1/setup/cloud-choice` | residual | Required | No |
 | `WS` | `/api/v1/setup/cloudflare/logs` | residual | Required | Yes |
@@ -208,6 +221,7 @@
 | `POST` | `/api/v1/setup/skip` | residual | Required | No |
 | `GET` | `/api/v1/setup/status` | residual | Required | No |
 | `POST` | `/api/v1/setup/step/{step_id}/skip` | residual | Required | No |
+| `GET` | `/api/v1/storage` | native | Required | No |
 | `POST` | `/api/v1/system/restart-supervisor` | native | Required | No |
 | `GET` | `/api/v2/observability/{*upstream_path}` | native | Required | No |
 | `GET` | `/api/version` | native | Public | No |

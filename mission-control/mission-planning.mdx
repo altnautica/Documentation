@@ -43,7 +43,7 @@ The inspector follows the selection:
 | Two or more waypoints | **Batch** edit |
 | A pattern, geofence, rally point, point of interest or transform | That item's settings, with a back arrow to **Mission** |
 
-Drag a number field's label left or right to change its value; hold `Shift` for steps ten times larger or `Alt` for a tenth. The arrow keys step the value too.
+Drag a number field's label or unit left or right to change its value (a field without either shows a small drag handle); hold `Shift` for steps ten times larger or `Alt` for a tenth. The arrow keys step the value too.
 
 ### Planner bar menu
 
@@ -65,13 +65,13 @@ The **⋯** menu holds **Download from drone**, **Import boundary (KML/SHP)**, e
     Open the **Issues** tab in the dock (`I`, or click the issues chip in the planner bar). Issues update as you edit. Check the **Terrain** and **Altitude** tabs (`T`) for ground clearance.
   </Step>
   <Step title="Save and send">
-    Click **Save** to store the plan in the library, then **Send to vehicle**. The button label shows the state: **Fix n issues** while blocking issues remain, then **Sending…** and **Sent ✓**. A chip next to it shows when the vehicle holds an older mission than the editor.
+    Click **Save** to store the plan in the library, then **Send to vehicle**. The button label shows the state: **Fix n issues** while blocking issues remain (clicking it opens the **Issues** tab, or the dialog when a fence or rally points can still be sent), then **Sending…** and **Sent ✓**. A chip next to it shows when the vehicle holds an older mission than the editor.
   </Step>
 </Steps>
 
 ## Send to vehicle
 
-**Send to vehicle** opens a dialog listing what the plan holds: the mission, the geofence and the rally points, each shown only when present. Blocking issues stop the mission from being sent, with a **Review issues** link to the dock. The dialog also shows pre-flight checklist progress with an **Open checklist** link; the checklist is informational and does not block sending. **Send** sends the selected items in order and reports each one as sent or failed. A failure does not stop the remaining items.
+**Send to vehicle** opens a dialog listing what the plan holds: the mission, the geofence and the rally points, each shown only when present. The button is available when the plan holds waypoints, a geofence or rally points, so a fence or rally points can be sent on their own. The dialog names the vehicle that receives the upload; when the plan is assigned to a different vehicle, it says so and offers a button to switch to that vehicle. Blocking issues stop the mission from being sent, with a **Review issues** link to the dock. The dialog also shows pre-flight checklist progress with an **Open checklist** link; the checklist is informational and does not block sending. **Send** sends the selected items in order and reports each one as sent or failed. A failure does not stop the remaining items.
 
 
 ## Map tools
@@ -202,7 +202,7 @@ See [File formats](/mission-control/file-formats) for each format.
 
 ## Keyboard shortcuts
 
-`Ctrl` is `⌘` on macOS. Tool keys are in [Map tools](#map-tools).
+`Ctrl` is `⌘` on macOS. Tool keys are in [Map tools](#map-tools). The panel and dock keys (`T`, `G`, `I`, `L`, `[`, `]`, `\`) work only while a plan is open, and no planner shortcut fires while a dialog is open.
 
 | Shortcut | Action |
 |---|---|
@@ -215,11 +215,11 @@ See [File formats](/mission-control/file-formats) for each format.
 | `/` | Search for a place |
 | `L` | Show or hide map layers |
 | `Ctrl+Z` / `Ctrl+Shift+Z` or `Ctrl+Y` | Undo / redo |
-| `Ctrl+C` / `Ctrl+V` | Copy / paste a waypoint |
-| Arrow keys | Nudge the selected waypoint |
-| `Del` | Delete the selection |
+| `Ctrl+C` / `Ctrl+V` | Copy / paste the selected waypoints |
+| Arrow keys | Nudge the selected waypoints |
+| `Del` | Delete the selected waypoints (one undo step) |
 | `Ctrl`-click / `Shift`-click | Add to the selection / select a range |
-| `Esc` | Cancel drawing, then clear the selection, then return the inspector to **Mission** |
+| `Esc` | Close the plan library sheet, then cancel drawing, then clear the selection, then return the inspector to **Mission**. An open menu or popover closes first |
 | `Ctrl+S` / `Ctrl+Shift+S` | Save plan / save plan as |
 | `Ctrl+O` | Open the plan library |
 | `Ctrl+N` | New plan (desktop app only) |

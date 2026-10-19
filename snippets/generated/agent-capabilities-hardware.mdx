@@ -19,3 +19,4 @@
 | `sensor.imu.register` | hardware | medium | No | Lets the plugin declare a secondary IMU device the rest of the agent can address. Often paired with VIO and odometry workflows. |
 | `sensor.lidar.register` | hardware | medium | No | Lets the plugin declare a LiDAR device. Downstream services can consume point clouds for mapping and obstacle avoidance. |
 | `sensor.payload.register` | hardware | medium | No | Lets the plugin declare a payload device (sprayer, dropper, sampler) so missions and the GCS can address it. |
+| `sensors.rig.write` | hardware | medium | Yes | Lets the plugin store the rig document (sensor roles, intrinsics and extrinsics) the agent validates and the sensor hub fuses with, through the same validation the operator's rig write runs. An invalid document is refused and the stored one kept. |
