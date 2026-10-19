@@ -22,7 +22,7 @@ This guide plans a survey grid over an area, uploads it to the flight controller
 
 <Steps>
   <Step title="Open Plan">
-    Click **Plan** in the top navigation. The map fills the page, the drawing tools sit in the toolbar on the left, and the planner panel on the right has the sections **Mission Setup**, **Defaults**, **Flight Patterns**, **Waypoints**, **Geofence**, **Rally Points**, **Terrain Profile**, **Transform Mission** and **Mission Validation**.
+    Click **Plan** in the top navigation. With no plan open, the **FLIGHT PLANS** library sits at the left of the map. Click **New Plan**. The library hides and the planner opens: the planner bar on top, the plan outline on the left, the tool rail on the map, the inspector on the right and the review dock along the bottom of the map.
 
     <Frame caption="Plan view with an empty mission.">
       ![Mission Control Plan view with an empty map, left toolbar and right planner panel](/images/mission-control/plan-empty.png)
@@ -30,17 +30,17 @@ This guide plans a survey grid over an area, uploads it to the flight controller
   </Step>
 
   <Step title="Set the mission defaults">
-    In **Mission Setup**, name the mission and set **Finish Action** to **Return to Launch**. In **Defaults**, set **Default Altitude** and **Default Speed**.
+    Click the plan name in the planner bar and type a name. With nothing selected, the inspector shows **Mission**; in **Defaults**, set **Altitude** and **Speed**.
   </Step>
 
   <Step title="Draw the survey area">
-    Pick the **Polygon tool** in the left toolbar and click the map to place the corners of the area. Make it slightly larger than the area you need, so the image footprints overlap at the edges.
+    Press `G` to open the pattern settings, pick **Survey grid**, then click **Draw area** and click the map to place the corners of the area. You can also draw first with the polygon tool (`P`) on the tool rail. Make the area slightly larger than you need, so the image footprints overlap at the edges.
   </Step>
 
   <Step title="Generate the pattern">
-    In **Flight Patterns**, set **Pattern Type** to **Survey Grid**. Choose a **Survey Preset** or **Camera Profile**, or a deliverable preset (**Orthomosaic**, **3D model**, **Fast / low detail**). Set **Altitude above home**, **Line Spacing** and **Speed**. **Show Advanced** adds **Grid Angle**, **Camera Trigger Distance**, wind alignment and more.
+    Choose a **Survey preset** or **Camera profile**, or a deliverable preset (**Orthomosaic**, **3D model**, **Fast / low detail**). Set **Altitude above home**, **Line spacing** and **Speed**. **Show Advanced** adds **Grid angle**, **Trigger distance**, wind alignment and more.
 
-    Click **Generate Pattern**. **Pattern Statistics** shows the distance, estimated time, waypoints and photos. Click **Apply (N waypoints)** to put the pattern into the mission. Applying replaces every waypoint already in the mission.
+    Click **Generate**. **Pattern stats** shows the distance, estimated time, waypoints and photos. Click **Apply N waypoints to mission** to put the pattern into the mission. Applying replaces every waypoint already in the mission. Add a Return to Launch or Land waypoint at the end so the drone comes home when the survey finishes.
 
     <Frame caption="Survey grid generated over a polygon.">
       ![Mission Control Plan view with a survey grid of parallel legs over a drawn polygon](/images/mission-control/plan-survey-pattern.png)
@@ -48,21 +48,21 @@ This guide plans a survey grid over an area, uploads it to the flight controller
   </Step>
 
   <Step title="Add a geofence and rally points">
-    In **Geofence**, draw a boundary with a margin around the survey area and set its breach action. In **Rally Points**, or with the **Rally point tool**, mark safe alternate landing spots. See [Geofences and rally points](/mission-control/geofences-rally).
+    Click **Geofence** in the plan outline, draw a boundary with a margin around the survey area and set its breach action. Mark safe alternate landing spots with the rally point tool (`Y`). See [Geofences and rally points](/mission-control/geofences-rally).
   </Step>
 
   <Step title="Check the mission">
-    **Mission Validation** checks the mission continuously as you edit. Fix every error it lists; upload stays blocked until there are none. Warnings are advisory. **Terrain Profile** shows the altitude along the route against the ground.
+    The **Issues** tab in the dock (`I`) checks the mission continuously as you edit. Fix every error it lists; sending stays blocked until there are none. Warnings are advisory. The **Terrain** tab shows the altitude along the route against the ground.
   </Step>
 </Steps>
 
 To try the plan without flying, open **Simulate** in the top navigation. See [Simulation](/mission-control/simulation).
 
-## Upload
+## Send to the drone
 
-1. Connect the drone.
-2. Click **Upload to FC**.
-3. Click **Download from FC** and compare the result with your plan. The waypoints, altitudes and commands should match.
+1. Connect the drone and pick it in **Vehicle** in the planner bar.
+2. Click **Send to vehicle**, check the mission, geofence and rally points are ticked, then click **Send**. Each item reports **Sent** or **Failed**.
+3. Choose **⋯ › Download from drone** and compare the result with your plan. The waypoints, altitudes and commands should match.
 
 ## Fly the mission
 

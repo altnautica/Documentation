@@ -18,7 +18,7 @@ The Plan tab reads and writes several mission formats so you can move plans betw
 | KMZ | Yes | Yes | Zipped KML |
 | CSV | Yes | Yes | One mission item per row |
 
-Export from the Plan tab footer menu: **Export (.altmission, lossless)**, **Export .waypoints**, **Export .plan (QGC)**, **Export KML**, **Export (.kmz)** and **Export CSV**. Import a plan with **Import** in the **FLIGHT PLANS** library.
+Export from the **⋯** menu in the Plan tab's planner bar: **Export (.altmission, lossless)**, **Export .waypoints**, **Export .plan (QGC)**, **Export KML**, **Export (.kmz)** and **Export CSV**. Import a plan with **Import** in the **FLIGHT PLANS** library.
 
 ## .altmission
 
@@ -85,7 +85,7 @@ These files add reference shapes to the map. They do not add waypoints.
 
 | Import | Files | Where | Result |
 |---|---|---|---|
-| Boundary | KML, KMZ, a zipped shapefile (`.zip`) or a bare `.shp` | Footer menu → **Import boundary (KML/SHP)** | Polygons become survey boundaries; holes inside them become survey keep-out areas |
+| Boundary | KML, KMZ, a zipped shapefile (`.zip`) or a bare `.shp` | **⋯** menu → **Import boundary (KML/SHP)** | Polygons become survey boundaries; holes inside them become survey keep-out areas |
 | Vector overlay | `.kml`, `.kmz` | Map overlays (`L`) | Shapes drawn on the map for reference |
 | Raster overlay | GeoTIFF (`.tif`, `.tiff`) | Map overlays (`L`) | An image draped on the map |
 
@@ -110,7 +110,7 @@ Recorded flights export from [Flight logs](/mission-control/flight-logs), includ
 
 ## Plan library
 
-The **FLIGHT PLANS** library stores plans in your browser's IndexedDB. You can make folders, search, sort by **Name**, **Date** or **WPs**, rename, duplicate, move, export and delete plans, and load the mission from a connected drone with **From Drone**.
+The **FLIGHT PLANS** library stores plans in your browser's IndexedDB. You can make folders, search, sort by **Name**, **Date** or **WPs**, rename, duplicate, move, export and delete plans, and load the mission from a connected drone with **From Drone**. With no plan open the library sits beside the map; while a plan is open, **Plans** in the planner bar (`Ctrl+O`) brings it back over the map.
 
 <Tip>
 Browser storage can be cleared. Export important plans as `.altmission` files.

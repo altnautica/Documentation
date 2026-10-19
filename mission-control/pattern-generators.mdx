@@ -1,13 +1,13 @@
 ---
 title: "Pattern generators"
-description: "Generate survey, orbit, corridor, perimeter, search, structure scan and landing waypoints in the Plan tab's Flight Patterns section."
+description: "Generate survey, orbit, corridor, perimeter, search, structure scan and landing waypoints in the Plan tab's pattern inspector."
 icon: "vector-polygon"
 ---
 
-Pattern generators turn a shape on the map and a few settings into a waypoint sequence. They live in the **Flight Patterns** section of the Plan tab's right panel. Nothing changes in your mission until you apply the result.
+Pattern generators turn a shape on the map and a few settings into a waypoint sequence. They live in the **Pattern** inspector of the Plan tab. Nothing changes in your mission until you apply the result.
 
-<Frame caption="Flight Patterns with a Survey Grid configured from a camera profile, ready to apply.">
-  ![Plan tab Flight Patterns section with a Survey Grid over a polygon and the Apply button visible](/images/mission-control/plan-survey-pattern.png)
+<Frame caption="Pattern settings with a Survey grid configured from a camera profile, ready to apply.">
+  ![Plan tab pattern settings with a Survey Grid over a polygon and the Apply button visible](/images/mission-control/plan-survey-pattern.png)
 </Frame>
 
 ## Generate a pattern
@@ -16,17 +16,17 @@ Pattern generators turn a shape on the map and a few settings into a waypoint se
   <Step title="Open a plan">
     Open or create a plan in the **Plan** tab. See [Mission planning](/mission-control/mission-planning).
   </Step>
-  <Step title="Open Flight Patterns">
-    Expand **Flight Patterns** in the right panel, or press `G`.
+  <Step title="Open the pattern settings">
+    Press `G`, or click the **Patterns** button on the tool rail to open the pattern gallery and pick a type there. The inspector switches to **Pattern**.
   </Step>
   <Step title="Pick a pattern type">
-    Choose a **Pattern Type**. The section tells you what it needs on the map: a polygon (Survey Grid, Structure Scan, Perimeter), a circle (Orbit), path points (Corridor), a start point (Parallel Track), a datum point (Expanding Square, Sector Search) or a landing point (landings).
+    Choose a pattern. The inspector tells you what it needs on the map: a polygon (Survey grid, Structure scan, Perimeter), a circle (Orbit), path points (Corridor), a start point (Parallel track), a datum point (Expanding square, Sector search) or a landing point (landings).
   </Step>
   <Step title="Draw and configure">
-    Draw the shape with the Polygon (`P`) or Circle (`C`) tool, or place the point, then set the parameters below.
+    For an area or circle pattern, click **Draw area** and draw the shape on the map, or draw it first with the Polygon (`P`) or Circle (`C`) tool. Drawn shapes are listed under **Shapes** in the plan outline; click one to use it for the pattern. For point patterns, place the point. Then set the parameters below.
   </Step>
   <Step title="Generate and apply">
-    Click **Generate Pattern**. The preview and its statistics (distance, estimated time, waypoints, and for area patterns photos, area and transects) appear. Click **Apply (N waypoints)** to add the waypoints to the mission.
+    Click **Generate**. The preview and **Pattern stats** (distance, estimated time, waypoints, and for area patterns photos, area and transects) appear. Click **Apply N waypoints to mission** to add the waypoints to the mission.
   </Step>
 </Steps>
 
@@ -34,7 +34,7 @@ Generated waypoints use the `relative` altitude frame (altitude above home) unle
 
 ## Generation limits
 
-Every generator rejects a configuration that would produce an unbounded amount of work and shows the reason in the section instead of a preview:
+Every generator rejects a configuration that would produce an unbounded amount of work and shows the reason in the inspector instead of a preview:
 
 | Limit | Value | Fix |
 |---|---|---|
@@ -180,6 +180,6 @@ Choose a built-in camera profile or **Manual** to enter your own sensor values.
     Fence the survey area and add rally points.
   </Card>
   <Card title="3D mission preview" icon="cube" href="/mission-control/simulation">
-    Check the generated path in 3D before upload.
+    Check the generated path in 3D before sending it.
   </Card>
 </CardGroup>

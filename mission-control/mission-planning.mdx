@@ -1,13 +1,13 @@
 ---
 title: "Mission planning"
-description: "Build, validate and upload waypoint missions in the Plan tab, with terrain profiles, patterns, templates and the Copilot."
+description: "Build, validate and upload waypoint missions in the Plan tab, with terrain profiles, patterns and templates."
 icon: "route"
 ---
 
-The **Plan** tab is the mission planner. You work on one flight plan at a time: pick or create a plan in the library, place waypoints and actions on the map, review the mission, then upload it to the flight controller.
+The **Plan** tab is the mission planner. You work on one flight plan at a time: open or create a plan in the library, place waypoints and actions on the map, review the mission, then send it to the vehicle.
 
-<Frame caption="Plan tab with a loaded mission, the right panel open and the Terrain Profile expanded.">
-  ![Plan tab showing a waypoint mission on the map with the Terrain Profile section open](/images/mission-control/plan-mission.png)
+<Frame caption="Plan tab with a demo plan open: planner bar on top, plan outline on the left, tool rail on the map, inspector on the right and the review dock along the bottom.">
+  ![Plan tab showing a waypoint mission on the map with the outline, inspector and review dock](/images/mission-control/plan-mission.png)
 </Frame>
 
 <Warning>
@@ -16,35 +16,63 @@ Uploading a mission changes what the aircraft flies in AUTO. Read [Safety](/oper
 
 ## Layout
 
+With no plan open, the **FLIGHT PLANS** library sits at the left of a full-size map. It is the way in: search, folders, **New Plan**, **Import** and **From Drone**. Opening or creating a plan hides it and brings up the planner.
+
 | Area | What it holds |
 |---|---|
-| **FLIGHT PLANS** library (left) | Saved plans and folders, search, sort (Name, Date, WPs), **New Plan**, **New Folder**, **Import**, **From Drone** |
-| Tool dock (on the map) | Drawing tools, undo and redo, clear, map overlays, offline area download and shortcut help |
-| Right panel, **Setup** band | **Mission Setup** (name, target drone), **Defaults** (altitude, speed, **Accept Radius**, **Altitude Frame**) |
-| Right panel, **Build** band | **Copilot**, **Flight Patterns**, **Mission Templates**, **Waypoints**, **Batch Edit** (when several waypoints are selected), **Geofence**, **Rally Points**, **Points of Interest**, **Transform Mission** |
-| Right panel, **Review** band | **Terrain Profile**, **Mission Validation**, site conditions (**Sun & golden hour**, **Weather**), **Energy estimate**, **Pre-flight checklist** |
-| Footer | **Save Mission**, **Upload to FC**, **Simulate in 3D** and a menu with the import and export actions |
-| Stats bar (bottom left of the map) | Waypoint count, total distance, estimated time, maximum altitude, average speed |
+| Planner bar (top) | **Plans** (opens the library over the map, also `Ctrl+O`), the plan name (click to rename), a dot when there are unsaved changes, **Vehicle**, an issues chip, **Save**, **Send to vehicle** and the **⋯** menu |
+| Plan outline (left) | **Mission** (one row per waypoint), **Shapes** (drawn polygons and circles), **Geofence**, **Rally points**, **Points of interest**. `[` shows or hides it |
+| Tool rail (on the map) | Drawing tools, the pattern gallery, undo and redo, map layers, offline area download and shortcut help |
+| Inspector (right) | Settings for whatever is selected. `]` shows or hides it; `\` hides or shows both side panels |
+| Dock (bottom of the map) | A stats strip (waypoints, distance, estimated time, maximum altitude, average speed) and the review tabs **Altitude**, **Terrain**, **Issues**, **Energy**, **Site** and **Checklist** |
+
+The map opens where you last left it. On first use it centres on your GPS position when location is turned on, and otherwise shows the whole world. Opening a plan fits the map to its waypoints.
+
+### Outline
+
+Click a row to select it; `Ctrl`-click adds to the selection and `Shift`-click selects a range. Drag a waypoint row to reorder it. Hover between two rows to insert a waypoint there, or hover a row to delete it. Clicking a group header opens that group's settings in the inspector, and the **+** on a header adds an item or arms the matching map tool. Selecting a waypoint on the map scrolls its row into view.
+
+### Inspector
+
+The inspector follows the selection:
+
+| Selection | Inspector shows |
+|---|---|
+| Nothing | **Mission**: **Defaults**, **Start from a template** (only while the plan is empty) and **Plan elements** rows that open the pattern, geofence, rally point, point of interest and transform settings |
+| One waypoint | **Waypoint**: command, position, altitude, speed, per-command parameters and attached actions |
+| Two or more waypoints | **Batch** edit |
+| A pattern, geofence, rally point, point of interest or transform | That item's settings, with a back arrow to **Mission** |
+
+Drag a number field's label left or right to change its value; hold `Shift` for steps ten times larger or `Alt` for a tenth. The arrow keys step the value too.
+
+### Planner bar menu
+
+The **⋯** menu holds **Download from drone**, **Import boundary (KML/SHP)**, every export and the **Flight brief (PDF)**, **Copy share link**, **Save as new plan**, **Reverse waypoints**, **Transform mission…**, **Simulate in 3D** and **Discard plan**. Every menu item, panel toggle and dock tab is also a command in the command palette (`Ctrl+K`).
 
 ## Create a mission
 
 <Steps>
   <Step title="Open or create a plan">
-    Click **Plan** in the top navigation. Pick a plan in the **FLIGHT PLANS** library, or click **New Plan**. The map tools stay inactive until a plan is open.
+    Click **Plan** in the top navigation. Pick a plan in the **FLIGHT PLANS** library, or click **New Plan**. While a plan is open, **Plans** in the planner bar brings the library back.
   </Step>
   <Step title="Set the defaults">
-    In **Defaults**, set the default altitude, speed, accept radius and altitude frame: **Relative (Home)**, **Absolute (MSL)** or **Terrain Following**. New waypoints take these values.
+    With nothing selected, the inspector shows **Mission**. In **Defaults**, set the altitude, speed, accept radius and altitude frame: **REL** (relative to home), **MSL** (above mean sea level) or **Terrain** (follows the terrain). New waypoints take these values.
   </Step>
   <Step title="Place waypoints">
-    Choose the Waypoint tool (`W`) and click the map. Use the Takeoff (`K`), Land (`J`), Loiter (`O`) and ROI (`R`) tools for those commands. Click a waypoint to select it; expand it in **Waypoints** to edit its command, altitude, speed and attached actions.
+    Choose the Waypoint tool (`W`) and click the map. Use the Takeoff (`K`), Land (`J`), Loiter (`O`) and ROI (`R`) tools for those commands. Click a waypoint on the map or in the outline to edit its command, altitude, speed and attached actions in the inspector.
   </Step>
   <Step title="Review">
-    Open **Mission Validation** (`I`). Issues update as you edit. Blocking issues disable **Upload to FC** and the button shows the error count. Check the **Terrain Profile** (`T`) for ground clearance.
+    Open the **Issues** tab in the dock (`I`, or click the issues chip in the planner bar). Issues update as you edit. Check the **Terrain** and **Altitude** tabs (`T`) for ground clearance.
   </Step>
-  <Step title="Save and upload">
-    Click **Save Mission** to store the plan in the library, then **Upload to FC**. A pill next to the buttons shows whether the plan on the aircraft matches the plan in the editor.
+  <Step title="Save and send">
+    Click **Save** to store the plan in the library, then **Send to vehicle**. The button label shows the state: **Fix n issues** while blocking issues remain, then **Sending…** and **Sent ✓**. A chip next to it shows when the vehicle holds an older mission than the editor.
   </Step>
 </Steps>
+
+## Send to vehicle
+
+**Send to vehicle** opens a dialog listing what the plan holds: the mission, the geofence and the rally points, each shown only when present. Blocking issues stop the mission from being sent, with a **Review issues** link to the dock. The dialog also shows pre-flight checklist progress with an **Open checklist** link; the checklist is informational and does not block sending. **Send** sends the selected items in order and reports each one as sent or failed. A failure does not stop the remaining items.
+
 
 ## Map tools
 
@@ -62,6 +90,8 @@ Uploading a mission changes what the aircraft flies in AUTO. Read [Safety](/oper
 | `P` | Polygon | Draw a polygon (survey area, fence, boundary) |
 | `C` | Circle | Draw a circle |
 | `M` | Measure | Measure distance and bearing |
+
+On the tool rail, the waypoint tools (`W` `K` `J` `O` `R`), the draw tools (`P` `C`) and the marker tools (`Y` rally point, `B` point of interest, `D` datum) are each grouped behind one button that shows the last tool used; its arrow opens the rest. The **Patterns** button opens a gallery of the pattern types and mission templates. To clear the whole plan, use **⋯ › Discard plan**.
 
 Right-click the map for the context menu, for example to insert a waypoint at that point.
 
@@ -102,19 +132,19 @@ iNav flies only three attached actions: `ROI`, `DO_JUMP` and `CONDITION_YAW`. Up
 
 ## Terrain profile
 
-With the **Terrain Following** frame, or to check clearance on any plan, the planner looks up ground elevation for each waypoint from the Open Elevation API and caches the results. The **Terrain Profile** section plots ground elevation against the flight path and marks legs with low clearance. Validation reports a blocking issue when clearance is too low, and an advisory when terrain could not be checked.
+With the **Terrain Following** frame, or to check clearance on any plan, the planner looks up ground elevation for each waypoint from the Open Elevation API and caches the results. The dock's **Terrain** tab plots ground elevation against the flight path and marks legs with low clearance. Validation reports a blocking issue when clearance is too low, and an advisory when terrain could not be checked.
 
 ## Batch edit
 
-Select several waypoints (Shift-click). The **Batch Edit** section appears with four operations: set altitude, set speed, set command, and delete the selected waypoints.
+Select several waypoints (`Ctrl`-click or `Shift`-click, on the map or in the outline). The inspector switches to **Batch** edit with four operations: set altitude, set speed, set command, and delete the selected waypoints.
 
 ## Transform mission
 
-**Transform Mission** moves, rotates or scales the whole mission around its centre. Relative positions and altitudes stay the same.
+**Transform mission…** in the **⋯** menu opens the transform settings in the inspector. It moves, rotates or scales the whole mission around its centre. Relative positions and altitudes stay the same.
 
 ## Mission validation
 
-Validation runs continuously. Blocking issues stop the upload; advisories are shown but do not.
+Validation runs continuously and is listed in the dock's **Issues** tab; clicking an issue selects its waypoint. Blocking issues stop the mission from being sent; advisories are shown but do not.
 
 <AccordionGroup>
   <Accordion title="Blocking issues">
@@ -143,32 +173,29 @@ Validation runs continuously. Blocking issues stop the upload; advisories are sh
   </Accordion>
 </AccordionGroup>
 
-The **Energy estimate** section gives a rough energy, flight-time and battery-swap figure from a default power draw. Check it against your own power curve.
-
-## Copilot
-
-**Copilot** sets up a mission from plain language, on the device with no network. Type a request such as `survey at 80m, 75% overlap` and click **Apply**, or click **Map this area** to run a survey over the current map view. It understands patterns, altitude, overlap and speed.
+The dock's **Energy** tab gives a rough energy, flight-time and battery-swap figure from a default power draw. Check it against your own power curve.
 
 ## Mission templates
 
-**Mission Templates** build a ready-to-fly plan from the current map view, for example **Grid survey**, **Property mapping**, **Orbit inspection** and **Corridor scan**. A template uses your drawn boundary, or a box around the map centre when there is none, and asks before replacing the current plan.
+Templates are in the **Templates** tab of the rail's pattern gallery, and in **Start from a template** in the **Mission** inspector while the plan is empty. A template builds a ready-to-fly plan from the current map view, for example **Grid survey**, **Property mapping**, **Orbit inspection** and **Corridor scan**. A template uses your drawn boundary, or a box around the map centre when there is none, and asks before replacing the current plan.
 
 ## Map aids
 
 - **Place search** (`/`) centres the map on a place.
-- **Overlays** (`L`) shows KML and raster (GeoTIFF) overlays. See [File formats](/mission-control/file-formats).
-- **Offline area download** in the tool dock saves map tiles for the visible area.
-- **Sun & golden hour** and **Weather** in the Review band show conditions at the first waypoint.
+- **Map layers** (`L`) shows KML and raster (GeoTIFF) overlays. See [File formats](/mission-control/file-formats).
+- **Download area for offline** on the tool rail saves map tiles for the visible area. Tiles you view are also kept automatically. See [Data](/mission-control/settings#data).
+- The basemap control switches between satellite, street, topographic and other maps, including **FIELD** when a paired ground station serves a tile pack.
+- The dock's **Site** tab shows sunrise, sunset, golden hour and weather at the first waypoint.
 
 ## Import, export and download
 
 | Action | Where |
 |---|---|
-| **Upload to FC** | Footer. Sends the mission over the MAVLink mission protocol (MSP on iNav) |
-| **Download from Drone** | Footer menu, or **From Drone** in the library. Reads the mission stored on the flight controller |
-| **Import boundary (KML/SHP)** | Footer menu |
-| Export | Footer menu: `.altmission`, `.waypoints`, `.plan` (QGC), KML, `.kmz`, CSV, and a **Flight brief (PDF)** |
-| **Copy share link** | Footer menu. Encodes the plan in a link; large plans need file export |
+| **Send to vehicle** | Planner bar. Sends the mission over the MAVLink mission protocol (MSP on iNav), plus the geofence and rally points when present |
+| **Download from drone** | **⋯** menu, or **From Drone** in the library. Reads the mission stored on the flight controller |
+| **Import boundary (KML/SHP)** | **⋯** menu |
+| Export | **⋯** menu: `.altmission`, `.waypoints`, `.plan` (QGC), KML, `.kmz`, CSV, and a **Flight brief (PDF)** |
+| **Copy share link** | **⋯** menu. Encodes the plan in a link; large plans need file export |
 | **Import** | Library. Loads a plan file |
 
 See [File formats](/mission-control/file-formats) for each format.
@@ -179,17 +206,22 @@ See [File formats](/mission-control/file-formats) for each format.
 
 | Shortcut | Action |
 |---|---|
-| `T` | Toggle the Terrain Profile |
-| `G` | Toggle Flight Patterns |
-| `I` | Toggle Mission Validation |
+| `T` | Show or hide the dock on the **Altitude** tab |
+| `G` | Show or hide the pattern settings |
+| `I` | Show or hide the dock on the **Issues** tab |
+| `[` | Show or hide the plan outline |
+| `]` | Show or hide the inspector |
+| `\` | Show or hide both side panels |
 | `/` | Search for a place |
-| `L` | Toggle map overlays |
+| `L` | Show or hide map layers |
 | `Ctrl+Z` / `Ctrl+Shift+Z` or `Ctrl+Y` | Undo / redo |
 | `Ctrl+C` / `Ctrl+V` | Copy / paste a waypoint |
 | Arrow keys | Nudge the selected waypoint |
 | `Del` | Delete the selection |
-| `Esc` | Cancel or clear |
+| `Ctrl`-click / `Shift`-click | Add to the selection / select a range |
+| `Esc` | Cancel drawing, then clear the selection, then return the inspector to **Mission** |
 | `Ctrl+S` / `Ctrl+Shift+S` | Save plan / save plan as |
+| `Ctrl+O` | Open the plan library |
 | `Ctrl+N` | New plan (desktop app only) |
 
 ## Next steps

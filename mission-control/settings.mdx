@@ -126,7 +126,17 @@ Pick a theme from the searchable list. The default is **Dark**.
 
 ## Data
 
-Download and manage offline map tiles for flying without internet.
+Mission Control keeps every map tile you view, so areas you have already looked at render offline. This happens automatically; there is no setting for it. To be sure an area works offline, download it from the **Plan** tab with the **Download area for offline** button in the map tools. Downloaded areas are kept apart from the browsing cache and are never cleared automatically.
+
+The **Offline Map Cache** card shows how many tiles are kept from browsing, how many are in downloaded areas, and how much browser storage is in use. **Clear browsing cache** removes the browsed tiles and keeps downloaded areas. **Clear downloaded areas** deletes every downloaded area.
+
+**Custom Map Source** sets your own tile URL. A custom source whose server does not send CORS headers still displays, but its tiles are not cached.
+
+**Field tile packs** lists the vector map packs a paired ground station serves over the LAN. When one is available, pick **FIELD** on the map's basemap control to use it with no internet. See [Field tile packs](/ground-agent/installation#field-tile-packs).
+
+### Basemaps
+
+The basemap control on each map switches between **DARK**, **OSM**, **SAT** (satellite, the default), **TOPO**, **STREETS** and **LIGHT**, plus **CUSTOM** once you configure a custom source and **FIELD** while a ground station serves a pack. **STREETS** and **LIGHT** are vector maps built from OpenStreetMap data (© OpenStreetMap contributors · Protomaps).
 
 ## Flash Tool and Extensions
 

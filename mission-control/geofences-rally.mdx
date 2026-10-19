@@ -4,10 +4,10 @@ description: "Set a geofence with its breach action and altitude ceiling, and ad
 icon: "shield-halved"
 ---
 
-A geofence is a boundary the flight controller enforces. Rally points are alternative return points the flight controller can use instead of home. You set both in the Plan tab's right panel, and both upload to the flight controller with the mission.
+A geofence is a boundary the flight controller enforces. Rally points are alternative return points the flight controller can use instead of home. You set both in the Plan tab, and **Send to vehicle** sends them to the flight controller together with the mission.
 
-<Frame caption="A polygon geofence and three rally points, with the Geofence and Rally Points sections expanded.">
-  ![Plan tab with a polygon fence and rally points on the map and both right-panel sections open](/images/mission-control/plan-geofence-rally.png)
+<Frame caption="A polygon geofence and three rally points, with the geofence settings open in the inspector.">
+  ![Plan tab with a polygon fence and rally points on the map and the geofence inspector open](/images/mission-control/plan-geofence-rally.png)
 </Frame>
 
 <Warning>
@@ -16,34 +16,34 @@ A geofence breach triggers a flight action on the aircraft. Read [Safety](/opera
 
 ## Geofence
 
-The **Geofence** section holds the fence for the current plan.
+Click **Geofence** in the plan outline (or the **Geofence** row in the **Mission** inspector) to open the fence settings for the current plan in the inspector.
 
 | Control | What it does |
 |---|---|
-| **Enable Geofence** | Turns the fence on. The section header shows On or Off |
+| **Enable geofence** | Turns the fence on. The outline row shows On or Off |
 | **Auto-fence** and **Fence buffer (m)** | Builds a polygon fence around your drawn boundary or waypoints, padded by the buffer |
 | **Type** | **Circle** or **Polygon** |
-| **Max Altitude** | Altitude ceiling. Required while the fence is enabled |
-| **Fence Action** | What the aircraft does on a breach: **RTL or Land**, **Land** or **Report Only** |
-| **Draw on Map** | Draw the polygon or circle on the map |
-| **Upload Fence** | Writes the fence to the flight controller |
+| **Max altitude** | Altitude ceiling. Required while the fence is enabled |
+| **Fence action** | What the aircraft does on a breach: **RTL or land**, **Land** or **Report only** |
+| **Draw on map** | Draw the polygon or circle on the map |
+| **Upload fence** | Writes the fence to the flight controller |
 | **Download** | Reads the fence stored on the flight controller |
-| **Clear All** | Removes the fence from the plan |
+| **Clear all** | Removes the fence from the plan |
 
 ### Create a fence
 
 <Steps>
-  <Step title="Open the Geofence section">
-    In the Plan tab, expand **Geofence** in the right panel and switch on **Enable Geofence**.
+  <Step title="Open the geofence settings">
+    In the Plan tab, click **Geofence** in the plan outline and switch on **Enable geofence**.
   </Step>
   <Step title="Draw the boundary">
-    Pick **Polygon** or **Circle** under **Type**, click **Draw on Map** and draw the shape. Or click **Auto-fence** to build a polygon around the plan with the buffer you set.
+    Pick **Polygon** or **Circle** under **Type**, click **Draw on map** and draw the shape. Or click **Auto-fence** to build a polygon around the plan with the buffer you set.
   </Step>
   <Step title="Set the ceiling and the action">
-    Enter **Max Altitude** and choose the **Fence Action**.
+    Enter **Max altitude** and choose the **Fence action**.
   </Step>
-  <Step title="Upload">
-    Click **Upload Fence**. Mission Control sends the fence points over the MAVLink mission protocol (fence mission type) and writes the fence parameters, including `FENCE_ENABLE`, `FENCE_TYPE`, `FENCE_ACTION` and `FENCE_ALT_MAX`.
+  <Step title="Send">
+    Click **Send to vehicle** in the planner bar and leave **Geofence** ticked, or click **Upload fence** in the geofence inspector to send the fence alone. Mission Control sends the fence points over the MAVLink mission protocol (fence mission type) and writes the fence parameters, including `FENCE_ENABLE`, `FENCE_TYPE`, `FENCE_ACTION` and `FENCE_ALT_MAX`.
   </Step>
 </Steps>
 
@@ -51,7 +51,7 @@ The **Geofence** section holds the fence for the current plan.
 
 A fence can carry extra zones: inclusion zones the aircraft must stay inside and exclusion zones it must stay out of. Add and edit zones, and toggle a zone between inclusion and exclusion, in the node's **Setup** tab under **SAFETY** → **Geofence**. On download, the first inclusion shape becomes the main fence and the rest become zones.
 
-Mission validation checks waypoints, legs and rally points against the fence and every zone, and blocks upload when one falls outside. See [Mission validation](/mission-control/mission-planning#mission-validation).
+Mission validation checks waypoints, legs and rally points against the fence and every zone, and blocks sending the mission when one falls outside. See [Mission validation](/mission-control/mission-planning#mission-validation).
 
 <Note>
 iNav uses geozones instead of the ArduPilot fence. See [iNav guide](/mission-control/inav-guide).
@@ -63,17 +63,17 @@ When the flight controller returns to launch, it can fly to the nearest rally po
 
 <Steps>
   <Step title="Place points">
-    Choose the Rally point tool (`Y`) and click the map. Each point appears in the **Rally Points** section.
+    Choose the rally point tool (`Y`) and click the map, or click **+** on **Rally points** in the plan outline. Each point appears as a row under **Rally points**; click it to open it in the inspector.
   </Step>
   <Step title="Set altitudes">
-    Set the **Altitude** of each point in the section.
+    Set the **Altitude** of each point in the rally points inspector.
   </Step>
-  <Step title="Upload">
-    Click **Upload Rally Points**. Use **Download Rally Points** to read the points stored on the aircraft, and **Clear All** to remove them from the plan (undo restores them).
+  <Step title="Send">
+    Send them with **Send to vehicle** (leave **Rally points** ticked), or click **Upload rally points** in the inspector. Use **Download rally points** to read the points stored on the aircraft, and **Clear all** to remove them from the plan (undo restores them).
   </Step>
 </Steps>
 
-Validation blocks upload when a rally point is outside the fence or inside an exclusion zone, and warns when its altitude is above the fence ceiling.
+Validation blocks sending when a rally point is outside the fence or inside an exclusion zone, and warns when its altitude is above the fence ceiling.
 
 <Note>
 On ArduPilot, `RALLY_LIMIT_KM` sets how far from home a rally point can be and still be used. Points farther away are ignored. Set it in the [Parameters](/mission-control/parameters) tab to cover your operating area.
@@ -89,7 +89,7 @@ On ArduPilot, `RALLY_LIMIT_KM` sets how far from home a rally point can be and s
 
 <CardGroup cols={2}>
   <Card title="Mission planning" icon="route" href="/mission-control/mission-planning">
-    Validate and upload the full plan.
+    Validate and send the full plan.
   </Card>
   <Card title="3D mission preview" icon="cube" href="/mission-control/simulation">
     Preview the mission, fence and rally points in 3D.
