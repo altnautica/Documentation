@@ -1,89 +1,287 @@
 ---
 title: "Agent terminal dashboard"
 sidebarTitle: "Terminal dashboard"
-description: "Run ados over SSH for a live view of links, autopilot, video, link and services, with quick actions."
+description: "Run ados over SSH, or ados-tui from a workstation, for a full terminal console: live tabs, settings, flight-controller parameters, extensions and logs."
 icon: "table-layout"
 ---
 
-Run `ados` on the node, or over SSH, to open the terminal dashboard:
+The terminal dashboard (`ados-tui`) is a keyboard-driven console for one agent. It shows the same live state as the [browser dashboard](/drone-agent/dashboard-overview) and edits the same settings, flight-controller parameters, extensions, Wi-Fi, pairing and MCP tokens, all over the agent's REST API on port 8080.
+
+## Open it
+
+On the node, or over SSH:
 
 ```bash
 ssh user@ados-9f2c1a.local
 ados
 ```
 
-In an interactive terminal, `ados` hands off to the native `ados-tui` dashboard. It polls the local agent every 2 seconds on a background thread, so a slow or hung agent never freezes the screen or the keys. Without a TTY (a pipe, a script, or a missing dashboard binary), `ados` prints the same one-shot summary as `ados status`.
+In an interactive terminal, `ados` hands off to `ados-tui`. Without a TTY (a pipe, a script, or a missing `ados-tui` binary), `ados` prints the same one-shot summary as `ados status`.
 
-For scripts or support collection, use JSON:
+From another machine on the LAN, run `ados-tui` and point it at the agent:
+
+```bash
+ados-tui --host 192.168.1.50
+ados-tui --host ados-9f2c1a.local:8080 --key <pairing-key>
+ados-tui --target bench-drone
+```
+
+| Flag | Meaning |
+|---|---|
+| `--host <host[:port]>` | Connect to an agent on another machine. The port defaults to 8080. |
+| `--key <key>` | The pairing key to send. |
+| `--target <name>` | Connect to a target saved under **Settings > Agents**. |
+| `--help`, `--version` | Print usage or the version. An unknown flag prints usage and exits with status 2. |
+
+| Variable | Meaning |
+|---|---|
+| `ADOS_HOST` | The agent to connect to when no `--target` or `--host` is given. |
+| `ADOS_KEY` | The pairing key when no `--key` is given. |
+| `ADOS_NO_UPDATE_CHECK` | Set to skip the background check for a newer agent release. |
+
+The target is chosen in this order: `--target`, `--host`, `ADOS_HOST`, then the local agent at `http://localhost:8080`. The key is chosen in this order: `--key`, `ADOS_KEY`, the saved target's key, then (local agent only) the node's pairing file.
+
+For scripts or support collection, use JSON instead:
 
 ```bash
 ados status --json
 ```
 
-<Frame caption="The terminal dashboard on a drone node.">
-  ![ados terminal dashboard with the verdict line, Links, Autopilot, Video, Link and Services panels, and footer key hints](/images/drone-agent/tui-status.png)
-</Frame>
+## Screen layout
 
-## Layout
+Every tab shares the same frame:
 
-The top line shows the node identity, the last refresh time and, when needed, a `stale` flag. Under it, a verdict line reads `HEALTHY`, `DEGRADED` or `SETUP`, followed by a one-line summary.
-
-| Panel | What it shows |
+| Row | What it shows |
 |---|---|
-| **Links** | Every URL the node answers on, grouped and best first: the setup page, LAN IP, hotspot, USB tether and mDNS name. The direct IP is the most reliable address and also works from the hosted Mission Control; the `.local` name needs a desktop app on the same LAN. Long URLs wrap so they stay copyable. |
-| **Autopilot** | Flight controller link (with the autopilot family when it is verified, or the board over MSP), flight mode, `ARMED` or `DISARMED`, a battery gauge with a trend sparkline, GPS fix, satellites, and altitude with its own trend. A ground station without a flight controller shows "no autopilot". |
-| **Video** | Live video pipeline state. The viewer URL lives in the Links panel. |
-| **Link** | Cloud relay state, remote access state, the hotspot name and, when there is one, the per-unit Wi-Fi passphrase. |
-| **Services** | Running and stopped service counts. While setup is incomplete, each setup step with its state and what it still needs. |
-| **Status** | Shown in place of the panels while the dashboard is still connecting to the agent, or with the reason the agent could not be reached. |
+| **Header** | The ADOS mark, the device name, a profile chip, a flight-controller chip (`● FC <family>` when the link is up, `○ FC` when not), the arm state and flight mode, a target chip (`⇄ local` or `⇄ <host>`), and the refresh clock. The clock is replaced by `STALE` or `OFFLINE` when the agent stops answering. |
+| **Tab bar** | The nine tabs with their digit, icon and label. The active tab is highlighted. Below 100 columns the labels shorten (`1 Ovw`, `2 Veh`, ...). |
+| **Body** | The active tab. |
+| **Context line** | The help text of the focused row, field or parameter. |
+| **Hint bar** | The keys that work right now on the left; the installed version on the right, with `⬆ <latest>` when a newer release exists. |
 
-The footer lists the key hints on the left and the installed version on the right, with "up to date" or "update available" once the background version check lands.
+Toasts confirm or report each action at the bottom right, above the hint bar. They clear on their own after 4 to 8 seconds depending on severity. The last 200 are kept for the session: open **Notifications** from the command palette.
+
+The terminal must be at least 80 columns by 24 rows. A smaller window shows "Terminal too small" with the current size until you enlarge it.
+
+If no poll has succeeded for 6 seconds, the header shows `STALE` (or `OFFLINE` after an error) and the Overview verdict reads `STALE` or `UNREACHABLE`. Flight readings are hidden while the data is stale, so a frozen mode, arm state or battery level never reads as live.
+
+## Tabs
+
+Press the digit to jump to a tab. A tab that does not apply to the node's profile is hidden, and its digit shows a "Not available on a ..." toast naming the profile. While the profile is unknown or not yet reported, every tab shows.
+
+| # | Tab | Profiles | What it shows |
+|---|---|---|---|
+| 1 | **Overview** | All | The verdict line (`HEALTHY`, `DEGRADED` or `SETUP`); the Links panel with every URL the node answers on, best first; the autopilot panel with battery and altitude trends; video, link and service summaries; per-profile details; setup steps with the next action; and the hardware-check summary. |
+| 2 | **Vehicle** | Drone, Visor | Attitude indicator, heading, GPS fix and position, altitude and battery charts over the last 2 minutes, battery packs with per-cell voltages, and the sensor hub. A Betaflight or iNav flight controller shows a note instead: its telemetry is decoded in Mission Control and the browser dashboard. |
+| 2 | **Ground** | Ground station | Takes the Vehicle slot. GNSS receivers and RTK base status, gamepads, Bluetooth devices, phone receiver invites and the local display. |
+| 3 | **Link** | Drone, Ground station | WFB radio state, channel, frequency, MCS and tx power; RSSI, SNR, loss and bitrate charts over 5 minutes; FEC counters as per-interval deltas; LoRa when present; mesh neighbours and receiver relays on a ground station. |
+| 4 | **Video** | Drone, Visor | Encoder settings, cameras, latency trend and the viewer URLs. Video itself is not drawn in the terminal. |
+| 5 | **Params** | Drone, Visor | The flight-controller parameter editor. See [Parameters](#parameters). |
+| 6 | **Extensions** | All | Installed extensions and the catalog. See [Extensions](#extensions). |
+| 7 | **Logs** | All | The agent log as a live stream. See [Logs](#logs). |
+| 8 | **System** | All | CPU, memory, disk and temperatures; services with restart; peripherals; the hardware check with fix hints; the agent version, update, supervisor restart and reboot. |
+| 9 | **Settings** | All | Every agent setting plus this terminal's preferences. See [Settings](#settings). |
 
 ## Keys
 
+Press `?` on any screen for the keys that apply there. The hint bar and the help overlay come from one key table, so they always match.
+
+### Everywhere
+
 | Key | Action |
 |---|---|
-| `a` | Open the actions overlay. Move with `j`/`k` or the arrow keys, run with `Enter`, close with `Esc` or `q`. |
-| `r` | Refresh now instead of waiting for the next poll. |
-| `u` | Update the agent. Shown only when a newer version is available. Asks for confirmation, and is refused while the vehicle reports armed. |
-| `d` | Install the RTL8812EU radio driver if it is missing (asks for confirmation). |
-| `p` | Show Mission Control pairing info. |
-| `l` | Run `ados logs tail`. With the Black Box store off (the default), this prints how to use `journalctl -u ados-supervisor -f` instead. Press Ctrl-C to stop following and return. |
-| `q` | Quit. Ctrl-C quits from any screen. |
+| `1` to `9` | Go to a tab. |
+| `[` / `]` | Previous / next tab. |
+| `Ctrl-K` or `:` | Command palette: fuzzy search over tabs, settings pages, every config key, loaded parameters, quick actions and commands (cycle theme, cycle motion, notifications, copy agent URLs). |
+| `/` | Search or filter the current list. |
+| `Ctrl-/` | Search everything (opens the palette). |
+| `r` | Refresh now. |
+| `y` | Copy the focused value. |
+| `a` | Quick actions. Local agent only. |
+| `u` | Update the agent. Shown only when a newer release exists, local agent only. |
+| `?` | Help. |
+| `Esc` | Close the overlay, then clear the search, then go back. |
+| `q` | Quit. Asks first when parameter edits are staged. |
+| `Ctrl-C` | Quit now. |
+
+### Lists and dialogs
+
+| Key | Action |
+|---|---|
+| `↑` `↓` or `k` `j` | Move. |
+| `PgUp` / `PgDn` | Page up / down. |
+| `Home` `g` / `End` `G` | First / last row. |
+| `Tab` / `Shift-Tab` | Next / previous pane (in Settings: next / previous page). |
+| `Enter` | Open, select or edit. |
+| `y` / `n` | Confirm / cancel a confirmation. `Enter` and `Esc` work too. |
+| `Space` | Toggle an item in a checklist. |
+
+Some confirmations ask you to type a word (for example `unpair` or `revoke`) before they run.
+
+### Per tab
+
+| Tab | Key | Action |
+|---|---|---|
+| Ground | `b` / `B` | Start an RTK base survey-in (asks for minimum duration and accuracy) / turn the base off. |
+| Ground | `s` | Scan for Bluetooth devices. |
+| Ground | `Enter` | Set the selected gamepad as primary, or pair the selected Bluetooth device. |
+| Ground | `a` / `x` | Approve / reject a phone receiver invite. |
+| Params | `Enter` | Edit the parameter. |
+| Params | `w` | Write staged values to the flight controller. |
+| Params | `u` / `U` | Unstage the row / discard every staged value. |
+| Params | `f` | Toggle favourite. |
+| Params | `m` | Show only staged values. |
+| Params | `e` / `i` | Export to / import from a `.param` file. |
+| Extensions | `Enter` | Install the selected catalog entry, or edit a config row. |
+| Extensions | `e` / `d` / `x` | Enable / disable / remove the extension. |
+| Extensions | `g` / `G` | Grant a missing optional permission / revoke a permission. |
+| Extensions | `I` | Install from a URL. |
+| Extensions | `F` | Install a local `.adosplug` file. Local agent only. |
+| Logs | `l` | Cycle the minimum level (DEBUG, INFO, WARNING, ERROR). |
+| Logs | `s` | Filter by service. |
+| Logs | `p` | Pause or resume the view. The buffer keeps filling; the hint bar counts new lines. |
+| Logs | `G` or `End` | Follow the tail. |
+| Logs | `Enter` | Show the full line. |
+| System | `R` | Restart the selected service. |
+| System | `c` | Re-run the hardware check. |
+| System | `S` | Restart the agent supervisor. |
+| System | `X` | Reboot the host. |
+
+## Settings
+
+The Settings tab has a sidebar of pages on the left and the page's rows on the right.
+
+| Key | Action |
+|---|---|
+| `←` / `→` | Change a toggle or choice. The change applies immediately. |
+| `Enter` | Edit a text or number value in place, or open a picker for a long list. |
+| `Tab` / `Shift-Tab` | Next / previous page. |
+| `/` | Filter the rows on this page. `Ctrl-/` searches every page. |
+| `v` | Reveal a masked secret for 10 seconds. |
+| `r` | Reload the page. |
+| `Esc` | Cancel an edit. |
+
+A changed value shows `◆`; a default value is dimmed. A saved change toasts `✓ <label> saved`. A refused change shows the agent's reason in an error toast and the row keeps its old value.
+
+| Group | Pages |
+|---|---|
+| **This terminal** | Appearance, Behaviour, Agents |
+| **Identity** | Profile, Device |
+| **Link & network** | Wi-Fi, Hotspot, Cellular, MAC pinning, Discovery, MAVLink (drone, Visor), Radio (drone, ground station) |
+| **Video & vision** | Camera (drone, Visor), Video link (drone), Vision (drone, Visor), Sensors (drone, Visor), Capture (Visor), Swarm (drone) |
+| **Cloud & remote** | Cloud, Remote access |
+| **Access & security** | Pairing, Security, MCP |
+| **System & safety** | Region (drone, ground station), Battery (drone, Visor), Self-heal, Display (ground station), Advanced |
+| **Extensions** | One page per enabled extension that declares settings |
+| **All settings** | Every key in the agent config schema, by section |
+
+Pages gated to a profile are hidden on other profiles. Pages with their own actions show their keys in the hint bar:
+
+| Page | Key | Action |
+|---|---|---|
+| Agents | `n` / `e` / `x` | Add / edit / delete a saved agent. |
+| Agents | `Enter` | Connect to the saved agent without restarting the terminal UI. |
+| Profile | `←` `→` then `Enter` | Stage a profile or ground role, then apply it after a confirmation. The agent restarts to apply. |
+| Profile | `d` | Re-detect the profile. |
+| Wi-Fi | `s` | Scan for networks (up to 15 seconds). |
+| Wi-Fi | `Enter` | Join the selected network, asking for the passphrase if it is secured. |
+| Wi-Fi | `h` | Join a hidden network. |
+| Wi-Fi | `D` | Disconnect. |
+| Wi-Fi | `x` | Forget a saved network. `←` `→` toggles its autoconnect. |
+| MAC pinning | `p` / `x` | Pin / unpin the selected adapter's MAC. |
+| Sensors | `l` | Load a sensor rig file (a JSON file on the machine running the terminal UI). |
+| Remote access | `t` | Paste a tunnel token. |
+| Pairing | `c` | Accept a pairing code. |
+| Pairing | `U` | Unpair this agent (type `unpair` to confirm). |
+| MCP | `n` | Mint an MCP token with `read`, `safe_write` or `admin` scopes. The token is shown once and never stored. |
+| MCP | `x` / `X` | Revoke the selected token / every token (type `revoke` to confirm). |
+
+The MCP page also shows the `claude mcp add` command that connects an MCP client to this agent; `y` copies it with the real key.
+
+All settings lists arrays and objects as read-only JSON: edit those in `/etc/ados/config.yaml`, because the config API sets one value per call. See [Configuration](/drone-agent/configuration).
+
+### This terminal
+
+These preferences belong to the machine running the terminal UI and never touch the agent. Changes apply live.
+
+| Page | Setting | Values |
+|---|---|---|
+| Appearance | Theme | `amber` (default), `brand-dark`, `brand-light`, `nvg` |
+| Appearance | Color-blind mode | Draws success states in blue instead of green. |
+| Appearance | Symbols | `unicode` (default), `nerd` (needs a Nerd Font), `ascii` |
+| Appearance | Motion | `auto` (default), `full`, `reduced`, `off` |
+| Behaviour | Refresh interval | 1000, 2000 (default) or 5000 ms |
+| Behaviour | Mouse | Off by default. When on, click tabs, pages and rows and scroll with the wheel; mouse capture blocks terminal text selection. |
+| Behaviour | Start tab | `overview` (default) or `last` |
+| Agents | Saved agents | Name, host, port and an optional remembered key. |
+
+Preferences are saved to `$XDG_CONFIG_HOME/ados/tui.json`, else `~/.config/ados/tui.json`, else `%APPDATA%\ados\tui.json`. If the file cannot be parsed, the terminal UI starts with defaults and does not overwrite it for that session.
+
+`auto` motion is full on a local terminal and reduced over SSH. Terminals with only basic colours get no motion. Status is always shown with a glyph or a word as well as a colour.
+
+## Parameters
+
+The Params tab edits the flight controller's parameters through the agent, with names, descriptions, ranges, units and options from the ArduPilot (Copter, Plane, Rover, Sub) or PX4 metadata built into the terminal UI. Betaflight and iNav parameters are edited in Mission Control's Configure tab.
+
+- The sidebar filters by **All**, **Staged**, **Non-default**, **Favourites** and parameter group.
+- `Enter` edits a value: a picker for an option list, a checklist for a bitmask, or a number. A value outside the documented range can be staged but is flagged `⚠`.
+- Edits are staged (`●`), not sent. `w` shows every staged change as `NAME old → new` and writes them on confirmation, then reports "Wrote n/m". A parameter the flight controller did not confirm stays staged.
+- A write is refused unless the vehicle reports disarmed on a fresh reading.
+- If a written parameter needs a reboot (`⟳`), the result says to reboot the flight controller.
+- `e` exports to `<device-name>-<date>-<time>.param` in the current directory (`NAME,VALUE` per line). `i` imports a `.param` file and stages each value that differs.
+- Staged edits survive refreshes. A staged parameter whose live value changed underneath is marked `≠`.
+- `SYSID_THISMAV` and other identity parameters are read-only.
+
+## Extensions
+
+The list shows installed extensions with their status and version, then catalog entries not yet installed. The detail pane shows the selected extension's signer, risk, permissions, MCP tools, service readiness, latest state and config rows.
+
+Installing from the catalog or a URL first lists the requested permissions: required ones are always granted, optional ones are checkboxes. `F` installs a local `.adosplug` file through `ados plugin install`, so the CLI's own permission prompt is used.
+
+## Logs
+
+The Logs tab follows the agent's log stream. If the stream is unavailable, it polls every 2 seconds, says so, and retries the stream every 10 seconds. Lines show time, level, logger and message; `/` filters by text.
+
+## Remote mode
+
+When the target is not this machine, the terminal UI is in remote mode and the target chip shows the host.
+
+- **Paired agent:** the first request that needs a key opens an **API key required** prompt. After a key is accepted you can save it with the target.
+- **Unpaired agent:** the dashboard PIN prompt opens instead. Set the PIN on the node first, in the browser dashboard or the on-box terminal UI. Wrong PINs count toward a lockout, and the PIN session is never saved. See [Dashboard PIN](/drone-agent/dashboard-overview#dashboard-pin).
+- Quick actions, the agent update, the RTL driver install and local `.adosplug` installs are hidden, because they would run on your workstation. Reboot goes through the API instead.
+- A file path you enter (a sensor rig, a `.param` import or export) is on the machine running the terminal UI.
+
+`y` copies with the OSC 52 terminal escape, so copying works over SSH. Inside tmux, set `set-clipboard on`.
 
 ## Quick actions
 
-The actions overlay (`a`) lists 8 actions. Each one runs an existing `ados` (or `systemctl`) command in the plain terminal, so you see its real output and any sudo prompt, then press Enter to return to the dashboard. Actions marked confirm ask `[y/N]` first.
+On the local agent, `a` opens the actions overlay. Each action runs an existing command in the plain terminal, so you see its real output and any sudo prompt, then press Enter to return. Actions marked confirm ask `[y/N]` first.
 
 | Action | Runs | Confirm |
 |---|---|---|
 | Install RTL driver | `ados radio install-driver` | Yes |
-| Pair | `ados pair` | No |
-| Logs | `ados logs tail` (prints the `journalctl` command while the Black Box store is off, the default) | No |
 | Radio status | `ados radio status` | No |
 | Update agent | `ados update` | Yes |
 | Restart radio | Restarts this node's WFB radio service (the transmit unit on a drone, the receive unit on a ground station) | Yes |
-| Unpair | `ados unpair` | Yes |
 | Reboot host | `sudo systemctl reboot` | Yes |
 
-Two actions refuse rather than run when it is unsafe:
+Pairing, unpairing and logs moved out of the overlay: use the Pairing settings page and the Logs tab.
 
-- **Update agent** is refused while the vehicle reports armed, because an update restarts the MAVLink router, video and radio.
+On launch, when a newer agent release exists, a splash shows the installed and latest versions once per session. Press `u` to update, or any other key to continue.
+
+## Safety
+
+- The terminal UI sends no flight commands.
+- Parameter writes, extension enable, disable, install, remove and grant, Wi-Fi join, disconnect and forget, service and supervisor restarts, reboot, unpair, and profile or region changes are refused unless the vehicle reports disarmed on a fresh reading.
+- **Update agent** is refused while the vehicle reports armed, because an update restarts the MAVLink router, video and radio. When the arm state is unknown, the confirmation says so.
+- Config changes the agent refuses while armed come back with the same refusal.
 - **Restart radio** is refused until the agent has reported the node's profile, because a drone and a ground station run different radio units.
-
-## Update splash
-
-On launch, the dashboard checks for a newer agent release in the background. If one exists, a splash shows the installed and latest versions once per session. Press `u` to update (the same confirmed, armed-refused path as the `u` key), or any other key to continue to the dashboard. The footer keeps an "update available" reminder.
-
-## Stale data
-
-If no poll has succeeded for 6 seconds, the header shows `stale` and the verdict line changes to `STALE` (or `UNREACHABLE` when the last poll returned an error) and says it is showing the last snapshot. The Autopilot panel hides its flight readings, so a frozen mode, arm state or battery level never reads as live.
 
 ## Next steps
 
 <CardGroup cols={2}>
   <Card title="Browser dashboard" icon="browser" href="/drone-agent/dashboard-overview">
-    Open the setup URL from the Links panel for first-run setup and settings.
+    The same settings and status in a browser.
   </Card>
   <Card title="Agent CLI reference" icon="terminal" href="/drone-agent/cli-reference">
     Every `ados` command behind the quick actions.

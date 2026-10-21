@@ -20,7 +20,7 @@ import AgentCliRecord from "/snippets/generated/agent-cli-record.mdx";
 
 The `ados` command runs on every node. It opens the terminal dashboard, reports status, pairs and unpairs the node, updates and uninstalls the agent, and inspects or tunes hardware, logs, networking, extensions, the profile, the radio link and recordings.
 
-Most flight-operations settings (MAVLink, video, network, remote access, ground-station role) live in the [browser dashboard](/drone-agent/dashboard-overview) and in Mission Control. The CLI is for status, recovery and scripting.
+Most flight-operations settings (MAVLink, video, network, remote access, ground-station role) live in the [browser dashboard](/drone-agent/dashboard-overview), the [terminal dashboard](/drone-agent/tui-dashboard) and Mission Control. The CLI is for status, recovery and scripting.
 
 This page covers the `ados` command on the node. Building and signing extensions uses the same `ados plugin` group; the authoring commands and exit codes are on [Plugin CLI reference](/developers/cli-reference).
 
@@ -64,13 +64,9 @@ Run `ados` on the node or over SSH:
 ados
 ```
 
-In an interactive terminal it opens the [terminal dashboard](/drone-agent/tui-dashboard): Links, Autopilot, Video, Link and Services panels, with quick actions on `a` (install radio driver, pair, logs, radio status, update, restart radio, unpair, reboot). Press `q` or Ctrl-C to exit.
+In an interactive terminal it opens the [terminal dashboard](/drone-agent/tui-dashboard): tabs for the overview, vehicle, link, video, flight-controller parameters, extensions, logs, system and settings, with quick actions on `a` (install radio driver, radio status, update, restart radio, reboot). Press `q` or Ctrl-C to exit.
 
-<Frame caption="The terminal dashboard on a drone node.">
-  ![ados terminal dashboard showing the verdict line, Links, Autopilot, Video, Link and Services panels](/images/drone-agent/tui-status.png)
-</Frame>
-
-The **Logs** quick action runs `ados logs tail`. With the Black Box store off (the default), it prints how to follow `journalctl -u ados-supervisor -f` instead.
+Pairing and logs are in the terminal dashboard's Pairing settings page and Logs tab. To follow the log from a shell, use `ados logs tail`; with the Black Box store off (the default), it prints how to follow `journalctl -u ados-supervisor -f` instead.
 
 Without a TTY, `ados` prints the same summary as `ados status`.
 
@@ -171,7 +167,7 @@ The store is off by default. With it off, these commands print how to read the j
 
 `ados network regulatory region <CC>` takes an ISO 3166-1 alpha-2 code (for example `US`, `DE`) and applies after a restart. `ados network regulatory unrestricted` clears the pin, which is the default posture.
 
-`ados network ap-passphrase` reads `/etc/ados/ap-passphrase` and prints the value on its own line, so it works in a script or a pipe without a TTY. It never generates one: asking a unit that has never started its access point is an error. The file is mode 0600, so run it as root. The terminal dashboard shows the same value in its Link panel. See [Regulatory](/operations/regulatory) for the region posture.
+`ados network ap-passphrase` reads `/etc/ados/ap-passphrase` and prints the value on its own line, so it works in a script or a pipe without a TTY. It never generates one: asking a unit that has never started its access point is an error. The file is mode 0600, so run it as root. The terminal dashboard shows the same value in the Overview tab's Link panel and, masked, on its Hotspot settings page. See [Regulatory](/operations/regulatory) for the region posture.
 
 ## `ados profile`
 
@@ -219,7 +215,7 @@ Recording is continuous and segmented, so `clip` cuts from segments already on d
 
 <CardGroup cols={2}>
   <Card title="Terminal dashboard" icon="table-layout" href="/drone-agent/tui-dashboard">
-    The live view `ados` opens in a terminal.
+    The terminal console `ados` opens: live tabs, settings, parameters and logs.
   </Card>
   <Card title="REST API" icon="code" href="/drone-agent/rest-api">
     The HTTP API the CLI and Mission Control call.

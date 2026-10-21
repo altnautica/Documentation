@@ -72,7 +72,7 @@ Edit `/etc/ados/config.yaml` with any text editor, then restart the affected ser
 sudo systemctl restart ados-mavlink
 ```
 
-The unit for each subsystem is on [Systemd services](/drone-agent/systemd-services). The terminal dashboard is read-only and does not edit config.
+The unit for each subsystem is on [Systemd services](/drone-agent/systemd-services). The [terminal dashboard](/drone-agent/tui-dashboard) also edits config: its Settings tab writes through `PUT /api/config`, the same path as the browser dashboard.
 
 ## Settings that need care
 
@@ -257,7 +257,7 @@ Each table is generated from the config schema. Secret keys show "Secret, not sh
 
 <CardGroup cols={2}>
   <Card title="Terminal dashboard" icon="table-layout" href="/drone-agent/tui-dashboard">
-    Watch the node's links, autopilot and video live.
+    Watch the node live and edit its settings from a terminal.
   </Card>
   <Card title="MAVLink proxy" icon="route" href="/drone-agent/mavlink-proxy">
     How the agent connects to the flight controller.
