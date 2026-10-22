@@ -111,30 +111,35 @@ ADOSDroneAgent/
 │   ├── ados-net/                    # Ground uplink matrix: wired, Wi-Fi station, cellular, failover
 │   ├── ados-display/                # OLED and LCD rendering, panel probe
 │   ├── ados-hid/                    # Touch, buttons, gamepads and the front-panel arbiter
-│   ├── ados-gpio/                   # GPIO output (buzzer, LED)
+│   ├── ados-gpio/                   # GPIO output (buzzer, LED) (published)
 │   ├── ados-crsf/                   # CRSF and ExpressLRS RC control lane
 │   ├── ados-config-tunnel/          # Config over radio (MAVLink TUNNEL)
 │   ├── ados-swarmbus/               # Swarm state bus (2 Hz position beacons)
-│   ├── ados-swarm-laws/             # Swarm control laws, task allocation and simulator (published)
-│   ├── ados-vision/                 # Vision engine host: frame rings, model registry
-│   ├── ados-offload/                # Perception offload for drones without an NPU
+│   ├── ados-swarm/                  # Swarm control laws, task allocation and simulator (published)
+│   ├── ados-vision-engine/          # Vision engine host: frame rings, model registry
+│   ├── ados-sensorbus/              # Sensor bus: frame codec, clients, capture-contract types
+│   ├── ados-clock-service/          # Host clock service and sensor bus broker
+│   ├── ados-sensorhub-service/      # Sensor hub service (USB or TCP packet stream)
+│   ├── ados-gnss/                   # GNSS service: receivers, RTK base and rover
+│   ├── ados-lora-service/           # LoRa beacon and mesh lane service
+│   ├── ados-offload/                # Perception offload for drones without an NPU (published)
 │   ├── ados-plugin-host/            # Plugin RPC host and capability-token checks
 │   ├── ados-logd/                   # Black-box log and telemetry store (SQLite), :8090
-│   ├── ados-macpin/                 # Stable MAC pinning for adapters that randomize it
-│   ├── ados-hal-probe/              # Probe-first hardware capability detection
+│   ├── ados-macpin/                 # Stable MAC pinning for adapters that randomize it (published)
+│   ├── ados-hal-probe/              # Probe-first hardware capability detection (published)
 │   ├── ados-config/                 # Config loading for the Rust services
-│   ├── ados-protocol/               # IPC wire contracts and contracts.toml
+│   ├── ados-protocol/               # IPC wire contracts and contracts.toml (published)
 │   ├── ados-capabilities-codegen/   # Generates the capability and contract tables for Rust, Python and TypeScript
-│   ├── ados-sdk/                    # Rust plugin SDK
+│   ├── ados-sdk/                    # Rust plugin SDK (published)
 │   ├── ados-installer/              # Step-graph installer
 │   ├── ados-tui/                    # Terminal dashboard (`ados` with no subcommand)
-│   ├── ados-tracker/                # Visual tracker (published, from ados-vision)
-│   ├── ados-sensorhub-proto/        # Sensor hub wire protocol (published)
-│   ├── ados-lora-governor/          # LoRa airtime and band-plan governor (published)
+│   ├── ados-vision/                 # Visual tracker, YOLO decoding and re-identification (published)
+│   ├── ados-sensorhub/              # Sensor hub wire protocol (published)
+│   ├── ados-lora/                   # LoRa airtime and band-plan governor (published)
 │   ├── ados-crsf-codec/             # no_std CRSF codec (published)
-│   ├── ados-gnss-stream/            # UBX, NMEA and RTCM3 stream splitter (published)
+│   ├── ados-positioning/            # UBX, NMEA and RTCM3 stream splitter, VALSET, survey-in (published)
 │   ├── ados-rtcm/                   # RTCM3 framing and GPS_RTCM_DATA fragmentation (published)
-│   ├── ados-clock-fit/              # Clock fitting and chrony refclock sink (published)
+│   ├── ados-clock/                  # Clock fitting and chrony refclock sink (published)
 │   ├── ados-mavlink-tunnel/         # MAVLink TUNNEL chunking (published)
 │   ├── ados-display-driver/         # OLED and framebuffer output (published)
 │   ├── ados-hmi/                    # Touch, button and encoder state machines (published)

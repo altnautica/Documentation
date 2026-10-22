@@ -3,40 +3,44 @@ title: "Rust crates"
 description: "ADOS libraries on crates.io: what each does, how to add it, and how they are versioned."
 ---
 
-The ADOS Drone Agent publishes its reusable Rust code as separate crates on crates.io. All of them live in the [`crates/` workspace](https://github.com/altnautica/ADOSDroneAgent/tree/main/crates#published-crates) of the agent repository. The platform crates speak the agent's wire; the standalone crates have no ADOS dependency and work in any project.
+The ADOS Drone Agent publishes its reusable Rust code as separate crates on crates.io. All of them live in the [`crates/` workspace](https://github.com/altnautica/ADOSDroneAgent/tree/main/crates#published-crates) of the agent repository. The platform crates speak the agent's wire or read its board profiles; the standalone crates have no ADOS dependency and work in any project.
 
-## Platform
-
-| Crate | What it does | Add it | Docs |
-|---|---|---|---|
-| [`ados-protocol`](https://crates.io/crates/ados-protocol) | Wire contracts for the agent: IPC framing, plugin RPC envelope and capability tokens, the vision frame bus, MSP and MAVLink helpers | `cargo add ados-protocol` | [docs.rs](https://docs.rs/ados-protocol) |
-| [`ados-sdk`](https://crates.io/crates/ados-sdk) | Build Rust plugins for the agent: async IPC client, plugin context, hardware driver traits and lifecycle runner | `cargo add ados-sdk` | [docs.rs](https://docs.rs/ados-sdk) |
-| [`ados-tracker`](https://crates.io/crates/ados-tracker) | Single-object visual tracker: Kalman motion model with appearance re-identification, YOLOv8 head decoding and OSNet embeddings | `cargo add ados-tracker` | [docs.rs](https://docs.rs/ados-tracker) |
-
-## Standalone
+{/* ados-family:crates */}
+**Platform (versioned with the ADOS Drone Agent)**
 
 | Crate | What it does | Add it | Docs |
 |---|---|---|---|
-| [`ados-sensorhub-proto`](https://crates.io/crates/ados-sensorhub-proto) | Sensor hub wire protocol: COBS framing, CRC-16 and fixed-layout IMU, barometer, magnetometer, trigger, PPS and GNSS packets. no_std, no allocation | `cargo add ados-sensorhub-proto` | [docs.rs](https://docs.rs/ados-sensorhub-proto) |
-| [`ados-offload`](https://crates.io/crates/ados-offload) | Decide where perception runs (onboard, offloaded or hybrid) and gate stale or link-lost results | `cargo add ados-offload` | [docs.rs](https://docs.rs/ados-offload) |
-| [`ados-macpin`](https://crates.io/crates/ados-macpin) | Stable MAC addresses for Linux adapters that randomize theirs every boot, via systemd-networkd `.link` files | `cargo add ados-macpin` | [docs.rs](https://docs.rs/ados-macpin) |
-| [`ados-lora-governor`](https://crates.io/crates/ados-lora-governor) | LoRa transmit governor with cited regional band plans: time-on-air, duty cycle, dwell time, listen-before-talk and an airtime ledger | `cargo add ados-lora-governor` | [docs.rs](https://docs.rs/ados-lora-governor) |
-| [`ados-crsf-codec`](https://crates.io/crates/ados-crsf-codec) | no_std CRSF (Crossfire / ExpressLRS) codec: frames, packed RC channels, telemetry and parameter frames | `cargo add ados-crsf-codec` | [docs.rs](https://docs.rs/ados-crsf-codec) |
-| [`ados-gnss-stream`](https://crates.io/crates/ados-gnss-stream) | Split a mixed UBX, NMEA and RTCM3 stream, build u-blox VALSET commands and run an RTK base survey-in | `cargo add ados-gnss-stream` | [docs.rs](https://docs.rs/ados-gnss-stream) |
-| [`ados-rtcm`](https://crates.io/crates/ados-rtcm) | RTCM3 framing, CRC-24Q and MAVLink GPS_RTCM_DATA fragmentation for RTK corrections | `cargo add ados-rtcm` | [docs.rs](https://docs.rs/ados-rtcm) |
-| [`ados-clock-fit`](https://crates.io/crates/ados-clock-fit) | Map remote clocks onto a host monotonic timebase, estimate TIMESYNC offsets and feed chrony | `cargo add ados-clock-fit` | [docs.rs](https://docs.rs/ados-clock-fit) |
-| [`ados-swarm-laws`](https://crates.io/crates/ados-swarm-laws) | Swarm control laws: separation, barriers, flocking, formations, CBBA task allocation and a point-mass simulator | `cargo add ados-swarm-laws` | [docs.rs](https://docs.rs/ados-swarm-laws) |
-| [`ados-mavlink-tunnel`](https://crates.io/crates/ados-mavlink-tunnel) | Chunk and reassemble large messages over MAVLink TUNNEL frames | `cargo add ados-mavlink-tunnel` | [docs.rs](https://docs.rs/ados-mavlink-tunnel) |
-| [`ados-display-driver`](https://crates.io/crates/ados-display-driver) | Linux output for small displays: SSD1306/SH1106 OLED over I2C, pixel packers and a framebuffer writer | `cargo add ados-display-driver` | [docs.rs](https://docs.rs/ados-display-driver) |
-| [`ados-hmi`](https://crates.io/crates/ados-hmi) | Input state machines for front panels: touch calibration and gestures, button presses, encoders and a pilot-in-command arbiter | `cargo add ados-hmi` | [docs.rs](https://docs.rs/ados-hmi) |
+| [`ados-protocol`](https://crates.io/crates/ados-protocol) | Wire contracts of the ADOS Drone Agent: IPC framing, plugin RPC envelope, capability tokens and the vision frame bus. | `cargo add ados-protocol` | [docs.rs](https://docs.rs/ados-protocol) |
+| [`ados-sdk`](https://crates.io/crates/ados-sdk) | Write Rust plugins for the ADOS Drone Agent: IPC client, plugin context, driver traits and lifecycle runner. | `cargo add ados-sdk` | [docs.rs](https://docs.rs/ados-sdk) |
+| [`ados-vision`](https://crates.io/crates/ados-vision) | Single-object visual tracker: Kalman motion model, appearance re-identification and YOLOv8 head decoding. | `cargo add ados-vision` | [docs.rs](https://docs.rs/ados-vision) |
+| [`ados-gpio`](https://crates.io/crates/ados-gpio) | Drive status buzzers and LEDs on Linux GPIO lines, with bounded software-PWM beep patterns. | `cargo add ados-gpio` | [docs.rs](https://docs.rs/ados-gpio) |
+| [`ados-hal-probe`](https://crates.io/crates/ados-hal-probe) | Find out what a board's hardware can really do by probing it, plus bundled board profiles. | `cargo add ados-hal-probe` | [docs.rs](https://docs.rs/ados-hal-probe) |
+
+**Standalone**
+
+| Crate | What it does | Add it | Docs |
+|---|---|---|---|
+| [`ados-sensorhub`](https://crates.io/crates/ados-sensorhub) | Sensor hub wire protocol: COBS framing, CRC-16 and fixed-layout IMU, baro, mag and GNSS packets. no_std. | `cargo add ados-sensorhub` | [docs.rs](https://docs.rs/ados-sensorhub) |
+| [`ados-offload`](https://crates.io/crates/ados-offload) | Choose where perception runs (onboard, offloaded or hybrid) and hold the vehicle when results go stale. | `cargo add ados-offload` | [docs.rs](https://docs.rs/ados-offload) |
+| [`ados-macpin`](https://crates.io/crates/ados-macpin) | Stable MAC addresses for Linux network adapters that randomize theirs every boot. | `cargo add ados-macpin` | [docs.rs](https://docs.rs/ados-macpin) |
+| [`ados-lora`](https://crates.io/crates/ados-lora) | LoRa transmit governor with cited regional band plans, duty cycle, dwell time and airtime accounting. | `cargo add ados-lora` | [docs.rs](https://docs.rs/ados-lora) |
+| [`ados-crsf-codec`](https://crates.io/crates/ados-crsf-codec) | no_std CRSF / ExpressLRS codec for RC channels, telemetry and parameter frames. | `cargo add ados-crsf-codec` | [docs.rs](https://docs.rs/ados-crsf-codec) |
+| [`ados-positioning`](https://crates.io/crates/ados-positioning) | Split mixed UBX, NMEA and RTCM3 GNSS streams, configure u-blox receivers and run an RTK base survey-in. | `cargo add ados-positioning` | [docs.rs](https://docs.rs/ados-positioning) |
+| [`ados-rtcm`](https://crates.io/crates/ados-rtcm) | RTCM3 framing, CRC-24Q and MAVLink GPS_RTCM_DATA fragmentation for RTK corrections. | `cargo add ados-rtcm` | [docs.rs](https://docs.rs/ados-rtcm) |
+| [`ados-clock`](https://crates.io/crates/ados-clock) | Map remote clocks onto the host clock: least-squares and envelope fits, TIMESYNC and a chrony sink. | `cargo add ados-clock` | [docs.rs](https://docs.rs/ados-clock) |
+| [`ados-swarm`](https://crates.io/crates/ados-swarm) | Swarm control laws: separation, flocking, formations, CBBA task allocation and a point-mass simulator. | `cargo add ados-swarm` | [docs.rs](https://docs.rs/ados-swarm) |
+| [`ados-mavlink-tunnel`](https://crates.io/crates/ados-mavlink-tunnel) | Send large messages over MAVLink TUNNEL frames with chunking and bounded reassembly. | `cargo add ados-mavlink-tunnel` | [docs.rs](https://docs.rs/ados-mavlink-tunnel) |
+| [`ados-display-driver`](https://crates.io/crates/ados-display-driver) | Small-display output on Linux: SSD1306/SH1106 OLED over I2C, pixel packers and a framebuffer writer. | `cargo add ados-display-driver` | [docs.rs](https://docs.rs/ados-display-driver) |
+| [`ados-hmi`](https://crates.io/crates/ados-hmi) | Front-panel input: touchscreen calibration and gestures, button presses and rotary encoders. | `cargo add ados-hmi` | [docs.rs](https://docs.rs/ados-hmi) |
+{/* /ados-family:crates */}
 
 ## Versioning
 
-- **Platform crates move in lockstep with the agent.** `ados-protocol`, `ados-sdk` and `ados-tracker` carry the agent version, so `ados-sdk` X.Y.Z speaks the wire of agent X.Y.Z. Pin the major.minor of the agent you target.
+- **Platform crates move in lockstep with the agent.** `ados-protocol`, `ados-sdk`, `ados-vision`, `ados-gpio` and `ados-hal-probe` carry the agent version, so `ados-sdk` X.Y.Z speaks the wire of agent X.Y.Z. Pin the major.minor of the agent you target.
 - **Standalone crates follow their own semver.** They started at 0.1.0 and bump only when they change.
 
 Any change to a published crate's packaged files ships with a version bump. To build an agent plugin, start with the [Rust SDK guide](/developers/sdk-rust).
 
 ## License
 
-Every crate is licensed under either of Apache License 2.0 or MIT at your option, except `ados-sensorhub-proto`, which is MIT. The agent services themselves stay GPL-3.0-or-later. See [Legal and licensing](/developers/legal-and-licensing).
+Every crate is licensed under either of Apache License 2.0 or MIT at your option, except `ados-sensorhub`, which is MIT. The agent services themselves stay GPL-3.0-or-later. See [Legal and licensing](/developers/legal-and-licensing).
