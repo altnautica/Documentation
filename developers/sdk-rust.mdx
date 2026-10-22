@@ -82,9 +82,18 @@ ados-protocol = { path = "../ADOSDroneAgent/crates/ados-protocol" }
 ```
 
 <Note>
-There is no crates.io publish. Every build, CI included, uses the path
-dependency; CI checks the sibling ADOSDroneAgent out at the commit
-recorded in the `ADOS_AGENT_REV` file at the workspace root.
+An out-of-tree plugin depends on `ados-sdk` from crates.io. Its version
+tracks the agent release it speaks to, so pin the agent's major.minor,
+for example `ados-sdk = "0.106"`:
+
+```bash
+cargo add ados-sdk
+```
+
+First-party extensions in ADOSExtensions keep the sibling path
+dependency above; CI checks ADOSDroneAgent out at the commit recorded in
+the `ADOS_AGENT_REV` file at the workspace root. See
+[Rust crates](/developers/rust-crates) for every published ADOS crate.
 </Note>
 
 A vision plugin also names `ados-protocol` directly for the framebus

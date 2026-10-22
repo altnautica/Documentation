@@ -115,7 +115,7 @@ ADOSDroneAgent/
 │   ├── ados-crsf/                   # CRSF and ExpressLRS RC control lane
 │   ├── ados-config-tunnel/          # Config over radio (MAVLink TUNNEL)
 │   ├── ados-swarmbus/               # Swarm state bus (2 Hz position beacons)
-│   ├── ados-swarm-control/          # Onboard swarm control laws and task allocation
+│   ├── ados-swarm-laws/             # Swarm control laws, task allocation and simulator (published)
 │   ├── ados-vision/                 # Vision engine host: frame rings, model registry
 │   ├── ados-offload/                # Perception offload for drones without an NPU
 │   ├── ados-plugin-host/            # Plugin RPC host and capability-token checks
@@ -127,7 +127,18 @@ ADOSDroneAgent/
 │   ├── ados-capabilities-codegen/   # Generates the capability and contract tables for Rust, Python and TypeScript
 │   ├── ados-sdk/                    # Rust plugin SDK
 │   ├── ados-installer/              # Step-graph installer
-│   └── ados-tui/                    # Terminal dashboard (`ados` with no subcommand)
+│   ├── ados-tui/                    # Terminal dashboard (`ados` with no subcommand)
+│   ├── ados-tracker/                # Visual tracker (published, from ados-vision)
+│   ├── ados-sensorhub-proto/        # Sensor hub wire protocol (published)
+│   ├── ados-lora-governor/          # LoRa airtime and band-plan governor (published)
+│   ├── ados-crsf-codec/             # no_std CRSF codec (published)
+│   ├── ados-gnss-stream/            # UBX, NMEA and RTCM3 stream splitter (published)
+│   ├── ados-rtcm/                   # RTCM3 framing and GPS_RTCM_DATA fragmentation (published)
+│   ├── ados-clock-fit/              # Clock fitting and chrony refclock sink (published)
+│   ├── ados-mavlink-tunnel/         # MAVLink TUNNEL chunking (published)
+│   ├── ados-display-driver/         # OLED and framebuffer output (published)
+│   ├── ados-hmi/                    # Touch, button and encoder state machines (published)
+│   └── README.md                    # Index of the crates published on crates.io
 ├── src/ados/                        # Python package
 │   ├── api/                         # Residual FastAPI app, behind ados-control on an internal socket
 │   ├── bootstrap/                   # profile_detect.py: fallback profile detection

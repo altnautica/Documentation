@@ -1,6 +1,6 @@
 ---
 title: "Legal and licensing"
-description: "Plugin ownership, licence declaration, how the GPL SDKs interact with your licence, vendor binaries, trademarks and warranty."
+description: "Plugin ownership, licence declaration, how each SDK licence interacts with yours, vendor binaries, trademarks and warranty."
 ---
 
 You wrote your plugin and you keep the rights to it. The registry is one distribution channel among several and does not change who owns or licenses what. How you sell, support or license your plugin is between you and your users.
@@ -19,15 +19,14 @@ license: "LicenseRef-MyProductEULA-1.0"
 
 For SPDX ids see [spdx.org/licenses](https://spdx.org/licenses/). For a custom licence use the `LicenseRef-<your-id>` form and ship the full text in the archive as `LICENSE.txt`. The agent does not gate installs by licence; operators see the declared string in the install review.
 
-## The SDKs are GPL
+## SDK licences
 
-The agent is GPL-3.0-or-later and Mission Control is GPL-3.0-only. The plugin SDKs are GPL-3.0-or-later too, and that matters more than the process boundary:
+The agent is GPL-3.0-or-later and Mission Control is GPL-3.0-only. The SDKs differ:
 
-- A GCS bundle built with `@altnautica/plugin-sdk` contains SDK code.
-- A Rust agent half statically links the `ados-sdk` crate.
-- A Python agent half imports `ados.sdk` inside the agent's GPL plugin runner.
+- The Rust crates `ados-sdk` and `ados-protocol` are `MIT OR Apache-2.0`. A Rust agent half that statically links them may use any licence, including a proprietary one.
+- `@altnautica/plugin-sdk` and the Python `ados.sdk` are GPL-3.0-or-later. A GCS bundle built with `@altnautica/plugin-sdk` contains SDK code, and a Python agent half imports `ados.sdk` inside the agent's GPL plugin runner.
 
-The agent runs every agent half as its own subprocess over a defined IPC surface, and Mission Control runs plugins in a sandboxed iframe that talks over `postMessage`. No plugin runs in-process. Even so, get legal advice before shipping a plugin that uses the SDKs under a licence that is not GPL-compatible. Altnautica is not your lawyer.
+For those two GPL SDKs the licence matters more than the process boundary. The agent runs every agent half as its own subprocess over a defined IPC surface, and Mission Control runs plugins in a sandboxed iframe that talks over `postMessage`. No plugin runs in-process. Even so, get legal advice before shipping a plugin that uses a GPL SDK under a licence that is not GPL-compatible. Altnautica is not your lawyer.
 
 A proprietary vendor library loaded by your plugin runs inside your plugin's process. You are responsible for whether its licence allows distribution with your plugin; see [Vendor binaries](/developers/vendor-binaries).
 

@@ -459,6 +459,7 @@
             "pages": [
               "developers/sdk-python",
               "developers/sdk-rust",
+              "developers/rust-crates",
               "developers/sdk-typescript"
             ]
           },
