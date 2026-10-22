@@ -157,7 +157,8 @@ for the wider playbook.
 
 ## Run the connector
 
-The connector is not published as a package. Clone and build it:
+The connector ships as a container image, or you can clone and build it. To
+build from source:
 
 ```bash
 git clone https://github.com/altnautica/ADOS-MCP.git
@@ -192,6 +193,80 @@ reachability, prints the result, and exits `0` or `1`:
 ADOS_MCP_AGENT_KEY=<pairing-key> node dist/index.js --target agent 192.168.1.50 --verify
 ```
 
+### Run with Docker
+
+The connector also ships as a multi-arch image, `ghcr.io/altnautica/ados-mcp`
+(`linux/amd64`, `linux/arm64`). Tags are `X.Y.Z`, `X.Y` and `latest` for
+releases, and `edge` for the main branch. Pin `X.Y.Z` for a reproducible setup.
+
+Create the data folder and pull the image:
+
+```bash
+mkdir -p ~/.ados/mcp && docker pull ghcr.io/altnautica/ados-mcp:latest
+```
+
+Add it to Claude Code. The key stays in the client's environment; `-e NAME`
+forwards it into the container, so it never appears in the `docker` arguments:
+
+```bash
+claude mcp add ados -e ADOS_MCP_AGENT_KEY=<pairing-key> -- docker run -i --rm -e ADOS_MCP_AGENT_KEY -v "$HOME/.ados/mcp:/home/node/.ados/mcp" ghcr.io/altnautica/ados-mcp:latest --target agent 192.168.1.50
+```
+
+Check reach with a one-shot run:
+
+```bash
+docker run --rm -e ADOS_MCP_AGENT_KEY=<pairing-key> ghcr.io/altnautica/ados-mcp:latest --target agent 192.168.1.50 --verify
+```
+
+For a client that reads `.mcp.json` (the key is read from your environment, so
+the file holds no secret):
+
+```json
+{
+  "mcpServers": {
+    "ados": {
+      "command": "docker",
+      "args": ["run", "-i", "--rm", "-e", "ADOS_MCP_AGENT_KEY", "-v", "${HOME}/.ados/mcp:/home/node/.ados/mcp", "ghcr.io/altnautica/ados-mcp:latest", "--target", "agent", "192.168.1.50"],
+      "env": { "ADOS_MCP_AGENT_KEY": "${ADOS_MCP_AGENT_KEY}" }
+    }
+  }
+}
+```
+
+To run it as a long-lived Streamable HTTP service, start the `mcp` service from
+a checkout. It listens on `127.0.0.1:8091`, mounts `~/.ados/mcp` and passes
+`--transport http`, which a service needs because `auto` picks stdio whenever
+stdin is not a terminal:
+
+```bash
+cp .env.example .env
+docker compose up -d
+claude mcp add --transport http ados http://127.0.0.1:8091/mcp --header "Authorization: Bearer <token>"
+```
+
+Behind your own reverse proxy, run with `--trust-proxy --http-host 0.0.0.0`
+and leave the port unpublished.
+
+<Warning>
+The image runs as user id 1000. On Linux, if your user id differs, add
+`--user "$(id -u):$(id -g)"` after `docker run`. Create `~/.ados/mcp` before the
+first run: otherwise Docker creates it owned by root, the audit sink cannot
+write, and write tools refuse.
+</Warning>
+
+Docker limits:
+
+- LAN auto-discovery and mDNS advertising need `--network host`, on Linux.
+- `.local` names may not resolve inside a container. Use the drone's IP address.
+- `--gcs local` inside a container points at the container itself. Use
+  `--convex-url http://host.docker.internal:3210`, and on Linux also add
+  `--add-host host.docker.internal:host-gateway`.
+- The on-box Unix socket does not apply, so a warning about it is expected.
+- Through Docker Desktop's port publishing, tokens pinned to a source IP see the
+  Docker gateway address.
+- Never pass `-t` to a stdio run.
+- cmd.exe does not expand `$HOME`. Use PowerShell or a POSIX shell. In Git Bash, put `MSYS_NO_PATHCONV=1` in front of the command: without it Git Bash rewrites the container side of the `-v` mount, the server still connects, and the audit trail silently stays inside the container.
+
 ### Connector flags
 
 | Flag | Default | Meaning |
@@ -199,6 +274,7 @@ ADOS_MCP_AGENT_KEY=<pairing-key> node dist/index.js --target agent 192.168.1.50 
 | `--target <agent\|local-fleet\|fleet>` | required | Deployment mode. |
 | `--transport <auto\|stdio\|http\|unix>` | `auto` | `auto` picks stdio when a client launched the process. |
 | `--http-port <port>` | `8091` | Streamable HTTP port in agent mode. |
+| `--http-host <addr>` | `::` | HTTP bind address. `127.0.0.1` with `--trust-proxy`; an explicit value always wins. |
 | `--fleet-file <path>` | `~/.ados/mcp/fleet.json` | The local-fleet file. |
 | `--gcs <local\|prod\|url>` | none | The Mission Control Convex backend, fleet mode. |
 | `--token <token>` | none | The bearer for the launch principal. |
@@ -217,9 +293,10 @@ ADOS_MCP_AGENT_KEY=<pairing-key> node dist/index.js --target agent 192.168.1.50 
 | `--version` | off | Print the version and exit. |
 
 Environment equivalents include `ADOS_MCP_AGENT_KEY`, `ADOS_AGENT_HOST`,
-`ADOS_NODE_ID`, `ADOS_MCP_HTTP_PORT`, `ADOS_MCP_FLEET`, `ADOS_MCP_FLEET_PATH`,
-`ADOS_MCP_DISCOVER`, `ADOS_MCP_OWNER`, `ADOS_MCP_TOKEN`, `ADOS_CONVEX_URL`,
-`ADOS_MQTT_URL`, `ADOS_MCP_AUDIT_PATH` and `ADOS_MCP_LOG_LEVEL`.
+`ADOS_NODE_ID`, `ADOS_MCP_HTTP_PORT`, `ADOS_MCP_HTTP_HOST`, `ADOS_MCP_FLEET`,
+`ADOS_MCP_FLEET_PATH`, `ADOS_MCP_DISCOVER`, `ADOS_MCP_OWNER`, `ADOS_MCP_TOKEN`,
+`ADOS_CONVEX_URL`, `ADOS_MQTT_URL`, `ADOS_MCP_AUDIT_PATH` and
+`ADOS_MCP_LOG_LEVEL`.
 
 ### Transports
 
@@ -285,10 +362,11 @@ capability floors it at `admin`. A capability that is neither in the generated
 floor nor on the read and safe-write allowlist is treated as `admin`. See
 [Permissions](/developers/permissions) for the capability catalog.
 
-The [Mission Control MCP tab](/mission-control/mcp) has a guided wizard that
-fills in a node's host and pairing key, generates the `claude mcp add` command,
-builds the inline local-fleet blob for every node you own, and mints the
-machine credential for fleet mode.
+The [Mission Control MCP tab](/mission-control/mcp) has a guided wizard with a
+Docker / From source toggle. It fills in a node's host and pairing key,
+generates the `claude mcp add` command for the runtime you pick, builds the
+inline local-fleet blob for every node you own, and mints the machine
+credential for fleet mode.
 
 ## Extensions that contribute MCP tools
 

@@ -196,7 +196,7 @@ Pages gated to a profile are hidden on other profiles. Pages with their own acti
 | MCP | `n` | Mint an MCP token with `read`, `safe_write` or `admin` scopes. The token is shown once and never stored. |
 | MCP | `x` / `X` | Revoke the selected token / every token (type `revoke` to confirm). |
 
-The MCP page also shows the `claude mcp add` command that connects an MCP client to this agent; `y` copies it with the real key.
+The MCP page also shows the `claude mcp add` commands that connect an MCP client to this agent: a Docker command, which `y` copies with the real key, and a from-source command with its own copy action.
 
 All settings lists arrays and objects as read-only JSON: edit those in `/etc/ados/config.yaml`, because the config API sets one value per call. See [Configuration](/drone-agent/configuration).
 
