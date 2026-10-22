@@ -1,8 +1,8 @@
 <p align="center">
   <a href="https://altnautica.com">
     <picture>
-      <source media="(prefers-color-scheme: dark)" srcset=".github/assets/brand/ados-lockup-dark.svg">
-      <img src=".github/assets/brand/ados-lockup-light.svg" alt="ADOS" width="220">
+      <source media="(prefers-color-scheme: dark)" srcset=".github/assets/brand/altnautica-wordmark-dark.svg">
+      <img src=".github/assets/brand/altnautica-wordmark-light.svg" alt="Altnautica" width="240">
     </picture>
   </a>
 </p>
@@ -27,7 +27,9 @@
   <img src=".github/assets/scenes/system-light.webp" alt="The ADOS system: drone, ground node and ground stations" width="100%">
 </picture>
 
-This repository is the source of [docs.altnautica.com](https://docs.altnautica.com), the documentation for the ADOS open-source drone platform. It is built with [Mintlify](https://mintlify.com).
+This repository is the source of [docs.altnautica.com](https://docs.altnautica.com), the documentation for ADOS, an open-source platform for software-defined drones. It covers every part of the ecosystem: the Drone Agent and its Ground Agent profile, Mission Control, Android GCS, the extensions (World Engine among them, in beta), ADOS MCP for AI clients, and the developer guides for building extensions and plugins on top. It is built with [Mintlify](https://mintlify.com).
+
+ADOS adds capabilities with every release, and the docs move with it. If a page is wrong or missing, a pull request here is the fastest fix; see [Contributing to these docs](#contributing-to-these-docs).
 
 ## How ADOS fits together
 
