@@ -102,6 +102,9 @@ interface PluginContext {
   theme: {
     onChange(handler: (vars: Record<string, string>) => void): () => void;
   };
+  videoOverlay: {
+    onProps(handler: (props: VideoOverlayHostProps) => void): () => void;
+  };
   i18n: {
     t(key: string, params?: Record<string, string | number>): string;
   };
@@ -113,10 +116,59 @@ rather than a fixed deadline. A denial, a command the host does not
 allow, or a rate limit rejects with a `HostError` whose code is
 `refused`.
 
-`events.subscribe` reads one-way host pushes (video-overlay host props,
-an agent plugin's state read-back) and needs no grant. `events.listen`
-and `events.publish` use the GCS plugin bus between installed plugin
-panels and need `event.subscribe` and `event.publish`.
+`events.subscribe` reads one-way host pushes (an agent plugin's state
+read-back, for example) and needs no grant. `events.listen` and
+`events.publish` use the GCS plugin bus between installed plugin panels
+and need `event.subscribe` and `event.publish`.
+
+### Video overlay host props
+
+A frame mounted in the `video.overlay` slot reads its host props with
+`ctx.videoOverlay.onProps`. The host pushes them on load and on every
+material change (a detection batch lands or ages out, the video resizes
+or changes resolution, the camera switches), never per video frame. A
+payload that is not an object with a rendered rect is dropped. The call
+returns an unsubscribe function. Mission Control and the agent cockpit
+push the same shape, so one overlay bundle draws the same on both hosts.
+
+```typescript
+interface VideoOverlayHostProps {
+  droneId: string;
+  cameraId: string;              // the camera the video shows
+  streamWidth: number;           // the stream's intrinsic resolution
+  streamHeight: number;
+  renderedRect: { left: number; top: number; width: number; height: number };
+  frameTimestampMs: number;      // host-clock ms of the batch shown; 0 with none
+  frameAgeMs: number | null;     // null when the host has no estimate
+  attitude: { rollDeg: number; pitchDeg: number; yawDeg: number } | null;
+  attitudeAtFrameTime: boolean;  // attitude sampled at the frame's capture time
+  detections: {
+    frameWidth: number;
+    frameHeight: number;
+    frameId: number;
+    receivedAt: number;
+    items: {
+      bbox: { x: number; y: number; width: number; height: number };
+      classLabel: string;
+      confidence: number;
+      trackId: number | null;
+      lockState: "locked" | "uncertain" | "lost" | null;
+    }[];
+  } | null;                      // null once the batch is stale: drop your boxes
+}
+
+const unsubscribe = ctx.videoOverlay.onProps((p) => {
+  const sx = p.renderedRect.width / p.streamWidth;
+  const sy = p.renderedRect.height / p.streamHeight;
+  draw(p, sx, sy);
+});
+```
+
+Draw inside `renderedRect`, which is the letterboxed video area, not the
+whole frame. `attitude` is `null` when the telemetry is unknown or stale:
+raise your own failure state rather than assuming level flight.
+`frameAgeMs` is `null` where the host has no frame-age estimate (the
+agent cockpit has none), and then `attitudeAtFrameTime` is `false`.
 
 `records` reads and writes the plugin's own cloud collection:
 `list(opts)`, `get(collection, key)`, `put(collection, key, data)` and
@@ -153,6 +205,7 @@ their capabilities are on [GCS bridge methods](/developers/event-hooks).
 | `ctx.records.list/get/put/remove` | `records.list/get/put/remove` | `cloud.records` |
 | `ctx.config.onChange(h)` | host-pushed `config.changed` | none |
 | `ctx.theme.onChange(h)` | host-pushed `theme.changed` | none |
+| `ctx.videoOverlay.onProps(h)` | host-pushed `video.overlay.props` | `ui.slot.video-overlay` |
 
 For any other method, call `ctx.client.request(method, capability, args)`.
 

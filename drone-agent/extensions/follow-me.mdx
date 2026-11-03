@@ -1,0 +1,120 @@
+---
+title: "Follow-Me"
+description: "Designate a subject in the live video and the drone follows it at a set distance and height, with local-frame setpoints, fused range cues and an operator-selectable re-acquire mode."
+icon: "crosshairs"
+keywords: ["ados", "follow-me", "extension", "tracking", "re-acquire", "guided setpoints"]
+---
+
+import ExtensionFollowMe from '/snippets/generated/extension-follow-me.mdx';
+
+Follow-Me is a first-party extension, `com.altnautica.follow-me`. Click a subject in the live video, pick **Follow**, and the drone flies a standoff follow: it keeps a set horizontal distance behind the subject and a set height above the ground, and turns to face it.
+
+<Warning>
+Follow-Me flies the drone with guided setpoints. Read [Safety](/operations/safety) before you use it, and keep a pilot ready to take over.
+</Warning>
+
+<ExtensionFollowMe />
+
+## What you need
+
+- A camera bound to the vision pipeline (USB UVC or CSI), facing forward or down. A gimbal is optional; with `gimbal_point` on, the plugin points it at the subject.
+- A detector on the companion. The default `coco-person` model runs on the NPU of supported boards and on the CPU elsewhere. Check `backend_state` in [`GET /api/vision/status`](/drone-agent/rest-api#vision-status): a node that reports `unavailable` produces no detections to follow.
+- A flight controller in a guided position mode: ArduPilot Guided, or PX4 Offboard.
+- Optional: a downward rangefinder on the flight controller, for height above the terrain; and a planar LiDAR published by the [World Engine extension](/drone-agent/extensions/world-engine), as a third range cue.
+
+## Start and stop a follow
+
+1. In the cockpit video, click or tap a detected person and pick **Follow this target** (default key `F`), or drag a box around the subject. This designates the track.
+2. Turn the **Follow-Me** Skill on (`Shift+F`). It asks for confirmation and needs the aircraft armed and in a guided mode.
+3. To stop, pick **Stop following** (`X`), turn the Skill off, or change the flight mode from your transmitter.
+
+An AI client gets two tools, `follow_status` and `stop_follow`, and no way to start a follow. A follow begins only when an operator designates a subject.
+
+## How it follows
+
+The loop runs at 20 Hz.
+
+1. **Vehicle state.** The plugin reads the flight controller's `LOCAL_POSITION_NED` for position and velocity, `ATTITUDE`, and `DISTANCE_SENSOR` from a downward rangefinder (orientation 25 only). `GLOBAL_POSITION_INT` is used only to show latitude and longitude.
+2. **Height above ground.** The rangefinder is used while its reading is younger than 0.3 s, inside its own minimum and maximum, and the aircraft is tilted less than 30°. Otherwise the plugin falls back to the barometric relative altitude. The read-back names the choice in `agl_source` (`rng` or `baro`).
+3. **Range to the subject.** Up to three cues, each with its own 1-sigma error, fused by inverse variance:
+
+   | Cue | Estimate | Error (1σ) | Used when |
+   |---|---|---|---|
+   | `ground` | The ray through the bottom-centre of the box (the feet), intersected with the ground at the measured height | 5 % of range plus the height error over the tangent of the depression angle (height error 0.3 m with `rng`, 1.5 m with `baro`) | A ground intersection exists |
+   | `box_height` | Slant range from an assumed 1.70 m subject height and the box height in pixels | 15 % of range | The box touches no frame edge |
+   | `lidar` | The nearest planar-scan return within ±2° of the subject's bearing | 0.05 m | A scan is published, and the return agrees with the other cues within ±25 % |
+
+   With no cue available the loop holds with `hold_reason: "no-range"`.
+4. **Subject motion.** A constant-velocity Kalman filter over north, east and their velocities (acceleration noise 1.5 m/s²) tracks the subject's position and velocity.
+5. **Setpoint.** The standoff point sits `follow_distance_m` behind the subject along its direction of travel when it moves faster than 0.5 m/s, and along the line from the drone otherwise. The plugin sends `SET_POSITION_TARGET_LOCAL_NED` (#84) in `MAV_FRAME_LOCAL_NED` with position, the subject's velocity as feed-forward (clamped to `max_speed_mps`) and yaw toward the subject; acceleration and yaw rate are ignored (`type_mask` 2496). Height is terrain-following: the drone climbs or descends by the difference between the measured height above ground and `follow_height_m`.
+
+The loop commands only while the flight controller's pose is fresh, the aircraft is armed and in a guided mode, and the tracker reports a live lock. When a gate fails it sends a short burst of hold setpoints at the current position, then stops sending, and publishes the reason in `hold_reason`.
+
+## Re-acquire after an occlusion
+
+When the tracker loses the subject (a tree trunk, a building corner), `reacquire_mode` decides what happens.
+
+| Mode | Behaviour |
+|---|---|
+| `strict` | Drop the track, publish `follow.lost` and hold. The operator designates again. |
+| `smart` (default) | Coast for up to `reacquire_window_s` (default 4 s): fly toward the predicted standoff at no more than half the feed-forward speed. Each detection batch, look for a `person` track whose appearance matches the stored subject (cosine similarity at least `reacquire_min_similarity`, default 0.75) and that sits within a Mahalanobis distance of 3 of the predicted position. On a match, designate that track and publish `follow.reacquired` with `{track_id, similarity, gap_s}`. When the window expires, publish `follow.lost` and hold. |
+
+The tracker itself never re-locks silently. A smart re-acquire is an explicit designation by the plugin, announced on the event bus and shown on every operator surface. The appearance match uses a re-identification embedding when the vision engine provides one, and a colour and gradient histogram otherwise.
+
+The re-acquire toggle is on the Follow-Me Skill's popover and in the Follow-Me tab.
+
+## Parameters
+
+| Key | Default | Range | Meaning |
+|---|---|---|---|
+| `follow_distance_m` | 8 | 3 to 30 m | Horizontal standoff from the subject. |
+| `follow_height_m` | 4 | 0 to 20 m | Height above the ground. |
+| `gimbal_point` | true | | Point a gimbal at the subject when one is present. |
+| `camera_hfov_deg` | 70 | 30 to 160° | Camera horizontal field of view. |
+| `mount_pitch_deg` | 30 | 0 to 90° | Fixed camera down-tilt when there is no gimbal. |
+| `designate_camera` | `auto` | | The camera whose detections the follow uses. |
+| `detector` | `coco-person` | | The detection model. |
+| `reacquire_mode` | `smart` | `strict`, `smart` | What happens after a lock loss. |
+| `reacquire_window_s` | 4 | 0.5 to 15 s | How long a smart re-acquire coasts. Shown only in `smart`. |
+| `reacquire_min_similarity` | 0.75 | 0.5 to 0.99 | Minimum appearance similarity for a smart re-acquire. Shown only in `smart`. |
+| `max_speed_mps` | 6 | 0.5 to 15 m/s | Cap on the velocity feed-forward. |
+
+Set them in the Follow-Me tab, or with `PUT /api/plugins/com.altnautica.follow-me/config`.
+
+## Follow state
+
+The plugin publishes `follow.state` on every change. The agent re-serves it as the `follow` kind of its [navigation routes](/drone-agent/rest-api#navigation-and-map), so the cockpit, Mission Control, the Android app and the terminal dashboard read the same fields.
+
+| Field | Meaning |
+|---|---|
+| `active` | The Skill is on. |
+| `phase` | `idle`, `acquiring`, `following`, `coasting`, `searching` (the coast window once the prediction is too spread to draw a box), `lost` or `holding`. |
+| `commanding` | True only while the plugin is actually sending follow setpoints. |
+| `hold_reason` | Why it is not commanding: `inactive`, `no-lock`, `lock-uncertain`, `lock-lost`, `pose-stale`, `fc-stale`, `fc-disarmed`, `fc-not-guided` or `no-range`. |
+| `lock_state`, `track_id`, `target_id`, `confidence` | The tracker's lock on the subject. |
+| `range_m`, `range_sigma_m`, `range_cues` | The fused range, its 1-sigma error, and each cue with its own estimate and error. |
+| `bearing_deg`, `depression_deg` | Direction to the subject. |
+| `target_ned`, `target_vel_ned`, `target_speed_mps` | The filtered subject position and velocity in the local frame. |
+| `predicted_bbox` | The predicted box while coasting. |
+| `distance_setpoint_m`, `height_setpoint_m`, `setpoint_rate_hz` | What the loop is commanding, and the measured send rate. |
+| `agl_m`, `agl_source` | Height above ground and its source (`rng` or `baro`). |
+| `reacquire_mode`, `coast_remaining_s` | The re-acquire mode and the time left in a coast. |
+| `pipeline_latency_ms` | Time from the detection to the setpoint it produced, or `null`. |
+| `fc_armed`, `fc_guided` | The flight controller state the gates read; false once its heartbeat is stale. |
+
+One-shot events: `follow.reacquired` (`{track_id, similarity, gap_s}`) and `follow.lost`.
+
+## On the operator surfaces
+
+The cockpit, Mission Control and the Android app draw the follow with the same [target symbology](/drone-agent/cockpit#target-states): tracking brackets with a `TRACK` tag and the range under the box while following, dashed `COAST` brackets at the predicted box, a `SEARCHING` sweep, a `Re-acquired` toast, and `LOST`. While following, a range panel shows the range with its uncertainty, the height source, the bearing and the subject's speed.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Agent cockpit" icon="gauge" href="/drone-agent/cockpit">
+    The on-node console and its follow chrome.
+  </Card>
+  <Card title="Extensions catalog" icon="puzzle-piece" href="/drone-agent/extensions-catalog#follow-me">
+    Install and the catalog entry.
+  </Card>
+</CardGroup>

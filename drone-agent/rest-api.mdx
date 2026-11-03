@@ -28,7 +28,7 @@ For example `http://192.168.1.50:8080` or `http://ados-9f2c1a.local:8080`. On th
 
 ## Authentication
 
-Send the pairing key in the `X-ADOS-Key` header. The key is created at pairing and stored in `/etc/ados/pairing.json`; it starts with `ados_`.
+Send the pairing key in the `X-ADOS-Key` header. The key is created at pairing and stored in `/etc/ados/pairing.json`; it starts with `ados_`. The node also accepts an optional operator API key in the same header; see [Operator API key](#operator-api-key).
 
 ```bash
 curl http://localhost:8080/api/status \
@@ -41,7 +41,7 @@ Three more rules apply at the auth edge:
 - **The unpaired gate.** While a node is unpaired, its data routes answer on-box callers and the first-boot lifelines (link-local, the node's own hotspot at `192.168.4.1` and USB tether at `192.168.7.1`), require a dashboard PIN session from other callers on the operator LAN, and refuse remote callers. The pairing claim is refused to remote callers.
 - **Dashboard PIN session.** The browser dashboard exchanges its PIN at `POST /api/dashboard/pin/verify` and then sends the session in the `x-ados-dashboard-session` header instead of a key. The dashboard PIN itself is covered on [Agent dashboard overview](/drone-agent/dashboard-overview#access-and-authentication).
 
-A browser cannot set `X-ADOS-Key` on a WebSocket handshake. Mint a short-lived ticket with `POST /api/_ws/ticket` (authenticated with the key) and pass it as a subprotocol: `new WebSocket(url, ["ados-ws-ticket", ticket])`.
+A browser cannot set `X-ADOS-Key` on a WebSocket handshake. Mint a short-lived ticket with `POST /api/_ws/ticket` and body `{"scope": "<scope>"}` (authenticated with the key) and pass it as a subprotocol: `new WebSocket(url, ["ados-ws-ticket", ticket])`. The agent mints tickets only for the scopes it knows, for example `vision.detections` for the detection stream and `nav.stream` for the navigation stream.
 
 ## Conventions
 
@@ -64,7 +64,7 @@ A browser cannot set `X-ADOS-Key` on a WebSocket handshake. Mint a short-lived t
 | Status | `/api/status`, `/api/status/full` | Agent status, board, flight controller, health |
 | Ping, version, time | `/api/ping`, `/api/version`, `/api/time` | Liveness, agent version, node clock |
 | Configuration | `/api/config`, `/api/config/schema` | Read and write config; the embedded config schema |
-| Commands | `/api/command`, `/api/commands` | Send MAVLink commands and list supported commands |
+| Commands | `/api/command`, `/api/commands` | Send MAVLink commands (including `ekfSourceSet`) and list supported commands |
 | Telemetry | `/api/telemetry` | Cached telemetry snapshot |
 | Parameters | `/api/params`, `/api/params/{name}` | Flight-controller parameter reads and writes through the cache |
 | MAVLink | `/api/mavlink/ports`, `/api/mavlink/signing` | Serial ports; MAVLink2 signing capability and FC enrolment |
@@ -84,7 +84,9 @@ A browser cannot set `X-ADOS-Key` on a WebSocket handshake. Mint a short-lived t
 | Swarm | `/api/swarm/neighbors` | The swarm neighbour table |
 | MCP | `/api/mcp/status`, `/api/mcp/tokens`, `/api/mcp/revoke` | AI-control token posture and lifecycle |
 | Peripherals | `/api/peripherals`, `/api/v1/peripherals` | USB devices and sensors |
-| Vision | `/api/vision` | Vision state, detections, model registry |
+| Vision | `/api/vision` | Vision state and backend health, detections, designation, model registry |
+| Navigation and map | `/api/v1/nav/status`, `/api/v1/nav/stream`, `/api/v1/map/live` | Navigation pose, planar scan, navigation source, follow read-back, live occupancy map |
+| Security | `/api/v1/security/api-key` | Rotate or clear the operator API key |
 | Logs | `/api/logs`, `/api/v2/observability/{*path}` | Log retrieval; the Black Box query API |
 | Network | `/api/v1/network` | MAC pinning, Wi-Fi client |
 | Display | `/api/v1/display` | Ground-station display page, snapshot, calibration |
@@ -177,6 +179,88 @@ curl -s -X POST http://localhost:8080/api/video/profile \
   -H "X-ADOS-Key: $KEY" \
   -H "Content-Type: application/json" \
   -d '{"profile": "hero", "holder": "gcs-1", "lease_s": 30}'
+```
+
+### EKF source set
+
+`ekfSourceSet` switches ArduPilot's EKF3 between its three configured source sets (`EK3_SRCn_*`) with `MAV_CMD_SET_EKF_SOURCE_SET` (42007). Pass the set number as the only argument; anything other than 1, 2 or 3 is a `400` before a frame is built. PX4 has no source sets and answers `UNSUPPORTED`, which the response's `ack` block reports.
+
+```bash
+curl -s -X POST http://localhost:8080/api/command \
+  -H "X-ADOS-Key: $KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"cmd": "ekfSourceSet", "args": [2]}'
+# {"status": "ok", "cmd": "ekfSourceSet", "set": 2, "ack": {...}}
+```
+
+### Vision status
+
+`GET /api/vision/status` lists the models registered with the vision engine and reports the inference backend:
+
+| Field | Meaning |
+|---|---|
+| `backend` | The configured inference backend. |
+| `backend_state` | `ready`, `mock` (a mock backend that was explicitly configured) or `unavailable` (the requested backend cannot run on this node). A reply that names no state reads as `unavailable`, never as `ready`. |
+| `backend_reason` | Why the backend is `unavailable`, or `null`. |
+| `models`, `model_count` | The registered models. |
+| `npu_utilization_pct` | NPU load, or `null` when the board reports none. |
+
+When the vision engine is not running the route answers `503`. A build without the requested backend no longer substitutes a mock silently: it reports `unavailable` and logs `vision_backend_unavailable` at startup.
+
+### Navigation and map
+
+The agent collects navigation state that extensions publish on the plugin event bus and serves it from the host, so an operator surface can show it without loading an extension UI. The sources are the World Engine extension's pose, planar scan, occupancy and map-status topics, Vision Navigation's `nav.state`, and Follow-Me's `follow.state` and follow events. Every route is served on every profile; a kind nothing publishes is `null`, never a `404`.
+
+| Kind | Source | Payload (`data`) |
+|---|---|---|
+| `pose` | `plugin.world-engine.pose` | The navigation pose with its tracking `health` |
+| `scan` | `plugin.world-engine.scan` | One planar scan: `{t_ns, frame: "body_frd", angle_start_rad, angle_increment_rad, ranges_m}` |
+| `nav` | `nav.state` | The [Vision Navigation state](/drone-agent/vision-nav-external-nav#navigation-state) |
+| `follow` | `follow.state` | The [Follow-Me read-back](/drone-agent/extensions/follow-me#follow-state) |
+| `map` | `plugin.world-engine.map_status` | The live mapping session summary |
+
+`data` is the source payload unchanged.
+
+**`GET /api/v1/nav/status`** returns the latest entry of each kind:
+
+```json
+{
+  "pose": {"ts_ms": 1767225600000, "age_ms": 31, "data": {"...": "..."}},
+  "scan": {"ts_ms": 1767225600010, "age_ms": 85, "data": {"...": "..."}},
+  "nav": null,
+  "follow": null,
+  "map": null
+}
+```
+
+**`WS /api/v1/nav/stream`** pushes frames `{kind, ts_ms, data}` for `pose`, `scan`, `nav`, `follow` and `map`. Each kind is sent at most 10 times a second and only its latest value goes out, so a slow client never queues stale frames. One-shot follow events arrive as `{kind: "follow_event", ts_ms, topic, data}` with `topic` `follow.reacquired` or `follow.lost`. Authenticate the upgrade with the `X-ADOS-Key` header or a `nav.stream` ticket.
+
+**`GET /api/v1/map/live?since=<seq>`** returns the live occupancy tiles that changed after `seq` (omit it for every tile):
+
+```json
+{"seq": 42, "frame": "map_frd", "res_m": 0.05, "tile_cells": 64,
+ "tiles": [{"ix": 0, "iy": -1, "png_b64": "iVBORw0..."}]}
+```
+
+Keep the returned `seq` and pass it on the next call. A `since` ahead of the node's current `seq` (a client still holding an earlier session) gets every tile again.
+
+```bash
+curl -s -H "X-ADOS-Key: $KEY" http://localhost:8080/api/v1/nav/status
+curl -s -H "X-ADOS-Key: $KEY" "http://localhost:8080/api/v1/map/live?since=0"
+```
+
+### Operator API key
+
+Besides the pairing key, a node accepts one optional operator API key in `X-ADOS-Key`, stored at `security.api.api_key` in the agent config.
+
+- `POST /api/v1/security/api-key/rotate` mints a new key in the pairing key's format (`ados_` plus URL-safe base64), stores it and returns it once: `{"ok": true, "api_key": "ados_...", "rotated_at": "<RFC 3339 UTC>"}`. No read route returns it again; `GET /api/config` redacts it.
+- `DELETE /api/v1/security/api-key` removes the key and answers `{"ok": true}`. The pairing key is untouched, so paired clients keep working.
+
+Both take effect on the next request, with no restart: the old key is refused at once. Both are refused with `403` when the request crossed a ground station's radio relay or arrived through a proxy or tunnel, and an MCP token can never call them. The log events `security.api_key_rotated` and `security.api_key_cleared` record each change without the key.
+
+```bash
+curl -s -X POST -H "X-ADOS-Key: $KEY" \
+  http://localhost:8080/api/v1/security/api-key/rotate
 ```
 
 ## CORS

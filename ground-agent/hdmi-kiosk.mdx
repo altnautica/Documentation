@@ -34,7 +34,7 @@ The kiosk re-reads its config every few seconds: changing `enabled` or the resol
   ![Agent cockpit running full screen in kiosk mode with the link strip, safety band, HUD overlay, radar and map tiles, and the skill bar with Arm and Mode available while disarmed](/images/ground-agent/cockpit-kiosk.png)
 </Frame>
 
-The cockpit has a menu rail: **Feed**, **Link**, **Mesh**, **Pair**, **Uplink**, **System**, **Extensions** and **Settings**. **Feed** is full-frame video with the HUD, an alert stack, a mini-map and the skill bar. It works by touch or gamepad.
+On a ground station the cockpit's menu rail shows **Feed**, **Link**, **LoRa**, **GNSS**, **IO**, **Pair**, **Uplink**, **System**, **Extensions** and **Settings**, plus **Mesh** on a relay or receiver and **Sources** on a receiver. **Feed** is full-frame video with the HUD, an alert stack, a mini-map and the skill bar. The kiosk always uses the `tv` layout. It works by touch or gamepad. Every screen is described on [Agent cockpit](/drone-agent/cockpit).
 
 Video comes from the ground station's own WHEP stream. Telemetry comes from the agent's `/api/telemetry` endpoint, polled at 5 Hz.
 

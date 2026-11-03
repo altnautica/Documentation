@@ -49,7 +49,7 @@ Scripts and other non-browser clients use the `X-ADOS-Key` header instead of a P
 
 - **Top bar:** online dot, device name, the node's .local name (click to copy), profile badge with ground role, board, agent version, uptime, a Settings shortcut and the theme toggle (dark, light, system).
 - **Sidebar:** the pages for this profile (see the next section). Below the `lg` width the sidebar becomes a drawer, and a bottom dock carries Home and Settings.
-- **Enter Cockpit banner:** on Home, opens the full-screen cockpit at `/cockpit`.
+- **Enter Cockpit banner:** on Home, opens the full-screen [agent cockpit](/drone-agent/cockpit) at `/cockpit`.
 - **Region chip:** on Home, reads **Region: Unrestricted** or **Region: Pinned to** a country code, and opens **Settings → Region**.
 - **Banners:** "Agent is unreachable. Reconnecting…" while the agent stops answering, and "Flight controller is disconnected." on a drone with no FC link.
 - **Offline page:** Home shows **Agent unreachable** when the agent's REST API does not answer (check power, network and that `ados-supervisor` is running), or **Access not set up yet** when the agent answered and declined; reload to set up access with the PIN.

@@ -341,6 +341,10 @@ boxes or a HUD.
 letterbox-corrected so plugin geometry lines up with the video pixels.
 For vector marks (boxes, reticles, labels) the bridge's `cockpit.marks`
 method composites them into one shared layer instead.
+The frame reads the camera, the rendered video rect, the vehicle attitude
+and the latest detections with `ctx.videoOverlay.onProps` (see
+[Video overlay host props](/developers/sdk-typescript#video-overlay-host-props)).
+Mission Control and the agent cockpit push the same props.
 
 ```yaml
 contributes:

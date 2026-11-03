@@ -199,6 +199,7 @@
               "drone-agent/pairing",
               "drone-agent/configuration",
               "drone-agent/tui-dashboard",
+              "drone-agent/cockpit",
               "drone-agent/cli-reference"
             ]
           },
@@ -335,6 +336,7 @@
             "group": "Extension guides",
             "pages": [
               "drone-agent/extensions/world-engine",
+              "drone-agent/extensions/follow-me",
               {
                 "group": "Vision Navigation",
                 "root": "drone-agent/vision-nav-overview",
@@ -343,6 +345,7 @@
                   "drone-agent/vision-nav-install",
                   "drone-agent/vision-nav-optical-flow",
                   "drone-agent/vision-nav-modes",
+                  "drone-agent/vision-nav-external-nav",
                   "drone-agent/vision-nav-calibration",
                   "drone-agent/vision-nav-troubleshooting",
                   "drone-agent/vision-nav-architecture"
@@ -560,7 +563,7 @@
     },
     {
       "source": "/drone-agent/follow-me-overview",
-      "destination": "/drone-agent/extensions-catalog#follow-me",
+      "destination": "/drone-agent/extensions/follow-me",
       "permanent": false
     },
     {

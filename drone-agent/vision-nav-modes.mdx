@@ -1,19 +1,20 @@
 ---
 title: "Vision Navigation: modes and fallback"
 sidebarTitle: "Modes and fallback"
-description: "The three Vision Navigation modes, their pre-arm checks, the scale ladder and what happens when flow degrades."
+description: "The four Vision Navigation modes, their pre-arm checks, the scale ladder and what happens when flow degrades."
 icon: "layer-group"
 ---
 
-Vision Navigation has three modes. Set the mode with the `mode` key in the plugin's per-drone config (see [Install and configure](/drone-agent/vision-nav-install#set-the-per-drone-config)). The Vision Nav tab's mode card is read-only: it lists the modes the agent can run and marks the active one. A config change restarts the plugin on the new mode.
+Vision Navigation has four modes. Set the mode with the `mode` key in the plugin's per-drone config (see [Install and configure](/drone-agent/vision-nav-install#set-the-per-drone-config)). The Vision Nav tab's mode card is read-only: it lists the modes the agent can run and marks the active one. A config change restarts the plugin on the new mode.
 
-## The three modes
+## The four modes
 
-| Mode | Camera | Rangefinder | Sends to the flight controller |
+| Mode | Input | Rangefinder | Sends to the flight controller |
 |---|---|---|---|
 | `off` | optional | optional | nothing |
-| `optical_flow` | downward | required | flow on component 198, scaled by the rangefinder |
-| `optical_flow_degraded` | downward | not needed | flow on component 198, scaled by the scale ladder |
+| `optical_flow` | downward camera | required | flow on component 198, scaled by the rangefinder |
+| `optical_flow_degraded` | downward camera | not needed | flow on component 198, scaled by the scale ladder |
+| `external_nav` | a shared pose topic (for example a planar LiDAR SLAM) | on the flight controller, for height | `ODOMETRY` on component 197, EKF source-set switching, and optionally `OBSTACLE_DISTANCE` |
 
 ### `off`
 
@@ -27,7 +28,13 @@ A Lucas-Kanade tracker on the downward camera, with the rangefinder for metric s
 
 The same tracker, with scale from the scale ladder instead of a rangefinder. It drifts more than `optical_flow`, and the drift grows quickly above about 5 m. Use it when you can't fit a rangefinder.
 
+### `external_nav`
+
+ArduPilot only. A pose another plugin publishes is sent as `ODOMETRY`, and the plugin switches the EKF source set between the external pose and a fallback set as tracking comes and goes. An optional obstacle feed turns a planar scan into `OBSTACLE_DISTANCE`. Its configuration, switching rules and pre-arm checks are on [External nav and obstacles](/drone-agent/vision-nav-external-nav).
+
 ## Pre-arm checks
+
+The flow modes run these checks. `external_nav` runs its own set: `extnav_source`, `extnav_health`, `ekf_origin` and, with the obstacle feed on, `obstacle_feed` (see [External nav pre-arm checks](/drone-agent/vision-nav-external-nav#pre-arm-checks)).
 
 | Check | Card row | `off` | `optical_flow` | `optical_flow_degraded` |
 |---|---|---|---|---|
@@ -63,7 +70,7 @@ On the static rung the estimator reports `degraded` whatever the raw quality, fl
 - **Sustained degradation.** A `degraded` or `failed` streak of 2 s turns the companion `CRITICAL`: its `HEARTBEAT` reports `MAV_STATE_CRITICAL`.
 - **No frames.** If no camera frame arrives for 2 s, the estimator reports `failed` and the companion goes `CRITICAL`. No frames means nothing is sent, so the flight controller's estimator times the flow source out.
 
-The plugin does not switch the flight controller's EKF source set. Keep an RC switch on the source-set option (see [Flight controller setup](/drone-agent/vision-nav-optical-flow#a-way-back-to-gps)) and use it, or land.
+In the flow modes the plugin does not switch the flight controller's EKF source set. Keep an RC switch on the source-set option (see [Flight controller setup](/drone-agent/vision-nav-optical-flow#a-way-back-to-gps)) and use it, or land. In `external_nav` the plugin switches the set itself; see [Source-set switching](/drone-agent/vision-nav-external-nav#source-set-switching).
 
 ## Next steps
 

@@ -1,14 +1,14 @@
 ---
 title: "Vision Navigation overview"
 sidebarTitle: "Vision Navigation"
-description: "GPS-denied position hold from a downward camera: optical flow with or without a rangefinder, fed to ArduPilot, PX4 or iNav."
+description: "GPS-denied navigation: optical flow from a downward camera fed to ArduPilot, PX4 or iNav, or an external pose such as a planar LiDAR SLAM sent to ArduPilot with source-set switching and an obstacle feed."
 icon: "compass"
-keywords: ["ados", "vision navigation", "optical flow", "gps-denied", "extension", "rangefinder"]
+keywords: ["ados", "vision navigation", "optical flow", "gps-denied", "extension", "rangefinder", "external navigation", "odometry", "obstacle avoidance"]
 ---
 
 Vision Navigation is a first-party extension, `com.altnautica.vision-nav`. It lets a drone hold position when GPS is weak or missing: indoors, under a bridge, between tall buildings. A downward camera tracks the ground, the flight controller's gyro removes the drone's own rotation, and the result reaches the flight controller as an optical-flow measurement about 30 times a second. Position hold, loiter and missions then keep working through the flight controller's own estimator.
 
-The extension does optical flow only. It does not estimate a full pose, does not run visual-inertial odometry and does not inject a position.
+In its flow modes the extension does optical flow only: it does not estimate a full pose and does not run visual-inertial odometry. In `external_nav` mode it estimates nothing itself either: it forwards a pose another plugin publishes (for example a planar LiDAR SLAM) to ArduPilot as `ODOMETRY`, switches the EKF source set as tracking comes and goes, and can turn a planar scan into `OBSTACLE_DISTANCE`.
 
 <Frame caption="The Vision Nav tab on a drone in optical_flow mode.">
   ![Mission Control Vision Nav tab with the mode card, sensors, flow health and pre-arm checks for a drone in optical flow mode](/images/extensions/vision-nav/vision-nav-tab.png)
@@ -30,10 +30,11 @@ Accuracy depends on the surface, the light, the camera and the airframe. The ext
 | `off` | The plugin stays loaded and reports sensor health, but sends nothing to the flight controller. This is the default. |
 | `optical_flow` | Downward camera plus a rangefinder. The pre-arm checks expect a fresh rangefinder reading. |
 | `optical_flow_degraded` | Downward camera, no rangefinder needed. Scale comes from the flight controller's height, and from GPS height when `outdoor` is on. |
+| `external_nav` | ArduPilot only. A shared pose topic sent as `ODOMETRY` on component 197, with EKF source-set switching and an optional planar-scan obstacle feed. See [External nav and obstacles](/drone-agent/vision-nav-external-nav). |
 
 The mode is a per-drone config key, not a picker in the Vision Nav tab. See [Modes and fallback](/drone-agent/vision-nav-modes).
 
-## How it works
+## How the flow modes work
 
 1. **Capture.** The agent's vision host captures the camera and publishes frames on the shared vision frame bus. The plugin never opens the camera itself.
 2. **Flow.** Each new frame is paired with the previous one and with the gyro sample taken at the same instant (from the flight controller's `RAW_IMU`, which the plugin asks for at 100 Hz). A Lucas-Kanade tracker measures how far the ground moved.

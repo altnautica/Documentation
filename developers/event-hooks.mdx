@@ -63,9 +63,11 @@ envelope claims is ignored; the bridge re-resolves it.
 | `telemetry.<topic>` | `telemetry.subscribe.<topic>` | Topic-specific payload | After the plugin subscribed to `<topic>`. |
 | `perception.detections` | `perception.subscribe` | A detection batch | After the plugin opened the detection stream. |
 
-Other host-pushed topics (for example the `video.overlay` host props, or
-an agent plugin's state read-back) arrive on the same channel and are
-read with `ctx.events.subscribe(topic, handler)`.
+The `video.overlay` host props arrive as `video.overlay.props` and are read
+with `ctx.videoOverlay.onProps(handler)` (see
+[Video overlay host props](/developers/sdk-typescript#video-overlay-host-props)).
+Other host-pushed topics (for example an agent plugin's state read-back)
+arrive on the same channel and are read with `ctx.events.subscribe(topic, handler)`.
 
 ## Wire shape
 

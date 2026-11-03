@@ -1,0 +1,133 @@
+---
+title: "Agent cockpit"
+description: "The node's own full-screen console at /cockpit: live video with the HUD, target designation and follow chrome, and every node screen from link and video to parameters, logs and extensions, by touch, mouse, keyboard or gamepad."
+icon: "gauge"
+keywords: ["ados", "cockpit", "console", "hud", "kiosk", "gamepad", "target designation", "follow-me"]
+---
+
+Every node serves a cockpit at `http://<node>:8080/cockpit/`, next to the [browser dashboard](/drone-agent/dashboard-overview) at `/`. The cockpit is a full-screen console built for flying and for running the node from a touchscreen, a TV or the [HDMI kiosk](/ground-agent/hdmi-kiosk): video with the HUD, the Skill Bar, and every node screen, driven by touch, mouse, keyboard or gamepad. Nothing needs installing; the agent ships the bundle.
+
+<Warning>
+The cockpit can arm, take off, land, return and cut the motors. Read [Safety](/operations/safety) before you fly from it.
+</Warning>
+
+## Open it
+
+- From a browser on the same network: `http://<node>:8080/cockpit/`.
+- On a ground station's HDMI output, the kiosk opens it full screen with `?kiosk=1`.
+- From the dashboard Home screen, the **Enter Cockpit** banner.
+
+On the node itself and on its first-boot networks the cockpit opens directly. From another machine on the LAN a node with an access PIN shows a notice with a PIN form; the PIN mints a short-lived session for that browser.
+
+## Screens
+
+The menu rail lists the screens the node's profile, ground-station role and flight-controller family allow. Each profile opens on its own home screen.
+
+| Screen | Profiles | What it does |
+|---|---|---|
+| **Feed** | all; home on `drone` and `ground_station` | Live video with the HUD, target layer, Skill Bar, minimap and radar. |
+| **Node** | `workstation`, `compute`; home there | World Engine node jobs, products, sessions and perception-offload status. |
+| **Capture** | `visor`; home there | The World Engine capture session. |
+| **Link** | all | The WFB radio link: signal, loss, bitrate, FEC, channel, TX power, the quality trace and the radio pair state. |
+| **Video** | `drone`, `visor` | Video configuration and latency. |
+| **Transmit** | `drone` | Radio TX power and FEC, bounded by the region; applied with slide-to-confirm. |
+| **LoRa** | `drone`, `ground_station` | LoRa radio. |
+| **GNSS** | `ground_station`, `visor` | GNSS receiver and base survey. |
+| **Sensors** | `drone`, `visor` | Sensors and the rig description upload. |
+| **IO** | `ground_station` | Controllers (making one primary is guarded), the HDMI display, Bluetooth discovery and pairing. |
+| **Mesh** | `ground_station` as `relay` or `receiver` | Mesh peers. A `direct` ground station has no mesh, so the screen is hidden. |
+| **Sources** | `ground_station` as `receiver` | The relays a receiver combines. |
+| **Pair** | all | Pairing with Mission Control. |
+| **Uplink** | `ground_station` | The internet uplink lanes (Ethernet, Wi-Fi client, cellular modem), the active lane, failover order and the modem data cap. Read-only. |
+| **System** | all | Identity, health, resources and services, with guarded service restart and reboot. Opens **Peripherals** and **Logs**. |
+| **Extensions** | all | Running extensions with their tabs and panels; install from a file or URL with a permission and risk review, and remove. |
+| **Params** | `drone`, `visor`, with a MAVLink flight controller | Flight-controller parameters with metadata. Writes are refused while armed. |
+| **MSP** | `drone`, `visor`, with an MSP flight controller | Betaflight and iNav settings and the CLI. Save-and-reboot is guarded. |
+| **Settings** | all | Every agent setting: a curated set (profile, network, radio, mesh, display, cloud, vision, camera, system) plus the complete raw tree, plus the cockpit's own appearance. |
+
+Every action that can cut access or change how the aircraft flies (unpair, reboot, restart, region apply, TX power, MSP save, extension removal, a network join) sits behind a guarded button or a slide-to-confirm. Leaving a screen with unsaved edits asks first.
+
+## Width classes and layouts
+
+The cockpit arranges itself by window width, the same breakpoints the Android app uses:
+
+| Class | Width |
+|---|---|
+| `compact` | under 600 px |
+| `medium` | 600 to 1023 px |
+| `expanded` | 1024 to 1599 px |
+| `tv` | 1600 px and wider, or any width with `?kiosk=1` |
+
+The Feed uses one of three layouts: **compact** keeps the video full-bleed with a minimap inset, **split** puts video and map side by side behind a draggable divider, and **portrait** stacks a 16:9 video over the map on a window taller than wide. Panels such as the range panel show more rows as the class grows.
+
+## Appearance
+
+Settings → Appearance holds two cockpit-local preferences, kept in the browser and never written to the agent:
+
+- **Theme:** Dark, Light or Night vision (dim green).
+- **Glove mode:** scales touch targets by 1.25 for gloved hands.
+
+Extensions' panels receive the theme through `theme.changed`, so they follow it.
+
+## The Feed
+
+Layers, bottom to top: the video, extension `video.overlay` frames, the host target layer, the instrument HUD, then the controls (stream tabs, alert stack, Skill Bar, safety band, right rail).
+
+- **Stream tabs and PiP.** Each camera leg is a tab. A picture-in-picture inset shows a second leg (the downward camera by default) with its own target layer; its header swaps it with the main video.
+- **Safety band.** Always visible at the top: node name, arm state, flight mode, battery with time to reserve, the [navigation-source chip](#navigation-source-chip), link, video, the pilot in command when reported, preflight checks, the recording and flight timers, and a guarded Kill. Every chip pairs its colour with text.
+- **Skill Bar.** Built-in flight skills plus the skills extensions declare, such as Follow-Me. A toggle skill with a two-value setting shows it as a segmented control; Follow-Me's is **STRICT | SMART**.
+- **Minimap.** With GPS, a map around the aircraft. Without a GPS fix it switches to the local frame: east and north metres around the drone, with the live occupancy tiles from `/api/v1/map/live`, the SLAM trail (dashed while degraded, broken where lost), the planar scan, the origin and the follow target. Drag pans; the view recentres 10 s later.
+- **Radar.** Heading and course over ground, plus obstacle sectors and scan points when a planar scan is published. With no obstacle data it draws no obstacle overlay rather than a false all-clear.
+
+### Designating a target
+
+- Tap or click a box to open the target menu: **Lock**, **Release**, and the target actions extensions declare (for example **Follow this target**).
+- Drag on empty video to draw a box and designate it on release (on touch, long-press 500 ms first).
+- With a keyboard or gamepad, `[` and `]` cycle a focus ring over the boxes, Enter opens the menu, Esc clears the focus.
+
+Designation calls `POST /api/vision/designate`. The what's-locked chip then shows who is designated, the state word and the confidence, with an × that releases the target and stops a running follow.
+
+### Target states
+
+The cockpit, Mission Control and the Android app draw targets with one symbology. Each state has its own shape and word; colour only reinforces it, so no state depends on colour alone.
+
+| State | When | Drawn as | Tag |
+|---|---|---|---|
+| Candidate | A detection with no track | Thin hairline box | `PERSON 82%` |
+| Tracked | A track that is not designated | Corner brackets | `PERSON #12` |
+| Locked | Designated, no follow running | Corner brackets | `LOCK #12 97%` |
+| Acquiring | Follow on, waiting for a lock and a range | Brackets | `ACQUIRING #12` |
+| Following | Follow commanding | Heavy tracking brackets with a centre cross reticle; range under the box | `TRACK 97%`, then `10.2 m ±0.6 m` |
+| Holding | Follow on but a gate holds | Brackets | `HOLD · <reason>` |
+| Coasting | Smart re-acquire coasting on the prediction | Dashed brackets at the predicted box | `COAST 1.4 s` |
+| Searching | Coast window with the prediction too spread for a box | A sweeping ring around the predicted point (or a bearing when off frame) | `SEARCHING` |
+| Re-acquired | Smart re-acquire designated a matching track | Brackets snap into place; a toast | `Re-acquired #12 · 0.86 · 1.2 s gap` |
+| Lost | The subject was given up | Brackets fade out | `LOST` |
+
+Boxes are smoothed over 120 ms between detection batches; with reduced motion the boxes snap and nothing animates. A stale detection batch, or video that is not playing, draws no boxes.
+
+### Follow chrome
+
+While a follow runs:
+
+- **Range panel** (bottom centre): the range with its ±2σ interval, the height above ground and its source (`RNG`, `BARO`), bearing, depression, the subject's speed, the range cues, the detection-to-setpoint latency and the re-acquire mode.
+- **Right rail:** **TRACKING ×** to stop the follow, the **STRICT | SMART** re-acquire toggle, the front and belly camera swap, the recording timer, and at `expanded` and `tv` widths mirrors of HOLD, RTL and LAND. These dispatch the same skills as the Skill Bar, with the same confirmation. Kill stays in the safety band.
+
+See [Follow-Me](/drone-agent/extensions/follow-me) for the follow itself.
+
+### Navigation-source chip
+
+The chip shows what the flight controller's EKF navigates on: `GPS`, `EXT NAV`, `FLOW` or `DR` (dead reckoning), with a quality word. Its inputs are the flight controller's `EKF_STATUS_REPORT`, the GPS fix, the EKF source-set parameters and Vision Navigation's [`nav.state`](/drone-agent/vision-nav-external-nav#navigation-state). Tapping it opens a popover that switches the source set by hand with the agent's [`ekfSourceSet` command](/drone-agent/rest-api#ekf-source-set).
+
+The pose, scan, navigation and follow data reach the cockpit from the agent's [navigation stream](/drone-agent/rest-api#navigation-and-map), so it shows them without loading an extension panel.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="HDMI kiosk" icon="tv" href="/ground-agent/hdmi-kiosk">
+    Run the cockpit full screen on a ground station.
+  </Card>
+  <Card title="REST API" icon="code" href="/drone-agent/rest-api">
+    The routes the cockpit reads.
+  </Card>
+</CardGroup>

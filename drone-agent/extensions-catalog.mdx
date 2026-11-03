@@ -51,7 +51,7 @@ It speaks MAVLink Gimbal v2 only. A gimbal that does not present a gimbal-manage
 | FC firmware | ArduPilot 4.5+, PX4 1.14+, iNav 7.0+ |
 | Resources | 512 MB RAM, 80% CPU, 24 processes |
 
-Position hold when GPS is unreliable. A downward camera plus the flight controller's gyro produce an optical-flow measurement about 30 times a second, sent as `OPTICAL_FLOW` to ArduPilot and iNav and as `OPTICAL_FLOW_RAD` to PX4. Three modes: optical flow with a rangefinder, optical flow without one (barometer height for scale, or GPS height in outdoor mode), or off. It does no visual-inertial odometry. The **Engage** Skill (`Shift+N`) turns it on and off.
+Position hold when GPS is unreliable. A downward camera plus the flight controller's gyro produce an optical-flow measurement about 30 times a second, sent as `OPTICAL_FLOW` to ArduPilot and iNav and as `OPTICAL_FLOW_RAD` to PX4. Or, on ArduPilot, an external pose another plugin publishes (for example a planar LiDAR SLAM) is sent as `ODOMETRY` with automatic EKF source-set switching, and a planar scan becomes `OBSTACLE_DISTANCE` for proximity avoidance. Four modes: optical flow with a rangefinder, optical flow without one (barometer height for scale, or GPS height in outdoor mode), external navigation, or off. It does no visual-inertial odometry. The **Engage** Skill (`Shift+N`) turns it on and off.
 
 <ExtensionVisionNav />
 
@@ -69,9 +69,9 @@ See the [Vision Navigation guide](/drone-agent/vision-nav-overview).
 | FC firmware | ArduPilot or PX4 in a guided position-hold mode (ArduPilot Copter Guided or Guided NoGPS, Plane and QuadPlane Guided, Rover Guided; PX4 Offboard) |
 | Resources | 128 MB RAM, 25% CPU, 4 processes |
 
-Click a subject in the live video and the drone follows it at a fixed distance and height. A detector on the companion produces detections, you designate one, and the companion locks that track, projects it onto the ground and streams guided position setpoints to the flight controller.
+Click a subject in the live video and the drone follows it at a set distance and height above the ground. A detector on the companion produces detections, you designate one, and the companion locks that track, estimates the subject's range from the feet ray, the box height and an optional planar LiDAR, tracks its velocity, and streams local-frame position, velocity feed-forward and yaw setpoints to the flight controller at 20 Hz. A downward rangefinder on the flight controller keeps the height above the terrain.
 
-It stops commanding the instant the tracker reports the subject uncertain or lost, and never re-locks onto a different subject by itself. The **Follow-Me** Skill (`Shift+F`) arms and disarms the behaviour and asks for confirmation first. An AI client gets two tools, `follow_status` and `stop_follow`, and no way to start a follow: a follow begins only when an operator designates a subject.
+It stops commanding when the tracker reports the subject uncertain or lost. After a loss the operator-selectable re-acquire mode decides: **Strict** holds and waits for a new designation; **Smart** coasts on the prediction for a few seconds and re-designates a person who matches the subject's appearance where the subject should be, announcing it. The tracker never re-locks silently. The **Follow-Me** Skill (`Shift+F`) arms and disarms the behaviour and asks for confirmation first. An AI client gets two tools, `follow_status` and `stop_follow`, and no way to start a follow: a follow begins only when an operator designates a subject. See the [Follow-Me guide](/drone-agent/extensions/follow-me).
 
 <ExtensionFollowMe />
 

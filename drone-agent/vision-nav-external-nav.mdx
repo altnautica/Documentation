@@ -1,0 +1,161 @@
+---
+title: "Vision Navigation: external navigation and obstacles"
+sidebarTitle: "External nav and obstacles"
+description: "Feed a planar LiDAR SLAM pose to ArduPilot as ODOMETRY with automatic EKF source-set switching, and turn a planar scan into OBSTACLE_DISTANCE for proximity avoidance."
+icon: "route"
+keywords: ["ados", "vision navigation", "external navigation", "odometry", "gps-denied", "obstacle distance", "lidar"]
+---
+
+The `external_nav` mode takes a pose that another installed plugin publishes on a shared topic, such as a planar LiDAR SLAM from the [World Engine extension](/drone-agent/extensions/world-engine), and sends it to the flight controller's own estimator. The flight controller keeps doing state estimation, control and avoidance; the companion supplies one more position source and switches the EKF to it and away from it as tracking quality changes.
+
+An optional obstacle feed turns a shared planar scan into `OBSTACLE_DISTANCE`, so ArduPilot's proximity avoidance sees what the LiDAR sees.
+
+<Warning>
+External navigation changes what the flight controller's estimator trusts for position. Prove it on the bench and in a tethered or low hover before relying on it, keep an RC switch on the EKF source-set option, and read [Safety](/operations/safety).
+</Warning>
+
+External navigation and the source-set switch need **ArduPilot**. PX4 has no EKF source sets.
+
+## What you need
+
+- A plugin that publishes the pose topic (default `plugin.world-engine.pose`) and, for the obstacle feed, the scan topic (default `plugin.world-engine.scan`). The World Engine extension publishes both from a planar LiDAR when `atlas.nav_pose` is `always`.
+- A downward rangefinder or barometer on the flight controller for height. A planar pose has no height: the plugin echoes the flight controller's own height back.
+- The EKF origin, given as `origin_lla` in the plugin config. The plugin sets it on the flight controller when the flight controller reports none.
+
+## Configure
+
+Set the mode and the two blocks in the per-drone plugin config (see [Install and configure](/drone-agent/vision-nav-install#set-the-per-drone-config)):
+
+```yaml
+mode: external_nav
+external_nav:
+  pose_topic: plugin.world-engine.pose
+  origin_lla: [51.5007, -0.1246, 20.0]   # lat deg, lon deg, alt m AMSL
+  rate_hz: 30
+  extnav_set: 1
+  fallback_set: 2
+  gps_primary: false
+obstacle:
+  enabled: true
+  scan_topic: plugin.world-engine.scan
+  sectors: 72
+  rate_hz: 10
+```
+
+| Key | Default | Meaning |
+|---|---|---|
+| `external_nav.pose_topic` | `plugin.world-engine.pose` | Shared topic carrying the pose. |
+| `external_nav.origin_lla` | none (required) | EKF origin `[lat, lon, alt_m]`. The mode refuses to start without it. |
+| `external_nav.rate_hz` | 30 | Cap on the `ODOMETRY` rate. |
+| `external_nav.extnav_set` | 1 | EKF source set (1 to 3) whose position source is ExternalNav. |
+| `external_nav.fallback_set` | 2 | Source set used when the pose is lost (the flight controller's optical-flow set) or, with `gps_primary`, the GPS set. |
+| `external_nav.gps_primary` | false | GPS is the primary source; the external pose takes over only while the GPS fix is lost. |
+| `obstacle.enabled` | false | Send `OBSTACLE_DISTANCE`. |
+| `obstacle.scan_topic` | `plugin.world-engine.scan` | Shared topic carrying the planar scan. |
+| `obstacle.sectors` | 72 | Sector count, 1 to 72; each spans `360 / sectors` degrees. |
+| `obstacle.rate_hz` | 10 | Cap on the `OBSTACLE_DISTANCE` rate. |
+
+## Flight controller setup
+
+| Parameter | Value | Why |
+|---|---|---|
+| `VISO_TYPE` | 1 | Accept `ODOMETRY` over MAVLink. |
+| `VISO_POS_X/Y/Z` | the sensor offset | Where the pose source sits on the airframe. |
+| `EK3_SRC1_POSXY`, `EK3_SRC1_VELXY`, `EK3_SRC1_YAW` | 6, 6, 6 | Source set 1 navigates on ExternalNav. |
+| `EK3_SRC1_POSZ` | 1 (baro) or 2 (rangefinder) | Height stays with the flight controller. |
+| `EK3_SRC2_VELXY` | 5 | Source set 2 falls back to optical flow (see [Flight controller setup](/drone-agent/vision-nav-optical-flow)). |
+| `PRX1_TYPE` | 2 | Accept `OBSTACLE_DISTANCE` over MAVLink. |
+| `AVOID_ENABLE` | 7 | Use proximity data for simple avoidance. |
+
+With `gps_primary: true`, make the fallback set the GPS set (`EK3_SRCn_POSXY 3`, `VELXY 3`) and keep the ExternalNav set as `extnav_set`.
+
+## What reaches the flight controller
+
+**`ODOMETRY` (#331)** on component 197, one message per measured pose, up to `rate_hz`:
+
+- `frame_id` `MAV_FRAME_LOCAL_FRD`, `child_frame_id` `MAV_FRAME_BODY_FRD`, the pair ArduPilot accepts.
+- x, y and yaw from the pose. A pose in a forward-left-up map frame is converted to forward-right-down.
+- z and vertical speed from the flight controller's own `LOCAL_POSITION_NED`; roll and pitch from its `ATTITUDE`.
+- Horizontal velocity from the pose difference over the last 100 ms, rotated into the body frame.
+- Pose noise and `quality` by tracking health:
+
+  | Health | Position σ | Yaw σ | `quality` |
+  |---|---|---|---|
+  | `good` | 0.05 m | 0.02 rad | 100 |
+  | `degraded` | 0.30 m | 0.10 rad | 50 |
+  | `lost` | nothing is sent | | |
+
+- `reset_counter` increments when the pose jumps more than 0.5 m between ticks (a relocalisation, not motion).
+
+**EKF origin.** When the flight controller reports no `GPS_GLOBAL_ORIGIN`, the plugin sends `MAV_CMD_DO_SET_GLOBAL_ORIGIN` from `origin_lla`.
+
+**`OBSTACLE_DISTANCE` (#330)**, from the latest scan:
+
+- `frame` `MAV_FRAME_BODY_FRD`, `increment_f` = `360 / sectors` degrees, sector 0 straight ahead, clockwise.
+- `sensor_type` `MAV_DISTANCE_SENSOR_LASER`, `min_distance` 5 cm, `max_distance` 1200 cm.
+- Each sector carries the nearest return in centimetres; a sector with no return carries `max_distance + 1`.
+
+## Source-set switching
+
+The plugin sends `MAV_CMD_SET_EKF_SOURCE_SET` (42007) when the inputs call for a change. Nothing is commanded before its first decision, so the flight controller keeps its boot set until then.
+
+| Policy | Active set | Switches to the other set when | Switches back when |
+|---|---|---|---|
+| External nav primary (`gps_primary: false`) | `extnav_set` while the pose is `good` or `degraded` | the pose is `lost` (or absent) for 1 s → `fallback_set` | the pose is `good` for 3 s |
+| GPS primary (`gps_primary: true`) | `fallback_set` while `GPS_RAW_INT.fix_type` is 3 or more | no 3D fix for 2 s and a `good` pose → `extnav_set` | a 3D fix for 10 s |
+
+`degraded` holds whichever set is active. You can also switch by hand from the cockpit's navigation-source chip, which sends the agent's [`ekfSourceSet` command](/drone-agent/rest-api#ekf-source-set).
+
+## Pre-arm checks
+
+| Check | `ok` | `pending` | `blocking` |
+|---|---|---|---|
+| `extnav_source` | a pose arrives | awaiting a pose | "External nav source missing": no installed plugin publishes the pose topic, or reading it is not granted; or the pose is rejected |
+| `extnav_health` | tracking `good` | tracking `degraded`, or no fresh pose | tracking `lost` |
+| `ekf_origin` | the flight controller reports an origin | origin not set yet | |
+| `obstacle_feed` (when enabled) | a scan arrives | awaiting a scan | the scan topic is not available |
+
+As in the other modes, the pre-arm card is advisory and does not stop the flight controller from arming.
+
+## Navigation state
+
+The plugin publishes `nav.state` on the event bus. The agent re-serves it as the `nav` kind of its [navigation routes](/drone-agent/rest-api#navigation-and-map), and every operator surface reads it for the navigation-source chip.
+
+```json
+{"mode": "external_nav", "active_set": 1, "extnav_health": "good",
+ "odom_rate_hz": 30.0, "last_reset_counter": 0, "obstacle_rate_hz": 10.0,
+ "min_obstacle_m": 3.2, "gps_fix": 0}
+```
+
+| Field | Meaning |
+|---|---|
+| `mode` | The running mode. |
+| `active_set` | The EKF source set the plugin last commanded, or `null` before its first decision. |
+| `extnav_health` | `good`, `degraded` or `lost`. |
+| `odom_rate_hz`, `obstacle_rate_hz` | Measured send rates. |
+| `last_reset_counter` | The `reset_counter` of the last `ODOMETRY`. |
+| `min_obstacle_m` | The nearest obstacle in the last scan. |
+| `gps_fix` | `GPS_RAW_INT.fix_type`. |
+
+Fields a mode does not produce are `null`.
+
+## Permissions
+
+| Permission | Why |
+|---|---|
+| `event.subscribe`, `telemetry.read` | Read the shared pose and scan topics. |
+| `estimator.pose.inject`, `mavlink.component.vio` | Send `ODOMETRY` to the estimator on component 197. |
+| `mavlink.write` | `OBSTACLE_DISTANCE`, `MAV_CMD_SET_EKF_SOURCE_SET`, `MAV_CMD_DO_SET_GLOBAL_ORIGIN` and the message-interval requests. |
+| `mavlink.read` | `LOCAL_POSITION_NED`, `ATTITUDE`, `GPS_RAW_INT` and `GPS_GLOBAL_ORIGIN`. |
+| `event.publish` | Publish `nav.state`. |
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Modes and fallback" icon="layer-group" href="/drone-agent/vision-nav-modes">
+    All four modes and their checks.
+  </Card>
+  <Card title="World Engine" icon="cubes" href="/drone-agent/extensions/world-engine">
+    The planar LiDAR pose and scan source.
+  </Card>
+</CardGroup>

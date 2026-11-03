@@ -333,7 +333,7 @@ The `flight.*` tools arm, take off, change mode, land and return a real
 aircraft. Read [Safety](/operations/safety) before you grant a `flight` scope.
 </Warning>
 
-The connector exposes 45 tools at MCP protocol revision `2025-06-18`. Every
+The connector exposes 48 tools at MCP protocol revision `2025-06-18`. Every
 deployment mode exposes the same set. The tools are grouped by prefix:
 
 | Group | What it covers |
@@ -348,8 +348,23 @@ deployment mode exposes the same set. The tools are grouped by prefix:
 | `admin.*` | Platform administration. |
 | `audit.*` | The connector's audit trail. |
 | `flight.*` | Flight actions, behind the `flight` scope and the safety gate. |
-| `vision.*` | Vision target designation, a `flight`-class tool. |
+| `vision.*` | Vision engine status, the latest detections, and target designation. |
+| `nav.*` | The navigation read-back: lidar pose and scan, navigation source, follow phase and range, live map session. |
 | `fleet.*` | Fleet listing in the fleet modes. |
+
+### Vision and navigation tools
+
+| Tool | Class | Agent route | What it does |
+|---|---|---|---|
+| `vision.detections` | read | `GET /api/vision/detections/latest` | The latest detection batch per camera: boxes, labels, confidence and track ids. |
+| `nav.status` | read | `GET /api/v1/nav/status` | The latest `pose`, `scan`, `nav`, `follow` and `map` entries, each `{ts_ms, age_ms, data}` or `null` when nothing publishes that kind. See [Navigation and map routes](/drone-agent/rest-api#navigation-and-map). |
+| `vision.designate` | flight | `POST /api/vision/designate` | Locks a camera's tracker onto a box given in normalized `0..1` frame coordinates (`camera_id`, `bbox {x, y, width, height}`, optional `class_label` and `confidence`). |
+
+All three talk to the drone directly; they are not relayed through a ground
+station. `vision.designate` is a `flight`-class tool: an active follow retargets
+to the designated box, so it needs the `flight` scope and passes the safety gate
+(a `confirm_id` or simulation). No tool starts a follow; a follow begins only
+when an operator designates a subject and turns the Follow-Me Skill on.
 
 The full list, with each tool's scope class and annotations, is in
 [`catalog/tools-catalog.json`](https://github.com/altnautica/ADOS-MCP/blob/main/catalog/tools-catalog.json).
