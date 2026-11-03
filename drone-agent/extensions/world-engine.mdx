@@ -158,9 +158,11 @@ curl -X PUT -H "X-ADOS-Key: $ADOS_KEY" -H "Content-Type: application/json" \
 | `atlas.selection.max_interval_ms` | `2000` | Take a keyframe anyway after this long. |
 | `atlas.selection.max_keyframes` | `0` | Session-wide cap. `0` is unlimited. |
 | `atlas.intrinsics` | empty | Per-camera calibrated pinhole (`fx`, `fy`, `cx`, `cy`, plus an optional distortion model). |
-| `atlas.live_reconstruct` | `false` | Rebuild the world on the compute node while keyframes arrive. |
+| `atlas.compute_placement` | `hybrid` | Where the heavy map products are built. `onboard`: a 5 cm sweep cloud on the drone. `stream`: keyframes, poses and scans stream to the compute node, which rebuilds the world while you fly; the drone keeps a 20 cm cloud. `post_flight`: record, upload after landing. `hybrid`: a 10 cm cloud on board plus the upload after landing. Navigation and the live occupancy map always stay on the drone. |
+| `atlas.nav_pose` | `always` with a LiDAR set | `always` publishes the navigation pose, scan and live map whenever the pose source runs; `capture` only while a session records. |
+| `atlas.memory_budget_mb` | 80 % of the plugin's memory cap | RAM the live map may hold: keyframe queue 40 %, scan ring 10 %, sweep cloud 30 %, occupancy 20 %. When the sweep cloud fills, its voxel doubles. |
 | `atlas.pose_max_age_ms` | `500` | The oldest pose a keyframe may be tagged with. |
-| `atlas.pose_publish_interval_ms` | `100` | Interval between published world poses. |
+| `atlas.pose_publish_interval_ms` | `100` | Minimum interval between published navigation poses. The pose never publishes faster than its source estimates (about 10 Hz for a planar LiDAR). |
 | `atlas.pose_prior.*` | see the schema | Pose uncertainty priors (GNSS, orientation, SLAM, clock offset). |
 | `offload.enabled` | `auto` | `auto` offloads when the board reports no neural accelerator and a compute node is reachable. `on` forces it, `off` never offloads. |
 | `offload.compute_node_addr` | empty | Pin the compute node as `host:port`. Empty discovers one over mDNS. |
@@ -170,6 +172,20 @@ curl -X PUT -H "X-ADOS-Key: $ADOS_KEY" -H "Content-Type: application/json" \
 | `relay.compute_base_url` | empty | The compute node the relay forwards to. |
 
 Capture re-reads its config every 5 seconds, so a change needs no restart.
+
+## Live navigation and map topics
+
+Other extensions and the agent's navigation API read these shared topics while the pose source runs:
+
+| Topic | Rate | Content |
+|---|---|---|
+| `plugin.world-engine.pose` | pose interval | Body pose in the local map frame (north/east/down metres from the first scan), with health and source. |
+| `plugin.world-engine.scan` | per scan | The LiDAR scan in 360 one-degree bins, body frame. |
+| `plugin.world-engine.occupancy` | 1 Hz | Changed 5 cm occupancy tiles as grey PNG (`kind: "live"`); finished products say `kind: "product"`. |
+| `plugin.world-engine.pointcloud` | 1 Hz | New points of the sweep cloud (`kind: "live"`), or a finished product. |
+| `plugin.world-engine.map_status` | 1 Hz | Placement, memory used against the budget, voxel size, keyframes dropped, mapped area, upload and stream progress. |
+
+A planar LiDAR records into the session as a compact polar stream, and the `planar-sweep` reconstruction preset turns it into a point cloud, an occupancy map per height band and a floorplan without any camera.
 
 ## The extension's HTTP API
 
