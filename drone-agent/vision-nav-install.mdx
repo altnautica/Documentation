@@ -81,7 +81,8 @@ From another machine on the LAN, send the same requests to `http://192.168.1.50:
 | `rangefinder.device` | none | Serial device for the TF-Luna, for example `/dev/ttyUSB0`. |
 | `rangefinder.baud` | `115200` | TF-Luna baud rate. |
 | `camera.orientation` | `auto` | `downward` or `auto` for both optical-flow modes. `forward` or `side` is rejected and leaves the plugin disengaged. |
-| `camera.device_path` | `/dev/video0` | Reported to the Vision Nav tab as the recommended camera. It does not select the camera; the plugin reads whatever the vision host captures. |
+| `camera.camera_id` | empty | The vision-host camera id the flow reads, for example the downward camera. Empty takes frames from every captured camera; set it when the vision host captures more than one. The Vision Nav tab's camera row shows it. |
+| `camera.device_path` | `/dev/video0` | Shown on the Vision Nav tab's camera row while `camera.camera_id` is empty. It does not select the camera. |
 | `camera.bus_type` | `uvc` | `uvc` or `csi`. |
 | `camera.width`, `camera.height`, `camera.fps` | `640`, `480`, `30` | The expected stream. Frames come from the vision bus at the size the vision host captures. |
 
