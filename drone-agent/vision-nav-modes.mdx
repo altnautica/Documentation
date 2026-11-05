@@ -34,7 +34,7 @@ ArduPilot only. A pose another plugin publishes is sent as `ODOMETRY`, and the p
 
 ## Pre-arm checks
 
-The flow modes run these checks. `external_nav` runs its own set: `extnav_source`, `extnav_health`, `ekf_origin` and, with the obstacle feed on, `obstacle_feed` (see [External nav pre-arm checks](/drone-agent/vision-nav-external-nav#pre-arm-checks)).
+The flow modes run these checks. `external_nav` runs its own set: `extnav_source`, `extnav_health`, `ekf_origin`, `fc_params`, `viso_delay` and, with the obstacle feed on, `obstacle_feed` (see [External nav pre-arm checks](/drone-agent/vision-nav-external-nav#pre-arm-checks)).
 
 | Check | Card row | `off` | `optical_flow` | `optical_flow_degraded` |
 |---|---|---|---|---|

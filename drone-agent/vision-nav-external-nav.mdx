@@ -20,7 +20,7 @@ External navigation and the source-set switch need **ArduPilot**. PX4 has no EKF
 
 - A plugin that publishes the pose topic (default `plugin.world-engine.pose`) and, for the obstacle feed, the scan topic (default `plugin.world-engine.scan`). The World Engine extension publishes both from a planar LiDAR when `atlas.nav_pose` is `always`.
 - A downward rangefinder or barometer on the flight controller for height. A planar pose has no height: the plugin echoes the flight controller's own height back.
-- The EKF origin, given as `origin_lla` in the plugin config. The plugin sets it on the flight controller when the flight controller reports none.
+- An EKF origin at the take-off site. Without GPS, the flight controller should set it itself at boot (see [EKF origin](#ekf-origin)); `origin_lla` in the plugin config is the last-resort copy the plugin sends when the flight controller has none.
 
 ## Configure
 
@@ -45,11 +45,11 @@ obstacle:
 | Key | Default | Meaning |
 |---|---|---|
 | `external_nav.pose_topic` | `plugin.world-engine.pose` | Shared topic carrying the pose. |
-| `external_nav.origin_lla` | none (required) | EKF origin `[lat, lon, alt_m]`. The mode refuses to start without it. |
+| `external_nav.origin_lla` | none | EKF origin `[lat, lon, alt_m]` of the take-off site. Required unless `gps_primary` is true; the mode refuses to start without it. |
 | `external_nav.rate_hz` | 30 | Cap on the `ODOMETRY` rate. |
 | `external_nav.extnav_set` | 1 | EKF source set (1 to 3) whose position source is ExternalNav. |
 | `external_nav.fallback_set` | 2 | Source set used when the pose is lost (the flight controller's optical-flow set) or, with `gps_primary`, the GPS set. |
-| `external_nav.gps_primary` | false | GPS is the primary source; the external pose takes over only while the GPS fix is lost. |
+| `external_nav.gps_primary` | false | GPS is the primary source; the external pose takes over only while the GPS is unusable (no 3D fix, or a reported horizontal accuracy worse than 5 m). |
 | `obstacle.enabled` | false | Send `OBSTACLE_DISTANCE`. |
 | `obstacle.scan_topic` | `plugin.world-engine.scan` | Shared topic carrying the planar scan. |
 | `obstacle.sectors` | 72 | Sector count, 1 to 72; each spans `360 / sectors` degrees. |
@@ -61,13 +61,35 @@ obstacle:
 |---|---|---|
 | `VISO_TYPE` | 1 | Accept `ODOMETRY` over MAVLink. |
 | `VISO_POS_X/Y/Z` | the sensor offset | Where the pose source sits on the airframe. |
-| `EK3_SRC1_POSXY`, `EK3_SRC1_VELXY`, `EK3_SRC1_YAW` | 6, 6, 6 | Source set 1 navigates on ExternalNav. |
+| `EK3_SRC1_POSXY`, `EK3_SRC1_VELXY` | 6, 6 | Source set 1 navigates on ExternalNav. |
+| `EK3_SRC1_YAW` | 1 (compass) | Keep yaw on the compass. The map's north follows the EKF's, so taking the EKF yaw from the map (6) leaves nothing holding north; the `fc_params` check blocks on 6. |
 | `EK3_SRC1_POSZ` | 1 (baro) or 2 (rangefinder) | Height stays with the flight controller. |
 | `EK3_SRC2_VELXY` | 5 | Source set 2 falls back to optical flow (see [Flight controller setup](/drone-agent/vision-nav-optical-flow)). |
 | `PRX1_TYPE` | 2 | Accept `OBSTACLE_DISTANCE` over MAVLink. |
 | `AVOID_ENABLE` | 7 | Use proximity data for simple avoidance. |
+| `AHRS_OPTIONS` | 16 (bit 4) | Without GPS, set the EKF origin at boot from `AHRS_ORIGIN_*` (ArduPilot 4.7 and later). See [EKF origin](#ekf-origin). |
+| `AHRS_ORIGIN_LAT`, `AHRS_ORIGIN_LON`, `AHRS_ORIGIN_ALT` | the take-off site | The same place as `origin_lla`. |
+| `EK3_MAG_EF_LIM` | leave above 0 (default 50) | The EKF then takes the declination from its own table at the origin, so the compass library's later declination update cannot step it. |
+| `ARMING_SKIPCHK` | 8 | Without GPS, skip the GPS pre-arm check. |
 
-With `gps_primary: true`, make the fallback set the GPS set (`EK3_SRCn_POSXY 3`, `VELXY 3`) and keep the ExternalNav set as `extnav_set`.
+With `gps_primary: true`, make the fallback set the GPS set (`EK3_SRCn_POSXY 3`, `VELXY 3`) and keep the ExternalNav set as `extnav_set`. Leave `AHRS_OPTIONS` bit 4 off: the GPS sets the origin.
+
+## EKF origin
+
+ArduPilot's EKF aligns its yaw at boot with the magnetic declination it has at that moment. An origin that arrives after the alignment makes it look up the site's declination and step the earth field. With `COMPASS_AUTODEC` on (the default) that step turns into a gyro bias, and the vehicle yaws, on the ground or in flight. ArduPilot also accepts an origin while armed.
+
+Without GPS, let the flight controller set the origin itself before the alignment:
+
+- **ArduPilot 4.7 and later:** `AHRS_OPTIONS` bit 4 with `AHRS_ORIGIN_LAT/LON/ALT` at the take-off site, and `EK3_MAG_EF_LIM` above 0. The flight controller reports "AHRS: using recorded origin" at boot.
+- **Before 4.7:** `COMPASS_AUTODEC 0` with `COMPASS_DEC` set to the site's declination.
+
+The plugin asks the flight controller for its origin every 5 s until it reports one. It sends `SET_GPS_GLOBAL_ORIGIN` (#48) from `origin_lla` only as a last resort, when all of these hold:
+
+- the flight controller has reported no origin 5 s after it booted (a heartbeat after 3 s of silence is a new boot);
+- the vehicle is disarmed;
+- `gps_primary` is false.
+
+If the origin the plugin sent arrives after a compass-yaw alignment with `COMPASS_AUTODEC` on, the `ekf_origin` check blocks until the flight controller is set up as above and rebooted.
 
 ## What reaches the flight controller
 
@@ -85,9 +107,9 @@ With `gps_primary: true`, make the fallback set the GPS set (`EK3_SRCn_POSXY 3`,
   | `degraded` | 0.30 m | 0.10 rad | 50 |
   | `lost` | nothing is sent | | |
 
-- `reset_counter` increments when the pose jumps more than 0.5 m between ticks (a relocalisation, not motion).
+- `reset_counter` increments when a pose lands more than 0.5 m from where the last velocity predicts it (from the last pose after a gap over 0.5 s or a loss): a relocalisation, not motion, so steady flight at any speed never counts.
 
-**EKF origin.** When the flight controller reports no `GPS_GLOBAL_ORIGIN`, the plugin sends `MAV_CMD_DO_SET_GLOBAL_ORIGIN` from `origin_lla`.
+**EKF origin.** See [EKF origin](#ekf-origin): `SET_GPS_GLOBAL_ORIGIN` (#48) from `origin_lla`, only as a last resort.
 
 **`OBSTACLE_DISTANCE` (#330)**, from the latest scan:
 
@@ -102,7 +124,7 @@ The plugin sends `MAV_CMD_SET_EKF_SOURCE_SET` (42007) when the inputs call for a
 | Policy | Active set | Switches to the other set when | Switches back when |
 |---|---|---|---|
 | External nav primary (`gps_primary: false`) | `extnav_set` while the pose is `good` or `degraded` | the pose is `lost` (or absent) for 1 s → `fallback_set` | the pose is `good` for 3 s |
-| GPS primary (`gps_primary: true`) | `fallback_set` while `GPS_RAW_INT.fix_type` is 3 or more | no 3D fix for 2 s and a `good` pose → `extnav_set` | a 3D fix for 10 s |
+| GPS primary (`gps_primary: true`) | `fallback_set` while the GPS is usable: `GPS_RAW_INT.fix_type` 3 or more and, when the receiver reports it, `h_acc` within 5 m | no usable GPS for 2 s and a `good` pose → `extnav_set` | usable GPS for 10 s |
 
 `degraded` holds whichever set is active. You can also switch by hand from the cockpit's navigation-source chip, which sends the agent's [`ekfSourceSet` command](/drone-agent/rest-api#ekf-source-set).
 
@@ -112,8 +134,14 @@ The plugin sends `MAV_CMD_SET_EKF_SOURCE_SET` (42007) when the inputs call for a
 |---|---|---|---|
 | `extnav_source` | a pose arrives | awaiting a pose | "External nav source missing": no installed plugin publishes the pose topic, or reading it is not granted; or the pose is rejected |
 | `extnav_health` | tracking `good` | tracking `degraded`, or no fresh pose | tracking `lost` |
-| `ekf_origin` | the flight controller reports an origin | origin not set yet | |
+| `ekf_origin` | the flight controller reports an origin | no origin yet: waiting for the GPS (with `gps_primary`), or "Set AHRS_OPTIONS bit 4 and AHRS_ORIGIN_LAT/LON/ALT"; or the flight-controller parameters are still being read | the origin the plugin sent arrived after a compass-yaw alignment with `COMPASS_AUTODEC` on; or a boot-time `AHRS_ORIGIN` is more than 1 km from `origin_lla` |
+| `fc_params` | the external-nav parameters are consistent | reading them ("N of M") | `VISO_TYPE` is not 1; the external-nav set's `POSXY` is not 6, or its `YAW` is 6 (north from the SLAM map); with `gps_primary` the fallback set's `POSXY` is not 3, otherwise its `VELXY` is not 5; `COMPASS_AUTODEC` is on with `EK3_MAG_EF_LIM` 0 (vision-nav 0.6.7 and later) |
+| `viso_delay` | `VISO_DELAY_MS` is within 50 ms of the measured pose age, or either is unknown | `VISO_DELAY_MS` differs from the median pose age by more than 50 ms; the detail gives the value to set | |
 | `obstacle_feed` (when enabled) | a scan arrives | awaiting a scan | the scan topic is not available |
+
+The plugin reads the parameters `fc_params` and `ekf_origin` need (`VISO_TYPE`, `VISO_DELAY_MS`, `COMPASS_AUTODEC`, `AHRS_OPTIONS`, `AHRS_ORIGIN_LAT/LON`, `EK3_MAG_EF_LIM` and the two source sets' `POSXY`, `YAW` and `VELXY`) with `PARAM_REQUEST_READ`, every 10 s while any is missing and again after the flight controller reboots.
+
+The median age of a pose when its `ODOMETRY` is sent (over the last 50 poses) is published as `navigation.poseAgeMs`; set `VISO_DELAY_MS` to it.
 
 As in the other modes, the pre-arm card is advisory and does not stop the flight controller from arming.
 
@@ -144,9 +172,9 @@ Fields a mode does not produce are `null`.
 | Permission | Why |
 |---|---|
 | `event.subscribe`, `telemetry.read` | Read the shared pose and scan topics. |
-| `estimator.pose.inject`, `mavlink.component.vio` | Send `ODOMETRY` to the estimator on component 197. |
-| `mavlink.write` | `OBSTACLE_DISTANCE`, `MAV_CMD_SET_EKF_SOURCE_SET`, `MAV_CMD_DO_SET_GLOBAL_ORIGIN` and the message-interval requests. |
-| `mavlink.read` | `LOCAL_POSITION_NED`, `ATTITUDE`, `GPS_RAW_INT` and `GPS_GLOBAL_ORIGIN`. |
+| `estimator.pose.inject`, `mavlink.component.vio` | Send `ODOMETRY` and `SET_GPS_GLOBAL_ORIGIN`, which both reach the estimator, on component 197. The agent refuses either without `estimator.pose.inject` (`SET_GPS_GLOBAL_ORIGIN` since agent 0.108.12). |
+| `mavlink.write` | `OBSTACLE_DISTANCE`, `MAV_CMD_SET_EKF_SOURCE_SET`, `MAV_CMD_REQUEST_MESSAGE`, `PARAM_REQUEST_READ` and the message-interval requests. |
+| `mavlink.read` | `HEARTBEAT`, `LOCAL_POSITION_NED`, `ATTITUDE`, `GPS_RAW_INT`, `GPS_GLOBAL_ORIGIN`, `PARAM_VALUE` and `COMMAND_ACK`. |
 | `event.publish` | Publish `nav.state`. |
 
 ## Next steps
