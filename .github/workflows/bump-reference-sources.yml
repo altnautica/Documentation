@@ -23,7 +23,7 @@ jobs:
       - name: Pin each source to main
         run: |
           set -euo pipefail
-          for repo in ADOSDroneAgent ADOSMissionControl ADOSExtensions; do
+          for repo in ADOSDroneAgent ADOSMissionControlGCS ADOSExtensions; do
             sha="$(git ls-remote "https://github.com/altnautica/${repo}" refs/heads/main | cut -f1)"
             test -n "$sha"
             node -e 'const fs=require("fs");const [r,s]=process.argv.slice(1);const p="reference-sources.json";const j=JSON.parse(fs.readFileSync(p,"utf8"));j[r]=s;fs.writeFileSync(p,JSON.stringify(j,null,2)+"\n");' "$repo" "$sha"

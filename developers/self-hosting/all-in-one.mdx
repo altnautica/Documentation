@@ -7,7 +7,7 @@ keywords: ["self-hosting", "docker compose", "convex", "mosquitto", "video relay
 ---
 
 One Docker Compose file at `tools/selfhost/` in
-[ADOSMissionControl](https://github.com/altnautica/ADOSMissionControl) (GPL-3.0)
+[ADOSMissionControlGCS](https://github.com/altnautica/ADOSMissionControlGCS) (GPL-3.0)
 brings up the whole cloud relay on a single host: a self-hosted Convex backend
 and its dashboard, the Mission Control web GCS, the Mosquitto broker with its
 auth sync, and the video relay. The [`ados-deploy` tool](/developers/self-hosting/deploy-tool)
@@ -59,7 +59,7 @@ while commands never reach the agent.
 Copy the example file and edit it before bringing anything up.
 
 ```bash
-cd ADOSMissionControl/tools/selfhost
+cd ADOSMissionControlGCS/tools/selfhost
 cp .env.example .env
 ```
 

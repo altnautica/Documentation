@@ -51,12 +51,12 @@ Through the bootstrap, which fetches a checkout if you do not have one:
 ```
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/altnautica/ADOSMissionControl/main/tools/deploy/deploy.sh | sh
+curl -sSL https://raw.githubusercontent.com/altnautica/ADOSMissionControlGCS/main/tools/deploy/deploy.sh | sh
 ```
 
 The bootstrap uses the current checkout when it finds
 `tools/selfhost/docker-compose.yml`, otherwise it clones to
-`$HOME/ADOSMissionControl`. Override with `ADOS_DIR` and `ADOS_REPO_URL`. It
+`$HOME/ADOSMissionControlGCS`. Override with `ADOS_DIR` and `ADOS_REPO_URL`. It
 then launches, in order of preference, a cached or committed `./ados-deploy`
 binary, the matching release asset, or a `cargo` build. Extra arguments pass
 through.

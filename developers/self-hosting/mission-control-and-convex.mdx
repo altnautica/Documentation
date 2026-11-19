@@ -8,7 +8,7 @@ icon: "window"
 Mission Control is a Next.js app you can build into a single Docker image and
 run on your own host. It talks to a Convex backend for sign-in, fleet
 management and the cloud command queue. Both halves live in
-[ADOSMissionControl](https://github.com/altnautica/ADOSMissionControl) under
+[ADOSMissionControlGCS](https://github.com/altnautica/ADOSMissionControlGCS) under
 GPL-3.0: the root `Dockerfile` builds the GCS, and `convex/` holds the
 functions and schema you push to the backend.
 
@@ -44,7 +44,7 @@ argument.
 <Steps>
   <Step title="Build the image">
     ```bash
-    cd ADOSMissionControl
+    cd ADOSMissionControlGCS
     docker build \
       --build-arg NEXT_PUBLIC_CONVEX_URL=https://convex.cloud.example.com \
       -t ados-mission-control .
@@ -87,7 +87,7 @@ to reach a drone across networks.
 
 You have two routes:
 
-- **Convex Cloud** is a hosted backend. In the `ADOSMissionControl` directory
+- **Convex Cloud** is a hosted backend. In the `ADOSMissionControlGCS` directory
   run `npx convex dev` to create and link a deployment, then
   `npx @convex-dev/auth` to set up its auth keys.
 - **Self-hosted** runs the open-source backend image
@@ -120,7 +120,7 @@ the backend on its own:
     client API origin and admin key:
 
     ```bash
-    cd ADOSMissionControl
+    cd ADOSMissionControlGCS
     npx convex deploy \
       --url https://convex.cloud.example.com \
       --admin-key <admin-key>

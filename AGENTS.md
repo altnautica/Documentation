@@ -143,7 +143,7 @@ marked support status.
 
 ## Related Public Projects
 
-- [ADOS Mission Control](https://github.com/altnautica/ADOSMissionControl) -
+- [ADOS Mission Control](https://github.com/altnautica/ADOSMissionControlGCS) -
   browser ground control station documented by this site.
 - [ADOS Drone Agent](https://github.com/altnautica/ADOSDroneAgent) - companion
   and ground-node agent documented by this site.

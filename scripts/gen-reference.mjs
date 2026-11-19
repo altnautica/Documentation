@@ -230,7 +230,7 @@ const RENDERERS = [
   { repo: "ADOSDroneAgent", file: "units", render: renderUnits },
   { repo: "ADOSDroneAgent", file: "installer-flags", render: renderInstallerFlags },
   { repo: "ADOSDroneAgent", file: "dashboard-routes", render: renderDashboardRoutes },
-  { repo: "ADOSMissionControl", file: "gcs-routes", render: renderGcsRoutes },
+  { repo: "ADOSMissionControlGCS", file: "gcs-routes", render: renderGcsRoutes },
   { repo: "ADOSExtensions", file: "extensions", render: renderExtensions },
 ];
 
