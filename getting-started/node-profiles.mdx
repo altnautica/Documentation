@@ -20,7 +20,7 @@ The profile is chosen at install time and saved to `/etc/ados/profile.conf`. The
 | `workstation` | A laptop, desktop or GPU box | A core shell: pairing, status, logs and the plugin host. The macOS default. |
 | `compute` | A headless worker | The same shell with no UI and no flight controller. |
 
-Reconstruction and perception offload are not core services on any profile. They come with the [World Engine extension](/drone-agent/extensions/world-engine), which the installer turns on by default for `workstation` and `compute` and leaves off for the other two.
+Reconstruction and perception offload are not core services on any profile. They come with the [Reconstruct extension](/drone-agent/extensions/reconstruct), which the installer turns on by default for `workstation` and `compute` and leaves off for the other two.
 
 The installer accepts `ground-station` and `ground_station` as the same value and saves the underscore form. Use `ground_station` in commands and config.
 
@@ -32,7 +32,7 @@ The supervisor keeps one service registry with a profile gate on each entry. A s
 - **`drone` and `ground_station`** add the MAVLink router, the swarm state bus, and the optional CRSF control lane and config-over-radio service when they are enabled. `workstation` and `compute` have no flight controller, so they never install or start the MAVLink router.
 - **`drone`** adds the camera encode pipeline, the WFB-ng transmitter and the onboard vision services.
 - **`ground_station`** adds WFB-ng receive and video serving, the OLED and display, the Wi-Fi access point, the HDMI kiosk and input stack with the pilot-in-command arbiter, the uplink router and, by role, the mesh services.
-- **`workstation` and `compute`** run only the core shell. With the World Engine extension installed, its node service runs here and never on a drone or ground station.
+- **`workstation` and `compute`** run only the core shell. With the Reconstruct extension installed, its node service runs here and never on a drone or ground station.
 
 For the unit names, their gates and what each unit does, see [Systemd services](/drone-agent/systemd-services).
 
@@ -91,13 +91,13 @@ sudo systemctl restart ados-supervisor
 
 A macOS workstation node is rootless and runs only the native services. Its HTTP front serves the native routes (such as `/api/status` and `/api/pairing/*`) but not the routes served by the Python service, which does not run there. The `ados` CLI reads the native routes on macOS for that reason.
 
-So a workstation node has no setup wizard, no captive portal, no Wi-Fi access point, no radio and no flight controller link. It has the pairing surface, the status surface, the logs and the plugin host, which runs extensions such as the World Engine as per-user LaunchAgents. A `compute` node is the same shell with no UI.
+So a workstation node has no setup wizard, no captive portal, no Wi-Fi access point, no radio and no flight controller link. It has the pairing surface, the status surface, the logs and the plugin host, which runs extensions such as Reconstruct as per-user LaunchAgents. A `compute` node is the same shell with no UI.
 
 ## Profiles on the wire and in Mission Control
 
 The agent reports its profile in the hyphenated form: `ground_station` is reported as `ground-station`, `workstation` and `compute` pass through, and anything unrecognised reports `drone`.
 
-Mission Control has built-in node surfaces for `drone`, `ground-station` and `workstation`. A `compute` node shows the workstation surfaces. An installed extension can add surfaces for the profiles it names; the World Engine's compute and jobs tabs on a workstation or compute node come from there.
+Mission Control has built-in node surfaces for `drone`, `ground-station` and `workstation`. A `compute` node shows the workstation surfaces. An installed extension can add surfaces for the profiles it names; Reconstruct's tab on a workstation or compute node comes from there.
 
 The ground-station role (`direct`, `relay` or `receiver`) is read from `/etc/ados/mesh/role` and defaults to `direct`. Other profiles report no role.
 

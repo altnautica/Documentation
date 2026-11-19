@@ -29,7 +29,7 @@ On a fresh interactive install with none of the identity flags set, the installe
 
 1. **Role**: pick the node profile (`drone`, `ground_station`, `workstation` or `compute`).
 2. **Hardware**: a scan of the hardware categories that matter for that profile, each marked found or not detected.
-3. **Features**: a checklist of optional components, such as the World Engine extension.
+3. **Features**: a checklist of optional components, such as the Reconstruct extension.
 4. **Wi-Fi**: join a Wi-Fi network (including a hidden one), so the wired cable can be unplugged afterwards.
 5. **Name**: the node's hostname, which is also its `.local` mDNS name.
 6. **Pairing**: an optional Mission Control pairing code. This screen appears only for `drone` and `ground_station`.
@@ -140,7 +140,7 @@ macOS gets a rootless, per-user `workstation` node. Run the same bootstrap **wit
 curl -sSL https://raw.githubusercontent.com/altnautica/ADOSDroneAgent/main/scripts/install.sh | bash
 ```
 
-The installer registers per-user LaunchAgents under `$HOME/.ados`, including the plugin host, which runs each extension as its own LaunchAgent in `~/Library/LaunchAgents`. The World Engine extension is installed by default, as on any workstation. A macOS node has no systemd, no WFB radio and no GPIO.
+The installer registers per-user LaunchAgents under `$HOME/.ados`, including the plugin host, which runs each extension as its own LaunchAgent in `~/Library/LaunchAgents`. The Reconstruct extension is installed by default, as on any workstation. A macOS node has no systemd, no WFB radio and no GPIO.
 
 ## Uninstall
 

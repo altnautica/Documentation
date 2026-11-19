@@ -165,7 +165,7 @@ An extension that declares `agent.http: true` serves its own API on a Unix socke
 
 ```bash
 curl -s -H "X-ADOS-Key: $KEY" \
-  http://localhost:8080/api/plugins/com.altnautica.world-engine/x/atlas/readiness
+  http://localhost:8080/api/plugins/com.altnautica.capture/x/capture/readiness
 ```
 
 An installed extension record carries `failure_reason`: why the host stopped or refused the extension (for example `tampered: <detail>` or `signer_revoked`), or `null` when it has not failed. `GET /api/plugins/{id}/locales/{lang}` returns the extension's `locales/<lang>.json` bundle so Mission Control can show its labels in the extension's own words; `lang` is a bare tag of letters, digits, `-` and `_`.
@@ -209,15 +209,15 @@ When the vision engine is not running the route answers `503`. A build without t
 
 ### Navigation and map
 
-The agent collects navigation state that extensions publish on the plugin event bus and serves it from the host, so an operator surface can show it without loading an extension UI. The sources are the World Engine extension's pose, planar scan, occupancy and map-status topics, Navigation's `nav.state`, and Follow-Me's `follow.state` and follow events. Every route is served on every profile; a kind nothing publishes is `null`, never a `404`.
+The agent collects navigation state that extensions publish on the plugin event bus and serves it from the host, so an operator surface can show it without loading an extension UI. The sources are Navigation's pose, planar scan, occupancy, map-status and `nav.state` topics, and Follow-Me's `follow.state` and follow events. Every route is served on every profile; a kind nothing publishes is `null`, never a `404`.
 
 | Kind | Source | Payload (`data`) |
 |---|---|---|
-| `pose` | `plugin.world-engine.pose` | The navigation pose with its tracking `health` |
-| `scan` | `plugin.world-engine.scan` | One planar scan: `{t_ns, frame: "body_frd", angle_start_rad, angle_increment_rad, ranges_m}` |
+| `pose` | `plugin.navigation.pose` | The navigation pose with its tracking `health` |
+| `scan` | `plugin.navigation.scan` | One planar scan: `{t_ns, frame: "body_frd", angle_start_rad, angle_increment_rad, ranges_m}` |
 | `nav` | `nav.state` | The [Navigation state](/drone-agent/navigation-external-nav#navigation-state) |
 | `follow` | `follow.state` | The [Follow-Me read-back](/drone-agent/extensions/follow-me#follow-state) |
-| `map` | `plugin.world-engine.map_status` | The live mapping session summary |
+| `map` | `plugin.navigation.map_status` | The live map summary: placement, memory, voxel size, sweep points, area, pose provider and FC IMU feed |
 
 `data` is the source payload unchanged.
 

@@ -7,11 +7,12 @@ keywords: ["ados", "extensions", "catalog", "first-party", "plugins"]
 
 import ExtensionsCatalog from '/snippets/generated/extensions-catalog.mdx';
 import ExtensionMavlinkGimbalV2 from '/snippets/generated/extension-mavlink-gimbal-v2.mdx';
-import ExtensionVisionNav from '/snippets/generated/extension-vision-nav.mdx';
+import ExtensionNavigation from '/snippets/generated/extension-navigation.mdx';
 import ExtensionFollowMe from '/snippets/generated/extension-follow-me.mdx';
 import ExtensionSiyiPod from '/snippets/generated/extension-siyi-pod.mdx';
 import ExtensionThermalFlirLeptonUsb from '/snippets/generated/extension-thermal-flir-lepton-usb.mdx';
-import ExtensionWorldEngine from '/snippets/generated/extension-world-engine.mdx';
+import ExtensionCapture from '/snippets/generated/extension-capture.mdx';
+import ExtensionReconstruct from '/snippets/generated/extension-reconstruct.mdx';
 
 These are the first-party extensions Altnautica publishes through the public [`ADOSExtensions`](https://github.com/altnautica/ADOSExtensions) repository. Each released extension ships as a signed `.adosplug` archive on GitHub Releases and installs from a node's **Extensions** page in Mission Control or with `ados plugin install`. Every extension is licensed GPL-3.0-or-later.
 
@@ -46,14 +47,15 @@ It speaks MAVLink Gimbal v2 only. A gimbal that does not present a gimbal-manage
 | Plugin id | `com.altnautica.navigation` |
 | Status | Released |
 | Risk | high |
-| Type | Agent binary (Rust) and Mission Control iframe |
-| Hardware | Downward USB UVC or CSI camera; optional rangefinder (TF-Luna on a companion serial port, or any rangefinder the flight controller publishes) |
+| Type | Agent binaries (Rust) and Mission Control iframe |
+| Hardware | Downward USB UVC or CSI camera; optional rangefinder (TF-Luna on a companion serial port, or any rangefinder the flight controller publishes); optional planar or 3D LiDAR, or a Visor's stereo cameras |
 | FC firmware | ArduPilot 4.5+, PX4 1.14+, iNav 7.0+ |
-| Resources | 512 MB RAM, 80% CPU, 24 processes |
+| Profiles | `drone`, `visor` |
+| Resources | heavy class, 768 MB RAM, 200% CPU, 512 processes |
 
-Position hold when GPS is unreliable. A downward camera plus the flight controller's gyro produce an optical-flow measurement about 30 times a second, sent as `OPTICAL_FLOW` to ArduPilot and iNav and as `OPTICAL_FLOW_RAD` to PX4. Or, on ArduPilot, an external pose another plugin publishes (for example a planar LiDAR SLAM) is sent as `ODOMETRY` with automatic EKF source-set switching, and a planar scan becomes `OBSTACLE_DISTANCE` for proximity avoidance. Four modes: optical flow with a rangefinder, optical flow without one (barometer height for scale, or GPS height in outdoor mode), external navigation, or off. It does no visual-inertial odometry. The **Engage** Skill (`Shift+N`) turns it on and off.
+Position hold when GPS is unreliable. A downward camera plus the flight controller's gyro produce an optical-flow measurement about 30 times a second, sent as `OPTICAL_FLOW` to ArduPilot and iNav and as `OPTICAL_FLOW_RAD` to PX4. With a LiDAR or a Visor's stereo pair it runs a pose of its own (planar scan matching, 3D LiDAR odometry or stereo visual-inertial odometry), builds a live occupancy map and sweep cloud, and on ArduPilot sends the pose as `ODOMETRY` with automatic EKF source-set switching; a planar scan becomes `OBSTACLE_DISTANCE` for proximity avoidance. The pose, scan and map are shared topics the pilot, Capture and Mission Control's Map tab read. The **Engage** Skill (`Shift+N`) turns it on and off.
 
-<ExtensionVisionNav />
+<ExtensionNavigation />
 
 See the [Navigation guide](/drone-agent/navigation-overview).
 
@@ -113,25 +115,43 @@ The driver targets a FLIR Lepton 3.5 on a PureThermal 2 dongle. It locks the rad
 
 <ExtensionThermalFlirLeptonUsb />
 
-## World Engine
+## Capture
 
 | Field | Value |
 |---|---|
-| Plugin id | `com.altnautica.world-engine` |
+| Plugin id | `com.altnautica.capture` |
 | Status | Released |
 | Risk | high |
-| Type | Agent binaries (Rust) on every profile and an inline Mission Control module |
-| Hardware | Any camera the vision engine publishes frames for; a workstation or compute node on the drone's LAN |
-| Profiles | `drone`, `ground_station`, `workstation`, `compute` |
-| Resources | heavy class, 16 GB RAM, 800% CPU, 1024 processes |
+| Type | Agent binaries (Rust) and an inline Mission Control module |
+| Hardware | Any camera the vision engine publishes frames for; a reconstruction node on the same network |
+| Profiles | `drone`, `visor`, `ground_station` |
+| Resources | heavy class, 768 MB RAM, 200% CPU, 512 processes |
 
-Builds a 3D world model from a flight. The drone selects pose-tagged keyframes and streams them to a compute node on the same network, which reconstructs a Gaussian splat, point cloud, mesh and occupancy grid that Mission Control shows live and after landing. The same node runs perception offload for a drone with no on-board accelerator, returning detections to the drone's own detection bus.
+Records 3D capture sessions on a drone or Visor: pose-tagged keyframes from every camera, plus the IMU, GNSS and Navigation's LiDAR, posed by Navigation or the flight controller. Finished sessions upload to a reconstruction node, resumably and checksum-verified, and keyframes stream to it live while you fly. A ground station relays the radio lane onto its LAN.
+
+<ExtensionCapture />
+
+See [Capture](/drone-agent/extensions/capture) for setup, configuration and the API.
+
+## Reconstruct
+
+| Field | Value |
+|---|---|
+| Plugin id | `com.altnautica.reconstruct` |
+| Status | Released |
+| Risk | high |
+| Type | Agent binaries (Rust) and an inline Mission Control module |
+| Hardware | A workstation or compute node, a GPU recommended; on a drone, nothing beyond the camera |
+| Profiles | `drone`, `workstation`, `compute` |
+| Resources | heavy class, 16 GB RAM, 800% CPU, 1024 processes on a node; 128 MB on a drone |
+
+Reconstructs captured sessions on a LAN compute node into a Gaussian splat, point cloud, mesh, occupancy and indoor products that Mission Control views, measures and exports. The same node runs perception offload for a drone with no on-board accelerator, returning detections to the drone's own detection bus, and builds the full-resolution live map from a drone that streams its scans.
 
 The installer turns it on by default for workstation and compute nodes. Its binaries download at install for the node's own architecture, each checked against a SHA-256 pinned in the signed manifest.
 
-<ExtensionWorldEngine />
+<ExtensionReconstruct />
 
-See [World Engine](/drone-agent/extensions/world-engine) for setup, configuration and the API.
+See [Reconstruct](/drone-agent/extensions/reconstruct) for setup, configuration and the API.
 
 ## Install one
 
@@ -146,7 +166,7 @@ See [Install extensions from Mission Control](/mission-control/installing-plugin
 From the agent CLI, `ados plugin install` takes a first-party catalog id, a release URL or a local archive:
 
 ```bash
-ados plugin install com.altnautica.world-engine
+ados plugin install com.altnautica.capture
 ados plugin install https://github.com/altnautica/ADOSExtensions/releases/download/<tag>/<file>.adosplug
 ados plugin install ./<file>.adosplug
 ```

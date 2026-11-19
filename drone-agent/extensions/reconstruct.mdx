@@ -1,0 +1,122 @@
+---
+title: "Reconstruct"
+description: "The first-party extension that reconstructs captured sessions on a LAN compute node and runs perception offload for drones without an accelerator."
+icon: "cubes"
+keywords: ["ados", "reconstruct", "extension", "3d reconstruction", "perception offload", "compute node"]
+---
+
+import ExtensionReconstruct from '/snippets/generated/extension-reconstruct.mdx';
+
+Reconstruct is a first-party extension, `com.altnautica.reconstruct`. It does
+two jobs:
+
+- **Reconstruction.** A `workstation` or `compute` node turns the sessions
+  [Capture](/drone-agent/extensions/capture) sends it into a Gaussian splat, a
+  point cloud, a mesh, occupancy and indoor products (floorplan, rooms, aisles
+  and a static tour), and serves them to Mission Control to view, measure and
+  export. While a drone's Navigation places its map on the node, the drone
+  streams its scans here and the node builds the full-resolution live map.
+- **Perception offload.** A drone with no on-board accelerator streams its
+  camera to the node, the node runs the detector, and the detections return
+  to the drone's own detection bus. Follow-Me, the gimbal and the cockpit
+  overlay work unchanged. A stale or link-lost detection is treated as lost,
+  never extrapolated.
+
+## Install
+
+The node installer offers Reconstruct as a feature toggle, on by default for
+the `workstation` and `compute` profiles:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/altnautica/ADOSDroneAgent/main/scripts/install.sh \
+  | sudo bash -s -- --profile workstation --reconstruct
+```
+
+`--no-reconstruct` skips it. On an installed node:
+
+```bash
+ados plugin install com.altnautica.reconstruct
+ados plugin enable com.altnautica.reconstruct
+```
+
+Install it on a drone too when the drone offloads perception or streams its
+map to the node. The binaries are install-time payloads, downloaded for the
+node's own architecture and profile and checked against the sha256 and size
+pinned in the signed manifest. The extension is signed by the Altnautica
+first-party key: its Mission Control pages run as an inline module and its
+resource class is `heavy`, which the agent refuses from a third-party signer.
+
+| Profile | What runs |
+|---|---|
+| `workstation`, `compute` | The `node` service on `:8092`: session uploads, live ingest, the staged reconstruction pipeline, artifacts and offload serving. |
+| `drone` | The main process: the perception-offload reconciler, the live scan stream to the node, and the reconstruction tools for an AI client. |
+
+On Windows the node runs standalone: `reconstruct-node --standalone
+--data-dir <dir> --listen 0.0.0.0:8092`.
+
+## Pair a device with the node
+
+Pair the drone or Visor and the node to the same Mission Control. Mission
+Control issues each device a credential from the node scoped to the lanes the
+device uses, separately for Capture and for Reconstruct, and installs it. The
+node's Reconstruct surface lists these credentials and revokes them. A drone
+finds the node over mDNS, or you pin it with
+`reconstruct.offload.compute_node_addr`.
+
+## Configuration
+
+| Key | Meaning |
+|---|---|
+| `reconstruct.offload.enabled` | `auto` offloads when the board has no neural accelerator and a node is reachable; `on` forces it, `off` never offloads. |
+| `reconstruct.offload.compute_node_addr` | The node as `host:port`; empty discovers one over mDNS. |
+| `reconstruct.offload_camera` | The camera offload streams when the vision engine has no main tap. |
+| `reconstruct.serving.enabled` | On a node, serve perception offload to paired drones. |
+| `reconstruct.serving.detector_model` | The detector model the node serves. Empty uses the node's default. |
+
+## Reconstruction tools
+
+The node drives pinned third-party tools (COLMAP, a splat trainer, the splat
+converters, and container images for calibration jobs), installed next to the
+extension by its fetch script. It never takes a tool from `PATH`. A preset
+whose tools are missing is refused with `E_TOOL_MISSING` and the tool's name.
+
+## The extension's HTTP API
+
+On a node, under `/api/plugins/com.altnautica.reconstruct/x/` and on `:8092`
+with the node credential:
+
+| Method | Path |
+|---|---|
+| `GET` | `api/compute/status`, `api/compute/identity` |
+| `POST` | `api/compute/datasets` |
+| `GET`, `POST` | `api/compute/jobs` |
+| `GET` | `api/compute/jobs/:id`, `api/compute/jobs/:id/outputs` |
+| `POST` | `api/compute/jobs/:id/cancel` |
+| `GET` | `artifacts/<path>` |
+| `POST` | `api/capture/event` (keyframes, capture state and live scans), `GET api/capture/health` |
+| `WS` | `ws/live/:device_id` (reconstruction descriptors and the live map) |
+
+On a drone: `GET reconstruct/status`, `PUT reconstruct/config` and `POST
+reconstruct/node-credential`.
+
+## Mission Control
+
+| Contribution | Nodes | What it shows |
+|---|---|---|
+| Reconstruct (top-level tab) | workstation, compute | The GPU, the cluster and the queue; Jobs, Products, Editor, device access and perception serving. |
+| Perception offload | drone | Where perception runs and which node it offloads to. |
+
+## Permissions
+
+<ExtensionReconstruct />
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Capture" icon="camera" href="/drone-agent/extensions/capture">
+    Recording sessions on a drone or Visor.
+  </Card>
+  <Card title="Node profiles" icon="layer-group" href="/getting-started/node-profiles">
+    The drone, ground station, workstation and compute profiles.
+  </Card>
+</CardGroup>

@@ -6,7 +6,7 @@ icon: "download"
 keywords: ["ados", "vision navigation", "install", "extension", "configuration"]
 ---
 
-import ExtensionVisionNav from '/snippets/generated/extension-vision-nav.mdx';
+import ExtensionNavigation from '/snippets/generated/extension-navigation.mdx';
 
 Navigation installs on one drone at a time. Each drone keeps its own permission grants and its own per-drone config, and the plugin runs only on the agent of the drone you picked.
 
@@ -34,7 +34,7 @@ Progress runs Uploading, Queued, Commanded, Downloading, Verifying, Installing, 
 
 The extension is **high** risk because it writes MAVLink that the flight controller fuses for position hold. It requests these permissions:
 
-<ExtensionVisionNav />
+<ExtensionNavigation />
 
 If the drone is armed, Mission Control asks you to confirm before it installs, enables, disables or removes an extension.
 

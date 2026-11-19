@@ -6,7 +6,7 @@ icon: "route"
 keywords: ["ados", "vision navigation", "external navigation", "odometry", "gps-denied", "obstacle distance", "lidar"]
 ---
 
-The `external_nav` mode takes a pose that another installed plugin publishes on a shared topic, such as a planar LiDAR SLAM from the [World Engine extension](/drone-agent/extensions/world-engine), and sends it to the flight controller's own estimator. The flight controller keeps doing state estimation, control and avoidance; the companion supplies one more position source and switches the EKF to it and away from it as tracking quality changes.
+The `external_nav` mode takes a pose that another installed plugin publishes on a shared topic, such as the planar LiDAR SLAM pose Navigation itself publishes, and sends it to the flight controller's own estimator. The flight controller keeps doing state estimation, control and avoidance; the companion supplies one more position source and switches the EKF to it and away from it as tracking quality changes.
 
 An optional obstacle feed turns a shared planar scan into `OBSTACLE_DISTANCE`, so ArduPilot's proximity avoidance sees what the LiDAR sees.
 
@@ -18,7 +18,7 @@ External navigation and the source-set switch need **ArduPilot**. PX4 has no EKF
 
 ## What you need
 
-- A plugin that publishes the pose topic (default `plugin.world-engine.pose`) and, for the obstacle feed, the scan topic (default `plugin.world-engine.scan`). The World Engine extension publishes both from a planar LiDAR when `atlas.nav_pose` is `always`.
+- A plugin that publishes the pose topic (default `plugin.navigation.pose`) and, for the obstacle feed, the scan topic (default `plugin.navigation.scan`). Navigation publishes both itself from a planar LiDAR.
 - A downward rangefinder or barometer on the flight controller for height. A planar pose has no height: the plugin echoes the flight controller's own height back.
 - An EKF origin at the take-off site. Without GPS, the flight controller should set it itself at boot (see [EKF origin](#ekf-origin)); `origin_lla` in the plugin config is the last-resort copy the plugin sends when the flight controller has none.
 
@@ -29,7 +29,7 @@ Set the mode and the two blocks in the per-drone plugin config (see [Install and
 ```yaml
 mode: external_nav
 external_nav:
-  pose_topic: plugin.world-engine.pose
+  pose_topic: plugin.navigation.pose
   origin_lla: [51.5007, -0.1246, 20.0]   # lat deg, lon deg, alt m AMSL
   rate_hz: 30
   extnav_set: 1
@@ -37,21 +37,21 @@ external_nav:
   gps_primary: false
 obstacle:
   enabled: true
-  scan_topic: plugin.world-engine.scan
+  scan_topic: plugin.navigation.scan
   sectors: 72
   rate_hz: 10
 ```
 
 | Key | Default | Meaning |
 |---|---|---|
-| `external_nav.pose_topic` | `plugin.world-engine.pose` | Shared topic carrying the pose. |
+| `external_nav.pose_topic` | `plugin.navigation.pose` | Shared topic carrying the pose. |
 | `external_nav.origin_lla` | none | EKF origin `[lat, lon, alt_m]` of the take-off site. Required unless `gps_primary` is true; the mode refuses to start without it. |
 | `external_nav.rate_hz` | 30 | Cap on the `ODOMETRY` rate. |
 | `external_nav.extnav_set` | 1 | EKF source set (1 to 3) whose position source is ExternalNav. |
 | `external_nav.fallback_set` | 2 | Source set used when the pose is lost (the flight controller's optical-flow set) or, with `gps_primary`, the GPS set. |
 | `external_nav.gps_primary` | false | GPS is the primary source; the external pose takes over only while the GPS is unusable (no 3D fix, or a reported horizontal accuracy worse than 5 m). |
 | `obstacle.enabled` | false | Send `OBSTACLE_DISTANCE`. |
-| `obstacle.scan_topic` | `plugin.world-engine.scan` | Shared topic carrying the planar scan. |
+| `obstacle.scan_topic` | `plugin.navigation.scan` | Shared topic carrying the planar scan. |
 | `obstacle.sectors` | 72 | Sector count, 1 to 72; each spans `360 / sectors` degrees. |
 | `obstacle.rate_hz` | 10 | Cap on the `OBSTACLE_DISTANCE` rate. |
 
@@ -135,7 +135,7 @@ The plugin sends `MAV_CMD_SET_EKF_SOURCE_SET` (42007) when the inputs call for a
 | `extnav_source` | a pose arrives | awaiting a pose | "External nav source missing": no installed plugin publishes the pose topic, or reading it is not granted; or the pose is rejected |
 | `extnav_health` | tracking `good` | tracking `degraded`, or no fresh pose | tracking `lost` |
 | `ekf_origin` | the flight controller reports an origin | no origin yet: waiting for the GPS (with `gps_primary`), or "Set AHRS_OPTIONS bit 4 and AHRS_ORIGIN_LAT/LON/ALT"; or the flight-controller parameters are still being read | the origin the plugin sent arrived after a compass-yaw alignment with `COMPASS_AUTODEC` on; or a boot-time `AHRS_ORIGIN` is more than 1 km from `origin_lla` |
-| `fc_params` | the external-nav parameters are consistent | reading them ("N of M") | `VISO_TYPE` is not 1; the external-nav set's `POSXY` is not 6, or its `YAW` is 6 (north from the SLAM map); with `gps_primary` the fallback set's `POSXY` is not 3, otherwise its `VELXY` is not 5; `COMPASS_AUTODEC` is on with `EK3_MAG_EF_LIM` 0 (vision-nav 0.6.7 and later) |
+| `fc_params` | the external-nav parameters are consistent | reading them ("N of M") | `VISO_TYPE` is not 1; the external-nav set's `POSXY` is not 6, or its `YAW` is 6 (north from the SLAM map); with `gps_primary` the fallback set's `POSXY` is not 3, otherwise its `VELXY` is not 5; `COMPASS_AUTODEC` is on with `EK3_MAG_EF_LIM` 0 (Navigation 1.0.0 and the extension it replaced from 0.6.7) |
 | `viso_delay` | `VISO_DELAY_MS` is within 50 ms of the measured pose age, or either is unknown | `VISO_DELAY_MS` differs from the median pose age by more than 50 ms; the detail gives the value to set | |
 | `obstacle_feed` (when enabled) | a scan arrives | awaiting a scan | the scan topic is not available |
 
@@ -183,7 +183,7 @@ Fields a mode does not produce are `null`.
   <Card title="Modes and fallback" icon="layer-group" href="/drone-agent/navigation-modes">
     All four modes and their checks.
   </Card>
-  <Card title="World Engine" icon="cubes" href="/drone-agent/extensions/world-engine">
-    The planar LiDAR pose and scan source.
+  <Card title="Navigation hardware" icon="microchip" href="/drone-agent/navigation-hardware">
+    The planar LiDAR the pose and scan come from.
   </Card>
 </CardGroup>

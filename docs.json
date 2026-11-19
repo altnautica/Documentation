@@ -335,7 +335,8 @@
           {
             "group": "Extension guides",
             "pages": [
-              "drone-agent/extensions/world-engine",
+              "drone-agent/extensions/capture",
+              "drone-agent/extensions/reconstruct",
               "drone-agent/extensions/follow-me",
               {
                 "group": "Navigation",
@@ -511,6 +512,11 @@
     ]
   },
   "redirects": [
+    {
+      "source": "/drone-agent/extensions/world-engine",
+      "destination": "/drone-agent/extensions/capture",
+      "permanent": true
+    },
     {
       "source": "/getting-started",
       "destination": "/getting-started/introduction",

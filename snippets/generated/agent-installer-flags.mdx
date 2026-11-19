@@ -6,8 +6,8 @@
 | `--host` | `<<appliance\|personal>>` | Host kind: appliance (dedicated box) or personal (your laptop or desktop); detected when omitted |
 | `--name` | `<<hostname>>` | mDNS hostname to set |
 | `--no-rtl-driver` | n/a | Skip the RTL8812EU WFB radio driver build |
-| `--world-engine` | n/a | Install the World Engine extension (3D world model + compute offload). Default: on for workstation and compute, off for drone and ground station. An installed extension is left alone; plugin auto-update keeps it current. The last of --world-engine and --no-world-engine wins. |
-| `--no-world-engine` | n/a | Skip the World Engine extension |
+| `--reconstruct` | n/a | Install the Reconstruct extension (reconstruction and perception offload). Default: on for workstation and compute, off for drone and ground station. An installed extension is left alone; plugin auto-update keeps it current. The last of --reconstruct and --no-reconstruct wins. |
+| `--no-reconstruct` | n/a | Skip the Reconstruct extension |
 | `--no-reboot` | n/a | Do not perform the single automatic reboot when provisioning needs one (a camera/display overlay, an I2C dtparam). The install then reports degraded and names what is still staged. |
 | `--pair` | `<<code>>` | Pairing code (or pass it positionally). On an already-installed box a bare code does a fast re-pair, not a reinstall. |
 | `--upgrade` | n/a | Upgrade an existing install in place |

@@ -70,7 +70,7 @@ The same agent installs as one of four profiles:
 
 - **`drone`**: the companion computer on the aircraft. Runs the flight controller link, camera, video transmit and cloud relay.
 - **`ground_station`**: a ground-side board that receives WFB-ng video, runs a Wi-Fi hotspot, serves video to a laptop or phone, and can drive an HDMI display and a status screen. See [Ground Agent overview](/ground-agent/overview).
-- **`workstation`**: a desktop or laptop node for local compute and the World Engine extension. It has no flight controller link.
+- **`workstation`**: a desktop or laptop node for local compute and the Reconstruct extension. It has no flight controller link.
 - **`compute`**: a headless compute node for offloaded work, also without a flight controller link.
 
 At first boot the agent scores hardware probes (OLED on I2C, an RTL8812 radio, a flight controller on serial, GPS, uplink) and picks `drone` or `ground_station`; ties fall back to the last recorded profile. You can also set the profile at install time with `--profile`. See [Node profiles](/getting-started/node-profiles) for what each profile runs.

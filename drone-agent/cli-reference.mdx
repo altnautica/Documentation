@@ -122,7 +122,7 @@ ados uninstall --purge --yes
 
 In more detail:
 
-- `ados plugin install <source>` takes a local `.adosplug` path, an HTTPS archive URL on the agent's download allowlist, a built-in plugin id, or a first-party catalog id such as `com.altnautica.world-engine`. It shows the requested permissions and grants the ones you approve.
+- `ados plugin install <source>` takes a local `.adosplug` path, an HTTPS archive URL on the agent's download allowlist, a built-in plugin id, or a first-party catalog id such as `com.altnautica.capture`. It shows the requested permissions and grants the ones you approve.
 - `enable` adds the extension to the supervisor's restart set and `disable` removes it; both take effect at runtime. `remove` purges on-disk state unless `--keep-data` is passed.
 - `ados plugin perms <id> --grant <perm>` grants a declared permission and `--revoke <perm>` drops one, at runtime.
 - `ados plugin logs <id>` prints the last 100 lines of the extension's stdout and stderr (`--lines N`, `--follow`). `--service <name>` reads a declared service's log instead of the main runner's.

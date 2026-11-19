@@ -20,7 +20,7 @@ Follow-Me flies the drone with guided setpoints. Read [Safety](/operations/safet
 - A camera bound to the vision pipeline (USB UVC or CSI), facing forward or down. A gimbal is optional; with `gimbal_point` on, the plugin points it at the subject.
 - A detector on the companion. The default `coco-person` model runs on the NPU of supported boards and on the CPU elsewhere. Check `backend_state` in [`GET /api/vision/status`](/drone-agent/rest-api#vision-status): a node that reports `unavailable` produces no detections to follow.
 - A flight controller in a guided position mode: ArduPilot Guided, or PX4 Offboard.
-- Optional: a downward rangefinder on the flight controller, for height above the terrain; and a planar LiDAR published by the [World Engine extension](/drone-agent/extensions/world-engine), as a third range cue.
+- Optional: a downward rangefinder on the flight controller, for height above the terrain; and a planar LiDAR scan published by the [Navigation extension](/drone-agent/navigation-overview), as a third range cue.
 
 ## Start and stop a follow
 

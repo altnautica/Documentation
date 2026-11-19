@@ -36,7 +36,7 @@ Which pages appear depends on the node's profile. Configuration pages need a com
 
 A page with a setup segment shows a **Live** view and a **Setup** view side by side. Logs are not here; they are the node's own **Logs** tab.
 
-An installed extension can add pages to this sidebar, in the group its manifest names (or under Software). The [World Engine](/drone-agent/extensions/world-engine) extension, for example, adds its own setup pages. Install and remove extensions from **Software → Extensions**; see [Install extensions from Mission Control](/mission-control/installing-plugins).
+An installed extension can add pages to this sidebar, in the group its manifest names (or under Software). The [Capture](/drone-agent/extensions/capture) extension, for example, adds its own setup page. Install and remove extensions from **Software → Extensions**; see [Install extensions from Mission Control](/mission-control/installing-plugins).
 
 When the node has stopped or refused an extension, for example because its files no longer match their signed digests or its signer was revoked, the extension's row on **Software → Extensions** carries a red line, **Stopped by the node: {reason}**, with the agent's own reason. The reason is read from the node over the LAN, so it appears only for a node Mission Control reaches directly.
 

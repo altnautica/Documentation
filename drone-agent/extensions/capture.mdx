@@ -1,0 +1,126 @@
+---
+title: "Capture"
+description: "The first-party extension that records 3D capture sessions on a drone or Visor and sends them to a reconstruction node on your network."
+icon: "camera"
+keywords: ["ados", "capture", "extension", "3d capture", "keyframes", "sessions"]
+---
+
+import ExtensionCapture from '/snippets/generated/extension-capture.mdx';
+
+Capture is a first-party extension, `com.altnautica.capture`. It records
+capture sessions on a drone or a Visor: every camera, the IMU, GNSS and the
+LiDAR, posed by [Navigation](/drone-agent/navigation-overview) or by the flight
+controller. It selects pose-tagged keyframes, uploads finished sessions to a
+reconstruction node on the same network (resumable, checksum-verified), and
+streams keyframes live to that node while you fly. A ground station relays the
+radio lane onto its LAN when no shared network reaches the drone.
+
+The node that turns sessions into a splat, a point cloud, a mesh and indoor
+products runs the [Reconstruct](/drone-agent/extensions/reconstruct)
+extension. Capture without Reconstruct still records sessions; they wait on
+the drone until a node is paired.
+
+## Install
+
+```bash
+ados plugin install com.altnautica.capture
+ados plugin enable com.altnautica.capture
+```
+
+`ados plugin install` also accepts a release URL or a downloaded archive. The
+install prompt lists every permission the extension asks for; you can also
+install it from the node's **Extensions** page in Mission Control (see
+[Install extensions from Mission Control](/mission-control/installing-plugins)).
+
+<Note>
+The archive is small. The per-architecture binaries are install-time payloads:
+the agent downloads only the files for its own architecture and profile from
+the GitHub release, checks each against the sha256 and size pinned in the
+signed manifest, and refuses the install on any mismatch.
+</Note>
+
+| Profile | What runs |
+|---|---|
+| `drone`, `visor` | The main process (keyframe forwarding, session uploads, the capture API) plus the `capture` service. |
+| `ground_station` | The main process as the radio relay, idle until you turn the relay on. |
+
+## Pair with a reconstruction node
+
+Pair the drone and the node to the same Mission Control, with Reconstruct
+installed on the node. Mission Control issues the drone a credential from the
+node scoped to Capture's lanes (session upload and keyframe ingest) and
+installs it on the drone. The drone finds the node over mDNS, or you pin it
+with `capture.compute_node_addr`.
+
+Keyframes ride the LAN first, then the radio link's auxiliary stream through a
+ground station in the `relay` role (pose and status only), then the cloud
+relay.
+
+## Configuration
+
+Read and write the configuration from Mission Control's Capture setup page, or
+over REST through the extension's own route:
+
+```bash
+curl -X PUT -H "X-ADOS-Key: $ADOS_KEY" -H "Content-Type: application/json" \
+  http://192.168.1.50:8080/api/plugins/com.altnautica.capture/x/capture/config \
+  -d '{"capture.enabled": true}'
+```
+
+| Key | Meaning |
+|---|---|
+| `capture.enabled` | Run capture on this node. |
+| `capture.capture_profile` | `orbit`, `lawnmower`, `freeform` or `inspection`. |
+| `capture.cameras` | The camera set, each `{id, role, enabled}`. |
+| `capture.pose_source` | `auto` (Navigation's pose while fresh, else the flight controller's), `fc_ekf` or `navigation`. |
+| `capture.selection.*` | Keyframe selection: movement, rotation, interval and a session cap. |
+| `capture.intrinsics` | Per-camera calibrated pinhole. |
+| `capture.memory_budget_mb` | RAM the keyframe queue may hold. |
+| `capture.auto_upload` | Upload a finished session when the drone lands. |
+| `capture.compute_node_addr` | The reconstruction node as `host:port`; empty discovers one. |
+| `capture.relay.enabled`, `capture.relay.compute_base_url` | On a ground station, relay radio keyframes onto the LAN. |
+
+When sessions upload follows Navigation's map placement
+(`navigation.map_placement`): after landing for `post_flight` and `hybrid`,
+streamed during the flight for `stream`.
+
+## The extension's HTTP API
+
+Under `/api/plugins/com.altnautica.capture/x/` on `:8080`, with the normal
+pairing key (the same paths work through a ground station's relay proxy):
+
+| Method | Path | What it does |
+|---|---|---|
+| `GET` | `capture/readiness` | Whether capture can run: enabled, cameras, profile, pose source, service state. |
+| `PUT` | `capture/config` | Write Capture's keys; a key another extension owns is refused naming its owner. |
+| `POST` | `capture/start`, `stop`, `pause`, `resume`, `mark` | Drive the session. |
+| `GET` | `capture/state`, `capture/coverage` | The live session and its coverage. |
+| `GET`, `DELETE` | `capture/sessions`, `capture/sessions/:id` | The recorded sessions. |
+| `POST` | `capture/sessions/:id/upload`, `capture/sessions/:id/reconstruct` | Upload a session, or submit it to the paired node. |
+| `GET` | `capture/relay/status` | On a ground station: the relay's counters. |
+
+## Mission Control
+
+| Contribution | Nodes | What it shows |
+|---|---|---|
+| Capture (top-level tab) | drone, Visor | Live, Sessions and Model views. |
+| Capture setup | drone, Visor | Cameras, the capture switch and the pose source. |
+| Calibration | Visor | The rig calibration. |
+| Relay | ground station | The relay's counters. |
+| Capture chips | drone cockpit | Recording state and the landing verdict. |
+| Coverage | drone map | What the session has covered. |
+
+## Permissions
+
+<ExtensionCapture />
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Reconstruct" icon="cubes" href="/drone-agent/extensions/reconstruct">
+    The reconstruction node and perception offload.
+  </Card>
+  <Card title="Navigation" icon="compass" href="/drone-agent/navigation-overview">
+    The pose and live map Capture uses.
+  </Card>
+</CardGroup>
