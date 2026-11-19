@@ -1,19 +1,19 @@
 ---
-title: "Vision Navigation: architecture"
+title: "Navigation: architecture"
 sidebarTitle: "Architecture"
-description: "Developer reference for the Vision Navigation agent half: module map, estimator contract, scale ladder, pre-arm gate and the navigation heartbeat."
+description: "Developer reference for the Navigation agent half: module map, estimator contract, scale ladder, pre-arm gate and the navigation heartbeat."
 icon: "sitemap"
 ---
 
 This page is for developers who want to read, audit or extend the extension. Operators don't need it.
 
-The agent half is a compiled Rust binary. The plugin host execs it directly under systemd, passes the per-plugin socket on the command line, and passes the capability token and agent id through the unit environment. The binary reads frames from the agent's shared vision frame bus; it never opens a camera. The GCS half is an iframe bundle that renders the **Vision Nav** tab and the **Engage** Skill.
+The agent half is a compiled Rust binary. The plugin host execs it directly under systemd, passes the per-plugin socket on the command line, and passes the capability token and agent id through the unit environment. The binary reads frames from the agent's shared vision frame bus; it never opens a camera. The GCS half is one iframe bundle that renders the **Navigation** Agent page, the **Navigation** cockpit panel and the **Engage** Skill; it reads which one it was mounted as from the frame URL.
 
 ## Module map
 
 ```text
-extensions/vision-nav/
-  manifest.yaml          # id, permissions, component 198, the Vision Nav tab and the Engage Skill
+extensions/navigation/
+  manifest.yaml          # id, permissions, component 198, the Navigation page and the Engage Skill
   config-schema.json     # per-drone config schema
   agent/                 # the Rust agent half
     src/
@@ -170,7 +170,7 @@ Once a second the plugin publishes a `navigation` block through `ctx.telemetry.e
 }
 ```
 
-The Vision Nav tab reads this block: the companion pill, the mode card, the Sensors card, the Estimator card, the telemetry charts, Flow health, the Pre-arm card and the fallback banner.
+The Navigation page reads this block: the companion pill, the mode card, the Sensors card, the Estimator card, the telemetry charts, Flow health, the Pre-arm card and the fallback banner.
 
 ## Adding an estimator
 
@@ -187,7 +187,7 @@ The Vision Nav tab reads this block: the companion pill, the mode card, the Sens
   <Card title="Vision plugins" icon="eye" href="/developers/vision-plugins">
     The vision frame bus and detection APIs for plugin authors.
   </Card>
-  <Card title="Overview" icon="compass" href="/drone-agent/vision-nav-overview">
-    Back to the start of the Vision Navigation guide.
+  <Card title="Overview" icon="compass" href="/drone-agent/navigation-overview">
+    Back to the start of the Navigation guide.
   </Card>
 </CardGroup>

@@ -1,13 +1,13 @@
 ---
-title: "Vision Navigation: flight controller setup"
+title: "Navigation: flight controller setup"
 sidebarTitle: "Flight controller setup"
-description: "Set the ArduPilot, PX4 or iNav parameters that fuse Vision Navigation's optical flow, set the EKF origin, and run the pre-flight checks."
+description: "Set the ArduPilot, PX4 or iNav parameters that fuse Navigation's optical flow, set the EKF origin, and run the pre-flight checks."
 icon: "sliders"
 ---
 
-Vision Navigation sends an optical-flow measurement. The flight controller decides whether to fuse it, so its parameters must accept flow on MAVLink and use it for horizontal velocity. Set them in Mission Control's [parameter editor](/mission-control/parameters) or your usual ground station.
+Navigation sends an optical-flow measurement. The flight controller decides whether to fuse it, so its parameters must accept flow on MAVLink and use it for horizontal velocity. Set them in Mission Control's [parameter editor](/mission-control/parameters) or your usual ground station.
 
-The Vision Nav tab shows a read-only parameter card for the firmware set in `firmware.type`. It lists the parameters that matter; it does not write them.
+The Navigation page shows a read-only parameter card for the firmware set in `firmware.type`. It lists the parameters that matter; it does not write them.
 
 <Warning>
 Test every change on the ground and in a low hover first, with a way back to GPS. Read [Safety](/operations/safety) before you fly.
@@ -51,7 +51,7 @@ PX4 receives `OPTICAL_FLOW_RAD` (#106): the angle the ground swept over the inte
 | `SENS_FLOW_MINHGT`, `SENS_FLOW_MAXHGT` | sensor range | Heights at which flow is trusted. |
 | `SENS_FLOW_MAXR` | sensor limit | Maximum angular flow rate the estimator trusts, in rad/s. |
 
-Reboot the flight controller after changing `EKF2_*` parameters. The PX4 card on the Vision Nav tab shows `EKF2_OF_CTRL`, and `EKF2_AID_MASK` for releases before 1.14, only when the flight controller reports them.
+Reboot the flight controller after changing `EKF2_*` parameters. The PX4 card on the Navigation page shows `EKF2_OF_CTRL`, and `EKF2_AID_MASK` for releases before 1.14, only when the flight controller reports them.
 
 ## iNav
 
@@ -63,7 +63,7 @@ iNav 7.0 and newer receives `OPTICAL_FLOW` (#100), the same as ArduPilot.
 | `nav_use_optflow_for_poshold` | `ON` | Use flow for position hold without GPS. |
 | `rangefinder_hardware` | your sensor | Flow needs a height reference. |
 
-In iNav's Ports tab, enable MAVLink on the UART that connects to the companion, then reboot the flight controller. The iNav card on the Vision Nav tab lists the related parameters (`opflow_scale`, `nav_extra_arming_safety`, `nav_landing_speed`, `nav_rangefinder_for_terrain`) as a reference.
+In iNav's Ports tab, enable MAVLink on the UART that connects to the companion, then reboot the flight controller. The iNav card on the Navigation page lists the related parameters (`opflow_scale`, `nav_extra_arming_safety`, `nav_landing_speed`, `nav_rangefinder_for_terrain`) as a reference.
 
 ## Betaflight
 
@@ -75,7 +75,7 @@ Without GPS the flight controller has no origin for its local position frame, an
 
 ## Pre-flight checks
 
-The Vision Nav tab's **Pre-arm** card shows the extension's checks:
+The Navigation page's **Pre-arm** card shows the extension's checks:
 
 - **Companion process active**
 - **Optical flow quality** at or above `flow_quality_min` (default 50)
@@ -94,10 +94,10 @@ The card is advisory. The plugin reports an `armable` flag and per-check rows, b
 ## Next steps
 
 <CardGroup cols={2}>
-  <Card title="Modes and fallback" icon="layer-group" href="/drone-agent/vision-nav-modes">
+  <Card title="Modes and fallback" icon="layer-group" href="/drone-agent/navigation-modes">
     What each mode checks and how scale falls back.
   </Card>
-  <Card title="Install" icon="download" href="/drone-agent/vision-nav-install">
+  <Card title="Install" icon="download" href="/drone-agent/navigation-install">
     The plugin config keys.
   </Card>
 </CardGroup>

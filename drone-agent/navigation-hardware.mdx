@@ -1,7 +1,7 @@
 ---
-title: "Vision Navigation: hardware"
+title: "Navigation: hardware"
 sidebarTitle: "Hardware"
-description: "Pick, mount and wire the downward camera and rangefinder that Vision Navigation needs."
+description: "Pick, mount and wire the downward camera and rangefinder that Navigation needs."
 icon: "camera"
 ---
 
@@ -39,7 +39,7 @@ On its own the tracker measures angular motion. A distance to the ground turns t
 
 The plugin has no I2C drivers. Wire an I2C rangefinder to the flight controller and use `fc_relay`.
 
-A reading counts as fresh for 200 ms. The `optical_flow` pre-arm check needs a fresh reading inside the sensor's own minimum and maximum range (0.2 to 8 m for the TF-Luna; the range the flight controller reports for `fc_relay`). If the TF-Luna port can't be opened, the plugin retries every 2 s and reports the error as `rangefinderError` on the Vision Nav tab.
+A reading counts as fresh for 200 ms. The `optical_flow` pre-arm check needs a fresh reading inside the sensor's own minimum and maximum range (0.2 to 8 m for the TF-Luna; the range the flight controller reports for `fc_relay`). If the TF-Luna port can't be opened, the plugin retries every 2 s and reports the error as `rangefinderError` on the Navigation page.
 
 ## Mount placement
 
@@ -50,7 +50,7 @@ A reading counts as fresh for 200 ms. The `optical_flow` pre-arm check needs a f
 
 ## Ground clearance
 
-Take off and fly above the rangefinder's minimum range. For the TF-Luna that means 0.3 m or more, because readings below about 0.2 m are unreliable. The flight controller also ignores flow outside its own height limits, so set those to match the sensor (see [Flight controller setup](/drone-agent/vision-nav-optical-flow)).
+Take off and fly above the rangefinder's minimum range. For the TF-Luna that means 0.3 m or more, because readings below about 0.2 m are unreliable. The flight controller also ignores flow outside its own height limits, so set those to match the sensor (see [Flight controller setup](/drone-agent/navigation-optical-flow)).
 
 ## Wiring example
 
@@ -68,10 +68,10 @@ The plugin needs the `hardware.uart` permission only for a companion-wired TF-Lu
 ## Next steps
 
 <CardGroup cols={2}>
-  <Card title="Install" icon="download" href="/drone-agent/vision-nav-install">
+  <Card title="Install" icon="download" href="/drone-agent/navigation-install">
     Install the extension and set its per-drone config.
   </Card>
-  <Card title="Overview" icon="compass" href="/drone-agent/vision-nav-overview">
+  <Card title="Overview" icon="compass" href="/drone-agent/navigation-overview">
     What the extension does and which modes it has.
   </Card>
 </CardGroup>

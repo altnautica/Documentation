@@ -1,11 +1,11 @@
 ---
-title: "Vision Navigation: modes and fallback"
+title: "Navigation: modes and fallback"
 sidebarTitle: "Modes and fallback"
-description: "The four Vision Navigation modes, their pre-arm checks, the scale ladder and what happens when flow degrades."
+description: "The four Navigation modes, their pre-arm checks, the scale ladder and what happens when flow degrades."
 icon: "layer-group"
 ---
 
-Vision Navigation has four modes. Set the mode with the `mode` key in the plugin's per-drone config (see [Install and configure](/drone-agent/vision-nav-install#set-the-per-drone-config)). The Vision Nav tab's mode card is read-only: it lists the modes the agent can run and marks the active one. A config change restarts the plugin on the new mode.
+Navigation has four modes. Set the mode with the `mode` key in the plugin's per-drone config (see [Install and configure](/drone-agent/navigation-install#set-the-per-drone-config)). The Navigation page's mode card is read-only: it lists the modes the agent can run and marks the active one. A config change restarts the plugin on the new mode.
 
 ## The four modes
 
@@ -30,11 +30,11 @@ The same tracker, with scale from the scale ladder instead of a rangefinder. It 
 
 ### `external_nav`
 
-ArduPilot only. A pose another plugin publishes is sent as `ODOMETRY`, and the plugin switches the EKF source set between the external pose and a fallback set as tracking comes and goes. An optional obstacle feed turns a planar scan into `OBSTACLE_DISTANCE`. Its configuration, switching rules and pre-arm checks are on [External nav and obstacles](/drone-agent/vision-nav-external-nav).
+ArduPilot only. A pose another plugin publishes is sent as `ODOMETRY`, and the plugin switches the EKF source set between the external pose and a fallback set as tracking comes and goes. An optional obstacle feed turns a planar scan into `OBSTACLE_DISTANCE`. Its configuration, switching rules and pre-arm checks are on [External nav and obstacles](/drone-agent/navigation-external-nav).
 
 ## Pre-arm checks
 
-The flow modes run these checks. `external_nav` runs its own set: `extnav_source`, `extnav_health`, `ekf_origin`, `fc_params`, `viso_delay` and, with the obstacle feed on, `obstacle_feed` (see [External nav pre-arm checks](/drone-agent/vision-nav-external-nav#pre-arm-checks)).
+The flow modes run these checks. `external_nav` runs its own set: `extnav_source`, `extnav_health`, `ekf_origin`, `fc_params`, `viso_delay` and, with the obstacle feed on, `obstacle_feed` (see [External nav pre-arm checks](/drone-agent/navigation-external-nav#pre-arm-checks)).
 
 | Check | Card row | `off` | `optical_flow` | `optical_flow_degraded` |
 |---|---|---|---|---|
@@ -66,19 +66,19 @@ On the static rung the estimator reports `degraded` whatever the raw quality, fl
 
 ## When flow degrades
 
-- **Low quality.** When flow quality falls below `flow_quality_min`, the estimator reports `degraded`. The fallback banner on the Vision Nav tab appears as soon as the estimator reports `degraded` or `failed`, and suggests landing or switching the flight controller back to GPS with your RC source-set switch.
+- **Low quality.** When flow quality falls below `flow_quality_min`, the estimator reports `degraded`. The fallback banner on the Navigation page appears as soon as the estimator reports `degraded` or `failed`, and suggests landing or switching the flight controller back to GPS with your RC source-set switch.
 - **Sustained degradation.** A `degraded` or `failed` streak of 2 s turns the companion `CRITICAL`: its `HEARTBEAT` reports `MAV_STATE_CRITICAL`.
 - **No frames.** If no camera frame arrives for 2 s, the estimator reports `failed` and the companion goes `CRITICAL`. No frames means nothing is sent, so the flight controller's estimator times the flow source out.
 
-In the flow modes the plugin does not switch the flight controller's EKF source set. Keep an RC switch on the source-set option (see [Flight controller setup](/drone-agent/vision-nav-optical-flow#a-way-back-to-gps)) and use it, or land. In `external_nav` the plugin switches the set itself; see [Source-set switching](/drone-agent/vision-nav-external-nav#source-set-switching).
+In the flow modes the plugin does not switch the flight controller's EKF source set. Keep an RC switch on the source-set option (see [Flight controller setup](/drone-agent/navigation-optical-flow#a-way-back-to-gps)) and use it, or land. In `external_nav` the plugin switches the set itself; see [Source-set switching](/drone-agent/navigation-external-nav#source-set-switching).
 
 ## Next steps
 
 <CardGroup cols={2}>
-  <Card title="Calibration" icon="crosshairs" href="/drone-agent/vision-nav-calibration">
+  <Card title="Calibration" icon="crosshairs" href="/drone-agent/navigation-calibration">
     Optional camera-IMU time offset.
   </Card>
-  <Card title="Flight controller setup" icon="sliders" href="/drone-agent/vision-nav-optical-flow">
+  <Card title="Flight controller setup" icon="sliders" href="/drone-agent/navigation-optical-flow">
     Parameters that fuse the flow.
   </Card>
 </CardGroup>

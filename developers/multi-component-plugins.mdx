@@ -19,7 +19,7 @@ Ship two halves when the plugin needs both:
 - Hardware or system access on the node.
 - An operator-facing UI in Mission Control.
 
-The panel in [Your first plugin](/developers/your-first-plugin) is GCS-only because it reads normalized telemetry and renders a readout. The first-party Vision Navigation extension is hybrid: a Rust agent half reads camera frames and writes MAVLink, and a GCS half renders the **Vision Nav** tab.
+The panel in [Your first plugin](/developers/your-first-plugin) is GCS-only because it reads normalized telemetry and renders a readout. The first-party Navigation extension is hybrid: a Rust agent half reads camera frames and writes MAVLink, and a GCS half renders the **Navigation** Agent page and cockpit panel.
 
 Keep work in one half when it fits there. A plugin that only reads telemetry and renders a panel is GCS-only. A plugin that runs background work with no operator UI is agent-only.
 

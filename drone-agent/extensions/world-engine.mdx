@@ -189,7 +189,7 @@ Other extensions and the agent's navigation API read these shared topics while t
 
 A planar LiDAR records into the session as a compact polar stream, and the `planar-sweep` reconstruction preset turns it into a point cloud, an occupancy map per height band and a floorplan without any camera.
 
-[Vision Navigation](/drone-agent/vision-nav-external-nav) turns the pose into `ODOMETRY` and the scan into `OBSTACLE_DISTANCE` for the flight controller, [Follow-Me](/drone-agent/extensions/follow-me) uses the scan as a range cue, and the agent serves the pose, scan, occupancy and map status to every operator surface through its [navigation and map routes](/drone-agent/rest-api#navigation-and-map).
+[Navigation](/drone-agent/navigation-external-nav) turns the pose into `ODOMETRY` and the scan into `OBSTACLE_DISTANCE` for the flight controller, [Follow-Me](/drone-agent/extensions/follow-me) uses the scan as a range cue, and the agent serves the pose, scan, occupancy and map status to every operator surface through its [navigation and map routes](/drone-agent/rest-api#navigation-and-map).
 
 ## The extension's HTTP API
 

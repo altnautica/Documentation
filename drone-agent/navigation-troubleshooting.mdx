@@ -1,15 +1,15 @@
 ---
-title: "Vision Navigation: troubleshooting"
+title: "Navigation: troubleshooting"
 sidebarTitle: "Troubleshooting"
-description: "Fix low optical-flow quality, scale problems, lost frames and rejected configs in Vision Navigation, and where to report a bug."
+description: "Fix low optical-flow quality, scale problems, lost frames and rejected configs in Navigation, and where to report a bug."
 icon: "life-ring"
 ---
 
-Start with the Vision Nav tab: the estimator state, flow quality, flow rate, the scale source and the pre-arm rows usually point at the problem. Then read the plugin log on the drone:
+Start with the Navigation page: the estimator state, flow quality, flow rate, the scale source and the pre-arm rows usually point at the problem. Then read the plugin log on the drone:
 
 ```bash
-ados plugin logs com.altnautica.vision-nav --lines 200
-systemctl status 'ados-plugin-com-altnautica-vision-nav-*'
+ados plugin logs com.altnautica.navigation --lines 200
+systemctl status 'ados-plugin-com-altnautica-navigation-*'
 ```
 
 The plugin's output goes to its own log file under `/var/log/ados/plugins/`, not to the journal. `ados plugin logs` finds the file for you.
@@ -70,20 +70,20 @@ Optical flow needs visible texture on the ground. In the dark it works only as w
 
 Open an issue on the [ADOSExtensions repository](https://github.com/altnautica/ADOSExtensions/issues) with:
 
-- the plugin log, from `ados plugin logs com.altnautica.vision-nav --lines 500` (the file is `/var/log/ados/plugins/com-altnautica-vision-nav-<hash>.log`);
-- the output of `systemctl status 'ados-plugin-com-altnautica-vision-nav-*'`;
+- the plugin log, from `ados plugin logs com.altnautica.navigation --lines 500` (the file is `/var/log/ados/plugins/com-altnautica-navigation-<hash>.log`);
+- the output of `systemctl status 'ados-plugin-com-altnautica-navigation-*'`;
 - the flight controller log covering the problem;
-- the plugin config (`GET /api/plugins/com.altnautica.vision-nav/config`).
+- the plugin config (`GET /api/plugins/com.altnautica.navigation/config`).
 
 For problems outside the extension, see [Troubleshooting by area](/operations/troubleshooting).
 
 ## Next steps
 
 <CardGroup cols={2}>
-  <Card title="Architecture" icon="sitemap" href="/drone-agent/vision-nav-architecture">
+  <Card title="Architecture" icon="sitemap" href="/drone-agent/navigation-architecture">
     How the agent half is built.
   </Card>
-  <Card title="Modes and fallback" icon="layer-group" href="/drone-agent/vision-nav-modes">
+  <Card title="Modes and fallback" icon="layer-group" href="/drone-agent/navigation-modes">
     Pre-arm checks and the scale ladder.
   </Card>
 </CardGroup>

@@ -52,7 +52,7 @@ do not claim full validation success.
 - Mission Control docs: `mission-control/`; Android GCS: `android/`
 - Drone Agent docs: `drone-agent/`
 - Ground Agent docs: `ground-agent/`
-- Extensions tab: `drone-agent/extensions-catalog.mdx`, `drone-agent/plugins.mdx`, `drone-agent/vision-nav-*.mdx`, `drone-agent/extensions/`, and `mission-control/installing-plugins.mdx`
+- Extensions tab: `drone-agent/extensions-catalog.mdx`, `drone-agent/plugins.mdx`, `drone-agent/navigation-*.mdx`, `drone-agent/extensions/`, and `mission-control/installing-plugins.mdx`
 - Operations: `operations/`
 - Platform tab: `architecture/`, `developers/self-hosting/`, `developers/mcp-server.mdx`
 - Developer guides (plugin SDK and distribution): `developers/`

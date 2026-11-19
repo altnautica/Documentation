@@ -1,17 +1,17 @@
 ---
-title: "Vision Navigation overview"
-sidebarTitle: "Vision Navigation"
+title: "Navigation overview"
+sidebarTitle: "Navigation"
 description: "GPS-denied navigation: optical flow from a downward camera fed to ArduPilot, PX4 or iNav, or an external pose such as a planar LiDAR SLAM sent to ArduPilot with source-set switching and an obstacle feed."
 icon: "compass"
 keywords: ["ados", "vision navigation", "optical flow", "gps-denied", "extension", "rangefinder", "external navigation", "odometry", "obstacle avoidance"]
 ---
 
-Vision Navigation is a first-party extension, `com.altnautica.vision-nav`. It lets a drone hold position when GPS is weak or missing: indoors, under a bridge, between tall buildings. A downward camera tracks the ground, the flight controller's gyro removes the drone's own rotation, and the result reaches the flight controller as an optical-flow measurement about 30 times a second. Position hold, loiter and missions then keep working through the flight controller's own estimator.
+Navigation is a first-party extension, `com.altnautica.navigation`. It lets a drone hold position when GPS is weak or missing: indoors, under a bridge, between tall buildings. A downward camera tracks the ground, the flight controller's gyro removes the drone's own rotation, and the result reaches the flight controller as an optical-flow measurement about 30 times a second. Position hold, loiter and missions then keep working through the flight controller's own estimator.
 
 In its flow modes the extension does optical flow only: it does not estimate a full pose and does not run visual-inertial odometry. In `external_nav` mode it estimates nothing itself either: it forwards a pose another plugin publishes (for example a planar LiDAR SLAM) to ArduPilot as `ODOMETRY`, switches the EKF source set as tracking comes and goes, and can turn a planar scan into `OBSTACLE_DISTANCE`.
 
-<Frame caption="The Vision Nav tab on a drone in optical_flow mode.">
-  ![Mission Control Vision Nav tab with the mode card, sensors, flow health and pre-arm checks for a drone in optical flow mode](/images/extensions/vision-nav/vision-nav-tab.png)
+<Frame caption="The Navigation page on a drone in optical_flow mode.">
+  ![Mission Control Navigation page with the mode card, sensors, flow health and pre-arm checks for a drone in optical flow mode](/images/extensions/navigation/vision-nav-tab.png)
 </Frame>
 
 ## What it is for
@@ -30,9 +30,9 @@ Accuracy depends on the surface, the light, the camera and the airframe. The ext
 | `off` | The plugin stays loaded and reports sensor health, but sends nothing to the flight controller. This is the default. |
 | `optical_flow` | Downward camera plus a rangefinder. The pre-arm checks expect a fresh rangefinder reading. |
 | `optical_flow_degraded` | Downward camera, no rangefinder needed. Scale comes from the flight controller's height, and from GPS height when `outdoor` is on. |
-| `external_nav` | ArduPilot only. A shared pose topic sent as `ODOMETRY` on component 197, with EKF source-set switching and an optional planar-scan obstacle feed. See [External nav and obstacles](/drone-agent/vision-nav-external-nav). |
+| `external_nav` | ArduPilot only. A shared pose topic sent as `ODOMETRY` on component 197, with EKF source-set switching and an optional planar-scan obstacle feed. See [External nav and obstacles](/drone-agent/navigation-external-nav). |
 
-The mode is a per-drone config key, not a picker in the Vision Nav tab. See [Modes and fallback](/drone-agent/vision-nav-modes).
+The mode is a per-drone config key, not a picker in the Navigation page. See [Modes and fallback](/drone-agent/navigation-modes).
 
 ## How the flow modes work
 
@@ -44,18 +44,18 @@ The mode is a per-drone config key, not a picker in the Vision Nav tab. See [Mod
    - PX4 gets `OPTICAL_FLOW_RAD` (#106) with the angle swept over the interval and the gyro rotation over the same interval.
 
    An unknown distance is sent as `-1`. When the rangefinder is wired to the companion, the plugin also sends `DISTANCE_SENSOR` (#132). It keeps a `TIMESYNC` exchange and a 1 Hz companion `HEARTBEAT` running on the same component.
-5. **Report.** Once a second the plugin publishes a `navigation` block on the agent heartbeat: mode, estimator state, flow quality and rate, scale source, sync offset and the pre-arm report. The Vision Nav tab in Mission Control renders it.
+5. **Report.** Once a second the plugin publishes a `navigation` block on the agent heartbeat: mode, estimator state, flow quality and rate, scale source, sync offset and the pre-arm report. The Navigation page in Mission Control renders it.
 
-The plugin checks itself on every frame. If flow quality drops below the gate, the estimator reports `degraded`; a degraded or failed streak of 2 s turns the companion `CRITICAL`. If no frame arrives for 2 s, the estimator reports `failed` and the companion goes `CRITICAL`. Losing frames or getting them back publishes the `navigation` block at once, so the Vision Nav tab shows the change without waiting for the next 1 s publish.
+The plugin checks itself on every frame. If flow quality drops below the gate, the estimator reports `degraded`; a degraded or failed streak of 2 s turns the companion `CRITICAL`. If no frame arrives for 2 s, the estimator reports `failed` and the companion goes `CRITICAL`. Losing frames or getting them back publishes the `navigation` block at once, so the Navigation page shows the change without waiting for the next 1 s publish.
 
 ## Supported hardware and firmware
 
-- **Companion boards:** the boards in the extension's manifest, listed in the [Extensions catalog](/drone-agent/extensions-catalog#vision-navigation). The agent refuses the install on any other board.
+- **Companion boards:** the boards in the extension's manifest, listed in the [Extensions catalog](/drone-agent/extensions-catalog#navigation). The agent refuses the install on any other board.
 - **Flight controllers:** ArduPilot 4.5 and newer, PX4 1.14 and newer, iNav 7.0 and newer. Betaflight has no position estimator, so it can't use optical flow.
 - **Cameras:** a downward USB UVC or CSI camera (global or rolling shutter).
 - **Rangefinders:** a TF-Luna on a companion serial port, or any rangefinder the flight controller already publishes as `DISTANCE_SENSOR`.
 
-Details and wiring are on [Hardware](/drone-agent/vision-nav-hardware).
+Details and wiring are on [Hardware](/drone-agent/navigation-hardware).
 
 ## Version requirements
 
@@ -64,10 +64,10 @@ The extension needs Drone Agent 0.99.125 or newer and Mission Control 0.56.0 or 
 ## Next steps
 
 <CardGroup cols={2}>
-  <Card title="Hardware" icon="camera" href="/drone-agent/vision-nav-hardware">
+  <Card title="Hardware" icon="camera" href="/drone-agent/navigation-hardware">
     Pick and mount the camera and rangefinder.
   </Card>
-  <Card title="Install" icon="download" href="/drone-agent/vision-nav-install">
+  <Card title="Install" icon="download" href="/drone-agent/navigation-install">
     Install and configure the extension on one drone.
   </Card>
 </CardGroup>

@@ -1,7 +1,7 @@
 ---
-title: "Vision Navigation: camera-IMU time offset"
+title: "Navigation: camera-IMU time offset"
 sidebarTitle: "Calibration"
-description: "Optional: load a Kalibr camchain.yaml so Vision Navigation pairs each frame with the right gyro sample."
+description: "Optional: load a Kalibr camchain.yaml so Navigation pairs each frame with the right gyro sample."
 icon: "crosshairs"
 ---
 
@@ -19,7 +19,7 @@ The extension's repository includes a small Python package that loads and checks
 
 ```bash
 git clone https://github.com/altnautica/ADOSExtensions.git
-cd ADOSExtensions/extensions/vision-nav/agent/calibration-helper
+cd ADOSExtensions/extensions/navigation/agent/calibration-helper
 python -m pip install -e .
 python -c "from altnautica_vision_nav_calib import load_intrinsics, load_extrinsics; \
 print(load_intrinsics('camchain.yaml')); print(load_extrinsics('camchain.yaml'))"
@@ -51,8 +51,8 @@ cam0:
 Copy the file into the plugin's per-drone data directory on the drone, named `camchain.yaml`:
 
 ```bash
-ls /var/ados/plugin-data/com.altnautica.vision-nav/drones/
-sudo cp camchain.yaml /var/ados/plugin-data/com.altnautica.vision-nav/drones/<agent-id>/camchain.yaml
+ls /var/ados/plugin-data/com.altnautica.navigation/drones/
+sudo cp camchain.yaml /var/ados/plugin-data/com.altnautica.navigation/drones/<agent-id>/camchain.yaml
 ```
 
 `<agent-id>` is the directory the first command lists for this drone.
@@ -62,11 +62,11 @@ sudo cp camchain.yaml /var/ados/plugin-data/com.altnautica.vision-nav/drones/<ag
 The plugin reads the file once, at start-up:
 
 ```bash
-ados plugin disable com.altnautica.vision-nav
-ados plugin enable com.altnautica.vision-nav
+ados plugin disable com.altnautica.navigation
+ados plugin enable com.altnautica.navigation
 ```
 
-The camera row on the Vision Nav tab's **Sensors** card then shows **Calibrated** instead of **Not calibrated**.
+The camera row on the Navigation page's **Sensors** card then shows **Calibrated** instead of **Not calibrated**.
 
 ## Sync offset on the Sensors card
 
@@ -75,10 +75,10 @@ The Sensors card shows the live camera-IMU sync offset: green at 10 ms or less, 
 ## Next steps
 
 <CardGroup cols={2}>
-  <Card title="Troubleshooting" icon="life-ring" href="/drone-agent/vision-nav-troubleshooting">
+  <Card title="Troubleshooting" icon="life-ring" href="/drone-agent/navigation-troubleshooting">
     Low flow quality, scale problems and lost frames.
   </Card>
-  <Card title="Modes and fallback" icon="layer-group" href="/drone-agent/vision-nav-modes">
+  <Card title="Modes and fallback" icon="layer-group" href="/drone-agent/navigation-modes">
     The modes and the scale ladder.
   </Card>
 </CardGroup>

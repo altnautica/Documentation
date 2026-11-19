@@ -206,9 +206,9 @@ are on [Permissions](/developers/permissions).
 | `vision.track.designate` | Set the engine's follow target through `ctx.vision.designate_track`. |
 | `vision.offload.advertise` | Report the perception offload link the plugin holds to a paired compute node. The agent counts the node as paired only when the advertised address answers. |
 
-## A worked extension: Vision Navigation
+## A worked extension: Navigation
 
-The first-party Vision Navigation extension (`vision-nav`) is a reference for
+The first-party Navigation extension (`navigation`) is a reference for
 frame-bus work. It provides GPS-denied position hold from optical flow: a Rust
 agent half reads engine frames (`vision.frame.read`) and emits the flow message
 the configured firmware fuses over MAVLink (`OPTICAL_FLOW` for ArduPilot and
@@ -216,9 +216,9 @@ iNav, `OPTICAL_FLOW_RAD` for PX4, plus `DISTANCE_SENSOR` when a rangefinder is
 wired to the companion). It supports ArduPilot 4.5+, PX4 1.14+ and iNav 7.0+.
 It does not inject pose through the visual-odometry helpers.
 
-Look at `extensions/vision-nav/` in the ADOSExtensions repository for a real
+Look at `extensions/navigation/` in the ADOSExtensions repository for a real
 `manifest.yaml`, config schema and agent/GCS split. Operator setup is in
-[Vision Navigation](/drone-agent/extensions-catalog#vision-navigation).
+[Navigation](/drone-agent/extensions-catalog#navigation).
 
 ## Multiple cameras
 

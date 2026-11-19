@@ -209,13 +209,13 @@ When the vision engine is not running the route answers `503`. A build without t
 
 ### Navigation and map
 
-The agent collects navigation state that extensions publish on the plugin event bus and serves it from the host, so an operator surface can show it without loading an extension UI. The sources are the World Engine extension's pose, planar scan, occupancy and map-status topics, Vision Navigation's `nav.state`, and Follow-Me's `follow.state` and follow events. Every route is served on every profile; a kind nothing publishes is `null`, never a `404`.
+The agent collects navigation state that extensions publish on the plugin event bus and serves it from the host, so an operator surface can show it without loading an extension UI. The sources are the World Engine extension's pose, planar scan, occupancy and map-status topics, Navigation's `nav.state`, and Follow-Me's `follow.state` and follow events. Every route is served on every profile; a kind nothing publishes is `null`, never a `404`.
 
 | Kind | Source | Payload (`data`) |
 |---|---|---|
 | `pose` | `plugin.world-engine.pose` | The navigation pose with its tracking `health` |
 | `scan` | `plugin.world-engine.scan` | One planar scan: `{t_ns, frame: "body_frd", angle_start_rad, angle_increment_rad, ranges_m}` |
-| `nav` | `nav.state` | The [Vision Navigation state](/drone-agent/vision-nav-external-nav#navigation-state) |
+| `nav` | `nav.state` | The [Navigation state](/drone-agent/navigation-external-nav#navigation-state) |
 | `follow` | `follow.state` | The [Follow-Me read-back](/drone-agent/extensions/follow-me#follow-state) |
 | `map` | `plugin.world-engine.map_status` | The live mapping session summary |
 

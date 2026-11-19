@@ -1,5 +1,5 @@
 ---
-title: "Vision Navigation: external navigation and obstacles"
+title: "Navigation: external navigation and obstacles"
 sidebarTitle: "External nav and obstacles"
 description: "Feed a planar LiDAR SLAM pose to ArduPilot as ODOMETRY with automatic EKF source-set switching, and turn a planar scan into OBSTACLE_DISTANCE for proximity avoidance."
 icon: "route"
@@ -24,7 +24,7 @@ External navigation and the source-set switch need **ArduPilot**. PX4 has no EKF
 
 ## Configure
 
-Set the mode and the two blocks in the per-drone plugin config (see [Install and configure](/drone-agent/vision-nav-install#set-the-per-drone-config)):
+Set the mode and the two blocks in the per-drone plugin config (see [Install and configure](/drone-agent/navigation-install#set-the-per-drone-config)):
 
 ```yaml
 mode: external_nav
@@ -64,7 +64,7 @@ obstacle:
 | `EK3_SRC1_POSXY`, `EK3_SRC1_VELXY` | 6, 6 | Source set 1 navigates on ExternalNav. |
 | `EK3_SRC1_YAW` | 1 (compass) | Keep yaw on the compass. The map's north follows the EKF's, so taking the EKF yaw from the map (6) leaves nothing holding north; the `fc_params` check blocks on 6. |
 | `EK3_SRC1_POSZ` | 1 (baro) or 2 (rangefinder) | Height stays with the flight controller. |
-| `EK3_SRC2_VELXY` | 5 | Source set 2 falls back to optical flow (see [Flight controller setup](/drone-agent/vision-nav-optical-flow)). |
+| `EK3_SRC2_VELXY` | 5 | Source set 2 falls back to optical flow (see [Flight controller setup](/drone-agent/navigation-optical-flow)). |
 | `PRX1_TYPE` | 2 | Accept `OBSTACLE_DISTANCE` over MAVLink. |
 | `AVOID_ENABLE` | 7 | Use proximity data for simple avoidance. |
 | `AHRS_OPTIONS` | 16 (bit 4) | Without GPS, set the EKF origin at boot from `AHRS_ORIGIN_*` (ArduPilot 4.7 and later). See [EKF origin](#ekf-origin). |
@@ -180,7 +180,7 @@ Fields a mode does not produce are `null`.
 ## Next steps
 
 <CardGroup cols={2}>
-  <Card title="Modes and fallback" icon="layer-group" href="/drone-agent/vision-nav-modes">
+  <Card title="Modes and fallback" icon="layer-group" href="/drone-agent/navigation-modes">
     All four modes and their checks.
   </Card>
   <Card title="World Engine" icon="cubes" href="/drone-agent/extensions/world-engine">

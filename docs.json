@@ -338,17 +338,17 @@
               "drone-agent/extensions/world-engine",
               "drone-agent/extensions/follow-me",
               {
-                "group": "Vision Navigation",
-                "root": "drone-agent/vision-nav-overview",
+                "group": "Navigation",
+                "root": "drone-agent/navigation-overview",
                 "pages": [
-                  "drone-agent/vision-nav-hardware",
-                  "drone-agent/vision-nav-install",
-                  "drone-agent/vision-nav-optical-flow",
-                  "drone-agent/vision-nav-modes",
-                  "drone-agent/vision-nav-external-nav",
-                  "drone-agent/vision-nav-calibration",
-                  "drone-agent/vision-nav-troubleshooting",
-                  "drone-agent/vision-nav-architecture"
+                  "drone-agent/navigation-hardware",
+                  "drone-agent/navigation-install",
+                  "drone-agent/navigation-optical-flow",
+                  "drone-agent/navigation-modes",
+                  "drone-agent/navigation-external-nav",
+                  "drone-agent/navigation-calibration",
+                  "drone-agent/navigation-troubleshooting",
+                  "drone-agent/navigation-architecture"
                 ]
               }
             ]
@@ -583,42 +583,47 @@
     },
     {
       "source": "/drone-agent/vision-nav-getting-started",
-      "destination": "/drone-agent/vision-nav-install",
+      "destination": "/drone-agent/navigation-install",
       "permanent": true
     },
     {
       "source": "/drone-agent/vision-nav-how-it-works",
-      "destination": "/drone-agent/vision-nav-overview",
+      "destination": "/drone-agent/navigation-overview",
       "permanent": true
     },
     {
       "source": "/drone-agent/vision-nav-features",
-      "destination": "/drone-agent/vision-nav-overview",
+      "destination": "/drone-agent/navigation-overview",
       "permanent": true
     },
     {
       "source": "/drone-agent/vision-nav-vio",
-      "destination": "/drone-agent/vision-nav-overview",
+      "destination": "/drone-agent/navigation-overview",
       "permanent": true
     },
     {
       "source": "/drone-agent/vision-nav-mode-comparison",
-      "destination": "/drone-agent/vision-nav-modes",
+      "destination": "/drone-agent/navigation-modes",
       "permanent": true
     },
     {
       "source": "/drone-agent/vision-nav-fallback-methods",
-      "destination": "/drone-agent/vision-nav-modes",
+      "destination": "/drone-agent/navigation-modes",
       "permanent": true
     },
     {
       "source": "/drone-agent/vision-nav-calibration-math",
-      "destination": "/drone-agent/vision-nav-calibration",
+      "destination": "/drone-agent/navigation-calibration",
       "permanent": true
     },
     {
       "source": "/drone-agent/vision-nav-faq",
-      "destination": "/drone-agent/vision-nav-troubleshooting",
+      "destination": "/drone-agent/navigation-troubleshooting",
+      "permanent": true
+    },
+    {
+      "source": "/drone-agent/vision-nav-:slug",
+      "destination": "/drone-agent/navigation-:slug",
       "permanent": true
     },
     {

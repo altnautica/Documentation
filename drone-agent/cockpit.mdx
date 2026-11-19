@@ -117,7 +117,7 @@ See [Follow-Me](/drone-agent/extensions/follow-me) for the follow itself.
 
 ### Navigation-source chip
 
-The chip shows what the flight controller's EKF navigates on: `GPS`, `EXT NAV`, `FLOW` or `DR` (dead reckoning), with a quality word. Its inputs are the flight controller's `EKF_STATUS_REPORT`, the GPS fix, the EKF source-set parameters and Vision Navigation's [`nav.state`](/drone-agent/vision-nav-external-nav#navigation-state). Tapping it opens a popover that switches the source set by hand with the agent's [`ekfSourceSet` command](/drone-agent/rest-api#ekf-source-set).
+The chip shows what the flight controller's EKF navigates on: `GPS`, `EXT NAV`, `FLOW` or `DR` (dead reckoning), with a quality word. Its inputs are the flight controller's `EKF_STATUS_REPORT`, the GPS fix, the EKF source-set parameters and Navigation's [`nav.state`](/drone-agent/navigation-external-nav#navigation-state). Tapping it opens a popover that switches the source set by hand with the agent's [`ekfSourceSet` command](/drone-agent/rest-api#ekf-source-set).
 
 The pose, scan, navigation and follow data reach the cockpit from the agent's [navigation stream](/drone-agent/rest-api#navigation-and-map), so it shows them without loading an extension panel.
 

@@ -1,33 +1,33 @@
 ---
-title: "Vision Navigation: install and configure"
+title: "Navigation: install and configure"
 sidebarTitle: "Install"
-description: "Install Vision Navigation on one drone from Mission Control or the agent CLI, set its per-drone config, and enable it."
+description: "Install Navigation on one drone from Mission Control or the agent CLI, set its per-drone config, and enable it."
 icon: "download"
 keywords: ["ados", "vision navigation", "install", "extension", "configuration"]
 ---
 
 import ExtensionVisionNav from '/snippets/generated/extension-vision-nav.mdx';
 
-Vision Navigation installs on one drone at a time. Each drone keeps its own permission grants and its own per-drone config, and the plugin runs only on the agent of the drone you picked.
+Navigation installs on one drone at a time. Each drone keeps its own permission grants and its own per-drone config, and the plugin runs only on the agent of the drone you picked.
 
 ## Before you start
 
-1. **Choose a mode.** `optical_flow` if the drone has a downward rangefinder, `optical_flow_degraded` if it doesn't. See [Modes and fallback](/drone-agent/vision-nav-modes).
-2. **Mount and wire the hardware.** A downward camera, plus the rangefinder for `optical_flow`. See [Hardware](/drone-agent/vision-nav-hardware).
+1. **Choose a mode.** `optical_flow` if the drone has a downward rangefinder, `optical_flow_degraded` if it doesn't. See [Modes and fallback](/drone-agent/navigation-modes).
+2. **Mount and wire the hardware.** A downward camera, plus the rangefinder for `optical_flow`. See [Hardware](/drone-agent/navigation-hardware).
 3. **Check the versions.** The drone runs Drone Agent 0.99.125 or newer (check with `ados version`) and you use Mission Control 0.56.0 or newer.
-4. **Check the board.** The drone's board must be in the extension's board list on the [Extensions catalog](/drone-agent/extensions-catalog#vision-navigation).
+4. **Check the board.** The drone's board must be in the extension's board list on the [Extensions catalog](/drone-agent/extensions-catalog#navigation).
 
 ## Install from Mission Control
 
 1. Open the drone, go to **Agent**, and under **Software** click **Extensions**. A drone with nothing installed shows "No extensions installed on this drone yet."
 2. Pick the source:
-   - **From the registry.** Find **ADOS Vision Navigation** in the list of available extensions and click **Install**. The drone fetches the signed archive itself, so this needs a LAN path from Mission Control to the drone.
+   - **From the registry.** Find **ADOS Navigation** in the list of available extensions and click **Install**. The drone fetches the signed archive itself, so this needs a LAN path from Mission Control to the drone.
    - **From a file.** Click **Install extension on this drone** (or **Install from file**) and choose a downloaded `.adosplug`. Mission Control sends it over the LAN when it can reach the drone, and through the cloud relay when it can't.
 3. Read the review page. It shows the description, compatibility, the permissions, the flight controller parameters the extension expects, the publisher and signer, and the resource impact.
 4. Click **Install**. The button names how many permissions the install grants.
 
-<Frame caption="The install review for Vision Navigation.">
-  ![Mission Control install review page for ADOS Vision Navigation with its permissions, details and the Install button that grants 11 permissions](/images/extensions/vision-nav/install-review.png)
+<Frame caption="The install review for Navigation.">
+  ![Mission Control install review page for ADOS Navigation with its permissions, details and the Install button that grants 11 permissions](/images/extensions/navigation/install-review.png)
 </Frame>
 
 Progress runs Uploading, Queued, Commanded, Downloading, Verifying, Installing, Enabling, Completed over the cloud relay. A LAN install skips the first four and runs Verifying, Installing, Enabling, Completed.
@@ -55,7 +55,7 @@ The CLI prints the plugin id, version, risk and the requested permissions, then 
 A fresh install starts in mode `off` and sends nothing to the flight controller. Write the config through the agent's plugin config route. On the drone itself no key is needed:
 
 ```bash
-BASE=http://127.0.0.1:8080/api/plugins/com.altnautica.vision-nav/config
+BASE=http://127.0.0.1:8080/api/plugins/com.altnautica.navigation/config
 
 curl -X PUT -H "Content-Type: application/json" $BASE \
   -d '{"key": "mode", "value": "optical_flow"}'
@@ -75,14 +75,14 @@ From another machine on the LAN, send the same requests to `http://192.168.1.50:
 | `active` | `true` | Written by the **Engage** Skill. `false` idles the plugin: nothing is sent to the flight controller. |
 | `flow_quality_min` | `50` | Flow quality gate, 0 to 255. Below it the estimator reports `degraded` and the flow pre-arm check blocks. |
 | `outdoor` | `false` | Allows the GPS height rung in `optical_flow_degraded`, measured from the first good 3D fix. Leave it off indoors. |
-| `firmware.type` | `ardupilot` | `ardupilot`, `px4` or `inav`. Picks the flow message (`OPTICAL_FLOW` for ArduPilot and iNav, `OPTICAL_FLOW_RAD` for PX4) and the parameter card on the Vision Nav tab. |
+| `firmware.type` | `ardupilot` | `ardupilot`, `px4` or `inav`. Picks the flow message (`OPTICAL_FLOW` for ArduPilot and iNav, `OPTICAL_FLOW_RAD` for PX4) and the parameter card on the Navigation page. |
 | `rangefinder.topology` | `fc` | `fc`, `companion` or `none`. |
 | `rangefinder.driver` | `fc_relay` | `fc_relay` or `tfluna_uart`. |
 | `rangefinder.device` | none | Serial device for the TF-Luna, for example `/dev/ttyUSB0`. |
 | `rangefinder.baud` | `115200` | TF-Luna baud rate. |
 | `camera.orientation` | `auto` | `downward` or `auto` for both optical-flow modes. `forward` or `side` is rejected and leaves the plugin disengaged. |
-| `camera.camera_id` | empty | The vision-host camera id the flow reads, for example the downward camera. Empty takes frames from every captured camera; set it when the vision host captures more than one. The Vision Nav tab's camera row shows it. |
-| `camera.device_path` | `/dev/video0` | Shown on the Vision Nav tab's camera row while `camera.camera_id` is empty. It does not select the camera. |
+| `camera.camera_id` | empty | The vision-host camera id the flow reads, for example the downward camera. Empty takes frames from every captured camera; set it when the vision host captures more than one. The Navigation page's camera row shows it. |
+| `camera.device_path` | `/dev/video0` | Shown on the Navigation page's camera row while `camera.camera_id` is empty. It does not select the camera. |
 | `camera.bus_type` | `uvc` | `uvc` or `csi`. |
 | `camera.width`, `camera.height`, `camera.fps` | `640`, `480`, `30` | The expected stream. Frames come from the vision bus at the size the vision host captures. |
 
@@ -90,38 +90,38 @@ The plugin checks its stored config once a second. When a value changes, it exit
 
 ## Enable the extension
 
-On the extension's row on the drone's **Extensions** page, click **Enable**. Within a few seconds a **Vision Nav** tab appears on the drone. **Configure** on the same row opens the extension's detail page (overview, permissions and events). **Uninstall** is in the row's menu.
+On the extension's row on the drone's **Extensions** page, click **Enable**. Within a few seconds a **Navigation** page appears in the drone's **Agent** tab under Video and vision, and a **Navigation** panel in its cockpit. **Configure** on the same row opens the extension's detail page (overview, permissions and events). **Uninstall** is in the row's menu.
 
 The **Engage** Skill (default key `Shift+N`) turns vision navigation on and off from the cockpit. It asks for confirmation before it engages, and writes `active` in the per-drone config.
 
 <Warning>
-Engaging Vision Navigation changes how the flight controller estimates position. Read [Safety](/operations/safety) before you fly.
+Engaging Navigation changes how the flight controller estimates position. Read [Safety](/operations/safety) before you fly.
 </Warning>
 
 ## What you have now
 
 - The plugin runs as its own sandboxed unit on the drone, with up to 512 MB RAM, 80% of a CPU core and 24 processes.
 - In an optical-flow mode it sends flow to the flight controller at the camera frame rate once frames and a scale source are available.
-- The Vision Nav tab shows the mode, the sensors, the estimator state, flow health and the pre-arm checks.
+- The Navigation page shows the mode, the sensors, the estimator state, flow health and the pre-arm checks.
 
 ## Uninstall
 
-Click **Uninstall** in the extension row's menu. The drone stops the plugin, removes it and clears its data on that drone, and the flight controller stops receiving flow. From the CLI, `ados plugin remove com.altnautica.vision-nav` does the same; add `--keep-data` to keep the data directory (and any `camchain.yaml`).
+Click **Uninstall** in the extension row's menu. The drone stops the plugin, removes it and clears its data on that drone, and the flight controller stops receiving flow. From the CLI, `ados plugin remove com.altnautica.navigation` does the same; add `--keep-data` to keep the data directory (and any `camchain.yaml`).
 
 ## If the install fails
 
 - **"Not compatible with this drone's board"** or **"Requires agent v…"**: the drone's board or agent version does not match the manifest. Upgrade the agent or use a supported board.
 - **Stuck at Downloading:** the drone can't reach the release URL. Check its outbound HTTPS.
 - **Fails at Verifying:** the signature does not verify against a trusted key, or the signer is revoked. Download the archive again from the release page.
-- **The tab stays empty after enabling:** the plugin sees no frames. Check that the vision host captures the downward camera, then read the plugin log with `ados plugin logs com.altnautica.vision-nav`.
+- **The tab stays empty after enabling:** the plugin sees no frames. Check that the vision host captures the downward camera, then read the plugin log with `ados plugin logs com.altnautica.navigation`.
 
 ## Next steps
 
 <CardGroup cols={2}>
-  <Card title="Flight controller setup" icon="sliders" href="/drone-agent/vision-nav-optical-flow">
+  <Card title="Flight controller setup" icon="sliders" href="/drone-agent/navigation-optical-flow">
     Set the flight controller parameters and check pre-arm.
   </Card>
-  <Card title="Hardware" icon="camera" href="/drone-agent/vision-nav-hardware">
+  <Card title="Hardware" icon="camera" href="/drone-agent/navigation-hardware">
     Camera and rangefinder choices.
   </Card>
 </CardGroup>
