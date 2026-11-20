@@ -55,8 +55,11 @@ curl -sSL https://raw.githubusercontent.com/altnautica/ADOSMissionControlGCS/mai
 ```
 
 The bootstrap uses the current checkout when it finds
-`tools/selfhost/docker-compose.yml`, otherwise it clones to
-`$HOME/ADOSMissionControlGCS`. Override with `ADOS_DIR` and `ADOS_REPO_URL`. It
+`tools/selfhost/docker-compose.yml`, otherwise it updates or clones
+`$HOME/ADOSMissionControlGCS`. An existing install from before the repository
+was renamed, at `$HOME/ADOSMissionControl`, is used in place (with its
+`tools/selfhost/.env`) when `$HOME/ADOSMissionControlGCS` does not exist.
+Override with `ADOS_DIR` and `ADOS_REPO_URL`. It
 then launches, in order of preference, a cached or committed `./ados-deploy`
 binary, the matching release asset, or a `cargo` build. Extra arguments pass
 through.
