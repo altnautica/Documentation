@@ -203,12 +203,24 @@ agent:
 | `size_bytes` | yes | The exact size, 1 byte to 1 GiB. |
 | `profiles` | no | Node profiles that fetch it. Absent means every profile. |
 | `arch_os` | no | The one `<arch>-<os>` host that fetches it. Absent means any. |
+| `unpack` | no | `zip`: the file is a zip archive the agent unpacks into the directory `path` (a runtime of many files, such as an interpreter with its libraries). Needs ADOS 0.124.19 or newer. |
 
 Because the payload list lives in `manifest.yaml`, the archive signature
 covers every `source`, `sha256` and size. The agent hashes while it
 streams, refuses the install on a mismatch, and only then moves the file
 into place. Payloads do not count toward the archive size caps. The
 install attestation lists each applied payload with its pinned sha256.
+
+An unpacked payload is checked against its pinned sha256 before anything is
+read from it. Its members must be regular files and directories with safe
+relative paths (no symlinks, devices, FIFOs, sockets or repeated members),
+within 50 000 members, 512 MiB per member and 2 GiB in all. They are written
+into a hidden sibling directory and moved into place only when complete, so
+a refused unpack leaves nothing behind. Files that start with an ELF or `#!`
+header install `0755`, the rest `0644`, directories `0755`, all owned by
+root. The attestation lists every unpacked file with its own sha256 and the
+payload it came from. An unpacked payload may not sit on an
+`agent.binaries` path.
 
 #### Plugin HTTP
 
